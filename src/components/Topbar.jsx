@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { ArrowLeft, ArrowRight, RotateCw, Star, Bell, Search, CheckCheck, Puzzle, Settings2, Power, ZoomIn, ZoomOut, Columns2, Rows2, Unplug } from 'lucide-react';
 import { useStore } from '../stores/useStore';
+import { useLoadingStore } from '../lib/loadingStore';
 import { getWebview } from '../lib/webviewRegistry';
 import OrbitLogo from './OrbitLogo';
 import AppIcon from './AppIcon';
@@ -146,6 +147,9 @@ export default function Topbar({ onOpenQuickSwitcher }) {
     return () => window.removeEventListener('click', onClick);
   }, []);
 
+  // L'app active est-elle en train de charger ? (bouton Actualiser qui tourne)
+  const isLoading = useLoadingStore((s) => !!s.loadingApps[activeApp]);
+
   const handleBack = () => getWebview(activeApp)?.goBack();
   const handleForward = () => getWebview(activeApp)?.goForward();
   const handleReload = () => getWebview(activeApp)?.reload();
@@ -188,9 +192,11 @@ export default function Topbar({ onOpenQuickSwitcher }) {
           onClick={handleReload}
           disabled={!activeApp}
           className="btn-icon disabled:opacity-30"
-          title="Actualiser"
+          title={isLoading ? 'Chargement…' : 'Actualiser'}
         >
-          <RotateCw size={18} />
+          {/* L'icône tourne pendant tout le chargement de la page : signe
+              visible que l'app recharge (comme dans un navigateur). */}
+          <RotateCw size={18} className={isLoading ? 'animate-spin' : undefined} />
         </button>
       </div>
 

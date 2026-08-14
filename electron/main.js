@@ -15,6 +15,55 @@ const isDev = !app.isPackaged;
 const VITE_DEV_SERVER_URL = 'http://localhost:5173';
 
 // ---------------------------------------------------------------------------
+// Identité navigateur : l'UA EXACTE du vrai Chrome, partout
+// ---------------------------------------------------------------------------
+// Une seule UA règle les deux problèmes qui se renvoyaient la balle. Deux
+// détails, tous deux vérifiés en conditions réelles :
+//
+//  1) AUCUN jeton produit. Electron ajoute le nom de l'app d'après
+//     package.json : « … Orbit/1.0.0 Chrome/130.0.6723.191 Electron/33.4.11
+//     Safari/537.36 ». WhatsApp refuse de démarrer (« WhatsApp fonctionne
+//     avec Google Chrome 100 ou version ultérieure ») tant qu'un jeton
+//     inconnu s'y trouve — retirer « Electron » ne suffisait pas, « Orbit »
+//     bloquait tout autant.
+//
+//  2) VERSION RÉDUITE : Chrome/130.0.0.0, pas Chrome/130.0.6723.191. Depuis
+//     Chrome 101 le vrai Chrome ne publie plus que le numéro majeur dans son
+//     UA (les trois autres champs sont à zéro). Une UA qui annonce Chrome
+//     avec une version complète n'est donc PAS un vrai Chrome : c'est ce que
+//     Google détecte pour afficher « Ce navigateur ou cette application ne
+//     sont peut-être pas sécurisés ». Avec la version réduite, la connexion
+//     Google passe.
+//
+// On ne touche à RIEN d'autre : les en-têtes Sec-CH-UA et
+// navigator.userAgentData d'Electron (« Chromium » + « Not?A_Brand ») sont
+// ceux d'un navigateur Chromium légitime. Les réécrire pour y ajouter
+// « Google Chrome » suffit au contraire à faire refuser la connexion Google.
+const CHROME_MAJOR = (process.versions.chrome || '130.0.0.0').split('.')[0];
+const UA_PLATFORM =
+  process.platform === 'win32'
+    ? 'Windows NT 10.0; Win64; x64'
+    : process.platform === 'darwin'
+      ? 'Macintosh; Intel Mac OS X 10_15_7'
+      : 'X11; Linux x86_64';
+const CHROME_UA = `Mozilla/5.0 (${UA_PLATFORM}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${CHROME_MAJOR}.0.0.0 Safari/537.36`;
+
+// UA par défaut de TOUT le process (fenêtre, requêtes, webviews)
+app.userAgentFallback = CHROME_UA;
+
+app.on('web-contents-created', (event, contents) => {
+  if (contents.getType() !== 'webview') return;
+  try {
+    // Fixée AVANT toute navigation : l'attribut `useragent` du <webview>
+    // pourrait arriver après le début du chargement (ordre des attributs
+    // posés par React) — ici, c'est garanti.
+    contents.setUserAgent(CHROME_UA);
+  } catch (err) {
+    console.error('[orbit] guest UA failed:', err);
+  }
+});
+
+// ---------------------------------------------------------------------------
 // État de la fenêtre (taille, position, maximisé) — persisté au redimensionner
 // ---------------------------------------------------------------------------
 const windowStateFile = () => path.join(app.getPath('userData'), 'window-state.json');
@@ -89,39 +138,11 @@ function setupHeaderBypass(ses) {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Connexion Google : UA « Electron » en en-tête pour les domaines Google
-// ---------------------------------------------------------------------------
-// Google refuse la connexion (« Ce navigateur ou cette application ne sont
-// peut-être pas sécurisés ») quand l'UA prétend être du Chrome pur sans
-// l'être vraiment (il détecte l'incohérence). En revanche il reconnaît
-// Electron comme client légitime (UA avec « Electron/x.y.z »). Le webview
-// garde une UA PROPRE (nécessaire pour WhatsApp, qui refuse sinon), on
-// réécrit donc UNIQUEMENT l'en-tête User-Agent vers l'UA Electron pour les
-// requêtes vers les domaines Google — le serveur de Google voit Electron,
-// et le JS de la page (et WhatsApp) voit l'UA propre.
-const googleUASessions = new WeakSet();
-
-function setupGoogleElectronUA(ses) {
-  if (!ses || !ses.webRequest || googleUASessions.has(ses)) return;
-  googleUASessions.add(ses);
-  try {
-    ses.webRequest.onBeforeSendHeaders((details, callback) => {
-      const headers = { ...details.requestHeaders };
-      const host = ((details.url || '').match(/^https?:\/\/([^/]+)/) || [])[1] || '';
-      const isGoogle =
-        /(^\.|^)google\.\w+$/.test(host) ||
-        /(^\.|^)(gstatic|googleusercontent|googleapis|ggpht|googlevideo)\.com$/.test(host);
-      if (isGoogle) {
-        headers['User-Agent'] = app.userAgentFallback;
-        headers['user-agent'] = app.userAgentFallback;
-      }
-      callback({ requestHeaders: headers });
-    });
-  } catch (err) {
-    console.error('[orbit] google UA rewrite failed:', err);
-  }
-}
+// NB : on ne touche PAS aux en-têtes Sec-CH-UA (client hints). Ceux
+// d'Electron (« Chromium » + « Not?A_Brand ») sont ceux d'un navigateur
+// Chromium légitime, et les réécrire pour y ajouter « Google Chrome » suffit
+// à faire refuser la connexion par Google (mesuré). Même chose pour
+// navigator.userAgentData : laissé intact.
 
 // ---------------------------------------------------------------------------
 // Sessions durables : les cookies de SESSION (sans expiration) sont perdus à
@@ -450,14 +471,6 @@ function createWindow() {
       }
     }
 
-    // UA « Electron » en en-tête pour les requêtes Google (connexion
-    // Gmail/Drive), pendant que le webview garde son UA propre (WhatsApp)
-    try {
-      setupGoogleElectronUA(session.fromPartition(partition));
-    } catch (err) {
-      console.error('[orbit] partition google UA failed:', err);
-    }
-
     // Injecter les extensions actives dans la session du webview
     knownPartitions.add(partition);
     ensureExtensionsForPartition(partition);
@@ -471,12 +484,13 @@ function createWindow() {
   // voient (before-input-event) → Alt+K, Alt+Page… ouvrent Orbit même quand
   // le focus est dans Gmail/Slack, et les apps gardent leurs raccourcis Ctrl.
   mainWindow.webContents.on('did-attach-webview', (_event, guestContents) => {
-    // Diagnostic : UA réellement reçue par chaque webview (surtout WhatsApp —
-    // l'erreur « Chrome 100 » signifie que l'UA n'est PAS propre).
+    // Diagnostic : UA réellement reçue par chaque webview. Tout écart avec
+    // l'UA Chrome authentique casse WhatsApp (« Chrome 100 ou version
+    // ultérieure ») ou la connexion Google.
     guestContents.on('did-navigate', () => {
       const ua = guestContents.getUserAgent() || '';
-      if (ua.includes('Electron')) {
-        console.log('[orbit] ⚠️ webview UA contient Electron →', guestContents.getURL().slice(0, 60), '|', ua.slice(0, 90));
+      if (ua !== CHROME_UA) {
+        console.log('[orbit] ⚠️ UA inattendue →', guestContents.getURL().slice(0, 60), '|', ua.slice(0, 110));
       }
     });
 
@@ -835,13 +849,11 @@ app.whenReady().then(() => {
 
   // Bypass pour la session principale (page React)
   setupHeaderBypass(session.defaultSession);
-  setupGoogleElectronUA(session.defaultSession);
 
   // Bypass pour les sessions des profils connus + extensions actives
   for (const p of ['work', 'personal']) {
     try {
       setupHeaderBypass(session.fromPartition(`persist:${p}`));
-      setupGoogleElectronUA(session.fromPartition(`persist:${p}`));
     } catch {
       /* ignore */
     }

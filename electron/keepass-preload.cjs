@@ -20,6 +20,12 @@
 // ---------------------------------------------------------------------------
 const { ipcRenderer } = require('electron');
 
+// NB : ce preload ne touche plus à l'identité du navigateur. Elle est fixée
+// une fois pour toutes dans main.js (CHROME_UA), et toute retouche
+// supplémentaire — navigator.userAgent, navigator.userAgentData, en-têtes
+// Sec-CH-UA — s'est révélée contre-productive : réécrire userAgentData pour
+// y annoncer « Google Chrome » fait refuser la connexion par Google.
+
 const PASSWORD_SELECTOR = 'input[type="password"]';
 // Mémorise le compte choisi (page identifiant → page mot de passe, Gmail…)
 const STORAGE_KEY = '__orbit_kp_selected_login__';

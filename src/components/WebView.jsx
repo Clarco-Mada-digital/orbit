@@ -1,18 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '../stores/useStore';
+import { useLoadingStore } from '../lib/loadingStore';
 import { registerWebview, unregisterWebview } from '../lib/webviewRegistry';
 import { computeStartUrl } from '../lib/urls';
 import { recipes } from '../lib/recipes';
-
-// UA sans Electron pour éviter la détection des apps web (WhatsApp refuse
-// l'UA avec « Electron »). NB : pour la connexion Google, le main process
-// réécrit l'en-tête User-Agent vers l'UA Electron sur les domaines Google
-// (setupGoogleElectronUA) — Google reconnaît Electron comme client légitime
-// alors qu'il bloque une UA Chrome « non authentique ».
-const CLEAN_UA =
-  typeof navigator !== 'undefined' && navigator.userAgent
-    ? navigator.userAgent.replace(/Electron\/\S+\s?/, '').trim()
-    : undefined;
+import { CHROME_UA } from '../lib/userAgent';
 
 // Un <webview> par app installée. Reste monté (masqué proprement) quand
 // l'app n'est pas affichée → l'état de la page est conservé, comme dans
@@ -26,6 +18,7 @@ const CLEAN_UA =
 export default function WebView({ app, active, visible, flexLayout }) {
   const ref = useRef(null);
   const updateApp = useStore((s) => s.updateApp);
+  const setAppLoading = useLoadingStore((s) => s.setAppLoading);
   const notificationsEnabled = useStore((s) => s.settings?.notifications !== false);
   const unreadRef = useRef(app.unread || 0);
 
@@ -97,12 +90,18 @@ export default function WebView({ app, active, visible, flexLayout }) {
       console.warn('[orbit] échec de chargement', app.name, e.errorCode, e.errorDescription);
     };
 
-    // Indicateur de chargement : visible seulement si la page met > 500 ms
+    // Indicateur de chargement. Deux vitesses :
+    //   - le bouton Actualiser de la Topbar tourne IMMÉDIATEMENT (retour
+    //     visuel au clic, comme dans un navigateur)
+    //   - le voile plein cadre n'apparaît qu'après 500 ms, pour ne pas
+    //     clignoter sur les recharges rapides (redirections…)
     const startLoading = () => {
+      setAppLoading(app.id, true);
       clearTimeout(loadingTimer.current);
       loadingTimer.current = setTimeout(() => setLoading(true), 500);
     };
     const stopLoading = () => {
+      setAppLoading(app.id, false);
       clearTimeout(loadingTimer.current);
       setLoading(false);
     };
@@ -127,6 +126,9 @@ export default function WebView({ app, active, visible, flexLayout }) {
 
     return () => {
       unregisterWebview(app.id);
+      // Démontage (veille, suppression…) : le chargement ne peut plus finir,
+      // sinon le bouton Actualiser tournerait indéfiniment.
+      setAppLoading(app.id, false);
       clearTimeout(loadingTimer.current);
       wv.removeEventListener('dom-ready', applyZoom);
       wv.removeEventListener('did-navigate', handleNavigate);
@@ -137,7 +139,7 @@ export default function WebView({ app, active, visible, flexLayout }) {
       wv.removeEventListener('did-start-loading', startLoading);
       wv.removeEventListener('did-stop-loading', stopLoading);
     };
-  }, [app.id, app.name, app.zoom, app.sleeping, active, notificationsEnabled, updateApp]);
+  }, [app.id, app.name, app.zoom, app.sleeping, active, notificationsEnabled, updateApp, setAppLoading]);
 
   // Zoom en temps réel : re-appliqué dès que le réglage change (boutons − / % / +)
   useEffect(() => {
@@ -193,7 +195,7 @@ export default function WebView({ app, active, visible, flexLayout }) {
         // Session UNIQUE par app : deux comptes de la même app (ex. deux Gmail)
         // n'ont aucun cookie en commun. Chaque instance = un compte séparé.
         partition={`persist:${app.profileId}:${app.id}`}
-        useragent={CLEAN_UA}
+        useragent={CHROME_UA}
         allowpopups="true"
         className="w-full h-full min-w-0 min-h-0"
         // NB : le preload KeePassXC (détection/remplissage) est injecté par le

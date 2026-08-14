@@ -25,4 +25,5 @@ coverage
 
 # Fichiers de test / scratch
 *.mjs
+*.cjs
 !vite.config.mjs
