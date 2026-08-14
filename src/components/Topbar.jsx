@@ -5,6 +5,8 @@ import { useLoadingStore } from '../lib/loadingStore';
 import { getWebview } from '../lib/webviewRegistry';
 import OrbitLogo from './OrbitLogo';
 import AppIcon from './AppIcon';
+import Downloads from './Downloads';
+import NowPlaying from './NowPlaying';
 
 // Icône d'une extension dans l'en-tête (comme la barre d'extensions d'un navigateur).
 // Les infos (nom, icône, page d'options) sont chargées une fois via le main process.
@@ -401,6 +403,13 @@ export default function Topbar({ onOpenQuickSwitcher }) {
               <Star size={18} fill={app?.isFavorite ? 'currentColor' : 'none'} />
             </button>
           )}
+          {/* Lecture en cours : n'apparaît que si un média joue quelque part */}
+          <NowPlaying />
+
+          {/* Téléchargements (comme un navigateur) : n'apparaît qu'en cas
+              d'activité ou d'historique */}
+          <Downloads />
+
           <div className="relative" ref={notifRef}>
             <button
               onClick={() => setShowNotifPanel((prev) => !prev)}

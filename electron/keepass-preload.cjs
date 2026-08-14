@@ -41,7 +41,15 @@ const dbg = (...args) => {
 dbg('preload chargé dans ' + window.location.href.slice(0, 80));
 
 let busy = false;
+let autoFilled = false; // remplissage automatique déjà fait sur cette page ?
 let currentFields = null; // { user, pass } du formulaire focalisé
+
+// Un champ contient-il déjà une saisie de l'utilisateur ? On ne l'écrase
+// JAMAIS automatiquement — sinon impossible de saisir un autre compte à la
+// main (le remplissage auto reprenait le dessus à chaque focus).
+function hasUserInput(fields) {
+  return Boolean((fields.user && fields.user.value) || (fields.pass && fields.pass.value));
+}
 let keyBtn = null;
 let hintEl = null;
 let hintTimer = null;
@@ -375,6 +383,18 @@ function removePicker() {
 // ---------------------------------------------------------------------------
 async function doFill(fields, manual) {
   if (busy || !fields) return;
+
+  // Remplissage AUTOMATIQUE (focus) : ne jamais s'imposer.
+  //   • si l'utilisateur a déjà saisi quelque chose → on ne touche à rien
+  //     (il est en train de taper un autre compte), on montre juste le 🔑 ;
+  //   • une seule tentative auto par page → après avoir effacé un champ, le
+  //     focus ne le re-remplit plus tout seul.
+  // Le clic sur 🔑 (manual = true) passe outre : c'est une action explicite.
+  if (!manual && (autoFilled || hasUserInput(fields))) {
+    showKeyBtn(fields.pass || fields.user);
+    return;
+  }
+
   busy = true;
   try {
     const res = await ipcRenderer.invoke('keepass:getLogins', {
@@ -387,6 +407,7 @@ async function doFill(fields, manual) {
       if (entries.length === 1) {
         // Un seul compte → remplissage direct
         fillEntry(fields, entries[0]);
+        if (!manual) autoFilled = true;
         removeKeyBtn();
       } else {
         // Plusieurs comptes → on mémorise le choix fait sur l'étape précédente
@@ -396,6 +417,7 @@ async function doFill(fields, manual) {
         const preferred = stored ? entries.find((e) => e.login === stored) : null;
         if (fields.pass && !fields.user && preferred) {
           fillEntry(fields, preferred);
+          if (!manual) autoFilled = true;
         } else {
           dbg('plusieurs comptes → sélecteur affiché (' + entries.length + ')');
           showPicker(entries, fields, fields.pass || fields.user);

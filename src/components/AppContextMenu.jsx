@@ -1,5 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
-import { Play, Moon, Trash2, Edit3, Check, X, ExternalLink, Pencil } from 'lucide-react';
+import {
+  Play,
+  Moon,
+  Trash2,
+  Edit3,
+  Check,
+  X,
+  ExternalLink,
+  Pencil,
+  ArrowRightLeft,
+  ChevronRight,
+  Bell,
+  BellOff,
+} from 'lucide-react';
 import { useStore } from '../stores/useStore';
 import EditAppModal from './EditAppModal';
 
@@ -8,30 +21,37 @@ import EditAppModal from './EditAppModal';
 // NB : window.prompt n'existe pas dans Electron → le renommage se fait
 // via un petit formulaire inline affiché à la place du menu.
 export default function AppContextMenu({ appId, x, y, onClose }) {
-  const { apps, activeApp, setActiveApp, toggleAppSleep, deleteApp, updateApp } = useStore();
+  const { apps, profiles, activeApp, setActiveApp, toggleAppSleep, deleteApp, updateApp, moveAppToProfile } =
+    useStore();
   const [renaming, setRenaming] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [moving, setMoving] = useState(false);
   const [name, setName] = useState('');
   const app = apps.find((a) => a.id === appId);
   const menuRef = useRef(null);
 
   // Fermer au clic EN DEHORS du menu, à la molette, à Échap, ou au redimensionnement.
-  // NB : un clic DANS le menu (champ de renommage, boutons…) ne doit pas le fermer
-  // — c'était la cause du « renommer ne marche pas » : le menu se fermait
-  // aussitôt le formulaire ouvert.
+  // On écoute 'mousedown' (et PAS 'click') : cliquer « Déplacer » ou « Renommer »
+  // re-rend le menu et retire le bouton du DOM ; un écouteur 'click' se
+  // déclencherait alors avec une cible DÉTACHÉE (plus contenue dans le menu) et
+  // fermerait le menu à tort. Au 'mousedown', la cible est encore en place, donc
+  // `contains` répond correctement.
   useEffect(() => {
     const close = (e) => {
       // Pendant l'édition, le modal gère sa propre fermeture (clic sur le fond)
       if (editing) return;
-      if (menuRef.current && e && menuRef.current.contains(e.target)) return;
+      if (menuRef.current && e && e.target && menuRef.current.contains(e.target)) return;
       onClose();
     };
     const onKey = (e) => {
-      // Échap annule le renommage d'abord, sinon ferme le menu
+      // Échap annule le renommage / le sous-menu de déplacement d'abord,
+      // sinon ferme le menu
       if (e.key === 'Escape') {
         if (renaming) {
           setRenaming(false);
           setName(app?.name || '');
+        } else if (moving) {
+          setMoving(false);
         } else {
           onClose();
         }
@@ -40,19 +60,19 @@ export default function AppContextMenu({ appId, x, y, onClose }) {
     const onScroll = () => {
       if (!editing) onClose();
     };
-    window.addEventListener('click', close);
+    window.addEventListener('mousedown', close);
     window.addEventListener('keydown', onKey);
     window.addEventListener('blur', close);
     window.addEventListener('resize', close);
     document.addEventListener('scroll', onScroll, true);
     return () => {
-      window.removeEventListener('click', close);
+      window.removeEventListener('mousedown', close);
       window.removeEventListener('keydown', onKey);
       window.removeEventListener('blur', close);
       window.removeEventListener('resize', close);
       document.removeEventListener('scroll', onScroll, true);
     };
-  }, [onClose, renaming, editing, app?.name]);
+  }, [onClose, renaming, editing, moving, app?.name]);
 
   if (!app) return null;
 
@@ -63,9 +83,12 @@ export default function AppContextMenu({ appId, x, y, onClose }) {
 
   const isActive = activeApp === appId;
 
+  // Profils de destination possibles (tous sauf celui de l'app)
+  const otherProfiles = profiles.filter((p) => p.id !== app.profileId);
+
   // Garder le menu entièrement visible dans la fenêtre (même sidebar réduite)
-  const width = renaming ? 256 : 208;
-  const height = renaming ? 150 : 190;
+  const width = renaming ? 256 : 240;
+  const height = renaming ? 150 : moving ? 130 + otherProfiles.length * 44 : 380;
   const style = {
     width,
     left: Math.max(8, Math.min(x, window.innerWidth - width - 8)),
@@ -92,9 +115,19 @@ export default function AppContextMenu({ appId, x, y, onClose }) {
       )
     ) {
       deleteApp(appId);
-      // Purge cookies/session du compte (chaque app a sa propre session)
-      window.electronAPI?.clearAppSession?.(app.profileId, appId);
+      // Purge cookies/session du compte via la clé de session STABLE
+      // (chaque app a sa propre partition).
+      window.electronAPI?.clearAppSession?.({
+        sessionKey: app.sessionKey || `${app.profileId}:${appId}`,
+        profileId: app.profileId,
+        appId,
+      });
     }
+    onClose();
+  };
+
+  const handleMove = (targetProfileId) => {
+    moveAppToProfile(appId, targetProfileId);
     onClose();
   };
 
@@ -136,8 +169,47 @@ export default function AppContextMenu({ appId, x, y, onClose }) {
             </button>
           </div>
         </div>
+      ) : moving ? (
+        <div className="py-0.5">
+          <div className="px-3 py-1.5 text-xs text-text-muted flex items-center gap-2 border-b border-border mb-0.5">
+            <ArrowRightLeft size={13} className="flex-shrink-0" />
+            <span className="truncate">
+              Déplacer « {app.name} » vers&nbsp;:
+            </span>
+          </div>
+          {otherProfiles.length === 0 ? (
+            <div className="px-3 py-2 text-xs text-text-muted">Aucun autre profil</div>
+          ) : (
+            otherProfiles.map((p) => (
+              <button
+                key={p.id}
+                onClick={() => handleMove(p.id)}
+                className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-bg-hover transition-colors"
+              >
+                <span className="text-base flex-shrink-0">{p.emoji}</span>
+                <span className="flex-1 text-left truncate">{p.name}</span>
+              </button>
+            ))
+          )}
+          <div className="my-1 border-t border-border"></div>
+          <button
+            onClick={() => setMoving(false)}
+            className="w-full flex items-center gap-3 px-3 py-2 text-sm text-text-secondary hover:bg-bg-hover transition-colors"
+          >
+            <X size={15} /> Retour
+          </button>
+        </div>
       ) : (
         <>
+          {/* En-tête : rappelle de QUELLE app il s'agit (les actions ci-dessous
+              — renommer, déplacer… — s'appliquent à cette app). */}
+          <div className="px-3 py-1.5 mb-0.5 border-b border-border flex items-center gap-2">
+            <span
+              className="w-4 h-4 rounded flex-shrink-0"
+              style={{ backgroundColor: `${app.color || '#6366f1'}` }}
+            />
+            <span className="text-xs font-semibold truncate">{app.name}</span>
+          </div>
           {!isActive && (
             <button
               onClick={() => {
@@ -160,16 +232,26 @@ export default function AppContextMenu({ appId, x, y, onClose }) {
             {app.sleeping ? 'Réveiller' : 'Mettre en veille'}
           </button>
           <button
+            onClick={() => {
+              updateApp(appId, { muted: !app.muted });
+              onClose();
+            }}
+            className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-bg-hover transition-colors"
+          >
+            {app.muted ? <Bell size={15} /> : <BellOff size={15} />}
+            {app.muted ? 'Réactiver les notifications' : 'Couper les notifications'}
+          </button>
+          <button
             onClick={startRename}
             className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-bg-hover transition-colors"
           >
-            <Edit3 size={15} /> Renommer
+            <Edit3 size={15} /> Renommer l'application
           </button>
           <button
             onClick={() => setEditing(true)}
             className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-bg-hover transition-colors"
           >
-            <Pencil size={15} /> Modifier…
+            <Pencil size={15} /> Modifier (icône, URL, couleur…)
           </button>
           <button
             onClick={() => {
@@ -182,6 +264,15 @@ export default function AppContextMenu({ appId, x, y, onClose }) {
           >
             <ExternalLink size={15} /> Ouvrir dans le navigateur
           </button>
+          {profiles.length > 1 && (
+            <button
+              onClick={() => setMoving(true)}
+              className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-bg-hover transition-colors"
+            >
+              <ArrowRightLeft size={15} /> Déplacer vers un profil
+              <ChevronRight size={14} className="ml-auto text-text-muted" />
+            </button>
+          )}
           <div className="my-1 border-t border-border"></div>
           <button
             onClick={handleUninstall}

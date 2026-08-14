@@ -23,6 +23,7 @@
 // L'association et la clé d'identification sont persistées dans
 // <userData>/keepass.json (la clé secrète ne quitte jamais le main process).
 // ---------------------------------------------------------------------------
+import { safeStorage } from 'electron';
 import nacl from 'tweetnacl';
 import fs from 'fs';
 import path from 'path';
@@ -82,9 +83,20 @@ function localServerPath() {
 // ---------------------------------------------------------------------------
 // Config persistée
 // ---------------------------------------------------------------------------
+// Le fichier contient la clé secrète d'IDENTIFICATION : on le CHIFFRE au repos
+// via le trousseau de l'OS (safeStorage) quand c'est disponible. L'ancien
+// fichier en clair reste lisible (migration transparente : réécrit chiffré).
 function loadConfig(file) {
   try {
-    return JSON.parse(fs.readFileSync(file, 'utf8'));
+    const buf = fs.readFileSync(file);
+    try {
+      return JSON.parse(buf.toString('utf8')); // ancien format en clair
+    } catch {
+      if (safeStorage.isEncryptionAvailable()) {
+        return JSON.parse(safeStorage.decryptString(buf));
+      }
+      throw new Error('config illisible');
+    }
   } catch {
     return { clientId: null, idKey: null, associations: [] };
   }
@@ -93,7 +105,12 @@ function loadConfig(file) {
 function saveConfig() {
   if (!state.configFile) return;
   try {
-    fs.writeFileSync(state.configFile, JSON.stringify(state.config, null, 2));
+    const json = JSON.stringify(state.config, null, 2);
+    if (safeStorage.isEncryptionAvailable()) {
+      fs.writeFileSync(state.configFile, safeStorage.encryptString(json));
+    } else {
+      fs.writeFileSync(state.configFile, json);
+    }
   } catch (err) {
     console.error('[keepass] sauvegarde config échouée:', err.message);
   }

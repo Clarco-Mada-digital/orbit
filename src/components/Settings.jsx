@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { X, User, Palette, Bell, Zap, Info, Keyboard, Puzzle, Check, KeyRound } from 'lucide-react';
+import { X, User, Palette, Bell, Zap, Info, Keyboard, Puzzle, Check, KeyRound, ShieldCheck, Ban } from 'lucide-react';
 import { useStore } from '../stores/useStore';
 import ProfileManager from './ProfileManager';
 import Extensions from './Extensions';
 import KeepassSettings from './KeepassSettings';
+import SecuritySettings from './SecuritySettings';
 
 // Polices proposées, groupées par style. Chaque entrée est rendue
 // dans sa propre police → aperçu en direct avant de choisir.
@@ -61,6 +62,8 @@ export default function Settings({ onClose }) {
     { id: 'shortcuts', name: 'Raccourcis', icon: Keyboard },
     { id: 'extensions', name: 'Extensions', icon: Puzzle },
     { id: 'keepass', name: 'KeePassXC', icon: KeyRound },
+    { id: 'security', name: 'Sécurité', icon: ShieldCheck },
+    { id: 'privacy', name: 'Confidentialité', icon: Ban },
     { id: 'notifications', name: 'Notifications', icon: Bell },
     { id: 'about', name: 'À propos', icon: Info },
   ];
@@ -144,6 +147,34 @@ export default function Settings({ onClose }) {
                         type="checkbox"
                         checked={settings.autoHideTopbar}
                         onChange={(e) => updateSettings({ autoHideTopbar: e.target.checked })}
+                        className="w-12 h-6 bg-bg-hover rounded-full relative cursor-pointer appearance-none checked:bg-accent-primary transition-colors after:content-[''] after:absolute after:top-1 after:left-1 after:w-4 after:h-4 after:bg-white after:rounded-full after:transition-transform checked:after:translate-x-6"
+                      />
+                    </label>
+                    <label className="flex items-center justify-between mb-3">
+                      <div>
+                        <div className="font-medium">Picture-in-Picture automatique</div>
+                        <div className="text-sm text-text-muted">
+                          Sort la vidéo en mini-fenêtre flottante quand vous changez d'app
+                        </div>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={settings.autoPictureInPicture !== false}
+                        onChange={(e) => updateSettings({ autoPictureInPicture: e.target.checked })}
+                        className="w-12 h-6 bg-bg-hover rounded-full relative cursor-pointer appearance-none checked:bg-accent-primary transition-colors after:content-[''] after:absolute after:top-1 after:left-1 after:w-4 after:h-4 after:bg-white after:rounded-full after:transition-transform checked:after:translate-x-6"
+                      />
+                    </label>
+                    <label className="flex items-center justify-between">
+                      <div>
+                        <div className="font-medium">Touches média du clavier</div>
+                        <div className="text-sm text-text-muted">
+                          Les touches ⏯ ⏭ ⏮ pilotent la lecture en cours (même hors d'Orbit)
+                        </div>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={settings.globalMediaKeys === true}
+                        onChange={(e) => updateSettings({ globalMediaKeys: e.target.checked })}
                         className="w-12 h-6 bg-bg-hover rounded-full relative cursor-pointer appearance-none checked:bg-accent-primary transition-colors after:content-[''] after:absolute after:top-1 after:left-1 after:w-4 after:h-4 after:bg-white after:rounded-full after:transition-transform checked:after:translate-x-6"
                       />
                     </label>
@@ -406,6 +437,128 @@ export default function Settings({ onClose }) {
               {activeTab === 'extensions' && <Extensions />}
 
               {activeTab === 'keepass' && <KeepassSettings />}
+
+              {activeTab === 'security' && <SecuritySettings />}
+
+              {activeTab === 'privacy' && (
+                <div className="space-y-6">
+                  <div className="card">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Ban size={18} className="text-accent-primary" />
+                      <h4 className="font-semibold">Bloqueur de pub &amp; traceurs</h4>
+                    </div>
+                    <p className="text-sm text-text-muted mb-4">
+                      Blocage natif intégré (listes type EasyList), au niveau réseau, pour toutes
+                      les apps et tous les profils — sans extension. Plus efficace et fiable que les
+                      extensions de blocage, qui ne fonctionnent pas dans Orbit.
+                    </p>
+                    <label className="flex items-center justify-between">
+                      <div>
+                        <div className="font-medium">Activer le blocage</div>
+                        <div className="text-sm text-text-muted">
+                          Bloque les publicités et traceurs connus
+                        </div>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={settings.adblock !== false}
+                        onChange={(e) => updateSettings({ adblock: e.target.checked })}
+                        className="w-12 h-6 bg-bg-hover rounded-full relative cursor-pointer appearance-none checked:bg-accent-primary transition-colors after:content-[''] after:absolute after:top-1 after:left-1 after:w-4 after:h-4 after:bg-white after:rounded-full after:transition-transform checked:after:translate-x-6"
+                      />
+                    </label>
+                    <p className="text-xs text-text-muted mt-3">
+                      Après changement, rechargez une app déjà ouverte (bouton ⟳) pour que l'effet
+                      s'applique. La première activation télécharge les listes (puis elles sont mises
+                      en cache, y compris hors-ligne).
+                    </p>
+                  </div>
+
+                  <div className="card">
+                    <h4 className="font-semibold mb-2">Traduction &amp; lecture vocale</h4>
+                    <p className="text-sm text-text-muted mb-4">
+                      Clic droit sur une page → « Traduire la sélection » ou « Lire à voix haute »
+                      (intégré, sans extension).
+                    </p>
+
+                    <label className="block text-sm font-medium mb-1.5">Langue de traduction</label>
+                    <select
+                      value={settings.translateTarget || 'fr'}
+                      onChange={(e) => updateSettings({ translateTarget: e.target.value })}
+                      className="input max-w-xs mb-4"
+                    >
+                      {[
+                        { v: 'fr', l: 'Français' },
+                        { v: 'en', l: 'Anglais' },
+                        { v: 'es', l: 'Espagnol' },
+                        { v: 'de', l: 'Allemand' },
+                        { v: 'it', l: 'Italien' },
+                        { v: 'pt', l: 'Portugais' },
+                        { v: 'ar', l: 'Arabe' },
+                        { v: 'zh-CN', l: 'Chinois (simplifié)' },
+                        { v: 'ru', l: 'Russe' },
+                        { v: 'ja', l: 'Japonais' },
+                      ].map((o) => (
+                        <option key={o.v} value={o.v}>
+                          {o.l}
+                        </option>
+                      ))}
+                    </select>
+
+                    <label className="block text-sm font-medium mb-1.5">Moteur de traduction</label>
+                    <div className="flex gap-3 mb-3">
+                      {[
+                        { v: 'google', l: 'Google', d: 'Rapide, sans configuration' },
+                        { v: 'libretranslate', l: 'LibreTranslate', d: 'Privé / auto-hébergé' },
+                      ].map((o) => (
+                        <button
+                          key={o.v}
+                          onClick={() => updateSettings({ translateEngine: o.v })}
+                          className={`flex-1 py-2.5 px-3 rounded-lg border-2 text-left transition-all ${
+                            (settings.translateEngine || 'google') === o.v
+                              ? 'border-accent-primary bg-accent-primary/10'
+                              : 'border-border hover:border-accent-primary/50'
+                          }`}
+                        >
+                          <div className="font-medium text-sm">{o.l}</div>
+                          <div className="text-xs text-text-muted">{o.d}</div>
+                        </button>
+                      ))}
+                    </div>
+
+                    {settings.translateEngine === 'libretranslate' && (
+                      <div className="space-y-2">
+                        <input
+                          type="text"
+                          value={settings.libreTranslateUrl || ''}
+                          onChange={(e) => updateSettings({ libreTranslateUrl: e.target.value })}
+                          placeholder="URL du serveur (ex. http://localhost:5000)"
+                          className="input"
+                        />
+                        <input
+                          type="password"
+                          value={settings.libreTranslateApiKey || ''}
+                          onChange={(e) => updateSettings({ libreTranslateApiKey: e.target.value })}
+                          placeholder="Clé API (optionnelle)"
+                          className="input"
+                        />
+                        <p className="text-xs text-text-muted">
+                          LibreTranslate est open-source et auto-hébergeable (Docker :{' '}
+                          <code className="px-1 py-0.5 bg-bg-secondary border border-border rounded">
+                            libretranslate/libretranslate
+                          </code>
+                          ). Avec un serveur local, vos textes ne quittent pas votre machine.
+                        </p>
+                      </div>
+                    )}
+                    {settings.translateEngine !== 'libretranslate' && (
+                      <p className="text-xs text-text-muted">
+                        Le moteur Google envoie le texte sélectionné à Google pour la traduction.
+                        Pour un traitement privé, choisissez LibreTranslate.
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {activeTab === 'notifications' && (
                 <div className="space-y-6">

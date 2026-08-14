@@ -12,8 +12,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Notifications système + badge de la fenêtre
   showNotification: (payload) => ipcRenderer.invoke('notifications:show', payload),
   setBadgeCount: (count) => ipcRenderer.invoke('notifications:setBadge', count),
-  // Purge cookies/session d'un compte désinstallé
-  clearAppSession: (profileId, appId) => ipcRenderer.invoke('sessions:clear', { profileId, appId }),
+  // Purge cookies/session d'un compte désinstallé (clé de session stable)
+  clearAppSession: (payload) => ipcRenderer.invoke('sessions:clear', payload),
   // Extensions Chrome
   syncExtensions: (list) => ipcRenderer.invoke('extensions:sync', list),
   installWebStoreExtension: (idOrUrl) => ipcRenderer.invoke('extensions:installWebStore', { idOrUrl }),
@@ -32,6 +32,64 @@ contextBridge.exposeInMainWorld('electronAPI', {
     const listener = (_event, action) => callback(action);
     ipcRenderer.on('orbit:shortcut', listener);
     return () => ipcRenderer.removeListener('orbit:shortcut', listener);
+  },
+  // Clic sur une notification système → ouvrir l'app concernée
+  onActivateApp: (callback) => {
+    const listener = (_event, appId) => callback(appId);
+    ipcRenderer.on('orbit:activate-app', listener);
+    return () => ipcRenderer.removeListener('orbit:activate-app', listener);
+  },
+  // Téléchargements (progression + actions)
+  onDownload: (callback) => {
+    const listener = (_event, payload) => callback(payload);
+    ipcRenderer.on('orbit:download', listener);
+    return () => ipcRenderer.removeListener('orbit:download', listener);
+  },
+  openDownload: (id) => ipcRenderer.invoke('downloads:open', id),
+  revealDownload: (id) => ipcRenderer.invoke('downloads:reveal', id),
+  cancelDownload: (id) => ipcRenderer.invoke('downloads:cancel', id),
+  openDownloadsFolder: () => ipcRenderer.invoke('downloads:openFolder'),
+  // Bloqueur de pub natif
+  adblock: {
+    setEnabled: (on) => ipcRenderer.invoke('adblock:setEnabled', on),
+    getState: () => ipcRenderer.invoke('adblock:getState'),
+  },
+  // Traduction : configuration (langue cible + moteur Google/LibreTranslate)
+  setTranslateConfig: (cfg) => ipcRenderer.invoke('translate:setConfig', cfg),
+  // Touches média globales du clavier (⏯ ⏭ ⏮)
+  setMediaKeysEnabled: (on) => ipcRenderer.invoke('mediakeys:setEnabled', on),
+  onMediaKey: (callback) => {
+    const listener = (_event, action) => callback(action);
+    ipcRenderer.on('orbit:media-key', listener);
+    return () => ipcRenderer.removeListener('orbit:media-key', listener);
+  },
+  // Mini-lecteur flottant (toujours au-dessus)
+  miniPlayer: {
+    open: () => ipcRenderer.invoke('miniplayer:open'),
+    sendState: (state) => ipcRenderer.invoke('miniplayer:state', state),
+    onRequestState: (callback) => {
+      const listener = () => callback();
+      ipcRenderer.on('orbit:mp:request-state', listener);
+      return () => ipcRenderer.removeListener('orbit:mp:request-state', listener);
+    },
+    onAction: (callback) => {
+      const listener = (_event, action) => callback(action);
+      ipcRenderer.on('orbit:mp:action', listener);
+      return () => ipcRenderer.removeListener('orbit:mp:action', listener);
+    },
+  },
+  // Verrouillage / sécurité
+  security: {
+    getState: () => ipcRenderer.invoke('security:getState'),
+    setAppLock: (pin) => ipcRenderer.invoke('security:setAppLock', pin),
+    removeAppLock: (pin) => ipcRenderer.invoke('security:removeAppLock', pin),
+    unlockApp: (pin) => ipcRenderer.invoke('security:unlockApp', pin),
+    lockApp: () => ipcRenderer.invoke('security:lockApp'),
+    setProfileLock: (id, pin) => ipcRenderer.invoke('security:setProfileLock', { id, pin }),
+    removeProfileLock: (id, pin) => ipcRenderer.invoke('security:removeProfileLock', { id, pin }),
+    unlockProfile: (id, pin) => ipcRenderer.invoke('security:unlockProfile', { id, pin }),
+    lockProfile: (id) => ipcRenderer.invoke('security:lockProfile', id),
+    dropProfile: (id) => ipcRenderer.invoke('security:dropProfile', id),
   },
   platform: process.platform,
 });

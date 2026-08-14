@@ -1,12 +1,17 @@
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useStore } from '../stores/useStore';
-import { ChevronLeft, ChevronRight, Plus, Settings, Grid, User, Moon } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Settings, Grid, User, Moon, BellOff, Lock } from 'lucide-react';
 import AppContextMenu from './AppContextMenu';
 import AppIcon from './AppIcon';
+import { useSecurityStore } from '../lib/securityStore';
 
 export default function Sidebar({ collapsed, onToggle, onOpenSettings, onOpenStore, onOpenProfileManager, onSelectApp }) {
   const { profiles, activeProfile, setActiveProfile, getProfileApps, activeApp, settings, reorderApps } = useStore();
+  const { lockedProfileIds, unlockedProfileIds } = useSecurityStore();
+  // Un profil affiche un cadenas s'il est verrouillé ET pas encore déverrouillé
+  const profileShowsLock = (id) =>
+    lockedProfileIds.includes(id) && !unlockedProfileIds.includes(id);
   const currentProfile = profiles.find((p) => p.id === activeProfile);
   const apps = getProfileApps(activeProfile);
 
@@ -138,7 +143,7 @@ export default function Sidebar({ collapsed, onToggle, onOpenSettings, onOpenSto
             <button
               key={profile.id}
               onClick={() => setActiveProfile(profile.id)}
-              className={`w-full flex items-center ${collapsed ? 'justify-center' : 'gap-3'} ${
+              className={`relative w-full flex items-center ${collapsed ? 'justify-center' : 'gap-3'} ${
                 settings.compactMode ? 'px-2 py-1.5' : 'px-3 py-2'
               } rounded-lg transition-all ${
                 profile.id === activeProfile
@@ -151,10 +156,16 @@ export default function Sidebar({ collapsed, onToggle, onOpenSettings, onOpenSto
               {!collapsed && (
                 <>
                   <span className="font-medium text-sm flex-1 text-left truncate">{profile.name}</span>
-                  {profile.id === activeProfile && (
+                  {profileShowsLock(profile.id) && (
+                    <Lock size={13} className="text-text-muted flex-shrink-0" title="Profil verrouillé" />
+                  )}
+                  {profile.id === activeProfile && !profileShowsLock(profile.id) && (
                     <div className="w-2 h-2 rounded-full bg-accent-primary flex-shrink-0"></div>
                   )}
                 </>
+              )}
+              {collapsed && profileShowsLock(profile.id) && (
+                <Lock size={11} className="absolute right-1 top-1 text-text-muted" />
               )}
             </button>
           ))}
@@ -246,6 +257,9 @@ export default function Sidebar({ collapsed, onToggle, onOpenSettings, onOpenSto
                 {!collapsed && (
                   <>
                     <span className="font-medium text-sm flex-1 text-left truncate">{app.name}</span>
+                    {app.muted && (
+                      <BellOff size={13} className="text-text-muted flex-shrink-0" title="Notifications coupées" />
+                    )}
                     {app.unread > 0 && !app.sleeping && (
                       <span className="badge flex-shrink-0">{app.unread > 99 ? '99+' : app.unread}</span>
                     )}

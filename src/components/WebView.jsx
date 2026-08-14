@@ -1,7 +1,26 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useStore } from '../stores/useStore';
 import { useLoadingStore } from '../lib/loadingStore';
+import { useMediaStore } from '../lib/mediaStore';
 import { registerWebview, unregisterWebview } from '../lib/webviewRegistry';
+
+// Lu DANS la page (via executeJavaScript) : métadonnées de lecture (Media
+// Session en priorité, sinon le titre de la page) + état lecture/pause.
+const READ_MEDIA_FN = `(() => {
+  try {
+    const md = navigator.mediaSession && navigator.mediaSession.metadata;
+    const el = document.querySelector('video, audio');
+    return {
+      hasMedia: !!el,
+      paused: el ? el.paused : true,
+      currentTime: el && isFinite(el.currentTime) ? el.currentTime : 0,
+      duration: el && isFinite(el.duration) ? el.duration : 0,
+      title: (md && md.title) || document.title || '',
+      artist: (md && md.artist) || '',
+      artwork: (md && md.artwork && md.artwork.length ? md.artwork[md.artwork.length - 1].src : '') || '',
+    };
+  } catch (e) { return { hasMedia: false, paused: true, currentTime: 0, duration: 0, title: '', artist: '', artwork: '' }; }
+})()`;
 import { computeStartUrl } from '../lib/urls';
 import { recipes } from '../lib/recipes';
 import { CHROME_UA } from '../lib/userAgent';
@@ -17,9 +36,16 @@ import { CHROME_UA } from '../lib/userAgent';
 //   flexLayout — rendue dans une grille partagée (flex:1) au lieu de plein écran
 export default function WebView({ app, active, visible, flexLayout }) {
   const ref = useRef(null);
+  // Le <webview> est-il prêt ? executeJavaScript/sendInputEvent lèvent une
+  // exception SYNCHRONE tant que 'dom-ready' n'a pas été émis (webview non
+  // attaché) → on ne pilote la page qu'après.
+  const domReadyRef = useRef(false);
   const updateApp = useStore((s) => s.updateApp);
   const setAppLoading = useLoadingStore((s) => s.setAppLoading);
+  const setMedia = useMediaStore((s) => s.setMedia);
+  const clearMedia = useMediaStore((s) => s.clearMedia);
   const notificationsEnabled = useStore((s) => s.settings?.notifications !== false);
+  const autoPip = useStore((s) => s.settings?.autoPictureInPicture !== false);
   const unreadRef = useRef(app.unread || 0);
 
   // Indicateur de chargement : un petit spinner s'affiche quand la page
@@ -68,11 +94,14 @@ export default function WebView({ app, active, visible, flexLayout }) {
         unread > unreadRef.current &&
         !active &&
         notificationsEnabled &&
+        !app.muted &&
         window.electronAPI?.showNotification
       ) {
         window.electronAPI.showNotification({
           title: app.name,
           body: `${unread} nouveau${unread > 1 ? 'x' : ''} message${unread > 1 ? 's' : ''} non lu${unread > 1 ? 's' : ''}`,
+          // Permet à un clic sur la notification d'ouvrir cette app précise
+          appId: app.id,
         });
       }
       unreadRef.current = unread;
@@ -106,8 +135,9 @@ export default function WebView({ app, active, visible, flexLayout }) {
       setLoading(false);
     };
 
-    // Appliquer le zoom mémorisé une fois la page chargée
+    // Appliquer le zoom mémorisé une fois la page chargée + marquer prêt
     const applyZoom = () => {
+      domReadyRef.current = true;
       try {
         wv.setZoomFactor(Math.min(3, Math.max(0.5, app.zoom || 1)));
       } catch {
@@ -115,6 +145,53 @@ export default function WebView({ app, active, visible, flexLayout }) {
       }
     };
 
+    // « Lecture en cours » : quand un média démarre, on lit ses métadonnées
+    // (Media Session + position/durée) et on met à jour le store → mini-barre
+    // + mini-lecteur flottant. On rafraîchit la position toutes les secondes
+    // PENDANT la lecture (pour la barre de progression), pas quand c'est en pause.
+    let pollTimer = null;
+    const readMedia = () => {
+      if (!domReadyRef.current) return;
+      try {
+        const p = wv.executeJavaScript(READ_MEDIA_FN);
+        if (p && typeof p.then === 'function') {
+          p.then((info) => {
+            if (info && (info.hasMedia || info.title)) {
+              setMedia(app.id, {
+                playing: !info.paused,
+                hasMedia: info.hasMedia,
+                currentTime: info.currentTime,
+                duration: info.duration,
+                title: info.title,
+                artist: info.artist,
+                artwork: info.artwork,
+              });
+            }
+          }).catch(() => {});
+        }
+      } catch {
+        /* ignore */
+      }
+    };
+    const startPolling = () => {
+      clearInterval(pollTimer);
+      pollTimer = setInterval(readMedia, 1000);
+    };
+    const stopPolling = () => {
+      clearInterval(pollTimer);
+      pollTimer = null;
+    };
+    const onMediaPlay = () => {
+      readMedia();
+      startPolling();
+    };
+    const onMediaPaused = () => {
+      readMedia();
+      stopPolling();
+    };
+
+    wv.addEventListener('media-started-playing', onMediaPlay);
+    wv.addEventListener('media-paused', onMediaPaused);
     wv.addEventListener('dom-ready', applyZoom);
     wv.addEventListener('did-navigate', handleNavigate);
     wv.addEventListener('did-navigate-in-page', handleNavigate);
@@ -129,7 +206,11 @@ export default function WebView({ app, active, visible, flexLayout }) {
       // Démontage (veille, suppression…) : le chargement ne peut plus finir,
       // sinon le bouton Actualiser tournerait indéfiniment.
       setAppLoading(app.id, false);
+      clearMedia(app.id);
+      clearInterval(pollTimer);
       clearTimeout(loadingTimer.current);
+      wv.removeEventListener('media-started-playing', onMediaPlay);
+      wv.removeEventListener('media-paused', onMediaPaused);
       wv.removeEventListener('dom-ready', applyZoom);
       wv.removeEventListener('did-navigate', handleNavigate);
       wv.removeEventListener('did-navigate-in-page', handleNavigate);
@@ -139,7 +220,7 @@ export default function WebView({ app, active, visible, flexLayout }) {
       wv.removeEventListener('did-start-loading', startLoading);
       wv.removeEventListener('did-stop-loading', stopLoading);
     };
-  }, [app.id, app.name, app.zoom, app.sleeping, active, notificationsEnabled, updateApp, setAppLoading]);
+  }, [app.id, app.name, app.zoom, app.sleeping, app.muted, active, notificationsEnabled, updateApp, setAppLoading, setMedia, clearMedia]);
 
   // Zoom en temps réel : re-appliqué dès que le réglage change (boutons − / % / +)
   useEffect(() => {
@@ -170,6 +251,32 @@ export default function WebView({ app, active, visible, flexLayout }) {
     return () => clearTimeout(t);
   }, [active, app.zoom]);
 
+  // Picture-in-Picture automatique : quand on QUITTE une app dont une vidéo
+  // joue, on la sort en mini-fenêtre flottante (PiP natif Chromium) ; quand on
+  // REVIENT, on referme le PiP. userGesture=true satisfait l'exigence de geste
+  // utilisateur de l'API requestPictureInPicture.
+  useEffect(() => {
+    const wv = ref.current;
+    // Ne rien faire tant que la page n'est pas prête (sinon executeJavaScript
+    // lève une exception synchrone : webview non attaché / pas de dom-ready).
+    if (!wv || app.sleeping || !domReadyRef.current || typeof wv.executeJavaScript !== 'function') {
+      return;
+    }
+    const code =
+      !active && autoPip
+        ? `(() => { try { const v=[...document.querySelectorAll('video')].find(x=>!x.paused && x.readyState>2 && !x.disablePictureInPicture); if (v && !document.pictureInPictureElement && v.requestPictureInPicture) v.requestPictureInPicture().catch(()=>{}); } catch(e){} })()`
+        : active
+          ? `(() => { try { if (document.pictureInPictureElement) document.exitPictureInPicture().catch(()=>{}); } catch(e){} })()`
+          : null;
+    if (!code) return;
+    try {
+      const p = wv.executeJavaScript(code, true);
+      if (p && typeof p.catch === 'function') p.catch(() => {});
+    } catch {
+      /* webview pas prêt : on ignore */
+    }
+  }, [active, autoPip, app.sleeping]);
+
   // App en veille → pas de webview du tout : la page est fermée.
   // Au réveil, elle se recharge à neuf.
   if (app.sleeping) return null;
@@ -192,22 +299,24 @@ export default function WebView({ app, active, visible, flexLayout }) {
       <webview
         ref={ref}
         src={startUrl}
-        // Session UNIQUE par app : deux comptes de la même app (ex. deux Gmail)
-        // n'ont aucun cookie en commun. Chaque instance = un compte séparé.
-        partition={`persist:${app.profileId}:${app.id}`}
+        // Session UNIQUE par app, indexée par une clé STABLE (sessionKey) :
+        // deux comptes de la même app (ex. deux Gmail) n'ont aucun cookie en
+        // commun, ET déplacer l'app vers un autre profil conserve le compte
+        // et le cache (la partition ne dépend plus du profil). Repli sur
+        // l'ancien schéma pour toute donnée pas encore migrée.
+        partition={`persist:${app.sessionKey || `${app.profileId}:${app.id}`}`}
         useragent={CHROME_UA}
         allowpopups="true"
         className="w-full h-full min-w-0 min-h-0"
         // NB : le preload KeePassXC (détection/remplissage) est injecté par le
         // main process dans 'will-attach-webview' — pas d'attribut ici.
       />
-      {/* Indicateur : visible quand la page recharge (>= 500 ms) */}
+      {/* Indicateur de chargement : fine barre de progression EN HAUT, discrète,
+          dans la couleur d'accent du thème (aucun voile plein cadre → on garde
+          la page visible pendant le rechargement, comme un vrai navigateur). */}
       {loading && visible && (
-        <div
-          className="absolute inset-0 flex items-center justify-center"
-          style={{ zIndex: 20, background: 'rgba(10, 10, 15, 0.55)', pointerEvents: 'none' }}
-        >
-          <div className="w-10 h-10 rounded-full border-[3px] border-indigo-500/30 border-t-indigo-400 animate-spin" />
+        <div className="orbit-progress" aria-hidden="true">
+          <div className="orbit-progress__bar" />
         </div>
       )}
     </div>

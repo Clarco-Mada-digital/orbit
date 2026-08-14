@@ -157,9 +157,9 @@ export default function EditAppModal({ app, onClose }) {
             </div>
 
             <div className="grid grid-cols-10 gap-1.5 max-h-40 overflow-y-auto pr-1">
-              {EMOJI_CHOICES.map((e) => (
+              {EMOJI_CHOICES.map((e, i) => (
                 <button
-                  key={e}
+                  key={`${e}-${i}`}
                   onClick={() => {
                     setEmoji(e);
                     setIconImage('');

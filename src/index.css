@@ -128,3 +128,45 @@
     @apply inline-flex items-center justify-center min-w-5 h-5 px-1.5 text-xs font-semibold rounded-full bg-accent-primary text-white;
   }
 }
+
+/* ===== Barre de progression de chargement des apps =========================
+   Fine barre EN HAUT du contenu, dans la couleur d'accent choisie par
+   l'utilisateur (variable --accent-primary). Remplace l'ancien voile + spinner.
+   Le rail (fond léger d'accent) reste visible même en mode « sans animations »
+   → l'indication de chargement fonctionne dans tous les cas. */
+.orbit-progress {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2.5px;
+  z-index: 30;
+  overflow: hidden;
+  background: rgb(var(--accent-primary) / 0.16);
+  pointer-events: none;
+}
+
+.orbit-progress__bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  height: 100%;
+  width: 40%;
+  border-radius: 3px;
+  background: linear-gradient(
+    90deg,
+    rgb(var(--accent-primary) / 0) 0%,
+    rgb(var(--accent-primary)) 50%,
+    rgb(var(--accent-primary) / 0) 100%
+  );
+  animation: orbit-progress-slide 1.1s ease-in-out infinite;
+}
+
+@keyframes orbit-progress-slide {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(320%);
+  }
+}

@@ -25,6 +25,19 @@ export const defaultSettings = {
   compactMode: false,
   showAppIcons: true,
   animationsEnabled: true,
+  // Picture-in-Picture automatique : sortir la vidéo en mini-fenêtre quand on
+  // quitte l'app (activé par défaut)
+  autoPictureInPicture: true,
+  // Touches média globales du clavier (⏯ ⏭ ⏮) — désactivé par défaut pour ne
+  // pas voler les touches à un éventuel lecteur natif
+  globalMediaKeys: false,
+  // Bloqueur de pub / traceurs natif (activé par défaut)
+  adblock: true,
+  // Traduction (menu contextuel « Traduire la sélection »)
+  translateTarget: 'fr',
+  translateEngine: 'google', // 'google' | 'libretranslate'
+  libreTranslateUrl: '', // ex. http://localhost:5000
+  libreTranslateApiKey: '',
   // KeePassXC : auto-remplissage des identifiants (activé par défaut)
   keepass: { enabled: true },
 };
@@ -46,6 +59,7 @@ export const useStore = create(
         {
           id: 'gmail-work',
           profileId: 'work',
+          sessionKey: 'work:gmail-work',
           recipeId: 'gmail',
           name: 'Gmail',
           url: 'https://mail.google.com',
@@ -62,6 +76,7 @@ export const useStore = create(
         {
           id: 'slack-work',
           profileId: 'work',
+          sessionKey: 'work:slack-work',
           recipeId: 'slack',
           name: 'Slack',
           url: 'https://app.slack.com',
@@ -107,31 +122,44 @@ export const useStore = create(
         })),
 
       deleteProfile: (profileId) =>
-        set((state) => ({
-          profiles: state.profiles.filter((p) => p.id !== profileId),
-          apps: state.apps.filter((a) => a.profileId !== profileId),
-          activeProfile:
-            state.activeProfile === profileId ? state.profiles[0]?.id : state.activeProfile,
-        })),
+        set((state) => {
+          // Retire aussi un éventuel verrou associé à ce profil (main process)
+          window.electronAPI?.security?.dropProfile?.(profileId);
+          return {
+            profiles: state.profiles.filter((p) => p.id !== profileId),
+            apps: state.apps.filter((a) => a.profileId !== profileId),
+            activeProfile:
+              state.activeProfile === profileId ? state.profiles[0]?.id : state.activeProfile,
+          };
+        }),
 
       addApp: (app) =>
-        set((state) => ({
-          apps: [
-            ...state.apps,
-            {
-              ...app,
-              id: `app-${Date.now()}`,
-              // URL de démarrage stable (recette/base) — distincte de l'URL
-              // courante qui peut être une page de connexion au moment du
-              // redémarrage.
-              homeUrl: app.homeUrl || app.url,
-              unread: 0,
-              sleeping: false,
-              zoom: 1, // zoom d'affichage de l'app (persisté)
-              order: state.apps.filter((a) => a.profileId === app.profileId).length,
-            },
-          ],
-        })),
+        set((state) => {
+          const id = `app-${Date.now()}`;
+          return {
+            apps: [
+              ...state.apps,
+              {
+                ...app,
+                id,
+                // Clé de session STABLE : identifie la partition Electron
+                // (cookies + cache) de cette app. Fixée à la création et JAMAIS
+                // modifiée ensuite — ainsi déplacer l'app vers un autre profil
+                // conserve le compte connecté et le cache (la partition ne
+                // dépend plus du profil).
+                sessionKey: `${app.profileId}:${id}`,
+                // URL de démarrage stable (recette/base) — distincte de l'URL
+                // courante qui peut être une page de connexion au moment du
+                // redémarrage.
+                homeUrl: app.homeUrl || app.url,
+                unread: 0,
+                sleeping: false,
+                zoom: 1, // zoom d'affichage de l'app (persisté)
+                order: state.apps.filter((a) => a.profileId === app.profileId).length,
+              },
+            ],
+          };
+        }),
 
       updateApp: (appId, updates) =>
         set((state) => ({
@@ -143,6 +171,25 @@ export const useStore = create(
           apps: state.apps.filter((a) => a.id !== appId),
           activeApp: state.activeApp === appId ? null : state.activeApp,
         })),
+
+      // Déplace une app vers un autre profil SANS perdre son compte ni son
+      // cache : la partition Electron est indexée par `sessionKey` (stable),
+      // pas par le profil. On ne change donc que le rattachement au profil et
+      // l'ordre (placée en fin de liste du profil cible).
+      moveAppToProfile: (appId, targetProfileId) =>
+        set((state) => {
+          const app = state.apps.find((a) => a.id === appId);
+          if (!app || app.profileId === targetProfileId) return state;
+          const order = state.apps.filter((a) => a.profileId === targetProfileId).length;
+          return {
+            apps: state.apps.map((a) =>
+              a.id === appId ? { ...a, profileId: targetProfileId, order } : a
+            ),
+            // Si l'app déplacée était active, elle n'est plus dans le profil
+            // courant → on désélectionne pour éviter un état incohérent.
+            activeApp: state.activeApp === appId ? null : state.activeApp,
+          };
+        }),
 
       // Veille : ferme l'app (la page est détruite) mais la garde installée.
       // L'icône apparaît grisée dans la sidebar.
@@ -227,7 +274,7 @@ export const useStore = create(
     }),
     {
       name: 'orbit-storage',
-      version: 7,
+      version: 8,
       migrate: (persistedState, version) => {
         // Fusionne les anciennes données avec les paramètres par défaut
         // (évite les champs manquants → bug "input non contrôlé")
@@ -284,6 +331,18 @@ export const useStore = create(
               if (recipe?.brandIcon) return { ...a, favicon: recipe.brandIcon };
               return a;
             }),
+          };
+        }
+        // v8 : clé de session stable. On la fixe à l'ANCIEN schéma
+        // (`profileId:appId`) pour que les apps déjà installées gardent
+        // EXACTEMENT leur partition actuelle (donc leur session/cache). Elle
+        // ne bougera plus, même si l'app change de profil ensuite.
+        if (version < 8) {
+          next = {
+            ...next,
+            apps: (next.apps || []).map((a) =>
+              a.sessionKey ? a : { ...a, sessionKey: `${a.profileId}:${a.id}` }
+            ),
           };
         }
         return next;

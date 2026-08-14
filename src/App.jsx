@@ -7,8 +7,30 @@ import Settings from './components/Settings';
 import ProfileManager from './components/ProfileManager';
 import AppStore from './components/AppStore';
 import WebView from './components/WebView';
+import LockScreen from './components/LockScreen';
 import { useStore } from './stores/useStore';
+import { useSecurityStore } from './lib/securityStore';
+import { useMediaStore } from './lib/mediaStore';
+import { mediaToggle, mediaPrev, mediaNext, mediaSeek, pickNowPlaying } from './lib/mediaControls';
 import { matchShortcut } from './lib/shortcuts';
+
+// Construit l'état à afficher dans le mini-lecteur flottant (ou null)
+function buildMiniPlayerState() {
+  const pick = pickNowPlaying(useMediaStore.getState().media, useStore.getState().activeApp);
+  if (!pick) return null;
+  const [appId, info] = pick;
+  const app = useStore.getState().apps.find((a) => a.id === appId);
+  return {
+    appId,
+    appName: app?.name || '',
+    title: info.title || '',
+    artist: info.artist || '',
+    artwork: info.artwork || '',
+    playing: !!info.playing,
+    currentTime: info.currentTime || 0,
+    duration: info.duration || 0,
+  };
+}
 
 const FONT_SIZES = { small: 12, medium: 14, large: 16, xlarge: 18 };
 
@@ -34,6 +56,7 @@ export default function App() {
     activeProfile,
     activeApp,
     apps,
+    profiles,
     extensions,
     settings,
     updateApp,
@@ -47,12 +70,137 @@ export default function App() {
     toggleSplitDirection,
   } = useStore();
 
+  // Média : pour synchroniser le mini-lecteur flottant
+  const media = useMediaStore((s) => s.media);
+
+  // Pousse l'état de lecture au mini-lecteur dès qu'il change
+  useEffect(() => {
+    window.electronAPI?.miniPlayer?.sendState?.(buildMiniPlayerState());
+  }, [media, activeApp]);
+
+  // Le mini-lecteur demande l'état courant (à son ouverture)
+  useEffect(() => {
+    const off = window.electronAPI?.miniPlayer?.onRequestState?.(() => {
+      window.electronAPI?.miniPlayer?.sendState?.(buildMiniPlayerState());
+    });
+    return () => {
+      if (typeof off === 'function') off();
+    };
+  }, []);
+
+  // Applique les actions du mini-lecteur au <webview> qui joue
+  useEffect(() => {
+    const off = window.electronAPI?.miniPlayer?.onAction?.((action) => {
+      const pick = pickNowPlaying(useMediaStore.getState().media, useStore.getState().activeApp);
+      if (!pick) return;
+      const [appId] = pick;
+      if (action.type === 'playpause') mediaToggle(appId);
+      else if (action.type === 'prev') mediaPrev(appId);
+      else if (action.type === 'next') mediaNext(appId);
+      else if (action.type === 'seek') mediaSeek(appId, action.value);
+      else if (action.type === 'goto') {
+        const st = useStore.getState();
+        const app = st.apps.find((a) => a.id === appId);
+        if (app) {
+          st.setActiveProfile(app.profileId);
+          st.setActiveApp(appId);
+        }
+      }
+    });
+    return () => {
+      if (typeof off === 'function') off();
+    };
+  }, []);
+
+  // Touches média globales du clavier → pilotent l'app en lecture
+  useEffect(() => {
+    window.electronAPI?.setMediaKeysEnabled?.(settings.globalMediaKeys === true);
+  }, [settings.globalMediaKeys]);
+
+  useEffect(() => {
+    const off = window.electronAPI?.onMediaKey?.((action) => {
+      const pick = pickNowPlaying(useMediaStore.getState().media, useStore.getState().activeApp);
+      if (!pick) return;
+      const [appId] = pick;
+      if (action === 'playpause') mediaToggle(appId);
+      else if (action === 'prev') mediaPrev(appId);
+      else if (action === 'next') mediaNext(appId);
+    });
+    return () => {
+      if (typeof off === 'function') off();
+    };
+  }, []);
+
+  // Verrouillage : état miroir du process principal
+  const security = useSecurityStore();
+  useEffect(() => {
+    security.refresh();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Un profil est-il accessible (pas de verrou, ou déjà déverrouillé) ?
+  const profileAccessible = (pid) =>
+    !security.lockedProfileIds.includes(pid) || security.unlockedProfileIds.includes(pid);
+  const activeProfileAccessible = profileAccessible(activeProfile);
+  const appLocked = security.ready && security.appLockEnabled && !security.appUnlocked;
+
+  const handleUnlockApp = async (pin) => {
+    const res = await window.electronAPI?.security?.unlockApp?.(pin);
+    if (res?.success) await security.refresh();
+    return res;
+  };
+  const handleUnlockProfile = async (pin) => {
+    const res = await window.electronAPI?.security?.unlockProfile?.(activeProfile, pin);
+    if (res?.success) await security.refresh();
+    return res;
+  };
+
   // Apps du profil actif, triées
   const profileApps = useMemo(
     () => apps.filter((a) => a.profileId === activeProfile).sort((a, b) => a.order - b.order),
     [apps, activeProfile]
   );
   const activeAppData = apps.find((a) => a.id === activeApp);
+
+  // Apps maintenues « vivantes » (webview monté) même hors du profil actif.
+  // Une fois OUVERTE, une app reste chargée : changer de profil puis revenir
+  // ne la recharge plus (fini le rechargement complet à chaque bascule). La
+  // mise en veille reste le moyen explicite de la fermer pour libérer la RAM.
+  const [mountedIds, setMountedIds] = useState(() => new Set());
+  useEffect(() => {
+    if (!activeApp) return;
+    setMountedIds((prev) => (prev.has(activeApp) ? prev : new Set(prev).add(activeApp)));
+  }, [activeApp]);
+
+  // Liste UNIQUE des webviews à monter (tous profils confondus) : apps du
+  // profil actif + apps déjà ouvertes ailleurs. Une seule liste keyée par
+  // app.id → React préserve l'instance à la bascule de profil (pas de remontage
+  // = pas de rechargement). Les apps en veille ne sont jamais montées.
+  const liveApps = useMemo(
+    () =>
+      apps.filter(
+        (a) =>
+          !a.sleeping &&
+          // Tant que l'état de verrouillage n'est pas chargé, on ne monte RIEN
+          // (évite d'afficher un profil verrouillé une fraction de seconde).
+          security.ready &&
+          // Verrou global : rien ne se monte tant qu'Orbit n'est pas déverrouillé
+          !appLocked &&
+          // Verrou de profil : les apps d'un profil verrouillé (non déverrouillé)
+          // ne sont pas montées → page fermée, non peinte, aucun accès.
+          profileAccessible(a.profileId) &&
+          (a.profileId === activeProfile || mountedIds.has(a.id))
+      ),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      apps,
+      activeProfile,
+      mountedIds,
+      appLocked,
+      security.ready,
+      security.lockedProfileIds,
+      security.unlockedProfileIds,
+    ]
+  );
 
   // Le partage n'est effectif que si toutes les apps existent dans le profil actif
   const activeSplit =
@@ -124,6 +272,26 @@ export default function App() {
   useEffect(() => {
     window.electronAPI?.keepassSetEnabled?.(settings.keepass?.enabled !== false);
   }, [settings.keepass?.enabled]);
+
+  // Synchroniser le bloqueur de pub natif avec le réglage (activé par défaut)
+  useEffect(() => {
+    window.electronAPI?.adblock?.setEnabled?.(settings.adblock !== false);
+  }, [settings.adblock]);
+
+  // Synchroniser la config de traduction (langue + moteur Google/LibreTranslate)
+  useEffect(() => {
+    window.electronAPI?.setTranslateConfig?.({
+      target: settings.translateTarget || 'fr',
+      engine: settings.translateEngine || 'google',
+      url: settings.libreTranslateUrl || '',
+      apiKey: settings.libreTranslateApiKey || '',
+    });
+  }, [
+    settings.translateTarget,
+    settings.translateEngine,
+    settings.libreTranslateUrl,
+    settings.libreTranslateApiKey,
+  ]);
 
   const handleSetActiveApp = useCallback((appId) => {
     setActiveApp(appId);
@@ -237,6 +405,23 @@ export default function App() {
     };
   }, [runShortcut]);
 
+  // Clic sur une notification système → ouvrir l'app concernée : on bascule
+  // sur son profil si besoin, on la réveille si elle dormait, et on l'active.
+  useEffect(() => {
+    const off = window.electronAPI?.onActivateApp?.((appId) => {
+      const { apps: all, setActiveProfile: setProfile, setActiveApp: setAa, toggleAppSleep: toggleSleep } =
+        useStore.getState();
+      const target = all.find((a) => a.id === appId);
+      if (!target) return;
+      setProfile(target.profileId);
+      if (target.sleeping) toggleSleep(target.id);
+      setAa(target.id);
+    });
+    return () => {
+      if (typeof off === 'function') off();
+    };
+  }, []);
+
   // Largeurs en rem → elles suivent la taille de police réglée
   const sidebarWidth = sidebarCollapsed ? '4rem' : '17.5rem';
   const hasApps = profileApps.length > 0;
@@ -288,21 +473,21 @@ export default function App() {
             }`}
             style={{ visibility: overlayOpen ? 'hidden' : 'visible' }}
           >
-            {hasApps ? (
-              <>
-                {profileApps.map((a) => {
-                  const inSplit = activeSplit && activeSplit.appIds.includes(a.id);
+            {liveApps.map((a) => {
+                  // Une app n'est « active/visible » que si elle appartient au
+                  // profil courant. Les autres restent montées mais masquées
+                  // (leur page/session survivent à la bascule de profil).
+                  const inActive = a.profileId === activeProfile;
+                  const inSplit = inActive && activeSplit && activeSplit.appIds.includes(a.id);
                   const idx = inSplit ? activeSplit.appIds.indexOf(a.id) : -1;
                   const gridMode = activeSplit && activeSplit.appIds.length >= 3;
-                  // Toutes les apps restent montées ; seules celles du partage
-                  // sont dans des panneaux (les autres restent cachées).
                   if (!inSplit) {
                     return (
                       <WebView
                         key={a.id}
                         app={a}
-                        active={a.id === activeApp}
-                        visible={a.id === activeApp}
+                        active={inActive && a.id === activeApp}
+                        visible={inActive && a.id === activeApp}
                       />
                     );
                   }
@@ -403,9 +588,12 @@ export default function App() {
                     </button>
                   </div>
                 )}
-              </>
-            ) : (
-              <div className="flex flex-col items-center justify-center h-full">
+
+            {/* Écran d'accueil : superposé quand le profil actif n'a aucune app.
+                Rendu par-dessus les webviews (qui restent montés pour les autres
+                profils) plutôt qu'à leur place → pas de démontage. */}
+            {!hasApps && (
+              <div className="absolute inset-0 flex flex-col items-center justify-center h-full bg-bg-secondary">
                 <div className="w-24 h-24 rounded-full bg-gradient-to-br from-accent-primary to-purple-500 flex items-center justify-center mb-6 animate-pulse">
                   <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
                     <circle cx="12" cy="12" r="3" />
@@ -455,6 +643,18 @@ export default function App() {
                 </div>
               </div>
             )}
+
+            {/* Profil verrouillé : gate de déverrouillage sur la zone de contenu.
+                Les apps du profil ne sont pas montées tant qu'on n'a pas saisi
+                le code (voir liveApps). */}
+            {!appLocked && !activeProfileAccessible && (
+              <LockScreen
+                variant="profile"
+                title={`Profil « ${profiles.find((p) => p.id === activeProfile)?.name || ''} » verrouillé`}
+                subtitle="Entrez le code de ce profil pour l'afficher"
+                onSubmit={handleUnlockProfile}
+              />
+            )}
           </div>
         </div>
       </div>
@@ -480,6 +680,12 @@ export default function App() {
       {showSettings && <Settings onClose={() => setShowSettings(false)} />}
       {showProfileManager && <ProfileManager onClose={() => setShowProfileManager(false)} />}
       {showAppStore && <AppStore onClose={() => setShowAppStore(false)} />}
+
+      {/* Verrou global : plein écran au lancement, par-dessus TOUT (topbar,
+          sidebar, webviews). Aucune app n'est montée tant que non déverrouillé. */}
+      {appLocked && (
+        <LockScreen variant="app" onSubmit={handleUnlockApp} />
+      )}
     </div>
   );
 }

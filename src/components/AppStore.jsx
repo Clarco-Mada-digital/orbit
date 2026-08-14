@@ -301,9 +301,9 @@ export default function AppStore({ onClose }) {
                     </div>
                   )}
 
-                  {EMOJI_CHOICES.map((emoji) => (
+                  {EMOJI_CHOICES.map((emoji, i) => (
                     <button
-                      key={emoji}
+                      key={`${emoji}-${i}`}
                       onClick={() => {
                         setCustomForm({ ...customForm, icon: emoji });
                         setCustomImage('');

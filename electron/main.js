@@ -1,8 +1,10 @@
-import { app, BrowserWindow, session, ipcMain, shell, Notification, dialog, net, screen } from 'electron';
+import { app, BrowserWindow, session, ipcMain, shell, Notification, dialog, net, screen, Menu, clipboard, globalShortcut } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import { unpackCrx } from './crx.js';
 import { init as initKeepass, setEnabled as keepassSetEnabled, getLogins as keepassGetLogins, associate as keepassAssociate, checkStatus as keepassCheckStatus } from './keepass.js';
+import * as security from './security.js';
+import * as adblock from './adblock.js';
 import { matchShortcutInput } from '../src/lib/shortcuts.js';
 import { fileURLToPath } from 'url';
 
@@ -125,26 +127,398 @@ function persistWindowState() {
 }
 
 // ---------------------------------------------------------------------------
-// Contournement X-Frame-Options / CSP : supprime les headers qui empêchent
-// d'embarquer les apps web (Gmail, Slack, Notion…) dans les <webview>.
+// Embarquement des apps web dans les <webview> : on lève UNIQUEMENT ce qui
+// empêche l'affichage encadré, sans désarmer les autres protections.
+//
+// AVANT : on supprimait toute la CSP (Content-Security-Policy) → on retirait
+// aussi les protections anti-XSS (script-src, object-src…) des apps embarquées.
+// MAINTENANT : on retire seulement ce qui bloque l'encadrement —
+//   • X-Frame-Options (entièrement, il n'a pas d'autre rôle) ;
+//   • la SEULE directive `frame-ancestors` de la CSP,
+// et on CONSERVE le reste de la CSP (script-src, etc.). C'est le comportement
+// d'un vrai navigateur : la page garde ses propres défenses.
 // ---------------------------------------------------------------------------
+
+// Retire la directive `frame-ancestors` d'une valeur de CSP, garde le reste.
+// Renvoie null si, une fois retirée, il ne reste plus rien d'utile.
+function stripFrameAncestors(cspValue) {
+  const kept = String(cspValue)
+    .split(';')
+    .map((d) => d.trim())
+    .filter((d) => d && !/^frame-ancestors\b/i.test(d));
+  return kept.length ? kept.join('; ') : null;
+}
+
+// Réécrit une clé de header CSP (valeur = tableau de chaînes chez Electron).
+function rewriteCspHeader(headers, key) {
+  const value = headers[key];
+  if (!value) return;
+  const list = Array.isArray(value) ? value : [value];
+  const next = list.map(stripFrameAncestors).filter(Boolean);
+  if (next.length) headers[key] = next;
+  else delete headers[key];
+}
+
+// Retire X-Frame-Options + frame-ancestors d'un jeu de headers (mutation en place)
+function stripFramingHeaders(headers) {
+  delete headers['x-frame-options'];
+  delete headers['X-Frame-Options'];
+  for (const key of Object.keys(headers)) {
+    if (/^content-security-policy(-report-only)?$/i.test(key)) {
+      rewriteCspHeader(headers, key);
+    }
+  }
+}
+
+// Écouteur UNIQUE par session pour onHeadersReceived ET onBeforeRequest.
+// Electron n'autorise qu'un écouteur par événement : on compose donc nous-mêmes
+// le bloqueur de pub (adblock.js) AVEC notre contournement d'encadrement.
 function setupHeaderBypass(ses) {
   if (!ses || !ses.webRequest) return;
   try {
+    // Blocage réseau des pubs/traceurs (no-op si l'adblock est désactivé)
+    ses.webRequest.onBeforeRequest((details, callback) => {
+      adblock.beforeRequest(ses, details, callback);
+    });
+
     ses.webRequest.onHeadersReceived((details, callback) => {
-      const headers = { ...details.responseHeaders };
-
-      delete headers['x-frame-options'];
-      delete headers['X-Frame-Options'];
-      delete headers['content-security-policy'];
-      delete headers['Content-Security-Policy'];
-      delete headers['content-security-policy-report-only'];
-
-      callback({ responseHeaders: headers });
+      // 1) L'adblocker peut modifier les headers ($csp) ou annuler la requête
+      adblock.headersReceived(ses, details, (adResp) => {
+        adResp = adResp || {};
+        if (adResp.cancel) {
+          callback(adResp);
+          return;
+        }
+        // 2) On repart des headers renvoyés par l'adblock (ou ceux d'origine)
+        const headers = { ...(adResp.responseHeaders || details.responseHeaders) };
+        // 3) Puis on lève X-Frame-Options / frame-ancestors pour l'embarquement
+        stripFramingHeaders(headers);
+        callback({ ...adResp, responseHeaders: headers });
+      });
     });
   } catch (err) {
     console.error('[orbit] header bypass failed:', err);
   }
+}
+
+// ---------------------------------------------------------------------------
+// Permissions des apps embarquées : sans politique explicite, Electron accorde
+// tout par défaut. On applique une politique « navigateur pro » :
+//   • AUTORISÉ : ce qu'attendent les apps de travail — notifications, micro /
+//     caméra (appels Slack, Meet, WhatsApp), plein écran, presse-papiers,
+//     verrouillage du pointeur, MediaKeys (DRM lecture vidéo) ;
+//   • REFUSÉ par défaut : accès matériel/sensible peu courant — géoloc, USB,
+//     HID, série, MIDI, capteurs, détection d'inactivité…
+// ---------------------------------------------------------------------------
+const ALLOWED_PERMISSIONS = new Set([
+  'notifications',
+  'media', // micro + caméra (appels/visio)
+  'mediaKeySystem', // DRM (lecture vidéo protégée)
+  'fullscreen',
+  'clipboard-read',
+  'clipboard-sanitized-write',
+  'pointerLock',
+  'background-sync',
+  'openExternal',
+]);
+
+function setupPermissions(ses) {
+  if (!ses) return;
+  try {
+    ses.setPermissionRequestHandler((_wc, permission, callback) => {
+      callback(ALLOWED_PERMISSIONS.has(permission));
+    });
+    // Même politique pour les vérifications synchrones (ex. navigator.permissions)
+    ses.setPermissionCheckHandler((_wc, permission) => ALLOWED_PERMISSIONS.has(permission));
+  } catch (err) {
+    console.error('[orbit] permission handler failed:', err);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Gestion des téléchargements (comme un navigateur)
+// ---------------------------------------------------------------------------
+// Chaque fichier téléchargé (clic droit « Enregistrer l'image », lien de
+// téléchargement d'une app…) est enregistré dans le dossier Téléchargements de
+// l'OS avec un nom unique, et sa progression est diffusée à l'interface (badge
+// + panneau : ouvrir, afficher dans le dossier, annuler).
+const downloads = new Map(); // id -> { item, savePath, url, filename }
+const downloadSessions = new WeakSet();
+let downloadSeq = 0;
+
+function broadcastDownload(payload) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('orbit:download', payload);
+  }
+}
+
+// Chemin libre : « photo.png » → « photo (1).png » si déjà présent.
+function uniquePath(p) {
+  if (!fs.existsSync(p)) return p;
+  const dir = path.dirname(p);
+  const ext = path.extname(p);
+  const base = path.basename(p, ext);
+  let i = 1;
+  let candidate;
+  do {
+    candidate = path.join(dir, `${base} (${i})${ext}`);
+    i += 1;
+  } while (fs.existsSync(candidate));
+  return candidate;
+}
+
+function setupDownloads(ses) {
+  if (!ses || downloadSessions.has(ses)) return;
+  downloadSessions.add(ses);
+  ses.on('will-download', (_event, item) => {
+    const id = `dl-${Date.now()}-${(downloadSeq += 1)}`;
+    const savePath = uniquePath(path.join(app.getPath('downloads'), item.getFilename()));
+    item.setSavePath(savePath);
+    downloads.set(id, { item, savePath, url: item.getURL(), filename: path.basename(savePath) });
+
+    const snapshot = (state) => ({
+      id,
+      filename: path.basename(savePath),
+      savePath,
+      url: item.getURL(),
+      totalBytes: item.getTotalBytes(),
+      receivedBytes: item.getReceivedBytes(),
+      state: state || item.getState(),
+    });
+
+    broadcastDownload({ ...snapshot('progressing'), event: 'started' });
+    item.on('updated', (_e, state) => broadcastDownload({ ...snapshot(state), event: 'updated' }));
+    item.once('done', (_e, state) => {
+      broadcastDownload({ ...snapshot(state), event: 'done' });
+      // On garde le chemin un moment (ouvrir / afficher) puis on nettoie.
+      const rec = downloads.get(id);
+      if (rec) rec.item = null;
+      setTimeout(() => downloads.delete(id), 10 * 60 * 1000);
+    });
+  });
+}
+
+// ---------------------------------------------------------------------------
+// Traduction + lecture vocale natives (remplacent les extensions capricieuses)
+// ---------------------------------------------------------------------------
+// Config de traduction (synchronisée depuis les réglages du renderer).
+//   engine : 'google' (endpoint public gtx) | 'libretranslate' (privé / auto-hébergé)
+//   url/apiKey : serveur LibreTranslate (ex. http://localhost:5000) + clé éventuelle
+let translateConfig = { target: 'fr', engine: 'google', url: '', apiKey: '' };
+
+// Lecture à voix haute via la Web Speech API DANS la page (voix de l'OS, hors
+// ligne). On exécute le JS dans le webContents invité.
+function speakText(wc, text) {
+  const t = String(text || '').slice(0, 32000);
+  if (!t) return;
+  wc.executeJavaScript(
+    `(() => { try { speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(${JSON.stringify(
+      t
+    )}); speechSynthesis.speak(u); } catch (e) {} })();`
+  ).catch(() => {});
+}
+
+function stopSpeaking(wc) {
+  wc.executeJavaScript('try { speechSynthesis.cancel(); } catch (e) {}').catch(() => {});
+}
+
+// Lit tout le texte visible de la page à voix haute.
+function speakPage(wc) {
+  wc.executeJavaScript(
+    `(() => { try { speechSynthesis.cancel(); const t = (document.body ? document.body.innerText : '').slice(0, 32000); if (t) speechSynthesis.speak(new SpeechSynthesisUtterance(t)); } catch (e) {} })();`
+  ).catch(() => {});
+}
+
+// Traduction via l'endpoint public Google (gtx) — pas de clé requise.
+async function translateGoogle(q, target) {
+  const url =
+    'https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=' +
+    encodeURIComponent(target) +
+    '&dt=t&q=' +
+    encodeURIComponent(q);
+  const res = await net.fetch(url);
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  const data = await res.json();
+  const translated = (data[0] || []).map((seg) => (seg && seg[0]) || '').join('');
+  return { translated, detected: data[2] || '' };
+}
+
+// Traduction via un serveur LibreTranslate (privé / auto-hébergeable) — les
+// textes ne sortent PAS vers un service tiers si le serveur est local.
+async function translateLibre(q, target, baseUrl, apiKey) {
+  const base = String(baseUrl || '').replace(/\/$/, '');
+  if (!base) throw new Error('URL du serveur LibreTranslate manquante (Réglages → Confidentialité)');
+  const res = await net.fetch(base + '/translate', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      q,
+      source: 'auto',
+      target,
+      format: 'text',
+      ...(apiKey ? { api_key: apiKey } : {}),
+    }),
+  });
+  if (!res.ok) throw new Error('LibreTranslate HTTP ' + res.status);
+  const data = await res.json();
+  return {
+    translated: data.translatedText || '',
+    detected: (data.detectedLanguage && data.detectedLanguage.language) || '',
+  };
+}
+
+async function translateText(text) {
+  const q = String(text || '').slice(0, 5000);
+  const { target, engine, url, apiKey } = translateConfig;
+  if (engine === 'libretranslate') return translateLibre(q, target, url, apiKey);
+  return translateGoogle(q, target);
+}
+
+// Affiche le résultat de traduction en surimpression DANS la page (petit encart
+// flottant, fermable), à la manière d'une extension de traduction.
+function showTranslationOverlay(wc, original, translated, detected, target) {
+  const payload = JSON.stringify({ original, translated, detected, target });
+  wc.executeJavaScript(
+    `(() => {
+      try {
+        const d = ${payload};
+        document.getElementById('__orbit_tr__')?.remove();
+        const box = document.createElement('div');
+        box.id = '__orbit_tr__';
+        box.style.cssText = 'position:fixed;z-index:2147483647;right:16px;bottom:16px;max-width:380px;background:#111827;color:#f3f4f6;border:1px solid #374151;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.5);font-family:system-ui,sans-serif;font-size:13px;line-height:1.5;overflow:hidden';
+        const head = document.createElement('div');
+        head.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:#0b1220;border-bottom:1px solid #1f2937';
+        head.innerHTML = '<span style="font-weight:600;color:#9ca3af">🌐 Traduction (' + (d.detected||'auto') + ' → ' + d.target + ')</span>';
+        const close = document.createElement('button');
+        close.textContent = '✕';
+        close.style.cssText = 'background:none;border:none;color:#9ca3af;cursor:pointer;font-size:14px';
+        close.onclick = () => box.remove();
+        head.appendChild(close);
+        const body = document.createElement('div');
+        body.style.cssText = 'padding:10px 12px';
+        const tr = document.createElement('div');
+        tr.textContent = d.translated;
+        const or = document.createElement('div');
+        or.textContent = d.original;
+        or.style.cssText = 'margin-top:8px;padding-top:8px;border-top:1px solid #1f2937;color:#9ca3af;font-size:12px';
+        body.appendChild(tr); body.appendChild(or);
+        box.appendChild(head); box.appendChild(body);
+        document.body.appendChild(box);
+        clearTimeout(window.__orbit_tr_timer__);
+        window.__orbit_tr_timer__ = setTimeout(() => box.remove(), 15000);
+      } catch (e) {}
+    })();`
+  ).catch(() => {});
+}
+
+async function translateSelection(wc, text) {
+  try {
+    const { translated, detected } = await translateText(text);
+    if (translated) {
+      showTranslationOverlay(wc, text, translated, detected, translateConfig.target);
+    }
+  } catch (err) {
+    console.error('[orbit] traduction échouée:', err.message);
+    // Retour visible dans la page plutôt qu'un échec silencieux
+    showTranslationOverlay(wc, text, '⚠️ ' + err.message, '', translateConfig.target);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Menu contextuel des pages (clic droit) — absent par défaut dans un <webview>
+// ---------------------------------------------------------------------------
+// Construit un menu natif adapté à ce qui est sous le curseur : image (copier /
+// enregistrer), lien (ouvrir / copier / télécharger), sélection (copier /
+// rechercher), champ éditable (couper/copier/coller + suggestions du
+// correcteur), et navigation (précédent / suivant / recharger).
+function buildGuestContextMenu(wc, params) {
+  const t = [];
+  const can = (flag) => Boolean(params.editFlags && params.editFlags[flag]);
+
+  if (params.linkURL) {
+    t.push({ label: 'Ouvrir le lien dans le navigateur', click: () => shell.openExternal(params.linkURL) });
+    t.push({ label: "Copier l'adresse du lien", click: () => clipboard.writeText(params.linkURL) });
+    t.push({ label: 'Télécharger le lien…', click: () => wc.downloadURL(params.linkURL) });
+    t.push({ type: 'separator' });
+  }
+
+  if (params.mediaType === 'video') {
+    t.push({
+      label: 'Image dans l’image (mini-fenêtre)',
+      click: () =>
+        wc
+          .executeJavaScript(
+            `(() => { try { const v=document.querySelector('video'); if(v && v.requestPictureInPicture && !document.pictureInPictureElement) v.requestPictureInPicture().catch(()=>{}); } catch(e){} })()`,
+            true
+          )
+          .catch(() => {}),
+    });
+    t.push({ type: 'separator' });
+  }
+
+  if (params.hasImageContents) {
+    t.push({ label: "Copier l'image", click: () => wc.copyImageAt(params.x, params.y) });
+    t.push({ label: "Copier l'adresse de l'image", click: () => clipboard.writeText(params.srcURL) });
+    t.push({ label: "Enregistrer l'image…", click: () => wc.downloadURL(params.srcURL) });
+    t.push({ label: "Ouvrir l'image dans le navigateur", click: () => shell.openExternal(params.srcURL) });
+    t.push({ type: 'separator' });
+  }
+
+  if (params.misspelledWord) {
+    for (const s of (params.dictionarySuggestions || []).slice(0, 5)) {
+      t.push({ label: s, click: () => wc.replaceMisspelling(s) });
+    }
+    if ((params.dictionarySuggestions || []).length) t.push({ type: 'separator' });
+  }
+
+  if (params.isEditable) {
+    t.push({ label: 'Annuler', enabled: can('canUndo'), click: () => wc.undo() });
+    t.push({ label: 'Rétablir', enabled: can('canRedo'), click: () => wc.redo() });
+    t.push({ type: 'separator' });
+    t.push({ label: 'Couper', enabled: can('canCut'), click: () => wc.cut() });
+    t.push({ label: 'Copier', enabled: can('canCopy'), click: () => wc.copy() });
+    t.push({ label: 'Coller', enabled: can('canPaste'), click: () => wc.paste() });
+    t.push({ label: 'Tout sélectionner', click: () => wc.selectAll() });
+  } else if (params.selectionText && params.selectionText.trim()) {
+    const sel = params.selectionText.trim();
+    t.push({ label: 'Copier', click: () => wc.copy() });
+    t.push({
+      label: `Traduire la sélection (→ ${translateConfig.target})`,
+      click: () => translateSelection(wc, sel),
+    });
+    t.push({ label: 'Lire à voix haute', click: () => speakText(wc, sel) });
+    t.push({ label: 'Arrêter la lecture', click: () => stopSpeaking(wc) });
+    t.push({
+      label: `Rechercher « ${sel.length > 40 ? sel.slice(0, 40) + '…' : sel} »`,
+      click: () => shell.openExternal('https://www.google.com/search?q=' + encodeURIComponent(sel)),
+    });
+  }
+
+  // Historique : compatible avec l'ancienne API (wc.canGoBack) ET la nouvelle
+  // (wc.navigationHistory) selon la version d'Electron.
+  const nav = wc.navigationHistory;
+  const canBack = nav?.canGoBack ? nav.canGoBack() : wc.canGoBack?.() || false;
+  const canFwd = nav?.canGoForward ? nav.canGoForward() : wc.canGoForward?.() || false;
+  const goBack = () => (nav?.goBack ? nav.goBack() : wc.goBack?.());
+  const goForward = () => (nav?.goForward ? nav.goForward() : wc.goForward?.());
+
+  if (t.length) t.push({ type: 'separator' });
+  // Lecture vocale / traduction de la page entière (utile sans sélection)
+  if (!params.isEditable) {
+    t.push({ label: 'Lire la page à voix haute', click: () => speakPage(wc) });
+    t.push({ label: 'Arrêter la lecture', click: () => stopSpeaking(wc) });
+    t.push({ type: 'separator' });
+  }
+  t.push({ label: 'Précédent', enabled: canBack, click: goBack });
+  t.push({ label: 'Suivant', enabled: canFwd, click: goForward });
+  t.push({ label: 'Recharger', click: () => wc.reload() });
+  t.push({ label: "Copier l'adresse de la page", click: () => clipboard.writeText(wc.getURL()) });
+  if (isDev) {
+    t.push({ type: 'separator' });
+    t.push({ label: 'Inspecter', click: () => wc.inspectElement(params.x, params.y) });
+  }
+
+  return Menu.buildFromTemplate(t);
 }
 
 // ---------------------------------------------------------------------------
@@ -214,22 +588,40 @@ async function persistOneCookie(ses, c) {
     // Déjà persistant → rien à faire (évite une écriture inutile)
     if (!current.session) return;
 
-    await ses.cookies.set({
-      url: cookieSetUrl(c),
-      name: current.name,
+    // Cookies à PRÉFIXE (__Host- / __Secure-) : le navigateur impose des
+    // règles strictes, et les VIOLER fait REJETER le cookie à la réécriture
+    // → session détruite (c'était la vraie cause du « GitHub → 404 après
+    // connexion » : __Host-user_session_same_site réécrit avec un attribut
+    // Domain → rejeté → déconnexion). Beaucoup de sites modernes utilisent
+    // ces préfixes pour leur cookie de session.
+    //   • __Host- : DOIT être host-only (AUCUN attribut Domain), Path=/, Secure
+    //   • __Secure- : DOIT être Secure
+    const name = current.name || '';
+    const isHostPrefix = name.startsWith('__Host-');
+    const isSecurePrefix = name.startsWith('__Secure-');
+
+    const setParams = {
+      url: cookieSetUrl(current),
+      name,
       // Valeur COURANTE (la plus récente), jamais la valeur capturée
       value: current.value,
-      // SANS le point initial : Electron normalise déjà le domaine en lui
-      // ajoutant le point (sinon '.github.com' → '..github.com' → invalide
-      // → le cookie existant est SUPPRIMÉ et le nouveau n'est pas posé →
-      // session perdue pendant la 2FA → boucle login !)
-      domain: (current.domain || '').replace(/^\./, ''),
-      path: current.path || '/',
-      secure: current.secure,
+      path: isHostPrefix ? '/' : current.path || '/',
+      secure: isHostPrefix || isSecurePrefix ? true : current.secure,
       httpOnly: current.httpOnly,
       sameSite: current.sameSite,
       expirationDate: FAR_FUTURE(),
-    });
+    };
+
+    // On ne pose l'attribut Domain QUE pour les cookies non-__Host-.
+    // SANS le point initial : Electron normalise déjà le domaine en lui
+    // ajoutant le point (sinon '.github.com' → '..github.com' → invalide
+    // → le cookie existant est SUPPRIMÉ et le nouveau n'est pas posé →
+    // session perdue pendant la 2FA → boucle login !)
+    if (!isHostPrefix) {
+      setParams.domain = (current.domain || '').replace(/^\./, '');
+    }
+
+    await ses.cookies.set(setParams);
   } catch {
     /* ignore */
   }
@@ -466,6 +858,9 @@ function createWindow() {
       const maximized = mainWindow.isMaximized();
       saveWindowState({ ...(maximized ? mainWindow.getNormalBounds() : mainWindow.getBounds()), maximized });
     }
+    // Ferme le mini-lecteur flottant, sinon l'app ne quitte pas (une fenêtre
+    // resterait ouverte) sur Windows/Linux.
+    if (miniPlayerWindow && !miniPlayerWindow.isDestroyed()) miniPlayerWindow.close();
   });
 
   // Rétablit le mode maximisé si la dernière session l'était
@@ -493,7 +888,10 @@ function createWindow() {
     const partition = (params && params.partition) || 'persist:default';
     if (partition !== 'default') {
       try {
-        setupHeaderBypass(session.fromPartition(partition));
+        const pSes = session.fromPartition(partition);
+        setupHeaderBypass(pSes);
+        setupPermissions(pSes);
+        setupDownloads(pSes);
       } catch (err) {
         console.error('[orbit] partition bypass failed:', err);
       }
@@ -537,6 +935,32 @@ function createWindow() {
         mainWindow.webContents.send('orbit:shortcut', action);
       }
     });
+
+    // Filtrage cosmétique de l'adblock : masque les emplacements publicitaires
+    // résiduels (cadres vides). On injecte le CSS calculé pour l'URL à chaque
+    // chargement de page (insertCSS — compatible Electron 33).
+    const injectCosmetics = () => {
+      try {
+        const styles = adblock.getCosmeticStyles(guestContents.getURL());
+        if (styles) guestContents.insertCSS(styles, { cssOrigin: 'user' });
+      } catch {
+        /* jamais bloquant */
+      }
+    };
+    guestContents.on('dom-ready', injectCosmetics);
+    guestContents.on('did-frame-navigate', injectCosmetics);
+
+    // Menu contextuel natif (clic droit) : copier/enregistrer une image,
+    // ouvrir/copier/télécharger un lien, rechercher la sélection, couper/
+    // coller dans un champ, précédent/suivant/recharger. Absent par défaut
+    // dans un <webview> → on le construit et on l'affiche nous-mêmes.
+    guestContents.on('context-menu', (_e, params) => {
+      try {
+        buildGuestContextMenu(guestContents, params).popup({ window: mainWindow });
+      } catch (err) {
+        console.error('[orbit] menu contextuel échoué:', err);
+      }
+    });
   });
 }
 
@@ -566,15 +990,28 @@ ipcMain.handle('window:close', () => {
 // ---------------------------------------------------------------------------
 // Notifications système (messages non lus des apps)
 // ---------------------------------------------------------------------------
-ipcMain.handle('notifications:show', (_event, { title, body } = {}) => {
+ipcMain.handle('notifications:show', (_event, { title, body, appId } = {}) => {
   if (!Notification.isSupported()) return { success: false };
   try {
-    new Notification({
+    const notif = new Notification({
       title: title || 'Orbit',
       body: body || '',
       icon: path.join(__dirname, '../build/icon.png'),
       silent: false,
-    }).show();
+    });
+
+    // Clic sur la notification → Orbit revient au premier plan ET ouvre l'app
+    // qui l'a émise (avant, un clic ne faisait rien : on devait retrouver
+    // l'app à la main). La sélection de l'app se fait côté React via IPC.
+    notif.on('click', () => {
+      if (!mainWindow || mainWindow.isDestroyed()) return;
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+      if (appId) mainWindow.webContents.send('orbit:activate-app', appId);
+    });
+
+    notif.show();
     return { success: true };
   } catch (err) {
     console.error('[orbit] notification failed:', err);
@@ -593,6 +1030,217 @@ ipcMain.handle('notifications:setBadge', (_event, count) => {
     console.error('[orbit] badge failed:', err);
     return { success: false };
   }
+});
+
+// ---------------------------------------------------------------------------
+// Mini-lecteur flottant (toujours au-dessus) — pour l'audio surtout
+// ---------------------------------------------------------------------------
+// Petite fenêtre épinglée par-dessus les autres apps, avec pochette + contrôles.
+// Elle ne pilote PAS le média elle-même : elle relaie ses actions à la fenêtre
+// principale (qui possède les <webview>) et affiche l'état qu'on lui pousse.
+let miniPlayerWindow = null;
+
+const miniPlayerStateFile = () => path.join(app.getPath('userData'), 'miniplayer-state.json');
+function loadMiniPlayerState() {
+  try {
+    return JSON.parse(fs.readFileSync(miniPlayerStateFile(), 'utf8'));
+  } catch {
+    return null;
+  }
+}
+let mpSaveTimer = null;
+function persistMiniPlayerPos() {
+  clearTimeout(mpSaveTimer);
+  mpSaveTimer = setTimeout(() => {
+    if (!miniPlayerWindow || miniPlayerWindow.isDestroyed()) return;
+    const b = miniPlayerWindow.getBounds();
+    try {
+      fs.writeFileSync(miniPlayerStateFile(), JSON.stringify({ x: b.x, y: b.y }));
+    } catch {
+      /* ignore */
+    }
+  }, 400);
+}
+
+function createMiniPlayer() {
+  if (miniPlayerWindow && !miniPlayerWindow.isDestroyed()) {
+    miniPlayerWindow.show();
+    miniPlayerWindow.focus();
+    return;
+  }
+  const display = screen.getPrimaryDisplay();
+  const wa = display.workArea;
+  const width = 340;
+  const height = 108;
+  // Position mémorisée si toujours visible, sinon coin bas-droite par défaut.
+  const saved = loadMiniPlayerState();
+  const pos =
+    saved && Number.isFinite(saved.x) && Number.isFinite(saved.y) && isBoundsVisible({ ...saved, width, height })
+      ? { x: saved.x, y: saved.y }
+      : { x: wa.x + wa.width - width - 20, y: wa.y + wa.height - height - 20 };
+  miniPlayerWindow = new BrowserWindow({
+    width,
+    height,
+    x: pos.x,
+    y: pos.y,
+    frame: false,
+    resizable: false,
+    maximizable: false,
+    minimizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    transparent: true,
+    backgroundColor: '#00000000',
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'miniplayer-preload.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  miniPlayerWindow.setAlwaysOnTop(true, 'floating');
+  miniPlayerWindow.loadFile(path.join(__dirname, 'miniplayer.html'));
+  miniPlayerWindow.once('ready-to-show', () => {
+    miniPlayerWindow.show();
+    // Demande à la fenêtre principale de pousser l'état courant
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('orbit:mp:request-state');
+    }
+  });
+  miniPlayerWindow.on('move', persistMiniPlayerPos);
+  miniPlayerWindow.on('closed', () => {
+    miniPlayerWindow = null;
+  });
+}
+
+ipcMain.handle('miniplayer:open', () => {
+  createMiniPlayer();
+  return { success: true };
+});
+
+// Touches média globales (⏯ ⏭ ⏮) — option. Quand activées, elles pilotent
+// l'app « en lecture » même quand Orbit n'a pas le focus. Désactivées par
+// défaut (pour ne pas voler les touches à un lecteur natif).
+const MEDIA_KEY_MAP = {
+  MediaPlayPause: 'playpause',
+  MediaNextTrack: 'next',
+  MediaPreviousTrack: 'prev',
+};
+function setMediaKeys(enabled) {
+  for (const accel of Object.keys(MEDIA_KEY_MAP)) {
+    try {
+      globalShortcut.unregister(accel);
+    } catch {
+      /* ignore */
+    }
+  }
+  if (!enabled) return { success: true, enabled: false };
+  for (const [accel, action] of Object.entries(MEDIA_KEY_MAP)) {
+    try {
+      globalShortcut.register(accel, () => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('orbit:media-key', action);
+        }
+      });
+    } catch {
+      /* certaines plateformes ne supportent pas ces touches */
+    }
+  }
+  return { success: true, enabled: true };
+}
+ipcMain.handle('mediakeys:setEnabled', (_e, on) => setMediaKeys(on));
+
+// État poussé par la fenêtre principale → relayé au mini-lecteur
+ipcMain.handle('miniplayer:state', (_e, state) => {
+  if (miniPlayerWindow && !miniPlayerWindow.isDestroyed()) {
+    miniPlayerWindow.webContents.send('orbit:mp:state', state || null);
+  }
+  return { success: true };
+});
+
+// Action du mini-lecteur → relayée à la fenêtre principale (qui pilote le média)
+ipcMain.handle('miniplayer:action', (_e, action = {}) => {
+  if (action.type === 'close') {
+    if (miniPlayerWindow && !miniPlayerWindow.isDestroyed()) miniPlayerWindow.close();
+    return { success: true };
+  }
+  if (action.type === 'goto') {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  }
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('orbit:mp:action', action);
+  }
+  return { success: true };
+});
+
+// ---------------------------------------------------------------------------
+// IPC — Bloqueur de pub
+// ---------------------------------------------------------------------------
+ipcMain.handle('adblock:setEnabled', (_e, on) => adblock.setEnabled(on));
+ipcMain.handle('adblock:getState', () => adblock.getState());
+
+// Config de traduction (langue cible + moteur Google/LibreTranslate)
+ipcMain.handle('translate:setConfig', (_e, cfg = {}) => {
+  translateConfig = {
+    target: String(cfg.target || translateConfig.target || 'fr').slice(0, 8),
+    engine: cfg.engine === 'libretranslate' ? 'libretranslate' : 'google',
+    url: String(cfg.url || ''),
+    apiKey: String(cfg.apiKey || ''),
+  };
+  return { success: true };
+});
+
+// ---------------------------------------------------------------------------
+// IPC — Verrouillage / sécurité
+// ---------------------------------------------------------------------------
+ipcMain.handle('security:getState', () => security.getState());
+ipcMain.handle('security:setAppLock', (_e, pin) => security.setAppLock(pin));
+ipcMain.handle('security:removeAppLock', (_e, pin) => security.removeAppLock(pin));
+ipcMain.handle('security:unlockApp', (_e, pin) => security.unlockApp(pin));
+ipcMain.handle('security:lockApp', () => security.lockApp());
+ipcMain.handle('security:setProfileLock', (_e, { id, pin } = {}) => security.setProfileLock(id, pin));
+ipcMain.handle('security:removeProfileLock', (_e, { id, pin } = {}) =>
+  security.removeProfileLock(id, pin)
+);
+ipcMain.handle('security:unlockProfile', (_e, { id, pin } = {}) => security.unlockProfile(id, pin));
+ipcMain.handle('security:lockProfile', (_e, id) => security.lockProfile(id));
+ipcMain.handle('security:dropProfile', (_e, id) => security.dropProfile(id));
+
+// ---------------------------------------------------------------------------
+// IPC — Téléchargements
+// ---------------------------------------------------------------------------
+ipcMain.handle('downloads:open', (_event, id) => {
+  const rec = downloads.get(id);
+  if (rec?.savePath) shell.openPath(rec.savePath);
+  return { success: Boolean(rec) };
+});
+
+ipcMain.handle('downloads:reveal', (_event, id) => {
+  const rec = downloads.get(id);
+  if (rec?.savePath) shell.showItemInFolder(rec.savePath);
+  return { success: Boolean(rec) };
+});
+
+ipcMain.handle('downloads:cancel', (_event, id) => {
+  const rec = downloads.get(id);
+  try {
+    rec?.item?.cancel();
+  } catch {
+    /* déjà terminé */
+  }
+  return { success: Boolean(rec) };
+});
+
+// Ouvre le dossier Téléchargements de l'OS
+ipcMain.handle('downloads:openFolder', () => {
+  shell.openPath(app.getPath('downloads'));
+  return { success: true };
 });
 
 // ---------------------------------------------------------------------------
@@ -752,7 +1400,20 @@ ipcMain.handle('extensions:getInfo', (_event, { id, path: extPath } = {}) => {
       );
     }
     if (manifest.manifest_version === 3 && manifest.background?.service_worker) {
-      warnings.push('Manifest V3 avec service worker : support partiel dans Electron');
+      warnings.push(
+        "Extension récente (Manifest V3) : sa tâche de fond peut ne pas tourner dans Orbit. " +
+          "Si elle « ne fait rien », préférez la version classique (Manifest V2) de la même extension."
+      );
+    }
+    // Bloqueurs de pub modernes (declarativeNetRequest) : non supporté par Electron
+    if (
+      manifest.manifest_version === 3 &&
+      (perms.includes('declarativeNetRequest') || perms.includes('declarativeNetRequestWithHostAccess'))
+    ) {
+      warnings.push(
+        'Bloqueur de contenu « nouvelle génération » (declarativeNetRequest) non pris en charge : ' +
+          "installez plutôt uBlock Origin (version classique) pour un blocage efficace."
+      );
     }
 
     return {
@@ -760,6 +1421,7 @@ ipcMain.handle('extensions:getInfo', (_event, { id, path: extPath } = {}) => {
       info: {
         name: manifest.name,
         version: manifest.version,
+        manifestVersion: manifest.manifest_version || 2,
         hasOptions: Boolean(manifest.options_ui?.page || manifest.options_page),
         iconUrl,
         warnings,
@@ -859,11 +1521,14 @@ ipcMain.on('keepass:dbg', (_event, message) => {
   console.log('[keepass-preload]', message);
 });
 
-// Purge les cookies/session d'un compte désinstallé (session unique par app)
-ipcMain.handle('sessions:clear', (_event, { profileId, appId } = {}) => {
+// Purge les cookies/session d'un compte désinstallé (session unique par app).
+// La clé de session est STABLE (sessionKey) : elle ne change pas quand l'app
+// est déplacée d'un profil à l'autre, donc le compte/cache la suivent. Repli
+// sur l'ancien schéma `profileId:appId` pour les données déjà installées.
+ipcMain.handle('sessions:clear', (_event, { sessionKey, profileId, appId } = {}) => {
   try {
-    const partition = `persist:${profileId}:${appId}`;
-    const ses = session.fromPartition(partition);
+    const key = sessionKey || `${profileId}:${appId}`;
+    const ses = session.fromPartition(`persist:${key}`);
     ses.clearStorageData().catch(() => {});
     return { success: true };
   } catch (err) {
@@ -883,15 +1548,27 @@ app.whenReady().then(() => {
   // Pont KeePassXC : charge l'association persistée + génère les clés de session
   initKeepass(app.getPath('userData'));
 
-  // Bypass pour la session principale (page React)
+  // Verrouillage (codes globaux / par profil) — chiffré au repos via safeStorage
+  security.init(app.getPath('userData'));
+
+  // Bloqueur de pub natif — l'état réel (on/off) est synchronisé par le
+  // renderer depuis les réglages ; ici on prépare juste le chemin du cache.
+  adblock.initAdblock(app.getPath('userData'), false);
+
+  // Bypass + permissions + téléchargements pour la session principale (React)
   setupHeaderBypass(session.defaultSession);
   setupGoogleUA(session.defaultSession);
+  setupPermissions(session.defaultSession);
+  setupDownloads(session.defaultSession);
 
-  // Bypass pour les sessions des profils connus + extensions actives
+  // Idem pour les sessions des profils connus + extensions actives
   for (const p of ['work', 'personal']) {
     try {
-      setupHeaderBypass(session.fromPartition(`persist:${p}`));
-      setupGoogleUA(session.fromPartition(`persist:${p}`));
+      const pSes = session.fromPartition(`persist:${p}`);
+      setupHeaderBypass(pSes);
+      setupGoogleUA(pSes);
+      setupPermissions(pSes);
+      setupDownloads(pSes);
     } catch {
       /* ignore */
     }
@@ -921,6 +1598,14 @@ app.on('web-contents-created', (_event, contents) => {
     }
     return openExternalHandler({ url });
   });
+});
+
+app.on('will-quit', () => {
+  try {
+    globalShortcut.unregisterAll();
+  } catch {
+    /* ignore */
+  }
 });
 
 app.on('window-all-closed', () => {

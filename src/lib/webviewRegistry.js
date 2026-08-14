@@ -13,3 +13,11 @@ export function unregisterWebview(appId) {
 export function getWebview(appId) {
   return registry.get(appId) || null;
 }
+
+// Toutes les <webview> montées (apps ouvertes/vivantes). Sert à recharger les
+// pages après un changement d'extensions : les content scripts ne s'injectent
+// que lors d'une navigation POSTÉRIEURE au chargement de l'extension.
+export function getAllWebviews() {
+  return Array.from(registry.values());
+}
+

@@ -1,20 +1,32 @@
 import { useState, useEffect } from 'react';
-import { Puzzle, FolderOpen, FileArchive, Trash2, Loader2, Info, Globe, Download, Settings2, AlertTriangle } from 'lucide-react';
+import { Puzzle, FolderOpen, FileArchive, Trash2, Loader2, Info, Globe, Download, Settings2, AlertTriangle, RotateCw } from 'lucide-react';
 import { useStore } from '../stores/useStore';
+import { getAllWebviews } from '../lib/webviewRegistry';
 
-// Avertissements d'une extension (fonctionnalités non supportées par Electron :
-// native messaging, MV3 service worker…). Chargés une fois via le main process.
+// Recharge toutes les apps ouvertes : indispensable après un changement
+// d'extensions, car les content scripts ne s'injectent que sur une navigation
+// POSTÉRIEURE au chargement de l'extension (limite d'Electron).
+function reloadAllApps() {
+  for (const wv of getAllWebviews()) {
+    try {
+      wv.reload();
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+// Infos d'une extension : version du manifeste (V2/V3) + avertissements
+// (fonctionnalités non supportées par Electron). Chargés via le main process.
 function ExtWarnings({ ext }) {
-  const [warnings, setWarnings] = useState(null);
+  const [info, setInfo] = useState(null);
 
   useEffect(() => {
     let mounted = true;
     const p = window.electronAPI?.getExtensionInfo?.({ id: ext.id, path: ext.path });
     if (p && typeof p.then === 'function') {
       p.then((res) => {
-        if (mounted && res?.success && res.info?.warnings?.length) {
-          setWarnings(res.info.warnings);
-        }
+        if (mounted && res?.success && res.info) setInfo(res.info);
       }).catch(() => {});
     }
     return () => {
@@ -22,9 +34,27 @@ function ExtWarnings({ ext }) {
     };
   }, [ext.id, ext.path]);
 
-  if (!warnings) return null;
+  if (!info) return null;
+  const isV3 = info.manifestVersion === 3;
+  const warnings = info.warnings || [];
+
   return (
     <div className="mt-1.5 space-y-1">
+      {/* Badge de version du manifeste : indique tout de suite si c'est une
+          extension « récente » (V3, souvent bridée dans Electron) ou « classique »
+          (V2, la mieux supportée). */}
+      <span
+        className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold ${
+          isV3 ? 'bg-yellow-500/15 text-yellow-500' : 'bg-emerald-500/15 text-emerald-500'
+        }`}
+        title={
+          isV3
+            ? 'Manifest V3 (récent) : certaines fonctions peuvent ne pas marcher dans Orbit'
+            : 'Manifest V2 (classique) : le mieux supporté'
+        }
+      >
+        {isV3 ? 'Manifest V3' : 'Manifest V2'}
+      </span>
       {warnings.map((w, i) => (
         <div key={i} className="text-xs text-yellow-500/90 flex items-start gap-1">
           <AlertTriangle size={12} className="flex-shrink-0 mt-0.5" />
@@ -44,6 +74,19 @@ export default function Extensions() {
   const [busy, setBusy] = useState(null); // 'webstore' | 'folder' | 'crx' | null
   const [storeUrl, setStoreUrl] = useState('');
   const [error, setError] = useState(null);
+
+  // Applique une nouvelle liste d'extensions, ATTEND que le main process les
+  // (dé)charge dans les sessions, puis recharge les apps pour que l'effet soit
+  // immédiat (sinon « l'extension ne fait rien » tant qu'on n'a pas rechargé).
+  const applyExtensions = async (nextList, { reload } = {}) => {
+    updateExtensions(nextList);
+    try {
+      await window.electronAPI?.syncExtensions?.(nextList);
+    } catch {
+      /* ignore */
+    }
+    if (reload) reloadAllApps();
+  };
 
   // Source d'affichage d'une extension
   const sourceLabel = (ext) =>
@@ -68,7 +111,8 @@ export default function Extensions() {
         setError('Cette extension est déjà installée.');
         return;
       }
-      updateExtensions([...extensions, { ...ext, enabled: true }]);
+      // Recharge les apps ouvertes pour activer l'extension immédiatement
+      await applyExtensions([...extensions, { ...ext, enabled: true }], { reload: true });
       setStoreUrl('');
     } catch (err) {
       setError(String(err?.message || err));
@@ -95,7 +139,7 @@ export default function Extensions() {
       }
       const ext = res.extension;
       if (!extensions.some((e) => e.id === ext.id)) {
-        updateExtensions([...extensions, { ...ext, enabled: true }]);
+        await applyExtensions([...extensions, { ...ext, enabled: true }], { reload: true });
       }
     } catch (err) {
       setError(String(err?.message || err));
@@ -105,8 +149,12 @@ export default function Extensions() {
   };
 
   const handleToggle = (ext) => {
-    updateExtensions(
-      extensions.map((e) => (e.id === ext.id ? { ...e, enabled: !e.enabled } : e))
+    const nextEnabled = !ext.enabled;
+    // Recharger seulement à l'ACTIVATION (pour injecter les content scripts) ;
+    // à la désactivation, recharger aussi pour que la page cesse d'être affectée.
+    applyExtensions(
+      extensions.map((e) => (e.id === ext.id ? { ...e, enabled: nextEnabled } : e)),
+      { reload: true }
     );
   };
 
@@ -117,7 +165,7 @@ export default function Extensions() {
       path: ext.path,
       managed: ext.managed,
     });
-    updateExtensions(extensions.filter((e) => e.id !== ext.id));
+    await applyExtensions(extensions.filter((e) => e.id !== ext.id), { reload: true });
   };
 
   // Ouvre la page d'options de l'extension dans une fenêtre Orbit
@@ -207,6 +255,15 @@ export default function Extensions() {
           <Puzzle size={18} className="text-accent-primary" />
           <h4 className="font-semibold">Extensions installées</h4>
           <span className="text-xs text-text-muted">({extensions.length})</span>
+          {extensions.length > 0 && (
+            <button
+              onClick={reloadAllApps}
+              className="ml-auto text-xs text-accent-primary hover:text-accent-hover flex items-center gap-1"
+              title="Recharger toutes les apps ouvertes pour (ré)appliquer les extensions"
+            >
+              <RotateCw size={13} /> Recharger les apps
+            </button>
+          )}
         </div>
 
         {extensions.length === 0 ? (
