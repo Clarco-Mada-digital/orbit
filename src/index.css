@@ -1,0 +1,130 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  /* ===== Thème sombre (défaut) — valeurs en triplets RGB pour Tailwind ===== */
+  :root {
+    color-scheme: dark;
+    --bg-primary: 10 10 15;
+    --bg-secondary: 19 19 26;
+    --bg-elevated: 28 28 36;
+    --bg-hover: 37 37 47;
+    --text-primary: 228 231 235;
+    --text-secondary: 156 163 175;
+    --text-muted: 107 114 128;
+    --border: 37 37 47;
+    --border-light: 42 42 56;
+    --accent-primary: 99 102 241;
+    --accent-hover: 129 140 248;
+    --accent-light: 165 180 252;
+  }
+
+  /* ===== Thème clair ===== */
+  [data-theme='light'] {
+    color-scheme: light;
+    --bg-primary: 247 248 251;
+    --bg-secondary: 255 255 255;
+    --bg-elevated: 243 244 248;
+    --bg-hover: 235 237 242;
+    --text-primary: 17 24 39;
+    --text-secondary: 75 85 99;
+    --text-muted: 107 114 128;
+    --border: 226 229 236;
+    --border-light: 213 217 226;
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-bg-primary text-text-primary antialiased;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    overflow: hidden;
+  }
+
+  /* Arrondi de la fenêtre principale */
+  #root {
+    border-radius: 12px;
+    overflow: hidden;
+  }
+
+  /* Zones de déplacement de la fenêtre (frameless) */
+  .app-drag {
+    -webkit-app-region: drag;
+  }
+  .app-no-drag {
+    -webkit-app-region: no-drag;
+  }
+
+  /* Les apps embarquées */
+  webview {
+    background: #ffffff;
+  }
+
+  /* Mode compact */
+  .compact-mode {
+    --spacing: 0.5rem;
+  }
+
+  /* Désactiver les animations */
+  .no-animations * {
+    animation: none !important;
+    transition: none !important;
+  }
+
+  ::-webkit-scrollbar {
+    @apply w-2 h-2;
+  }
+
+  ::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+
+  ::-webkit-scrollbar-thumb {
+    @apply bg-bg-hover rounded-full;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-accent-primary;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+
+  .btn-primary {
+    @apply bg-accent-primary text-white hover:bg-accent-hover active:scale-95;
+  }
+
+  .btn-secondary {
+    @apply bg-bg-elevated text-text-primary hover:bg-bg-hover border border-border;
+  }
+
+  .btn-ghost {
+    @apply text-text-secondary hover:text-text-primary hover:bg-bg-elevated;
+  }
+
+  .btn-icon {
+    @apply w-10 h-10 flex items-center justify-center rounded-lg transition-all duration-200 hover:bg-bg-hover active:scale-95;
+  }
+
+  .btn-sm {
+    @apply px-3 py-1.5 text-xs;
+  }
+
+  .input {
+    @apply w-full px-3 py-2 bg-bg-secondary border border-border rounded-lg text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-accent-primary/50 focus:border-accent-primary transition-all;
+  }
+
+  .card {
+    @apply bg-bg-elevated border border-border rounded-xl p-4 shadow-lg;
+  }
+
+  .badge {
+    @apply inline-flex items-center justify-center min-w-5 h-5 px-1.5 text-xs font-semibold rounded-full bg-accent-primary text-white;
+  }
+}
