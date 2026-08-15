@@ -28,6 +28,9 @@ export function matchShortcut(e) {
   if (k === ',') return 'settings';
   if (shift && k === 'o') return 'store';
   if (shift && k === 'p') return 'profiles';
+  if (shift && k === 'm') return 'mark-all-read';
+  if (k === 's') return 'toggle-sleep';
+  if (k === 'b') return 'toggle-sidebar';
   if (k === 'pagedown') return 'next-app';
   if (k === 'pageup') return 'prev-app';
   if (/^[1-9]$/.test(k)) return `app-${k}`;
@@ -49,6 +52,9 @@ export function matchShortcutInput(input) {
   if (k === ',') return 'settings';
   if (shift && k === 'o') return 'store';
   if (shift && k === 'p') return 'profiles';
+  if (shift && k === 'm') return 'mark-all-read';
+  if (k === 's') return 'toggle-sleep';
+  if (k === 'b') return 'toggle-sidebar';
   if (k === 'pagedown') return 'next-app';
   if (k === 'pageup') return 'prev-app';
   if (/^[1-9]$/.test(k)) return `app-${k}`;
@@ -67,6 +73,9 @@ export function shortcutKeys() {
     { keys: [M, ','], desc: 'Paramètres' },
     { keys: [M, '⇧', 'O'], desc: "Boutique d'applications" },
     { keys: [M, '⇧', 'P'], desc: 'Gérer les profils' },
+    { keys: [M, 'S'], desc: "Mettre en veille / réveiller l'app active" },
+    { keys: [M, 'B'], desc: 'Réduire / agrandir la barre latérale' },
+    { keys: [M, '⇧', 'M'], desc: 'Tout marquer comme lu' },
     { keys: mac ? [M, '`'] : [M, 'Page ↓'], desc: "Passer à l'app suivante" },
     { keys: mac ? [M, '⇧', '`'] : [M, 'Page ↑'], desc: "Passer à l'app précédente" },
     { keys: [M, '1…9'], desc: 'Aller directement à l’app n° 1 à 9' },

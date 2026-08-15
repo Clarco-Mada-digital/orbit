@@ -1065,14 +1065,15 @@ ipcMain.handle('window:close', () => {
 // ---------------------------------------------------------------------------
 // Notifications système (messages non lus des apps)
 // ---------------------------------------------------------------------------
-ipcMain.handle('notifications:show', (_event, { title, body, appId } = {}) => {
+ipcMain.handle('notifications:show', (_event, { title, body, appId, silent } = {}) => {
   if (!Notification.isSupported()) return { success: false };
   try {
     const notif = new Notification({
       title: title || 'Orbit',
       body: body || '',
       icon: path.join(__dirname, '../build/icon.png'),
-      silent: false,
+      // Son perso joué côté renderer → on coupe le son système pour éviter le doublon
+      silent: silent === true,
     });
 
     // Clic sur la notification → Orbit revient au premier plan ET ouvre l'app

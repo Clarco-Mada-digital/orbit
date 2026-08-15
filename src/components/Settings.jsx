@@ -6,6 +6,7 @@ import Extensions from './Extensions';
 import KeepassSettings from './KeepassSettings';
 import SecuritySettings from './SecuritySettings';
 import BackupSettings from './BackupSettings';
+import { shortcutKeys } from '../lib/shortcuts';
 
 // Polices proposées, groupées par style. Chaque entrée est rendue
 // dans sa propre police → aperçu en direct avant de choisir.
@@ -70,16 +71,11 @@ export default function Settings({ onClose }) {
     { id: 'about', name: 'À propos', icon: Info },
   ];
 
-  const shortcuts = [
-    { name: 'Quick Switcher', keys: 'Cmd/Ctrl + K' },
-    { name: 'Paramètres', keys: 'Cmd/Ctrl + ,' },
-    { name: 'App Store', keys: 'Cmd/Ctrl + Shift + O' },
-    { name: 'Profils', keys: 'Cmd/Ctrl + Shift + P' },
-    { name: 'Actualiser', keys: 'Cmd/Ctrl + R' },
-    { name: 'Retour', keys: 'Cmd/Ctrl + [' },
-    { name: 'Avancer', keys: 'Cmd/Ctrl + ]' },
-    { name: 'Fermer overlay', keys: 'Escape' },
-  ];
+  // Source unique des raccourcis (adaptés à la plateforme)
+  const shortcuts = shortcutKeys().map((s) => ({
+    name: s.desc,
+    keys: s.keys.join(' + '),
+  }));
 
   return (
     <>
@@ -628,6 +624,69 @@ export default function Settings({ onClose }) {
                         className="w-12 h-6 bg-bg-hover rounded-full relative cursor-pointer appearance-none checked:bg-accent-primary transition-colors after:content-[''] after:absolute after:top-1 after:left-1 after:w-4 after:h-4 after:bg-white after:rounded-full after:transition-transform checked:after:translate-x-6"
                       />
                     </label>
+                  </div>
+                  <div className="card">
+                    <h4 className="font-semibold mb-2">Son de notification</h4>
+                    <p className="text-sm text-text-muted mb-4">
+                      Personnalisez le son joué à la réception d'un message. Vide = son système.
+                    </p>
+                    <div className="flex items-center gap-3 flex-wrap">
+                      <span className="text-sm text-text-secondary">
+                        {settings.notificationSound
+                          ? `🔊 ${settings.notificationSoundName || 'Son personnalisé'}`
+                          : 'Son système (par défaut)'}
+                      </span>
+                      <div className="flex gap-2 ml-auto">
+                        <label className="btn btn-secondary btn-sm cursor-pointer">
+                          Choisir un son…
+                          <input
+                            type="file"
+                            accept="audio/*"
+                            className="hidden"
+                            onChange={(e) => {
+                              const file = e.target.files && e.target.files[0];
+                              e.target.value = '';
+                              if (!file) return;
+                              if (file.size > 1024 * 1024) {
+                                alert('Son trop lourd (max 1 Mo). Choisissez un son court.');
+                                return;
+                              }
+                              const reader = new FileReader();
+                              reader.onload = () =>
+                                updateSettings({
+                                  notificationSound: String(reader.result || ''),
+                                  notificationSoundName: file.name,
+                                });
+                              reader.readAsDataURL(file);
+                            }}
+                          />
+                        </label>
+                        {settings.notificationSound && (
+                          <>
+                            <button
+                              onClick={() => {
+                                try {
+                                  new Audio(settings.notificationSound).play().catch(() => {});
+                                } catch {
+                                  /* ignore */
+                                }
+                              }}
+                              className="btn btn-secondary btn-sm"
+                            >
+                              Tester
+                            </button>
+                            <button
+                              onClick={() =>
+                                updateSettings({ notificationSound: '', notificationSoundName: '' })
+                              }
+                              className="btn btn-sm text-error hover:bg-error/10"
+                            >
+                              Par défaut
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
                   </div>
                   <div className="card">
                     <h4 className="font-semibold mb-4">Centre de notifications</h4>

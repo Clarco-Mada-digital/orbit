@@ -417,6 +417,16 @@ export default function App() {
     if (action === 'settings') return setShowSettings((v) => !v);
     if (action === 'store') return setShowAppStore((v) => !v);
     if (action === 'profiles') return setShowProfileManager((v) => !v);
+    if (action === 'toggle-sidebar') {
+      const { sidebarCollapsed: c, setSidebarCollapsed: set } = useStore.getState();
+      return set(!c);
+    }
+    if (action === 'toggle-sleep') {
+      const { activeApp: a, toggleAppSleep: t } = useStore.getState();
+      if (a) t(a);
+      return;
+    }
+    if (action === 'mark-all-read') return useStore.getState().markAllRead();
     if (action === 'next-app' || action === 'prev-app') {
       const { activeProfile, apps: all, activeApp, setActiveApp: setAa } = useStore.getState();
       const list = all

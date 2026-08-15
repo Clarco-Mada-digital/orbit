@@ -18,6 +18,9 @@ export const defaultSettings = {
   sidebarPosition: 'left',
   autoHideTopbar: false,
   notifications: true,
+  // Son de notification personnalisé (data URL ; vide = son système)
+  notificationSound: '',
+  notificationSoundName: '',
   startMinimized: false,
   fontSize: 'medium', // small | medium | large | xlarge
   fontFamily: 'Inter',

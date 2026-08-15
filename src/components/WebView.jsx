@@ -46,6 +46,7 @@ export default function WebView({ app, active, visible, flexLayout }) {
   const setMedia = useMediaStore((s) => s.setMedia);
   const clearMedia = useMediaStore((s) => s.clearMedia);
   const notificationsEnabled = useStore((s) => s.settings?.notifications !== false);
+  const notifSound = useStore((s) => s.settings?.notificationSound || '');
   const autoPip = useStore((s) => s.settings?.autoPictureInPicture !== false);
   // Le profil de l'app partage-t-il ses connexions (mode « navigateur » / SSO) ?
   const sharedSession = useStore(
@@ -102,11 +103,20 @@ export default function WebView({ app, active, visible, flexLayout }) {
         !app.muted &&
         window.electronAPI?.showNotification
       ) {
+        // Son personnalisé (joué ici) → on coupe le son système côté natif
+        if (notifSound) {
+          try {
+            new Audio(notifSound).play().catch(() => {});
+          } catch {
+            /* ignore */
+          }
+        }
         window.electronAPI.showNotification({
           title: app.name,
           body: `${unread} nouveau${unread > 1 ? 'x' : ''} message${unread > 1 ? 's' : ''} non lu${unread > 1 ? 's' : ''}`,
           // Permet à un clic sur la notification d'ouvrir cette app précise
           appId: app.id,
+          silent: !!notifSound,
         });
       }
       unreadRef.current = unread;
@@ -225,7 +235,7 @@ export default function WebView({ app, active, visible, flexLayout }) {
       wv.removeEventListener('did-start-loading', startLoading);
       wv.removeEventListener('did-stop-loading', stopLoading);
     };
-  }, [app.id, app.name, app.zoom, app.sleeping, app.muted, active, notificationsEnabled, updateApp, setAppLoading, setMedia, clearMedia]);
+  }, [app.id, app.name, app.zoom, app.sleeping, app.muted, active, notificationsEnabled, notifSound, updateApp, setAppLoading, setMedia, clearMedia]);
 
   // Zoom en temps réel : re-appliqué dès que le réglage change (boutons − / % / +)
   useEffect(() => {
