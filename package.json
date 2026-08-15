@@ -66,7 +66,10 @@
         "deb"
       ],
       "category": "Utility",
-      "icon": "build/icon.png"
+      "icon": "build/icon.png",
+      "desktopName": "orbit.desktop",
+      "synopsis": "Hub applicatif — vos apps web dans une seule fenêtre",
+      "syncDesktopName": true
     },
     "win": {
       "target": [
