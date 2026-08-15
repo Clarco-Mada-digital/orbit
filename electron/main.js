@@ -6,6 +6,7 @@ import { unpackCrx } from './crx.js';
 import { init as initKeepass, setEnabled as keepassSetEnabled, getLogins as keepassGetLogins, associate as keepassAssociate, checkStatus as keepassCheckStatus } from './keepass.js';
 import * as security from './security.js';
 import * as adblock from './adblock.js';
+import * as downloader from './downloader.js';
 import { matchShortcutInput } from '../src/lib/shortcuts.js';
 import { fileURLToPath } from 'url';
 
@@ -611,8 +612,13 @@ function buildGuestContextMenu(wc, params) {
   const goForward = () => (nav?.goForward ? nav.goForward() : wc.goForward?.());
 
   if (t.length) t.push({ type: 'separator' });
-  // Lecture vocale / traduction de la page entière (utile sans sélection)
+  // Téléchargement média de la page (yt-dlp) : YouTube, Facebook, etc.
   if (!params.isEditable) {
+    const pageUrl = params.pageURL || wc.getURL();
+    t.push({ label: 'Télécharger la vidéo', click: () => startMediaDownload(pageUrl, 'video') });
+    t.push({ label: 'Télécharger l’audio', click: () => startMediaDownload(pageUrl, 'audio') });
+    t.push({ type: 'separator' });
+    // Lecture vocale / traduction de la page entière (utile sans sélection)
     t.push({ label: 'Lire la page à voix haute', click: () => speakPage(wc) });
     t.push({ label: 'Arrêter la lecture', click: () => stopSpeaking(wc) });
     t.push({ type: 'separator' });
@@ -1080,6 +1086,10 @@ function createWindow() {
     webPreferences.nodeIntegration = false;
     webPreferences.contextIsolation = true;
     webPreferences.sandbox = true;
+    // Garder les apps ACTIVES même quand la fenêtre est masquée/minimisée
+    // (sinon Chromium gèle les timers/polling → plus de notifications quand
+    // Orbit est caché, ex. via le raccourci global).
+    webPreferences.backgroundThrottling = false;
 
     // Preload de détection/remplissage des identifiants (KeePassXC).
     // Injecté ici (le main process connaît __dirname ; les preloads
@@ -1647,6 +1657,46 @@ ipcMain.handle('downloads:openFolder', () => {
   shell.openPath(app.getPath('downloads'));
   return { success: true };
 });
+
+// Téléchargement vidéo/audio via yt-dlp — la progression alimente le MÊME
+// panneau Téléchargements (broadcastDownload).
+let mediaSeq = 0;
+const mediaStarted = new Set();
+function startMediaDownload(url, mode) {
+  if (!url || !/^https?:\/\//.test(url)) return { success: false };
+  const id = `yt-${Date.now()}-${(mediaSeq += 1)}`;
+  downloader.downloadMedia({ id, url, mode }, (ev) => {
+    const rec = downloads.get(id) || {};
+    if (ev.proc) rec.item = { cancel: () => { try { ev.proc.kill('SIGTERM'); } catch { /* ignore */ } } };
+    if (ev.savePath) rec.savePath = ev.savePath;
+    rec.url = url;
+    rec.filename = ev.filename;
+    downloads.set(id, rec);
+    const first = !mediaStarted.has(id);
+    if (first) mediaStarted.add(id);
+    broadcastDownload({
+      id,
+      filename: ev.filename,
+      savePath: ev.savePath || rec.savePath || '',
+      url,
+      totalBytes: ev.totalBytes || 0,
+      receivedBytes: ev.receivedBytes || 0,
+      state: ev.state,
+      event:
+        ev.state === 'completed' || ev.state === 'interrupted'
+          ? 'done'
+          : first
+            ? 'started'
+            : 'updated',
+    });
+    if (ev.state === 'completed' || ev.state === 'interrupted') {
+      mediaStarted.delete(id);
+      setTimeout(() => downloads.delete(id), 10 * 60 * 1000);
+    }
+  });
+  return { success: true, id };
+}
+ipcMain.handle('media:download', (_e, { url, mode } = {}) => startMediaDownload(url, mode));
 
 // ---------------------------------------------------------------------------
 // IPC — Extensions Chrome

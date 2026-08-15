@@ -106,9 +106,12 @@ export default function WebView({ app, active, visible, flexLayout }) {
       // Notification SEULEMENT si le compteur dépasse le plafond déjà notifié
       // (et app non active, non coupée) → une notif par vague de messages, pas
       // à chaque clignotement de titre.
+      // « En avant-plan » = app active ET fenêtre visible/focus. Si Orbit est
+      // masqué/minimisé (ex. raccourci global), on notifie même l'app active.
+      const inForeground = active && !document.hidden && document.hasFocus();
       if (
         unread > unreadRef.current &&
-        !active &&
+        !inForeground &&
         notificationsEnabled &&
         !app.muted &&
         !notificationsSilenced({ dnd, quietHoursEnabled, quietStart, quietEnd }) &&

@@ -52,6 +52,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   revealDownload: (id) => ipcRenderer.invoke('downloads:reveal', id),
   cancelDownload: (id) => ipcRenderer.invoke('downloads:cancel', id),
   openDownloadsFolder: () => ipcRenderer.invoke('downloads:openFolder'),
+  // Téléchargement vidéo/audio (yt-dlp) — mode: 'video' | 'audio'
+  downloadMedia: (url, mode) => ipcRenderer.invoke('media:download', { url, mode }),
   // Bloqueur de pub natif
   adblock: {
     setEnabled: (on) => ipcRenderer.invoke('adblock:setEnabled', on),
