@@ -22,6 +22,7 @@ export default function EditAppModal({ app, onClose }) {
   const [iconImage, setIconImage] = useState(app.iconImage || '');
   const [useSiteFavicon, setUseSiteFavicon] = useState(Boolean(app.favicon && !app.iconImage));
   const [color, setColor] = useState(app.color || '#6366f1');
+  const [proxy, setProxy] = useState(app.proxy || '');
   const fileRef = useRef(null);
 
   const isCustom = !app.recipeId; // URL modifiable uniquement pour les apps personnalisées
@@ -46,6 +47,8 @@ export default function EditAppModal({ app, onClose }) {
       // Image téléversée : prioritaire sur tout ; vide = retirée
       iconImage: iconImage || undefined,
       favicon: useSiteFavicon ? faviconServiceUrl(url || app.url) : undefined,
+      // Proxy/VPN spécifique à cette app (vide = suit le profil / le global)
+      proxy: proxy.trim() || undefined,
     };
     if (isCustom) {
       const u = normalizeUrl(url);
@@ -193,6 +196,20 @@ export default function EditAppModal({ app, onClose }) {
                 />
               ))}
             </div>
+          </div>
+
+          {/* Proxy / VPN spécifique à cette app */}
+          <div>
+            <label className="text-xs text-text-muted block mb-1.5">
+              Proxy / VPN (vide = suit le profil / le global)
+            </label>
+            <input
+              type="text"
+              value={proxy}
+              onChange={(e) => setProxy(e.target.value)}
+              placeholder="socks5://host:port"
+              className="input"
+            />
           </div>
         </div>
 

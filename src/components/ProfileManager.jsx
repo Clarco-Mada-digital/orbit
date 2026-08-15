@@ -6,7 +6,7 @@ export default function ProfileManager({ onClose }) {
   const { profiles, activeProfile, setActiveProfile, addProfile, updateProfile, deleteProfile } = useStore();
   const [editing, setEditing] = useState(null);
   const [creating, setCreating] = useState(false);
-  const [formData, setFormData] = useState({ name: '', emoji: '💼', color: '#6366f1' });
+  const [formData, setFormData] = useState({ name: '', emoji: '💼', color: '#6366f1', proxy: '' });
 
   const emojis = ['💼', '🏠', '🎯', '🎮', '🎨', '🎓', '💪', '🌟', '🚀', '💡', '🔥', '⚡', '🌈', '🎵', '📚', '🍕'];
   const colors = [
@@ -25,12 +25,17 @@ export default function ProfileManager({ onClose }) {
       addProfile(formData);
       setCreating(false);
     }
-    setFormData({ name: '', emoji: '💼', color: '#6366f1' });
+    setFormData({ name: '', emoji: '💼', color: '#6366f1', proxy: '' });
   };
 
   const handleEdit = (profile) => {
     setEditing(profile.id);
-    setFormData({ name: profile.name, emoji: profile.emoji, color: profile.color });
+    setFormData({
+      name: profile.name,
+      emoji: profile.emoji,
+      color: profile.color,
+      proxy: profile.proxy || '',
+    });
   };
 
   const handleDelete = (profileId) => {
@@ -108,6 +113,18 @@ export default function ProfileManager({ onClose }) {
                         ))}
                       </div>
                     </div>
+                  </div>
+                  <div>
+                    <label className="text-xs text-text-muted block mb-1.5">
+                      Proxy / VPN de ce profil (vide = réglage global)
+                    </label>
+                    <input
+                      type="text"
+                      value={formData.proxy}
+                      onChange={(e) => setFormData({ ...formData, proxy: e.target.value })}
+                      placeholder="socks5://host:port"
+                      className="input text-sm"
+                    />
                   </div>
                   <div className="flex gap-2">
                     <button onClick={handleSave} className="btn btn-primary">

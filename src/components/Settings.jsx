@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { X, User, Palette, Bell, Zap, Info, Keyboard, Puzzle, Check, KeyRound, ShieldCheck, Ban, Archive } from 'lucide-react';
+import { X, User, Palette, Bell, Zap, Info, Keyboard, Puzzle, Check, KeyRound, ShieldCheck, Ban, Archive, Globe } from 'lucide-react';
 import { useStore } from '../stores/useStore';
 import ProfileManager from './ProfileManager';
 import Extensions from './Extensions';
@@ -494,6 +494,31 @@ export default function Settings({ onClose }) {
                       Après changement, rechargez une app déjà ouverte (bouton ⟳) pour que l'effet
                       s'applique. La première activation télécharge les listes (puis elles sont mises
                       en cache, y compris hors-ligne).
+                    </p>
+                  </div>
+
+                  <div className="card">
+                    <div className="flex items-center gap-2 mb-2">
+                      <Globe size={18} className="text-accent-primary" />
+                      <h4 className="font-semibold">Proxy / VPN</h4>
+                    </div>
+                    <p className="text-sm text-text-muted mb-3">
+                      Fait passer le trafic par un proxy (SOCKS5 ou HTTP) — pratique pour utiliser un
+                      VPN. Proxy <strong>global</strong> ici ; surchargeable <strong>par profil</strong>{' '}
+                      (Profils) et <strong>par app</strong> (clic droit → Modifier). Vide = connexion
+                      directe.
+                    </p>
+                    <input
+                      type="text"
+                      value={settings.globalProxy || ''}
+                      onChange={(e) => updateSettings({ globalProxy: e.target.value })}
+                      placeholder="socks5://127.0.0.1:1080"
+                      className="input"
+                    />
+                    <p className="text-xs text-text-muted mt-2">
+                      Ex. un serveur SOCKS5 de NordVPN, le proxy local de Mullvad, ou votre propre
+                      proxy. Rechargez l'app après changement. Les proxys avec identifiant/mot de
+                      passe ne sont pas encore pris en charge.
                     </p>
                   </div>
 

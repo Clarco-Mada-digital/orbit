@@ -1288,6 +1288,25 @@ ipcMain.handle('security:lockProfile', (_e, id) => security.lockProfile(id));
 ipcMain.handle('security:dropProfile', (_e, id) => security.dropProfile(id));
 
 // ---------------------------------------------------------------------------
+// IPC — Proxy / VPN par partition (session)
+// ---------------------------------------------------------------------------
+// Route une partition (app/profil) via un proxy (SOCKS/HTTP) — permet
+// d'utiliser un VPN uniquement sur certaines apps/profils. Chaîne vide = direct.
+ipcMain.handle('proxy:apply', async (_e, { partition, rules } = {}) => {
+  try {
+    const ses =
+      !partition || partition === 'default'
+        ? session.defaultSession
+        : session.fromPartition(partition);
+    if (rules) await ses.setProxy({ proxyRules: rules });
+    else await ses.setProxy({ mode: 'direct' });
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: String(err.message || err) };
+  }
+});
+
+// ---------------------------------------------------------------------------
 // IPC — Portail captif
 // ---------------------------------------------------------------------------
 // Vérifie la connectivité ; si un portail est détecté, ouvre sa page et

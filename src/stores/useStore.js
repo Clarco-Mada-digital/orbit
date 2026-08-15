@@ -33,6 +33,8 @@ export const defaultSettings = {
   globalMediaKeys: false,
   // Mise en veille automatique des apps inactives (minutes ; 0 = désactivée)
   autoSleepMinutes: 0,
+  // Proxy/VPN global (ex. socks5://127.0.0.1:1080 ; vide = direct)
+  globalProxy: '',
   // Bloqueur de pub / traceurs natif (activé par défaut)
   adblock: true,
   // Traduction (menu contextuel « Traduire la sélection »)

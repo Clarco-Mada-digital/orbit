@@ -56,6 +56,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   // Traduction : configuration (langue cible + moteur Google/LibreTranslate)
   setTranslateConfig: (cfg) => ipcRenderer.invoke('translate:setConfig', cfg),
+  // Proxy / VPN par partition
+  applyProxy: (payload) => ipcRenderer.invoke('proxy:apply', payload),
   // Portail captif (Wi-Fi public)
   checkCaptivePortal: () => ipcRenderer.invoke('captive:check'),
   openCaptivePortal: () => ipcRenderer.invoke('captive:open'),

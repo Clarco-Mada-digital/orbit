@@ -12,7 +12,7 @@ import { useStore } from './stores/useStore';
 import { useSecurityStore } from './lib/securityStore';
 import { useMediaStore } from './lib/mediaStore';
 import { mediaToggle, mediaPrev, mediaNext, mediaSeek, pickNowPlaying } from './lib/mediaControls';
-import { appViewKey } from './lib/session';
+import { appViewKey, appPartition, resolveProxy } from './lib/session';
 import { matchShortcut } from './lib/shortcuts';
 
 // Construit l'état à afficher dans le mini-lecteur flottant (ou null)
@@ -330,6 +330,25 @@ export default function App() {
   useEffect(() => {
     window.electronAPI?.adblock?.setEnabled?.(settings.adblock !== false);
   }, [settings.adblock]);
+
+  // Proxy/VPN : applique à chaque partition (app/profil) son proxy effectif.
+  // Une seule application par partition. On ne (ré)applique QUE les partitions
+  // dont le proxy a réellement changé (apps change souvent : titres, non-lus…).
+  const proxyRef = useRef({});
+  useEffect(() => {
+    const next = {};
+    for (const a of apps) {
+      const profile = profiles.find((p) => p.id === a.profileId);
+      const partition = appPartition(a, !!profile?.sharedSession);
+      if (!(partition in next)) next[partition] = resolveProxy(a, profile, settings.globalProxy);
+    }
+    for (const [partition, rules] of Object.entries(next)) {
+      if (proxyRef.current[partition] !== rules) {
+        window.electronAPI?.applyProxy?.({ partition, rules });
+      }
+    }
+    proxyRef.current = next;
+  }, [apps, profiles, settings.globalProxy]);
 
   // Synchroniser la config de traduction (langue + moteur Google/LibreTranslate)
   useEffect(() => {

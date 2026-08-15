@@ -15,6 +15,13 @@ export function appPartition(app, sharedSession) {
   return `persist:${app.sessionKey || `${app.profileId}:${app.id}`}`;
 }
 
+// Proxy/VPN effectif d'une app : override de l'app > proxy du profil > proxy
+// global. Chaîne vide = connexion directe. Format attendu par Electron, ex.
+// "socks5://127.0.0.1:1080" ou "http=host:port;https=host:port".
+export function resolveProxy(app, profile, globalProxy) {
+  return (app?.proxy || profile?.proxy || globalProxy || '').trim();
+}
+
 // Clé React d'une app : doit changer quand la partition change (conteneur /
 // isolée / partagée) pour forcer le remontage du <webview> avec le bon coffre.
 export function appViewKey(app, sharedSession) {
