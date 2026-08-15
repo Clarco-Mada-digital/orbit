@@ -56,7 +56,21 @@ function trayIconPath() {
 function createTray() {
   if (tray) return;
   try {
-    tray = new Tray(trayIconPath());
+    // On passe un nativeImage (pas un chemin) : Electron l'écrit dans un
+    // fichier temporaire du VRAI disque, seul moyen pour AppIndicator de lire
+    // l'icône (un chemin dans app.asar donne une icône « fantôme »).
+    let image = nativeImage.createFromPath(trayIconPath());
+    if (image.isEmpty()) {
+      image = nativeImage.createFromPath(path.join(__dirname, '../build/icon.png'));
+    }
+    if (!image.isEmpty()) {
+      try {
+        image = image.resize({ width: 24, height: 24 });
+      } catch {
+        /* garde l'original */
+      }
+    }
+    tray = new Tray(image.isEmpty() ? trayIconPath() : image);
     tray.setToolTip('Orbit');
     tray.setContextMenu(
       Menu.buildFromTemplate([

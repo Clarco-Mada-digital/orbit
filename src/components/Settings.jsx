@@ -160,18 +160,46 @@ export default function Settings({ onClose }) {
                       <input
                         type="checkbox"
                         checked={settings.globalHotkeyEnabled === true}
-                        onChange={(e) => updateSettings({ globalHotkeyEnabled: e.target.checked })}
+                        onChange={async (e) => {
+                          const on = e.target.checked;
+                          updateSettings({ globalHotkeyEnabled: on });
+                          if (on) {
+                            const res = await window.electronAPI?.setSummonHotkey?.(
+                              settings.globalHotkey || 'CommandOrControl+Alt+O'
+                            );
+                            if (res && res.success === false) {
+                              alert(
+                                'Ce raccourci est indisponible (déjà utilisé par le système ?). Essayez-en un autre, ex. CommandOrControl+Shift+O.'
+                              );
+                            }
+                          }
+                        }}
                         className="w-12 h-6 bg-bg-hover rounded-full relative cursor-pointer appearance-none checked:bg-accent-primary transition-colors after:content-[''] after:absolute after:top-1 after:left-1 after:w-4 after:h-4 after:bg-white after:rounded-full after:transition-transform checked:after:translate-x-6"
                       />
                     </label>
                     {settings.globalHotkeyEnabled && (
-                      <input
-                        type="text"
-                        value={settings.globalHotkey || ''}
-                        onChange={(e) => updateSettings({ globalHotkey: e.target.value })}
-                        placeholder="CommandOrControl+Alt+O"
-                        className="input text-sm"
-                      />
+                      <div className="space-y-1.5">
+                        <input
+                          type="text"
+                          value={settings.globalHotkey || ''}
+                          onChange={(e) => updateSettings({ globalHotkey: e.target.value })}
+                          onBlur={async () => {
+                            const res = await window.electronAPI?.setSummonHotkey?.(
+                              settings.globalHotkey || 'CommandOrControl+Alt+O'
+                            );
+                            if (res && res.success === false) {
+                              alert('Ce raccourci est indisponible. Essayez une autre combinaison.');
+                            }
+                          }}
+                          placeholder="CommandOrControl+Alt+O"
+                          className="input text-sm"
+                        />
+                        <p className="text-xs text-text-muted">
+                          Ex. <code>CommandOrControl+Shift+O</code>, <code>Super+O</code>. Si rien ne
+                          se passe, la combinaison est sûrement déjà prise par ton bureau — essayes-en
+                          une autre.
+                        </p>
+                      </div>
                     )}
                   </div>
 

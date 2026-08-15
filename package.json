@@ -60,6 +60,10 @@
       "build/icon.png",
       "package.json"
     ],
+    "asarUnpack": [
+      "dist/icons/**",
+      "build/icon.png"
+    ],
     "linux": {
       "target": [
         "AppImage",
