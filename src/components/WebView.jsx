@@ -52,7 +52,11 @@ export default function WebView({ app, active, visible, flexLayout }) {
   const sharedSession = useStore(
     (s) => !!s.profiles.find((p) => p.id === app.profileId)?.sharedSession
   );
+  // « Plafond » de non-lus déjà notifiés : on ne re-notifie que si le compteur
+  // le DÉPASSE (le clignotement de titre 1↔0 ne le franchit jamais → pas de
+  // notification/son en boucle). Réarmé à la lecture (app active ou 0 durable).
   const unreadRef = useRef(app.unread || 0);
+  const zeroTimerRef = useRef(null);
 
   // Indicateur de chargement : un petit spinner s'affiche quand la page
   // se recharge (navigation, reload…). Délai de 500 ms avant d'apparaître
@@ -93,16 +97,17 @@ export default function WebView({ app, active, visible, flexLayout }) {
       const unread = m ? parseInt(m[1], 10) : 0;
       updateApp(app.id, { unread });
 
-      // Notification système quand le compteur augmente et que l'app n'est
-      // pas au premier plan (ne spamme pas l'app qu'on est en train d'utiliser)
+      // Notification SEULEMENT si le compteur dépasse le plafond déjà notifié
+      // (et app non active, non coupée) → une notif par vague de messages, pas
+      // à chaque clignotement de titre.
       if (
-        unread > 0 &&
         unread > unreadRef.current &&
         !active &&
         notificationsEnabled &&
         !app.muted &&
         window.electronAPI?.showNotification
       ) {
+        unreadRef.current = unread; // on monte le plafond
         // Son personnalisé (joué ici) → on coupe le son système côté natif
         if (notifSound) {
           try {
@@ -119,7 +124,16 @@ export default function WebView({ app, active, visible, flexLayout }) {
           silent: !!notifSound,
         });
       }
-      unreadRef.current = unread;
+
+      // Lecture réelle : compteur à 0 pendant 5 s → on réarme le plafond
+      // (un futur message re-notifiera). Le passage transitoire à 0 dû au
+      // clignotement ne réarme pas (le compteur redevient >0 avant le délai).
+      clearTimeout(zeroTimerRef.current);
+      if (unread === 0) {
+        zeroTimerRef.current = setTimeout(() => {
+          unreadRef.current = 0;
+        }, 5000);
+      }
     };
 
     const handleFavicon = (e) => {
@@ -224,6 +238,7 @@ export default function WebView({ app, active, visible, flexLayout }) {
       clearMedia(app.id);
       clearInterval(pollTimer);
       clearTimeout(loadingTimer.current);
+      clearTimeout(zeroTimerRef.current);
       wv.removeEventListener('media-started-playing', onMediaPlay);
       wv.removeEventListener('media-paused', onMediaPaused);
       wv.removeEventListener('dom-ready', applyZoom);
@@ -236,6 +251,15 @@ export default function WebView({ app, active, visible, flexLayout }) {
       wv.removeEventListener('did-stop-loading', stopLoading);
     };
   }, [app.id, app.name, app.zoom, app.sleeping, app.muted, active, notificationsEnabled, notifSound, updateApp, setAppLoading, setMedia, clearMedia]);
+
+  // Quand on ouvre l'app (elle devient active), on la considère LUE : on réarme
+  // le plafond de notifications → un prochain message re-notifiera.
+  useEffect(() => {
+    if (active) {
+      unreadRef.current = 0;
+      clearTimeout(zeroTimerRef.current);
+    }
+  }, [active]);
 
   // Zoom en temps réel : re-appliqué dès que le réglage change (boutons − / % / +)
   useEffect(() => {
