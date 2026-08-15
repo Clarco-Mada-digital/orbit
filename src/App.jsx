@@ -401,8 +401,8 @@ export default function App() {
     // Option « accent par profil » : suit la couleur du profil actif.
     const activeProfileObj = profiles.find((p) => p.id === activeProfile);
     const accentHex =
-      settings.accentPerProfile && activeProfileObj?.color
-        ? activeProfileObj.color
+      settings.accentPerProfile && activeProfileObj
+        ? activeProfileObj.accent || activeProfileObj.color || settings.accentColor || '#6366f1'
         : settings.accentColor || '#6366f1';
     const accent = hexToRgbTriplet(accentHex);
     root.style.setProperty('--accent-primary', accent);

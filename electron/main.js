@@ -17,7 +17,7 @@ let mainWindow;
 // --- Barre système (tray) + fenêtre ----------------------------------------
 let tray = null;
 let isQuitting = false;
-let closeToTray = true; // synchronisé depuis les réglages du renderer
+let closeToTray = false; // synchronisé depuis les réglages du renderer (opt-in)
 let trayInfoShown = false;
 let summonAccel = null;
 
@@ -61,7 +61,11 @@ function createTray() {
         },
       ])
     );
-    tray.on('click', toggleMainWindow);
+    // IMPORTANT : sur Linux le clic gauche est peu fiable et on ne veut JAMAIS
+    // masquer depuis le tray (risque de rester bloqué) → clic = TOUJOURS
+    // afficher. Le masquage se fait uniquement via le bouton fermer.
+    tray.on('click', showMainWindow);
+    tray.on('double-click', showMainWindow);
   } catch (err) {
     console.error('[orbit] tray échoué:', err.message);
   }
@@ -84,6 +88,14 @@ function setSummonHotkey(accelerator) {
     return { success: false, error: String(err.message || err) };
   }
 }
+
+// Instance unique : relancer Orbit ne crée pas une 2e fenêtre mais RAMÈNE
+// l'existante au premier plan (filet de sécurité si la fenêtre est masquée).
+const gotInstanceLock = app.requestSingleInstanceLock();
+if (!gotInstanceLock) {
+  app.quit();
+}
+app.on('second-instance', () => showMainWindow());
 
 const isDev = !app.isPackaged;
 const VITE_DEV_SERVER_URL = 'http://localhost:5173';
@@ -1878,6 +1890,9 @@ ipcMain.handle('sessions:clear', (_event, { sessionKey, profileId, appId } = {})
 // Lifecycle
 // ---------------------------------------------------------------------------
 app.whenReady().then(() => {
+  // Seconde instance : on a déjà quitté plus haut, on ne construit rien.
+  if (!gotInstanceLock) return;
+
   // Identifiant d'app Windows : indispensable pour les notifications natives
   if (process.platform === 'win32') {
     app.setAppUserModelId('com.orbit.app');

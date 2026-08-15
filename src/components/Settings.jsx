@@ -453,7 +453,8 @@ export default function Settings({ onClose }) {
                       <div>
                         <div className="font-medium">Accent par profil</div>
                         <div className="text-sm text-text-muted">
-                          La couleur d'accent suit celle du profil actif (repère visuel pro / perso)
+                          L'accent suit la couleur choisie pour chaque profil (dans Profils → chaque
+                          profil a sa palette). Repère visuel pro / perso.
                         </div>
                       </div>
                       <input

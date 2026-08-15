@@ -35,8 +35,8 @@ export const defaultSettings = {
   animationsEnabled: true,
   // Couleur d'accent qui suit la couleur du profil actif
   accentPerProfile: false,
-  // Barre système (tray) : fermer la fenêtre la réduit dans le tray
-  closeToTray: true,
+  // Barre système (tray) : fermer la fenêtre la réduit dans le tray (opt-in)
+  closeToTray: false,
   // Raccourci global pour afficher/masquer Orbit depuis n'importe où
   globalHotkeyEnabled: false,
   globalHotkey: 'CommandOrControl+Alt+O',

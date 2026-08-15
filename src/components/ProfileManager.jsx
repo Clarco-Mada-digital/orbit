@@ -171,6 +171,27 @@ export default function ProfileManager({ onClose }) {
                       />
                       <span>Partager les connexions (SSO navigateur)</span>
                     </label>
+                    <div className="mt-2">
+                      <div className="text-xs text-text-muted mb-1.5">
+                        Couleur d'accent du profil (active « Accent par profil » dans Réglages → Apparence)
+                      </div>
+                      <div className="flex gap-1.5 flex-wrap">
+                        {colors.slice(0, 12).map((c) => {
+                          const current = profile.accent || profile.color;
+                          return (
+                            <button
+                              key={c}
+                              onClick={() => updateProfile(profile.id, { accent: c })}
+                              className={`w-6 h-6 rounded-full transition-all ${
+                                current === c ? 'ring-2 ring-white scale-110' : 'hover:scale-105'
+                              }`}
+                              style={{ backgroundColor: c }}
+                              title={c}
+                            />
+                          );
+                        })}
+                      </div>
+                    </div>
                   </div>
                   <div className="flex gap-2">
                     {profile.id !== activeProfile && (
