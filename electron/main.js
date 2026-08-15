@@ -34,19 +34,29 @@ function toggleMainWindow() {
   else showMainWindow();
 }
 
+// Choisit une icône de tray existante et de taille raisonnable. Sous Linux
+// (AppIndicator), on passe le CHEMIN d'une petite PNG (l'applet la met à
+// l'échelle lui-même) — redimensionner un 1024px en 18px rendait une icône vide.
+function trayIconPath() {
+  const candidates = [
+    path.join(__dirname, '../dist/icons/icon-32.png'), // build packagé
+    path.join(__dirname, '../public/icons/icon-32.png'), // dev
+    path.join(__dirname, '../build/icon.png'), // repli
+  ];
+  for (const p of candidates) {
+    try {
+      if (fs.existsSync(p)) return p;
+    } catch {
+      /* suivant */
+    }
+  }
+  return candidates[candidates.length - 1];
+}
+
 function createTray() {
   if (tray) return;
   try {
-    const iconPath = path.join(__dirname, '../build/icon.png');
-    let img = nativeImage.createFromPath(iconPath);
-    if (!img.isEmpty()) {
-      try {
-        img = img.resize({ width: 18, height: 18 });
-      } catch {
-        /* garde l'original */
-      }
-    }
-    tray = new Tray(img.isEmpty() ? iconPath : img);
+    tray = new Tray(trayIconPath());
     tray.setToolTip('Orbit');
     tray.setContextMenu(
       Menu.buildFromTemplate([
