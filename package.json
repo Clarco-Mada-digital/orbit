@@ -1,6 +1,6 @@
 {
   "name": "orbit",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "description": "Station alternative - Modern web app hub",
   "main": "electron/main.js",
   "type": "module",
@@ -28,7 +28,7 @@
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
     "concurrently": "^9.1.2",
-    "electron": "^33.3.1",
+    "electron": "^43.4.0",
     "electron-builder": "^26.15.3",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.17",
@@ -38,13 +38,13 @@
   "dependencies": {
     "@ghostery/adblocker-electron": "^2.18.2",
     "clsx": "^2.1.1",
-    "extract-zip": "^2.0.1",
     "framer-motion": "^11.15.0",
     "lucide-react": "^0.468.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "tldts-experimental": "^7.4.10",
     "tweetnacl": "^1.0.3",
+    "yauzl": "^2.10.0",
     "zustand": "^5.0.2"
   },
   "build": {
@@ -67,9 +67,13 @@
       ],
       "category": "Utility",
       "icon": "build/icon.png",
-      "desktopName": "orbit.desktop",
-      "synopsis": "Hub applicatif — vos apps web dans une seule fenêtre",
-      "syncDesktopName": true
+      "desktop": {
+        "entry": {
+          "Name": "Orbit",
+          "Comment": "Hub applicatif — vos apps web dans une seule fenêtre",
+          "StartupWMClass": "Orbit"
+        }
+      }
     },
     "win": {
       "target": [

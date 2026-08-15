@@ -1292,17 +1292,52 @@ ipcMain.handle('security:dropProfile', (_e, id) => security.dropProfile(id));
 // ---------------------------------------------------------------------------
 // Route une partition (app/profil) via un proxy (SOCKS/HTTP) — permet
 // d'utiliser un VPN uniquement sur certaines apps/profils. Chaîne vide = direct.
+//
+// Authentification : on accepte "scheme://user:pass@host:port". Les identifiants
+// sont RETIRÉS des règles (Electron ne les accepte pas là) et fournis via
+// l'événement 'login' (proxy 407). Stockés par session, jamais persistés.
+const proxyCreds = new WeakMap(); // ses -> { username, password }
+
+function splitProxyAuth(rules) {
+  const m = /^(\w+:\/\/)(?:([^:@/]+):([^@/]+)@)?(.+)$/.exec(String(rules).trim());
+  if (!m) return { clean: String(rules).trim(), username: null, password: null };
+  const [, scheme, user, pass, hostport] = m;
+  return { clean: scheme + hostport, username: user || null, password: pass || null };
+}
+
 ipcMain.handle('proxy:apply', async (_e, { partition, rules } = {}) => {
   try {
     const ses =
       !partition || partition === 'default'
         ? session.defaultSession
         : session.fromPartition(partition);
-    if (rules) await ses.setProxy({ proxyRules: rules });
-    else await ses.setProxy({ mode: 'direct' });
+    if (rules && rules.trim()) {
+      const { clean, username, password } = splitProxyAuth(rules);
+      if (username) proxyCreds.set(ses, { username, password: password || '' });
+      else proxyCreds.delete(ses);
+      await ses.setProxy({ proxyRules: clean });
+    } else {
+      proxyCreds.delete(ses);
+      await ses.setProxy({ mode: 'direct' });
+    }
     return { success: true };
   } catch (err) {
     return { success: false, error: String(err.message || err) };
+  }
+});
+
+// Fournit les identifiants du proxy quand il en demande (407). N'intervient
+// PAS pour l'authentification des sites eux-mêmes (laissée au comportement natif).
+app.on('login', (event, webContents, _details, authInfo, callback) => {
+  if (!authInfo || !authInfo.isProxy) return;
+  try {
+    const creds = webContents && webContents.session && proxyCreds.get(webContents.session);
+    if (creds && creds.username) {
+      event.preventDefault();
+      callback(creds.username, creds.password);
+    }
+  } catch {
+    /* laisse échouer proprement */
   }
 });
 

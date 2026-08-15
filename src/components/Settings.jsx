@@ -516,9 +516,9 @@ export default function Settings({ onClose }) {
                       className="input"
                     />
                     <p className="text-xs text-text-muted mt-2">
-                      Ex. un serveur SOCKS5 de NordVPN, le proxy local de Mullvad, ou votre propre
-                      proxy. Rechargez l'app après changement. Les proxys avec identifiant/mot de
-                      passe ne sont pas encore pris en charge.
+                      Ex. <code>socks5://host:port</code>, <code>http://host:port</code>, ou avec
+                      identifiants <code>socks5://user:pass@host:port</code>. SOCKS5 d'un VPN, proxy
+                      local (Mullvad), ou votre propre serveur. Rechargez l'app après changement.
                     </p>
                   </div>
 
@@ -649,7 +649,7 @@ export default function Settings({ onClose }) {
                       </svg>
                     </div>
                     <h2 className="text-2xl font-bold mb-2">Orbit 🛰</h2>
-                    <p className="text-text-muted mb-1">Version 1.0.0</p>
+                    <p className="text-text-muted mb-1">Version 1.1.0</p>
                     <p className="text-sm text-text-muted mb-6">
                       Alternative moderne à Station
                     </p>
