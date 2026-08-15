@@ -190,6 +190,32 @@ export default function Sidebar({ collapsed, onToggle, onOpenSettings, onOpenSto
 
       {/* Applications */}
       <div className={`flex-1 overflow-y-auto ${padding}`}>
+        {/* Favoris : accès rapide aux apps marquées d'une ⭐ (via la Topbar) */}
+        {apps.some((a) => a.isFavorite) && (
+          <div className="mb-3">
+            {!collapsed && (
+              <div className="text-xs font-semibold text-text-muted uppercase mb-2 px-2">Favoris</div>
+            )}
+            <div className={`flex flex-wrap ${collapsed ? 'justify-center' : ''} gap-1`}>
+              {apps
+                .filter((a) => a.isFavorite)
+                .map((fav) => (
+                  <button
+                    key={fav.id}
+                    onClick={() => onSelectApp(fav.id)}
+                    onContextMenu={(e) => openContextMenu(e, fav.id)}
+                    title={fav.name}
+                    className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 transition-all ${
+                      fav.id === activeApp ? 'ring-2 ring-accent-primary' : 'hover:bg-bg-hover'
+                    } ${fav.sleeping ? 'grayscale opacity-60' : ''}`}
+                    style={{ backgroundColor: settings.showAppIcons ? `${fav.color}20` : 'transparent' }}
+                  >
+                    <AppIcon app={fav} className="w-5 h-5 rounded" />
+                  </button>
+                ))}
+            </div>
+          </div>
+        )}
         {!collapsed && (
           <div className="text-xs font-semibold text-text-muted uppercase mb-2 px-2">Applications</div>
         )}

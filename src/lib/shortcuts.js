@@ -19,6 +19,15 @@ export function isMac() {
 // La combinaison est-elle un raccourci d'Orbit ? (événement keydown du DOM)
 export function matchShortcut(e) {
   const mac = isMac();
+  // Rechercher dans la page : Ctrl+F (Win/Linux) ou ⌘F (mac) — remplace la
+  // recherche de l'app embarquée par celle d'Orbit.
+  if (
+    (mac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.altKey) &&
+    !e.shiftKey &&
+    (e.key || '').toLowerCase() === 'f'
+  ) {
+    return 'find';
+  }
   const mod = mac ? e.metaKey : e.altKey;
   // Modificateur parasite (Ctrl, ou l'autre) → pas un raccourci Orbit
   if (!mod || e.ctrlKey || (mac ? e.altKey : e.metaKey)) return null;
@@ -44,6 +53,14 @@ export function matchShortcut(e) {
 export function matchShortcutInput(input) {
   if (!input || input.type !== 'keyDown') return null;
   const mac = typeof process !== 'undefined' && process.platform === 'darwin';
+  // Rechercher dans la page : Ctrl+F (Win/Linux) ou ⌘F (mac)
+  if (
+    (mac ? input.meta && !input.control : input.control && !input.alt) &&
+    !input.shift &&
+    String(input.key || '').toLowerCase() === 'f'
+  ) {
+    return 'find';
+  }
   const mod = mac ? input.meta : input.alt;
   if (!mod || input.control || (mac ? input.alt : input.meta)) return null;
   const k = String(input.key || '').toLowerCase();

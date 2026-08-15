@@ -8,6 +8,7 @@ import ProfileManager from './components/ProfileManager';
 import AppStore from './components/AppStore';
 import WebView from './components/WebView';
 import LockScreen from './components/LockScreen';
+import FindBar from './components/FindBar';
 import { useStore } from './stores/useStore';
 import { useSecurityStore } from './lib/securityStore';
 import { useMediaStore } from './lib/mediaStore';
@@ -54,6 +55,7 @@ export default function App() {
   const [showProfileManager, setShowProfileManager] = useState(false);
   const [showAppStore, setShowAppStore] = useState(false);
   const [captive, setCaptive] = useState(null); // { detected, url } | null
+  const [showFind, setShowFind] = useState(false);
   const {
     activeProfile,
     activeApp,
@@ -71,6 +73,26 @@ export default function App() {
     clearSplitView,
     toggleSplitDirection,
   } = useStore();
+
+  // App de démarrage : au lancement, ouvre l'app choisie (une seule fois).
+  // '' = reprendre la dernière (activeApp persisté), 'none' = aucune.
+  const startupDoneRef = useRef(false);
+  useEffect(() => {
+    if (startupDoneRef.current) return;
+    startupDoneRef.current = true;
+    const st = useStore.getState();
+    const sa = st.settings.startupApp;
+    if (!sa) return; // reprendre la dernière
+    if (sa === 'none') {
+      st.setActiveApp(null);
+      return;
+    }
+    const target = st.apps.find((a) => a.id === sa);
+    if (target) {
+      st.setActiveProfile(target.profileId);
+      st.setActiveApp(target.id);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Média : pour synchroniser le mini-lecteur flottant
   const media = useMediaStore((s) => s.media);
@@ -200,6 +222,17 @@ export default function App() {
   const security = useSecurityStore();
   useEffect(() => {
     security.refresh();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Verrouillage auto après inactivité : synchro du délai + reverrouillage
+  useEffect(() => {
+    window.electronAPI?.security?.setAutoLock?.(settings.autoLockMinutes || 0);
+  }, [settings.autoLockMinutes]);
+  useEffect(() => {
+    const off = window.electronAPI?.security?.onRelock?.(() => security.refresh());
+    return () => {
+      if (typeof off === 'function') off();
+    };
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Un profil est-il accessible (pas de verrou, ou déjà déverrouillé) ?
@@ -435,6 +468,10 @@ export default function App() {
     if (action === 'settings') return setShowSettings((v) => !v);
     if (action === 'store') return setShowAppStore((v) => !v);
     if (action === 'profiles') return setShowProfileManager((v) => !v);
+    if (action === 'find') {
+      if (useStore.getState().activeApp) setShowFind(true);
+      return;
+    }
     if (action === 'toggle-sidebar') {
       const { sidebarCollapsed: c, setSidebarCollapsed: set } = useStore.getState();
       return set(!c);
@@ -490,6 +527,7 @@ export default function App() {
         setShowSettings(false);
         setShowProfileManager(false);
         setShowAppStore(false);
+        setShowFind(false);
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -764,6 +802,11 @@ export default function App() {
                   </div>
                 </div>
               </div>
+            )}
+
+            {/* Rechercher dans la page (Ctrl/Cmd+F) — sur l'app active */}
+            {showFind && activeApp && !overlayOpen && activeProfileAccessible && !appLocked && (
+              <FindBar appId={activeApp} onClose={() => setShowFind(false)} />
             )}
 
             {/* Profil verrouillé : gate de déverrouillage sur la zone de contenu.

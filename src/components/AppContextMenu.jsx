@@ -13,9 +13,11 @@ import {
   Bell,
   BellOff,
   Layers,
+  Eraser,
   Check as CheckIcon,
 } from 'lucide-react';
 import { useStore } from '../stores/useStore';
+import { getWebview } from '../lib/webviewRegistry';
 import EditAppModal from './EditAppModal';
 
 // Menu contextuel (clic droit) sur une app de la sidebar :
@@ -111,7 +113,7 @@ export default function AppContextMenu({ appId, x, y, onClose }) {
       ? 130 + otherProfiles.length * 44
       : containing
         ? 180 + containers.length * 40
-        : 420;
+        : 460;
   const style = {
     width,
     left: Math.max(8, Math.min(x, window.innerWidth - width - 8)),
@@ -146,6 +148,26 @@ export default function AppContextMenu({ appId, x, y, onClose }) {
 
   const handleMove = (targetProfileId) => {
     moveAppToProfile(appId, targetProfileId);
+    onClose();
+  };
+
+  const handleClearData = () => {
+    if (
+      confirm(
+        `Effacer les données de « ${app.name} » ?\nCookies, cache et connexion seront supprimés, et l'app se rechargera.`
+      )
+    ) {
+      window.electronAPI?.clearAppSession?.({
+        sessionKey: app.sessionKey || `${app.profileId}:${appId}`,
+        profileId: app.profileId,
+        appId,
+      });
+      try {
+        getWebview(appId)?.reload();
+      } catch {
+        /* ignore */
+      }
+    }
     onClose();
   };
 
@@ -358,6 +380,12 @@ export default function AppContextMenu({ appId, x, y, onClose }) {
           >
             <Layers size={15} /> Conteneur (multi-comptes)
             <ChevronRight size={14} className="ml-auto text-text-muted" />
+          </button>
+          <button
+            onClick={handleClearData}
+            className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-bg-hover transition-colors"
+          >
+            <Eraser size={15} /> Effacer les données du site
           </button>
           <div className="my-1 border-t border-border"></div>
           <button

@@ -1,4 +1,4 @@
-import { app, BrowserWindow, session, ipcMain, shell, Notification, dialog, net, screen, Menu, clipboard, globalShortcut, Tray, nativeImage } from 'electron';
+import { app, BrowserWindow, session, ipcMain, shell, Notification, dialog, net, screen, Menu, clipboard, globalShortcut, Tray, nativeImage, powerMonitor } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import crypto from 'node:crypto';
@@ -1427,6 +1427,37 @@ ipcMain.handle('security:removeProfileLock', (_e, { id, pin } = {}) =>
 ipcMain.handle('security:unlockProfile', (_e, { id, pin } = {}) => security.unlockProfile(id, pin));
 ipcMain.handle('security:lockProfile', (_e, id) => security.lockProfile(id));
 ipcMain.handle('security:dropProfile', (_e, id) => security.dropProfile(id));
+
+// Verrouillage automatique après inactivité SYSTÈME (clavier/souris n'importe
+// où — compte même quand on utilise une app embarquée, contrairement à un
+// détecteur limité à la fenêtre React).
+let autoLockMinutes = 0;
+let autoLockTimer = null;
+function setupAutoLock(minutes) {
+  autoLockMinutes = Number(minutes) || 0;
+  clearInterval(autoLockTimer);
+  autoLockTimer = null;
+  if (autoLockMinutes <= 0) return;
+  autoLockTimer = setInterval(() => {
+    try {
+      const idleSec = powerMonitor.getSystemIdleTime();
+      if (idleSec < autoLockMinutes * 60) return;
+      const st = security.getState();
+      if (st.appLockEnabled && st.appUnlocked) {
+        security.lockApp();
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('orbit:relock');
+        }
+      }
+    } catch {
+      /* ignore */
+    }
+  }, 20000);
+}
+ipcMain.handle('security:setAutoLock', (_e, minutes) => {
+  setupAutoLock(minutes);
+  return { success: true };
+});
 
 // ---------------------------------------------------------------------------
 // IPC — Proxy / VPN par partition (session)

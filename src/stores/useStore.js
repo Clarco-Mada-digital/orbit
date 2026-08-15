@@ -57,6 +57,11 @@ export const defaultSettings = {
   translateEngine: 'google', // 'google' | 'libretranslate'
   libreTranslateUrl: '', // ex. http://localhost:5000
   libreTranslateApiKey: '',
+  // App ouverte au démarrage : '' = reprendre la dernière, 'none' = aucune,
+  // sinon l'id d'une app
+  startupApp: '',
+  // Verrouillage automatique après inactivité (minutes ; 0 = désactivé)
+  autoLockMinutes: 0,
   // KeePassXC : auto-remplissage des identifiants (activé par défaut)
   keepass: { enabled: true },
 };

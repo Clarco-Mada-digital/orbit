@@ -107,6 +107,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     unlockProfile: (id, pin) => ipcRenderer.invoke('security:unlockProfile', { id, pin }),
     lockProfile: (id) => ipcRenderer.invoke('security:lockProfile', id),
     dropProfile: (id) => ipcRenderer.invoke('security:dropProfile', id),
+    setAutoLock: (minutes) => ipcRenderer.invoke('security:setAutoLock', minutes),
+    onRelock: (callback) => {
+      const listener = () => callback();
+      ipcRenderer.on('orbit:relock', listener);
+      return () => ipcRenderer.removeListener('orbit:relock', listener);
+    },
   },
   platform: process.platform,
 });

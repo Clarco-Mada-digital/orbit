@@ -54,7 +54,7 @@ const fontGroups = [
 export default function Settings({ onClose }) {
   const [activeTab, setActiveTab] = useState('general');
   const [showProfileManager, setShowProfileManager] = useState(false);
-  const { settings, updateSettings } = useStore();
+  const { settings, updateSettings, apps, profiles } = useStore();
 
   const tabs = [
     { id: 'general', name: 'Général', icon: Zap },
@@ -123,7 +123,7 @@ export default function Settings({ onClose }) {
                 <div className="space-y-6">
                   <div className="card">
                     <h4 className="font-semibold mb-4">Démarrage</h4>
-                    <label className="flex items-center justify-between mb-3">
+                    <label className="flex items-center justify-between mb-4">
                       <span>Démarrer minimisé</span>
                       <input
                         type="checkbox"
@@ -132,6 +132,23 @@ export default function Settings({ onClose }) {
                         className="w-12 h-6 bg-bg-hover rounded-full relative cursor-pointer appearance-none checked:bg-accent-primary transition-colors after:content-[''] after:absolute after:top-1 after:left-1 after:w-4 after:h-4 after:bg-white after:rounded-full after:transition-transform checked:after:translate-x-6"
                       />
                     </label>
+                    <label className="block text-sm font-medium mb-1.5">Application au démarrage</label>
+                    <select
+                      value={settings.startupApp || ''}
+                      onChange={(e) => updateSettings({ startupApp: e.target.value })}
+                      className="input max-w-sm"
+                    >
+                      <option value="">Reprendre la dernière app</option>
+                      <option value="none">Aucune (écran d'accueil)</option>
+                      {apps.map((a) => {
+                        const prof = profiles.find((p) => p.id === a.profileId);
+                        return (
+                          <option key={a.id} value={a.id}>
+                            {(prof ? prof.name + ' · ' : '') + a.name}
+                          </option>
+                        );
+                      })}
+                    </select>
                   </div>
 
                   <div className="card">

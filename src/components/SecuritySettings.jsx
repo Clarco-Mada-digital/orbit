@@ -8,7 +8,7 @@ import LockScreen from './LockScreen';
 // Les codes ne transitent que vers le process principal (electron/security.js),
 // qui garde une empreinte scrypt chiffrée via le trousseau de l'OS.
 export default function SecuritySettings() {
-  const { profiles } = useStore();
+  const { profiles, settings, updateSettings } = useStore();
   const security = useSecurityStore();
   const [action, setAction] = useState(null); // { fn, title, subtitle, confirm }
 
@@ -95,6 +95,25 @@ export default function SecuritySettings() {
             <Lock size={14} /> Activer le verrou
           </button>
         )}
+
+        <div className="mt-4 pt-4 border-t border-border">
+          <label className="block text-sm font-medium mb-1.5">Verrouillage automatique</label>
+          <p className="text-xs text-text-muted mb-2">
+            Verrouille Orbit après une période d'inactivité (nécessite un code global).
+          </p>
+          <select
+            value={settings.autoLockMinutes || 0}
+            onChange={(e) => updateSettings({ autoLockMinutes: parseInt(e.target.value, 10) })}
+            className="input max-w-xs"
+            disabled={!security.appLockEnabled}
+          >
+            <option value={0}>Désactivé</option>
+            <option value={5}>Après 5 minutes</option>
+            <option value={10}>Après 10 minutes</option>
+            <option value={15}>Après 15 minutes</option>
+            <option value={30}>Après 30 minutes</option>
+          </select>
+        </div>
       </div>
 
       {/* Verrous par profil */}
