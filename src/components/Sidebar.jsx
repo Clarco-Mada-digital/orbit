@@ -1,14 +1,30 @@
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useStore } from '../stores/useStore';
-import { ChevronLeft, ChevronRight, Plus, Settings, Grid, User, Moon, BellOff, Lock } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Settings, Grid, User, Moon, BellOff, Lock, Volume2, VolumeX } from 'lucide-react';
 import AppContextMenu from './AppContextMenu';
 import AppIcon from './AppIcon';
 import { useSecurityStore } from '../lib/securityStore';
+import { useMediaStore } from '../lib/mediaStore';
+import { getWebview } from '../lib/webviewRegistry';
 
 export default function Sidebar({ collapsed, onToggle, onOpenSettings, onOpenStore, onOpenProfileManager, onSelectApp }) {
-  const { profiles, activeProfile, setActiveProfile, getProfileApps, activeApp, settings, reorderApps } = useStore();
+  const { profiles, activeProfile, setActiveProfile, getProfileApps, activeApp, settings, reorderApps, containers } = useStore();
   const { lockedProfileIds, unlockedProfileIds } = useSecurityStore();
+  const media = useMediaStore((s) => s.media);
+  const setMedia = useMediaStore((s) => s.setMedia);
+
+  // Coupe / réactive le son d'une app précise (comme un onglet de navigateur).
+  const toggleAppAudio = (appId) => {
+    const next = !media[appId]?.audioMuted;
+    const wv = getWebview(appId);
+    try {
+      wv?.setAudioMuted?.(next);
+    } catch {
+      /* webview pas prêt */
+    }
+    setMedia(appId, { audioMuted: next });
+  };
   // Un profil affiche un cadenas s'il est verrouillé ET pas encore déverrouillé
   const profileShowsLock = (id) =>
     lockedProfileIds.includes(id) && !unlockedProfileIds.includes(id);
@@ -253,10 +269,41 @@ export default function Sidebar({ collapsed, onToggle, onOpenSettings, onOpenSto
                       <Moon size={9} className="text-text-muted" />
                     </span>
                   )}
+                  {/* Pastille du conteneur (multi-comptes) */}
+                  {app.containerId && (
+                    <span
+                      className="absolute -bottom-1 -left-1 w-3 h-3 rounded-full border-2 border-bg-secondary"
+                      style={{
+                        backgroundColor:
+                          containers.find((c) => c.id === app.containerId)?.color || '#f59e0b',
+                      }}
+                      title={`Conteneur : ${containers.find((c) => c.id === app.containerId)?.name || ''}`}
+                    />
+                  )}
                 </div>
                 {!collapsed && (
                   <>
                     <span className="font-medium text-sm flex-1 text-left truncate">{app.name}</span>
+                    {/* Son : apparaît quand l'app joue un média ou qu'elle est
+                        coupée → clic pour couper/réactiver (comme un onglet). */}
+                    {(media[app.id]?.playing || media[app.id]?.audioMuted) && (
+                      <span
+                        role="button"
+                        tabIndex={0}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          toggleAppAudio(app.id);
+                        }}
+                        className={`flex-shrink-0 transition-colors ${
+                          media[app.id]?.audioMuted
+                            ? 'text-error hover:text-error'
+                            : 'text-accent-primary hover:text-accent-hover'
+                        }`}
+                        title={media[app.id]?.audioMuted ? 'Réactiver le son' : 'Couper le son'}
+                      >
+                        {media[app.id]?.audioMuted ? <VolumeX size={13} /> : <Volume2 size={13} />}
+                      </span>
+                    )}
                     {app.muted && (
                       <BellOff size={13} className="text-text-muted flex-shrink-0" title="Notifications coupées" />
                     )}

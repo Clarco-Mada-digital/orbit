@@ -24,6 +24,7 @@ const READ_MEDIA_FN = `(() => {
 import { computeStartUrl } from '../lib/urls';
 import { recipes } from '../lib/recipes';
 import { CHROME_UA } from '../lib/userAgent';
+import { appPartition } from '../lib/session';
 
 // Un <webview> par app installée. Reste monté (masqué proprement) quand
 // l'app n'est pas affichée → l'état de la page est conservé, comme dans
@@ -46,6 +47,10 @@ export default function WebView({ app, active, visible, flexLayout }) {
   const clearMedia = useMediaStore((s) => s.clearMedia);
   const notificationsEnabled = useStore((s) => s.settings?.notifications !== false);
   const autoPip = useStore((s) => s.settings?.autoPictureInPicture !== false);
+  // Le profil de l'app partage-t-il ses connexions (mode « navigateur » / SSO) ?
+  const sharedSession = useStore(
+    (s) => !!s.profiles.find((p) => p.id === app.profileId)?.sharedSession
+  );
   const unreadRef = useRef(app.unread || 0);
 
   // Indicateur de chargement : un petit spinner s'affiche quand la page
@@ -299,12 +304,11 @@ export default function WebView({ app, active, visible, flexLayout }) {
       <webview
         ref={ref}
         src={startUrl}
-        // Session UNIQUE par app, indexée par une clé STABLE (sessionKey) :
-        // deux comptes de la même app (ex. deux Gmail) n'ont aucun cookie en
-        // commun, ET déplacer l'app vers un autre profil conserve le compte
-        // et le cache (la partition ne dépend plus du profil). Repli sur
-        // l'ancien schéma pour toute donnée pas encore migrée.
-        partition={`persist:${app.sessionKey || `${app.profileId}:${app.id}`}`}
+        // Partition (« coffre à cookies ») : soit propre à l'app (sessions
+        // isolées, plusieurs comptes possibles), soit partagée avec tout le
+        // profil (mode « navigateur » → SSO Google entre Gmail/YouTube/Drive).
+        // Voir lib/session.js.
+        partition={appPartition(app, sharedSession)}
         useragent={CHROME_UA}
         allowpopups="true"
         className="w-full h-full min-w-0 min-h-0"

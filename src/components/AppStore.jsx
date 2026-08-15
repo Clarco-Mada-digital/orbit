@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { X, Search, Grid, Plus, Trash2, Globe, Wand2, ImageIcon, Upload } from 'lucide-react';
+import { X, Search, Grid, Plus, Trash2, Globe, Wand2, ImageIcon, Upload, RotateCcw } from 'lucide-react';
 import { useStore } from '../stores/useStore';
 import { recipes, categories } from '../lib/recipes';
 import { homeUrlFor } from '../lib/urls';
@@ -58,7 +58,8 @@ export default function AppStore({ onClose }) {
     reader.readAsDataURL(file);
     e.target.value = '';
   };
-  const { apps, activeProfile, activeApp, addApp, deleteApp } = useStore();
+  const { apps, activeProfile, activeApp, addApp, deleteApp, trash, restoreApp, purgeTrashApp, emptyTrash } =
+    useStore();
 
   // Apps installées dans le profil actif (recette OU personnalisée)
   const installedApps = apps.filter((a) => a.profileId === activeProfile);
@@ -111,10 +112,10 @@ export default function AppStore({ onClose }) {
     }
   };
 
-  // Purge les cookies/session du compte désinstallé
+  // Désinstalle → met dans la Corbeille (la session est conservée pour une
+  // éventuelle restauration ; elle n'est purgée qu'en vidant la corbeille).
   const handleDeleteApp = (app) => {
     deleteApp(app.id);
-    window.electronAPI?.clearAppSession?.(app.profileId, app.id);
   };
 
   const handleAddCustom = () => {
@@ -379,6 +380,60 @@ export default function AppStore({ onClose }) {
 
         {/* Apps Grid */}
         <div className="flex-1 overflow-y-auto p-6">
+          {/* Corbeille : apps désinstallées récemment, restaurables avec leur session */}
+          {trash.length > 0 && (
+            <div className="mb-6 card border-border/60">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-2">
+                  <Trash2 size={16} className="text-text-muted" />
+                  <h4 className="font-semibold text-sm">Corbeille</h4>
+                  <span className="text-xs text-text-muted">({trash.length})</span>
+                </div>
+                <button
+                  onClick={() => {
+                    if (confirm('Vider la corbeille ? Les apps et leurs sessions seront supprimées définitivement.'))
+                      emptyTrash();
+                  }}
+                  className="text-xs text-error hover:underline"
+                >
+                  Vider la corbeille
+                </button>
+              </div>
+              <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
+                {trash.map((item) => (
+                  <div
+                    key={item.id}
+                    className="flex items-center gap-2 p-2 rounded-lg border border-border bg-bg-secondary"
+                  >
+                    <div
+                      className="w-8 h-8 rounded-md flex items-center justify-center flex-shrink-0"
+                      style={{ backgroundColor: `${item.color}20` }}
+                    >
+                      <AppIcon app={item} className="w-4 h-4 rounded" />
+                    </div>
+                    <span className="flex-1 min-w-0 text-sm truncate" title={item.name}>
+                      {item.name}
+                    </span>
+                    <button
+                      onClick={() => restoreApp(item.id)}
+                      className="btn-icon w-7 h-7"
+                      title="Restaurer (avec sa session)"
+                    >
+                      <RotateCcw size={14} />
+                    </button>
+                    <button
+                      onClick={() => purgeTrashApp(item.id)}
+                      className="btn-icon w-7 h-7 text-error"
+                      title="Supprimer définitivement"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
             {filteredRecipes.map((recipe) => {
               const instances = getInstances(recipe.id);

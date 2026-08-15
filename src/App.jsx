@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Moon, Play, X, Columns2, Rows2, Plus } from 'lucide-react';
+import { Moon, Play, X, Columns2, Rows2, Plus, Wifi } from 'lucide-react';
 import Sidebar from './components/Sidebar';
 import Topbar from './components/Topbar';
 import QuickSwitcher from './components/QuickSwitcher';
@@ -12,6 +12,7 @@ import { useStore } from './stores/useStore';
 import { useSecurityStore } from './lib/securityStore';
 import { useMediaStore } from './lib/mediaStore';
 import { mediaToggle, mediaPrev, mediaNext, mediaSeek, pickNowPlaying } from './lib/mediaControls';
+import { appViewKey } from './lib/session';
 import { matchShortcut } from './lib/shortcuts';
 
 // Construit l'état à afficher dans le mini-lecteur flottant (ou null)
@@ -52,6 +53,7 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showProfileManager, setShowProfileManager] = useState(false);
   const [showAppStore, setShowAppStore] = useState(false);
+  const [captive, setCaptive] = useState(null); // { detected, url } | null
   const {
     activeProfile,
     activeApp,
@@ -109,6 +111,57 @@ export default function App() {
     });
     return () => {
       if (typeof off === 'function') off();
+    };
+  }, []);
+
+  // Mise en veille automatique des apps inactives. On NE met JAMAIS en veille :
+  // l'app active, celles en écran partagé, ni celles qui jouent un média.
+  useEffect(() => {
+    const mins = settings.autoSleepMinutes || 0;
+    if (!mins) return undefined;
+    const thresholdMs = mins * 60000;
+    const lastSeen = {}; // { appId: timestamp du dernier usage }
+    const tick = () => {
+      const st = useStore.getState();
+      const md = useMediaStore.getState().media;
+      const now = Date.now();
+      const active = st.activeApp;
+      const split = st.splitView?.appIds || [];
+      for (const a of st.apps) {
+        if (a.sleeping) continue;
+        const busy = a.id === active || split.includes(a.id) || md[a.id]?.playing;
+        if (busy) {
+          lastSeen[a.id] = now; // toujours « frais » tant qu'utilisée / sonore
+          continue;
+        }
+        if (lastSeen[a.id] == null) {
+          lastSeen[a.id] = now; // première observation → on démarre le compteur
+          continue;
+        }
+        if (now - lastSeen[a.id] > thresholdMs) st.toggleAppSleep(a.id);
+      }
+    };
+    const id = setInterval(tick, 60000);
+    return () => clearInterval(id);
+  }, [settings.autoSleepMinutes]);
+
+  // Portail captif (Wi-Fi public) : bannière quand une connexion réseau est
+  // requise, + re-vérification au retour en ligne et au focus de la fenêtre.
+  useEffect(() => {
+    const off = window.electronAPI?.onCaptivePortal?.((info) => {
+      setCaptive(info?.detected ? info : null);
+    });
+    return () => {
+      if (typeof off === 'function') off();
+    };
+  }, []);
+  useEffect(() => {
+    const check = () => window.electronAPI?.checkCaptivePortal?.();
+    window.addEventListener('online', check);
+    window.addEventListener('focus', check);
+    return () => {
+      window.removeEventListener('online', check);
+      window.removeEventListener('focus', check);
     };
   }, []);
 
@@ -441,6 +494,25 @@ export default function App() {
       {/* Barre unifiée : logo, navigation, URL, notifications + contrôles fenêtre */}
       <Topbar onOpenQuickSwitcher={() => setShowQuickSwitcher(true)} />
 
+      {/* Portail captif : ce réseau Wi-Fi exige une connexion */}
+      {captive?.detected && (
+        <div className="flex items-center gap-3 px-4 py-2 bg-amber-500/15 text-amber-600 dark:text-amber-400 border-b border-amber-500/30 text-sm flex-shrink-0">
+          <Wifi size={16} className="flex-shrink-0" />
+          <span className="flex-1 min-w-0">
+            Ce réseau Wi-Fi demande une connexion pour accéder à Internet.
+          </span>
+          <button
+            onClick={() => window.electronAPI?.openCaptivePortal?.()}
+            className="btn btn-primary btn-sm whitespace-nowrap"
+          >
+            Se connecter
+          </button>
+          <button onClick={() => setCaptive(null)} className="btn-icon w-7 h-7" title="Ignorer">
+            <X size={14} />
+          </button>
+        </div>
+      )}
+
       {/* Layout principal */}
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar (fixed) */}
@@ -481,10 +553,13 @@ export default function App() {
                   const inSplit = inActive && activeSplit && activeSplit.appIds.includes(a.id);
                   const idx = inSplit ? activeSplit.appIds.indexOf(a.id) : -1;
                   const gridMode = activeSplit && activeSplit.appIds.length >= 3;
+                  // Clé qui change avec le mode de session (isolée ↔ partagée)
+                  // pour remonter le webview sur la bonne partition.
+                  const vkey = appViewKey(a, profiles.find((p) => p.id === a.profileId)?.sharedSession);
                   if (!inSplit) {
                     return (
                       <WebView
-                        key={a.id}
+                        key={vkey}
                         app={a}
                         active={inActive && a.id === activeApp}
                         visible={inActive && a.id === activeApp}
@@ -492,7 +567,7 @@ export default function App() {
                     );
                   }
                   return (
-                    <Fragment key={a.id}>
+                    <Fragment key={vkey}>
                       {/* Séparateur ajustable (2 apps seulement) */}
                       {!gridMode && idx > 0 && (
                         <div

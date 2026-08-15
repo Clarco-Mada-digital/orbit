@@ -56,6 +56,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   // Traduction : configuration (langue cible + moteur Google/LibreTranslate)
   setTranslateConfig: (cfg) => ipcRenderer.invoke('translate:setConfig', cfg),
+  // Portail captif (Wi-Fi public)
+  checkCaptivePortal: () => ipcRenderer.invoke('captive:check'),
+  openCaptivePortal: () => ipcRenderer.invoke('captive:open'),
+  onCaptivePortal: (callback) => {
+    const listener = (_event, info) => callback(info);
+    ipcRenderer.on('orbit:captive', listener);
+    return () => ipcRenderer.removeListener('orbit:captive', listener);
+  },
+  // Sauvegarde / restauration de la configuration
+  backupExport: (payload) => ipcRenderer.invoke('backup:export', payload),
+  backupImport: () => ipcRenderer.invoke('backup:import'),
+  backupDecrypt: (payload) => ipcRenderer.invoke('backup:decrypt', payload),
   // Touches média globales du clavier (⏯ ⏭ ⏮)
   setMediaKeysEnabled: (on) => ipcRenderer.invoke('mediakeys:setEnabled', on),
   onMediaKey: (callback) => {

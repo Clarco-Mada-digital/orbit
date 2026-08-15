@@ -27,3 +27,5 @@ coverage
 *.mjs
 *.cjs
 !vite.config.mjs
+# …mais les preloads Electron (.cjs) DOIVENT être suivis
+!electron/*.cjs

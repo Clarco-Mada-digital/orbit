@@ -129,9 +129,31 @@ export default function ProfileManager({ onClose }) {
                   </div>
                   <div className="flex-1">
                     <h3 className="font-semibold">{profile.name}</h3>
-                    <p className="text-sm text-text-muted">
+                    <p className="text-sm text-text-muted mb-1.5">
                       {profile.id === activeProfile && '✓ Actif'}
                     </p>
+                    <label className="flex items-center gap-2 cursor-pointer text-xs text-text-secondary">
+                      <input
+                        type="checkbox"
+                        checked={!!profile.sharedSession}
+                        onChange={() => {
+                          const enabling = !profile.sharedSession;
+                          if (
+                            enabling &&
+                            !confirm(
+                              'Partager les connexions dans « ' +
+                                profile.name +
+                                ' » ?\n\nLes apps de ce profil partageront un seul compte par service, comme un navigateur : connectez-vous à Google une fois → Gmail, YouTube, Drive suivent (fini la 2FA à répéter).\n\nÀ savoir : les apps vont se recharger et il faudra vous reconnecter une fois. Ce mode empêche d’avoir 2 comptes du même service dans ce profil.'
+                            )
+                          ) {
+                            return;
+                          }
+                          updateProfile(profile.id, { sharedSession: enabling });
+                        }}
+                        className="w-9 h-5 bg-bg-hover rounded-full relative cursor-pointer appearance-none checked:bg-accent-primary transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:w-4 after:h-4 after:bg-white after:rounded-full after:transition-transform checked:after:translate-x-4"
+                      />
+                      <span>Partager les connexions (SSO navigateur)</span>
+                    </label>
                   </div>
                   <div className="flex gap-2">
                     {profile.id !== activeProfile && (

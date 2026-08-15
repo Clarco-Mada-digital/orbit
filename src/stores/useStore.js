@@ -31,6 +31,8 @@ export const defaultSettings = {
   // Touches média globales du clavier (⏯ ⏭ ⏮) — désactivé par défaut pour ne
   // pas voler les touches à un éventuel lecteur natif
   globalMediaKeys: false,
+  // Mise en veille automatique des apps inactives (minutes ; 0 = désactivée)
+  autoSleepMinutes: 0,
   // Bloqueur de pub / traceurs natif (activé par défaut)
   adblock: true,
   // Traduction (menu contextuel « Traduire la sélection »)
@@ -95,6 +97,14 @@ export const useStore = create(
 
       // Extensions Chrome installées [{ id, name, version, path, managed, enabled }]
       extensions: [],
+
+      // Corbeille : apps désinstallées récemment (restaurables avec leur session)
+      trash: [],
+
+      // Conteneurs (type Firefox) : coffres à cookies nommés. Les apps d'un
+      // même conteneur partagent leurs connexions (SSO), même dans un profil
+      // « isolé » → permet plusieurs comptes d'un même service. [{ id, name, color }]
+      containers: [],
 
       // Sidebar réduite (persisté : on la retrouve au prochain lancement)
       sidebarCollapsed: false,
@@ -166,11 +176,62 @@ export const useStore = create(
           apps: state.apps.map((a) => (a.id === appId ? { ...a, ...updates } : a)),
         })),
 
+      // Désinstalle une app → la place dans la CORBEILLE (sa session/cookies
+      // sont conservés tant qu'elle y est → restauration possible telle quelle).
       deleteApp: (appId) =>
-        set((state) => ({
-          apps: state.apps.filter((a) => a.id !== appId),
-          activeApp: state.activeApp === appId ? null : state.activeApp,
-        })),
+        set((state) => {
+          const app = state.apps.find((a) => a.id === appId);
+          return {
+            apps: state.apps.filter((a) => a.id !== appId),
+            activeApp: state.activeApp === appId ? null : state.activeApp,
+            trash: app
+              ? [{ ...app, deletedAt: Date.now() }, ...state.trash].slice(0, 30)
+              : state.trash,
+          };
+        }),
+
+      // Restaure une app de la corbeille (dans son profil, ou le 1er s'il n'existe plus)
+      restoreApp: (appId) =>
+        set((state) => {
+          const item = state.trash.find((a) => a.id === appId);
+          if (!item) return state;
+          const profileId = state.profiles.some((p) => p.id === item.profileId)
+            ? item.profileId
+            : state.profiles[0]?.id;
+          const { deletedAt, ...app } = item; // eslint-disable-line no-unused-vars
+          const order = state.apps.filter((a) => a.profileId === profileId).length;
+          return {
+            apps: [...state.apps, { ...app, profileId, order }],
+            trash: state.trash.filter((a) => a.id !== appId),
+          };
+        }),
+
+      // Supprime DÉFINITIVEMENT une app de la corbeille (+ purge sa session)
+      purgeTrashApp: (appId) =>
+        set((state) => {
+          const item = state.trash.find((a) => a.id === appId);
+          if (item) {
+            window.electronAPI?.clearAppSession?.({
+              sessionKey: item.sessionKey || `${item.profileId}:${item.id}`,
+              profileId: item.profileId,
+              appId: item.id,
+            });
+          }
+          return { trash: state.trash.filter((a) => a.id !== appId) };
+        }),
+
+      // Vide toute la corbeille (+ purge les sessions)
+      emptyTrash: () =>
+        set((state) => {
+          state.trash.forEach((item) =>
+            window.electronAPI?.clearAppSession?.({
+              sessionKey: item.sessionKey || `${item.profileId}:${item.id}`,
+              profileId: item.profileId,
+              appId: item.id,
+            })
+          );
+          return { trash: [] };
+        }),
 
       // Déplace une app vers un autre profil SANS perdre son compte ni son
       // cache : la partition Electron est indexée par `sessionKey` (stable),
@@ -203,6 +264,42 @@ export const useStore = create(
       markAllRead: () =>
         set((state) => ({
           apps: state.apps.map((a) => ({ ...a, unread: 0 })),
+        })),
+
+      // Conteneurs multi-comptes
+      addContainer: (name, color) =>
+        set((state) => ({
+          containers: [
+            ...state.containers,
+            { id: `ctn-${Date.now()}`, name: name || 'Conteneur', color: color || '#f59e0b' },
+          ],
+        })),
+      // Crée un conteneur ET l'assigne à l'app (atomique — pratique depuis le menu)
+      createContainerForApp: (appId, name, color) =>
+        set((state) => {
+          const id = `ctn-${Date.now()}`;
+          return {
+            containers: [
+              ...state.containers,
+              { id, name: name || 'Conteneur', color: color || '#f59e0b' },
+            ],
+            apps: state.apps.map((a) => (a.id === appId ? { ...a, containerId: id } : a)),
+          };
+        }),
+      setAppContainer: (appId, containerId) =>
+        set((state) => ({
+          apps: state.apps.map((a) =>
+            a.id === appId ? { ...a, containerId: containerId || undefined } : a
+          ),
+        })),
+      renameContainer: (id, name) =>
+        set((state) => ({
+          containers: state.containers.map((c) => (c.id === id ? { ...c, name } : c)),
+        })),
+      deleteContainer: (id) =>
+        set((state) => ({
+          containers: state.containers.filter((c) => c.id !== id),
+          apps: state.apps.map((a) => (a.containerId === id ? { ...a, containerId: undefined } : a)),
         })),
 
       // Extensions Chrome

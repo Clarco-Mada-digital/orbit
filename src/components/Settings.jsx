@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { X, User, Palette, Bell, Zap, Info, Keyboard, Puzzle, Check, KeyRound, ShieldCheck, Ban } from 'lucide-react';
+import { X, User, Palette, Bell, Zap, Info, Keyboard, Puzzle, Check, KeyRound, ShieldCheck, Ban, Archive } from 'lucide-react';
 import { useStore } from '../stores/useStore';
 import ProfileManager from './ProfileManager';
 import Extensions from './Extensions';
 import KeepassSettings from './KeepassSettings';
 import SecuritySettings from './SecuritySettings';
+import BackupSettings from './BackupSettings';
 
 // Polices proposées, groupées par style. Chaque entrée est rendue
 // dans sa propre police → aperçu en direct avant de choisir.
@@ -64,6 +65,7 @@ export default function Settings({ onClose }) {
     { id: 'keepass', name: 'KeePassXC', icon: KeyRound },
     { id: 'security', name: 'Sécurité', icon: ShieldCheck },
     { id: 'privacy', name: 'Confidentialité', icon: Ban },
+    { id: 'backup', name: 'Sauvegarde', icon: Archive },
     { id: 'notifications', name: 'Notifications', icon: Bell },
     { id: 'about', name: 'À propos', icon: Info },
   ];
@@ -88,7 +90,7 @@ export default function Settings({ onClose }) {
             <div className="p-6 border-b border-border">
               <h2 className="text-xl font-bold">Paramètres</h2>
             </div>
-            <nav className="flex-1 p-3">
+            <nav className="flex-1 p-3 overflow-y-auto">
               {tabs.map((tab) => {
                 const Icon = tab.icon;
                 return (
@@ -178,6 +180,26 @@ export default function Settings({ onClose }) {
                         className="w-12 h-6 bg-bg-hover rounded-full relative cursor-pointer appearance-none checked:bg-accent-primary transition-colors after:content-[''] after:absolute after:top-1 after:left-1 after:w-4 after:h-4 after:bg-white after:rounded-full after:transition-transform checked:after:translate-x-6"
                       />
                     </label>
+                  </div>
+
+                  <div className="card">
+                    <h4 className="font-semibold mb-2">Ressources</h4>
+                    <p className="text-sm text-text-muted mb-3">
+                      Met en veille les apps inactives pour libérer la mémoire. L'app active,
+                      l'écran partagé et les apps qui jouent un son ne sont jamais mises en veille.
+                    </p>
+                    <label className="block text-sm font-medium mb-1.5">Mise en veille automatique</label>
+                    <select
+                      value={settings.autoSleepMinutes || 0}
+                      onChange={(e) => updateSettings({ autoSleepMinutes: parseInt(e.target.value, 10) })}
+                      className="input max-w-xs"
+                    >
+                      <option value={0}>Désactivée</option>
+                      <option value={15}>Après 15 minutes</option>
+                      <option value={30}>Après 30 minutes</option>
+                      <option value={60}>Après 1 heure</option>
+                      <option value={120}>Après 2 heures</option>
+                    </select>
                   </div>
                 </div>
               )}
@@ -439,6 +461,8 @@ export default function Settings({ onClose }) {
               {activeTab === 'keepass' && <KeepassSettings />}
 
               {activeTab === 'security' && <SecuritySettings />}
+
+              {activeTab === 'backup' && <BackupSettings />}
 
               {activeTab === 'privacy' && (
                 <div className="space-y-6">

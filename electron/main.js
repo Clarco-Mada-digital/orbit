@@ -1,6 +1,7 @@
 import { app, BrowserWindow, session, ipcMain, shell, Notification, dialog, net, screen, Menu, clipboard, globalShortcut } from 'electron';
 import path from 'path';
 import fs from 'fs';
+import crypto from 'node:crypto';
 import { unpackCrx } from './crx.js';
 import { init as initKeepass, setEnabled as keepassSetEnabled, getLogins as keepassGetLogins, associate as keepassAssociate, checkStatus as keepassCheckStatus } from './keepass.js';
 import * as security from './security.js';
@@ -809,6 +810,78 @@ function openInAppPopup(guestContents, url) {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Portail captif (Wi-Fi public : hôtel, aéroport, MikroTik…)
+// ---------------------------------------------------------------------------
+// On teste une URL « témoin » qui DOIT répondre 204 (vide). Si le réseau la
+// détourne (redirection / page HTML), c'est qu'un portail exige une connexion
+// → on ouvre sa page de login dans une petite fenêtre, sans quitter Orbit.
+let captiveWindow = null;
+let captiveWatchTimer = null;
+
+async function detectCaptivePortal() {
+  const urls = [
+    'http://www.gstatic.com/generate_204',
+    'http://connectivitycheck.gstatic.com/generate_204',
+  ];
+  for (const url of urls) {
+    try {
+      const res = await net.fetch(url, { redirect: 'follow', cache: 'no-store' });
+      if (res.status === 204) return { portal: false };
+      // Réponse inattendue (redirection suivie / page HTML) → portail captif.
+      return { portal: true, url: res.url || url };
+    } catch {
+      // Erreur réseau → soit hors-ligne, soit URL bloquée : on tente la suivante
+    }
+  }
+  return { portal: false, offline: true };
+}
+
+function watchCaptiveResolved() {
+  clearInterval(captiveWatchTimer);
+  captiveWatchTimer = setInterval(async () => {
+    const r = await detectCaptivePortal();
+    if (!r.portal) {
+      clearInterval(captiveWatchTimer);
+      captiveWatchTimer = null;
+      if (captiveWindow && !captiveWindow.isDestroyed()) captiveWindow.close();
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('orbit:captive', { detected: false });
+      }
+    }
+  }, 4000);
+}
+
+function openCaptivePortalWindow(url) {
+  if (captiveWindow && !captiveWindow.isDestroyed()) {
+    captiveWindow.show();
+    captiveWindow.focus();
+    return;
+  }
+  captiveWindow = new BrowserWindow({
+    width: 480,
+    height: 660,
+    parent: mainWindow || undefined,
+    title: 'Connexion au réseau Wi-Fi',
+    autoHideMenuBar: true,
+    backgroundColor: '#ffffff',
+    webPreferences: {
+      // Session dédiée non persistée : le portail ne pollue pas les sessions
+      // des apps, et ses cookies éphémères disparaissent ensuite.
+      partition: 'captive-portal',
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  captiveWindow.loadURL(url).catch(() => {});
+  captiveWindow.on('closed', () => {
+    captiveWindow = null;
+  });
+  // Referme automatiquement dès que la connexion passe (portail validé).
+  watchCaptiveResolved();
+}
+
 function createWindow() {
   // Restaure la taille/position de la dernière session (si toujours visible)
   const saved = loadWindowState();
@@ -858,9 +931,11 @@ function createWindow() {
       const maximized = mainWindow.isMaximized();
       saveWindowState({ ...(maximized ? mainWindow.getNormalBounds() : mainWindow.getBounds()), maximized });
     }
-    // Ferme le mini-lecteur flottant, sinon l'app ne quitte pas (une fenêtre
+    // Ferme les fenêtres secondaires, sinon l'app ne quitte pas (une fenêtre
     // resterait ouverte) sur Windows/Linux.
     if (miniPlayerWindow && !miniPlayerWindow.isDestroyed()) miniPlayerWindow.close();
+    if (captiveWindow && !captiveWindow.isDestroyed()) captiveWindow.close();
+    clearInterval(captiveWatchTimer);
   });
 
   // Rétablit le mode maximisé si la dernière session l'était
@@ -1211,6 +1286,110 @@ ipcMain.handle('security:removeProfileLock', (_e, { id, pin } = {}) =>
 ipcMain.handle('security:unlockProfile', (_e, { id, pin } = {}) => security.unlockProfile(id, pin));
 ipcMain.handle('security:lockProfile', (_e, id) => security.lockProfile(id));
 ipcMain.handle('security:dropProfile', (_e, id) => security.dropProfile(id));
+
+// ---------------------------------------------------------------------------
+// IPC — Portail captif
+// ---------------------------------------------------------------------------
+// Vérifie la connectivité ; si un portail est détecté, ouvre sa page et
+// prévient l'interface (bannière). Appelé au démarrage, au retour en ligne et
+// au focus de la fenêtre.
+ipcMain.handle('captive:check', async () => {
+  const r = await detectCaptivePortal();
+  if (r.portal) {
+    openCaptivePortalWindow(r.url);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('orbit:captive', { detected: true, url: r.url });
+    }
+  }
+  return r;
+});
+
+// Rouvre manuellement la page du portail (bouton « Se connecter » de la bannière)
+ipcMain.handle('captive:open', async () => {
+  const r = await detectCaptivePortal();
+  if (r.portal) openCaptivePortalWindow(r.url);
+  else if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('orbit:captive', { detected: false });
+  }
+  return r;
+});
+
+// ---------------------------------------------------------------------------
+// IPC — Sauvegarde / restauration de la configuration
+// ---------------------------------------------------------------------------
+// Export chiffré optionnel : AES-256-GCM avec clé dérivée du mot de passe
+// (scrypt + sel aléatoire) → portable entre machines (contrairement à
+// safeStorage qui est lié au trousseau local).
+function encryptBackup(jsonStr, password) {
+  const salt = crypto.randomBytes(16);
+  const iv = crypto.randomBytes(12);
+  const key = crypto.scryptSync(String(password), salt, 32);
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  const enc = Buffer.concat([cipher.update(jsonStr, 'utf8'), cipher.final()]);
+  return JSON.stringify({
+    orbit: 'enc1',
+    salt: salt.toString('base64'),
+    iv: iv.toString('base64'),
+    tag: cipher.getAuthTag().toString('base64'),
+    data: enc.toString('base64'),
+  });
+}
+function decryptBackup(container, password) {
+  const key = crypto.scryptSync(String(password), Buffer.from(container.salt, 'base64'), 32);
+  const decipher = crypto.createDecipheriv('aes-256-gcm', key, Buffer.from(container.iv, 'base64'));
+  decipher.setAuthTag(Buffer.from(container.tag, 'base64'));
+  const dec = Buffer.concat([
+    decipher.update(Buffer.from(container.data, 'base64')),
+    decipher.final(),
+  ]);
+  return JSON.parse(dec.toString('utf8'));
+}
+
+ipcMain.handle('backup:export', async (_e, { data, password } = {}) => {
+  try {
+    const res = await dialog.showSaveDialog(mainWindow, {
+      title: 'Exporter la configuration Orbit',
+      defaultPath: `orbit-backup-${new Date().toISOString().slice(0, 10)}.orbit`,
+      filters: [{ name: 'Sauvegarde Orbit', extensions: ['orbit', 'json'] }],
+    });
+    if (res.canceled || !res.filePath) return { success: false, canceled: true };
+    const json = JSON.stringify(data);
+    fs.writeFileSync(res.filePath, password ? encryptBackup(json, password) : json);
+    return { success: true, path: res.filePath, encrypted: Boolean(password) };
+  } catch (err) {
+    return { success: false, error: String(err.message || err) };
+  }
+});
+
+ipcMain.handle('backup:import', async () => {
+  try {
+    const res = await dialog.showOpenDialog(mainWindow, {
+      title: 'Importer une configuration Orbit',
+      properties: ['openFile'],
+      filters: [{ name: 'Sauvegarde Orbit', extensions: ['orbit', 'json'] }],
+    });
+    if (res.canceled || !res.filePaths[0]) return { success: false, canceled: true };
+    const raw = fs.readFileSync(res.filePaths[0], 'utf8');
+    let parsed;
+    try {
+      parsed = JSON.parse(raw);
+    } catch {
+      return { success: false, error: 'Fichier illisible ou corrompu' };
+    }
+    if (parsed && parsed.orbit === 'enc1') return { success: true, encrypted: true, blob: parsed };
+    return { success: true, encrypted: false, data: parsed };
+  } catch (err) {
+    return { success: false, error: String(err.message || err) };
+  }
+});
+
+ipcMain.handle('backup:decrypt', (_e, { blob, password } = {}) => {
+  try {
+    return { success: true, data: decryptBackup(blob, password) };
+  } catch {
+    return { success: false, error: 'Mot de passe incorrect ou fichier corrompu' };
+  }
+});
 
 // ---------------------------------------------------------------------------
 // IPC — Téléchargements
@@ -1580,6 +1759,17 @@ app.whenReady().then(() => {
   for (const p of EXT_PARTITIONS) {
     ensureExtensionsForPartition(p);
   }
+
+  // Détection d'un portail captif au démarrage (délai : laisser le Wi-Fi s'établir)
+  setTimeout(async () => {
+    const r = await detectCaptivePortal();
+    if (r.portal) {
+      openCaptivePortalWindow(r.url);
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('orbit:captive', { detected: true, url: r.url });
+      }
+    }
+  }, 3500);
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

@@ -12,6 +12,8 @@ import {
   ChevronRight,
   Bell,
   BellOff,
+  Layers,
+  Check as CheckIcon,
 } from 'lucide-react';
 import { useStore } from '../stores/useStore';
 import EditAppModal from './EditAppModal';
@@ -21,11 +23,24 @@ import EditAppModal from './EditAppModal';
 // NB : window.prompt n'existe pas dans Electron → le renommage se fait
 // via un petit formulaire inline affiché à la place du menu.
 export default function AppContextMenu({ appId, x, y, onClose }) {
-  const { apps, profiles, activeApp, setActiveApp, toggleAppSleep, deleteApp, updateApp, moveAppToProfile } =
-    useStore();
+  const {
+    apps,
+    profiles,
+    activeApp,
+    setActiveApp,
+    toggleAppSleep,
+    deleteApp,
+    updateApp,
+    moveAppToProfile,
+    containers,
+    setAppContainer,
+    createContainerForApp,
+  } = useStore();
   const [renaming, setRenaming] = useState(false);
   const [editing, setEditing] = useState(false);
   const [moving, setMoving] = useState(false);
+  const [containing, setContaining] = useState(false);
+  const [newCtn, setNewCtn] = useState('');
   const [name, setName] = useState('');
   const app = apps.find((a) => a.id === appId);
   const menuRef = useRef(null);
@@ -52,6 +67,8 @@ export default function AppContextMenu({ appId, x, y, onClose }) {
           setName(app?.name || '');
         } else if (moving) {
           setMoving(false);
+        } else if (containing) {
+          setContaining(false);
         } else {
           onClose();
         }
@@ -72,7 +89,7 @@ export default function AppContextMenu({ appId, x, y, onClose }) {
       window.removeEventListener('resize', close);
       document.removeEventListener('scroll', onScroll, true);
     };
-  }, [onClose, renaming, editing, moving, app?.name]);
+  }, [onClose, renaming, editing, moving, containing, app?.name]);
 
   if (!app) return null;
 
@@ -88,7 +105,13 @@ export default function AppContextMenu({ appId, x, y, onClose }) {
 
   // Garder le menu entièrement visible dans la fenêtre (même sidebar réduite)
   const width = renaming ? 256 : 240;
-  const height = renaming ? 150 : moving ? 130 + otherProfiles.length * 44 : 380;
+  const height = renaming
+    ? 150
+    : moving
+      ? 130 + otherProfiles.length * 44
+      : containing
+        ? 180 + containers.length * 40
+        : 420;
   const style = {
     width,
     left: Math.max(8, Math.min(x, window.innerWidth - width - 8)),
@@ -111,23 +134,29 @@ export default function AppContextMenu({ appId, x, y, onClose }) {
   const handleUninstall = () => {
     if (
       confirm(
-        `Désinstaller « ${app.name} » ?\nL'application sera retirée de votre profil.`
+        `Désinstaller « ${app.name} » ?\nL'application ira dans la corbeille (Boutique → Corbeille) et pourra être restaurée avec sa session.`
       )
     ) {
+      // Déplacé vers la corbeille — la session est conservée tant qu'on ne
+      // vide pas la corbeille (restauration possible telle quelle).
       deleteApp(appId);
-      // Purge cookies/session du compte via la clé de session STABLE
-      // (chaque app a sa propre partition).
-      window.electronAPI?.clearAppSession?.({
-        sessionKey: app.sessionKey || `${app.profileId}:${appId}`,
-        profileId: app.profileId,
-        appId,
-      });
     }
     onClose();
   };
 
   const handleMove = (targetProfileId) => {
     moveAppToProfile(appId, targetProfileId);
+    onClose();
+  };
+
+  const assignContainer = (containerId) => {
+    setAppContainer(appId, containerId);
+    onClose();
+  };
+  const createContainer = () => {
+    const n = newCtn.trim();
+    if (!n) return;
+    createContainerForApp(appId, n);
     onClose();
   };
 
@@ -198,6 +227,56 @@ export default function AppContextMenu({ appId, x, y, onClose }) {
           >
             <X size={15} /> Retour
           </button>
+        </div>
+      ) : containing ? (
+        <div className="py-0.5">
+          <div className="px-3 py-1.5 text-xs text-text-muted flex items-center gap-2 border-b border-border mb-0.5">
+            <Layers size={13} className="flex-shrink-0" />
+            <span className="truncate">Conteneur de « {app.name} »</span>
+          </div>
+          <button
+            onClick={() => assignContainer(null)}
+            className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-bg-hover transition-colors"
+          >
+            <span className="w-3 h-3 rounded-full border border-border flex-shrink-0" />
+            <span className="flex-1 text-left">Aucun</span>
+            {!app.containerId && <CheckIcon size={14} className="text-accent-primary" />}
+          </button>
+          {containers.map((c) => (
+            <button
+              key={c.id}
+              onClick={() => assignContainer(c.id)}
+              className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-bg-hover transition-colors"
+            >
+              <span
+                className="w-3 h-3 rounded-full flex-shrink-0"
+                style={{ backgroundColor: c.color }}
+              />
+              <span className="flex-1 text-left truncate">{c.name}</span>
+              {app.containerId === c.id && <CheckIcon size={14} className="text-accent-primary" />}
+            </button>
+          ))}
+          <div className="my-1 border-t border-border"></div>
+          <div className="px-3 py-2">
+            <input
+              type="text"
+              value={newCtn}
+              onChange={(e) => setNewCtn(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') createContainer();
+              }}
+              placeholder="Nouveau conteneur…"
+              className="input text-sm"
+            />
+            <div className="flex gap-2 mt-2">
+              <button onClick={createContainer} className="flex-1 btn btn-primary btn-sm">
+                <Check size={14} /> Créer &amp; assigner
+              </button>
+              <button onClick={() => setContaining(false)} className="btn btn-secondary btn-sm">
+                <X size={14} />
+              </button>
+            </div>
+          </div>
         </div>
       ) : (
         <>
@@ -273,6 +352,13 @@ export default function AppContextMenu({ appId, x, y, onClose }) {
               <ChevronRight size={14} className="ml-auto text-text-muted" />
             </button>
           )}
+          <button
+            onClick={() => setContaining(true)}
+            className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-bg-hover transition-colors"
+          >
+            <Layers size={15} /> Conteneur (multi-comptes)
+            <ChevronRight size={14} className="ml-auto text-text-muted" />
+          </button>
           <div className="my-1 border-t border-border"></div>
           <button
             onClick={handleUninstall}
