@@ -170,6 +170,18 @@ export default function App() {
     window.electronAPI?.setMediaKeysEnabled?.(settings.globalMediaKeys === true);
   }, [settings.globalMediaKeys]);
 
+  // Fermer-vers-le-tray
+  useEffect(() => {
+    window.electronAPI?.setCloseToTray?.(settings.closeToTray !== false);
+  }, [settings.closeToTray]);
+
+  // Raccourci global d'invocation (afficher/masquer Orbit)
+  useEffect(() => {
+    window.electronAPI?.setSummonHotkey?.(
+      settings.globalHotkeyEnabled ? settings.globalHotkey || 'CommandOrControl+Alt+O' : null
+    );
+  }, [settings.globalHotkeyEnabled, settings.globalHotkey]);
+
   useEffect(() => {
     const off = window.electronAPI?.onMediaKey?.((action) => {
       const pick = pickNowPlaying(useMediaStore.getState().media, useStore.getState().activeApp);
@@ -385,8 +397,14 @@ export default function App() {
     };
     applyTheme();
 
-    // Couleur d'accent → variables CSS (accent-primary, hover, light)
-    const accent = hexToRgbTriplet(settings.accentColor || '#6366f1');
+    // Couleur d'accent → variables CSS (accent-primary, hover, light).
+    // Option « accent par profil » : suit la couleur du profil actif.
+    const activeProfileObj = profiles.find((p) => p.id === activeProfile);
+    const accentHex =
+      settings.accentPerProfile && activeProfileObj?.color
+        ? activeProfileObj.color
+        : settings.accentColor || '#6366f1';
+    const accent = hexToRgbTriplet(accentHex);
     root.style.setProperty('--accent-primary', accent);
     root.style.setProperty('--accent-hover', mixWithWhite(accent, 0.15));
     root.style.setProperty('--accent-light', mixWithWhite(accent, 0.4));
@@ -409,7 +427,7 @@ export default function App() {
       mq.addEventListener('change', onChange);
       return () => mq.removeEventListener('change', onChange);
     }
-  }, [settings]);
+  }, [settings, activeProfile, profiles]);
 
   // Exécute une action de raccourci (nom centralisé dans lib/shortcuts.js)
   const runShortcut = useCallback((action) => {

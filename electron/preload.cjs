@@ -9,6 +9,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   minimizeWindow: () => ipcRenderer.invoke('window:minimize'),
   maximizeWindow: () => ipcRenderer.invoke('window:maximize'),
   closeWindow: () => ipcRenderer.invoke('window:close'),
+  // Barre système (tray) + raccourci global d'invocation
+  setCloseToTray: (enabled) => ipcRenderer.invoke('tray:setCloseToTray', enabled),
+  setSummonHotkey: (accelerator) => ipcRenderer.invoke('tray:setSummonHotkey', accelerator),
   // Notifications système + badge de la fenêtre
   showNotification: (payload) => ipcRenderer.invoke('notifications:show', payload),
   setBadgeCount: (count) => ipcRenderer.invoke('notifications:setBadge', count),

@@ -25,6 +25,7 @@ import { computeStartUrl } from '../lib/urls';
 import { recipes } from '../lib/recipes';
 import { CHROME_UA } from '../lib/userAgent';
 import { appPartition } from '../lib/session';
+import { notificationsSilenced } from '../lib/dnd';
 
 // Un <webview> par app installée. Reste monté (masqué proprement) quand
 // l'app n'est pas affichée → l'état de la page est conservé, comme dans
@@ -47,6 +48,11 @@ export default function WebView({ app, active, visible, flexLayout }) {
   const clearMedia = useMediaStore((s) => s.clearMedia);
   const notificationsEnabled = useStore((s) => s.settings?.notifications !== false);
   const notifSound = useStore((s) => s.settings?.notificationSound || '');
+  // Réglages « Ne pas déranger » (évalués à l'instant de la notif)
+  const dnd = useStore((s) => s.settings?.dnd);
+  const quietHoursEnabled = useStore((s) => s.settings?.quietHoursEnabled);
+  const quietStart = useStore((s) => s.settings?.quietStart);
+  const quietEnd = useStore((s) => s.settings?.quietEnd);
   const autoPip = useStore((s) => s.settings?.autoPictureInPicture !== false);
   // Le profil de l'app partage-t-il ses connexions (mode « navigateur » / SSO) ?
   const sharedSession = useStore(
@@ -105,6 +111,7 @@ export default function WebView({ app, active, visible, flexLayout }) {
         !active &&
         notificationsEnabled &&
         !app.muted &&
+        !notificationsSilenced({ dnd, quietHoursEnabled, quietStart, quietEnd }) &&
         window.electronAPI?.showNotification
       ) {
         unreadRef.current = unread; // on monte le plafond
@@ -250,7 +257,7 @@ export default function WebView({ app, active, visible, flexLayout }) {
       wv.removeEventListener('did-start-loading', startLoading);
       wv.removeEventListener('did-stop-loading', stopLoading);
     };
-  }, [app.id, app.name, app.zoom, app.sleeping, app.muted, active, notificationsEnabled, notifSound, updateApp, setAppLoading, setMedia, clearMedia]);
+  }, [app.id, app.name, app.zoom, app.sleeping, app.muted, active, notificationsEnabled, notifSound, dnd, quietHoursEnabled, quietStart, quietEnd, updateApp, setAppLoading, setMedia, clearMedia]);
 
   // Quand on ouvre l'app (elle devient active), on la considère LUE : on réarme
   // le plafond de notifications → un prochain message re-notifiera.

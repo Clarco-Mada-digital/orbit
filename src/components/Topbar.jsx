@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, ArrowRight, RotateCw, Star, Bell, Search, CheckCheck, Puzzle, Settings2, Power, ZoomIn, ZoomOut, Columns2, Rows2, Unplug } from 'lucide-react';
+import { ArrowLeft, ArrowRight, RotateCw, Star, Bell, Search, CheckCheck, Puzzle, Settings2, Power, ZoomIn, ZoomOut, Columns2, Rows2, Unplug, Moon } from 'lucide-react';
 import { useStore } from '../stores/useStore';
 import { useLoadingStore } from '../lib/loadingStore';
 import { getWebview } from '../lib/webviewRegistry';
@@ -62,6 +62,8 @@ export default function Topbar({ onOpenQuickSwitcher }) {
     setActiveApp,
     setActiveProfile,
     markAllRead,
+    settings,
+    updateSettings,
     adjustAppZoom,
     resetAppZoom,
     splitView,
@@ -427,17 +429,29 @@ export default function Topbar({ onOpenQuickSwitcher }) {
             {/* Panneau de notifications */}
             {showNotifPanel && (
               <div className="absolute right-0 top-full mt-2 w-80 bg-bg-elevated border border-border rounded-xl shadow-2xl overflow-hidden z-50 animate-scale-in">
-                <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+                <div className="px-4 py-3 border-b border-border flex items-center justify-between gap-2">
                   <span className="font-semibold text-sm">Notifications</span>
-                  {unreadApps.length > 0 && (
+                  <div className="flex items-center gap-3">
                     <button
-                      onClick={markAllRead}
-                      className="text-xs text-accent-primary hover:text-accent-hover flex items-center gap-1"
+                      onClick={() => updateSettings({ dnd: !settings.dnd })}
+                      className={`text-xs flex items-center gap-1 ${
+                        settings.dnd ? 'text-accent-primary' : 'text-text-muted hover:text-text-primary'
+                      }`}
+                      title="Ne pas déranger"
                     >
-                      <CheckCheck size={13} />
-                      Tout marquer comme lu
+                      <Moon size={13} />
+                      {settings.dnd ? 'DND activé' : 'Ne pas déranger'}
                     </button>
-                  )}
+                    {unreadApps.length > 0 && (
+                      <button
+                        onClick={markAllRead}
+                        className="text-xs text-accent-primary hover:text-accent-hover flex items-center gap-1"
+                      >
+                        <CheckCheck size={13} />
+                        Tout lire
+                      </button>
+                    )}
+                  </div>
                 </div>
 
                 <div className="max-h-72 overflow-y-auto">

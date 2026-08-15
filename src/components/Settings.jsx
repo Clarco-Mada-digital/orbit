@@ -135,6 +135,47 @@ export default function Settings({ onClose }) {
                   </div>
 
                   <div className="card">
+                    <h4 className="font-semibold mb-4">Barre système (tray)</h4>
+                    <label className="flex items-center justify-between mb-3">
+                      <div>
+                        <div className="font-medium">Réduire dans la barre système</div>
+                        <div className="text-sm text-text-muted">
+                          Fermer la fenêtre garde Orbit en fond (icône du tray) au lieu de quitter
+                        </div>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={settings.closeToTray !== false}
+                        onChange={(e) => updateSettings({ closeToTray: e.target.checked })}
+                        className="w-12 h-6 bg-bg-hover rounded-full relative cursor-pointer appearance-none checked:bg-accent-primary transition-colors after:content-[''] after:absolute after:top-1 after:left-1 after:w-4 after:h-4 after:bg-white after:rounded-full after:transition-transform checked:after:translate-x-6"
+                      />
+                    </label>
+                    <label className="flex items-center justify-between mb-2">
+                      <div>
+                        <div className="font-medium">Raccourci global d'invocation</div>
+                        <div className="text-sm text-text-muted">
+                          Afficher / masquer Orbit depuis n'importe où
+                        </div>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={settings.globalHotkeyEnabled === true}
+                        onChange={(e) => updateSettings({ globalHotkeyEnabled: e.target.checked })}
+                        className="w-12 h-6 bg-bg-hover rounded-full relative cursor-pointer appearance-none checked:bg-accent-primary transition-colors after:content-[''] after:absolute after:top-1 after:left-1 after:w-4 after:h-4 after:bg-white after:rounded-full after:transition-transform checked:after:translate-x-6"
+                      />
+                    </label>
+                    {settings.globalHotkeyEnabled && (
+                      <input
+                        type="text"
+                        value={settings.globalHotkey || ''}
+                        onChange={(e) => updateSettings({ globalHotkey: e.target.value })}
+                        placeholder="CommandOrControl+Alt+O"
+                        className="input text-sm"
+                      />
+                    )}
+                  </div>
+
+                  <div className="card">
                     <h4 className="font-semibold mb-4">Interface</h4>
                     <label className="flex items-center justify-between mb-3">
                       <div>
@@ -408,6 +449,20 @@ export default function Settings({ onClose }) {
                         />
                       ))}
                     </div>
+                    <label className="flex items-center justify-between mt-4 pt-4 border-t border-border">
+                      <div>
+                        <div className="font-medium">Accent par profil</div>
+                        <div className="text-sm text-text-muted">
+                          La couleur d'accent suit celle du profil actif (repère visuel pro / perso)
+                        </div>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={settings.accentPerProfile === true}
+                        onChange={(e) => updateSettings({ accentPerProfile: e.target.checked })}
+                        className="w-12 h-6 bg-bg-hover rounded-full relative cursor-pointer appearance-none checked:bg-accent-primary transition-colors after:content-[''] after:absolute after:top-1 after:left-1 after:w-4 after:h-4 after:bg-white after:rounded-full after:transition-transform checked:after:translate-x-6"
+                      />
+                    </label>
                   </div>
                 </div>
               )}
@@ -624,6 +679,53 @@ export default function Settings({ onClose }) {
                         className="w-12 h-6 bg-bg-hover rounded-full relative cursor-pointer appearance-none checked:bg-accent-primary transition-colors after:content-[''] after:absolute after:top-1 after:left-1 after:w-4 after:h-4 after:bg-white after:rounded-full after:transition-transform checked:after:translate-x-6"
                       />
                     </label>
+                  </div>
+                  <div className="card">
+                    <h4 className="font-semibold mb-4">Ne pas déranger</h4>
+                    <label className="flex items-center justify-between mb-3">
+                      <div>
+                        <div className="font-medium">Activer maintenant</div>
+                        <div className="text-sm text-text-muted">Coupe toutes les notifications</div>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={settings.dnd === true}
+                        onChange={(e) => updateSettings({ dnd: e.target.checked })}
+                        className="w-12 h-6 bg-bg-hover rounded-full relative cursor-pointer appearance-none checked:bg-accent-primary transition-colors after:content-[''] after:absolute after:top-1 after:left-1 after:w-4 after:h-4 after:bg-white after:rounded-full after:transition-transform checked:after:translate-x-6"
+                      />
+                    </label>
+                    <label className="flex items-center justify-between mb-3">
+                      <div>
+                        <div className="font-medium">Plages horaires silencieuses</div>
+                        <div className="text-sm text-text-muted">
+                          Coupe automatiquement les notifications sur une plage (ex. la nuit)
+                        </div>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={settings.quietHoursEnabled === true}
+                        onChange={(e) => updateSettings({ quietHoursEnabled: e.target.checked })}
+                        className="w-12 h-6 bg-bg-hover rounded-full relative cursor-pointer appearance-none checked:bg-accent-primary transition-colors after:content-[''] after:absolute after:top-1 after:left-1 after:w-4 after:h-4 after:bg-white after:rounded-full after:transition-transform checked:after:translate-x-6"
+                      />
+                    </label>
+                    {settings.quietHoursEnabled && (
+                      <div className="flex items-center gap-3">
+                        <label className="text-sm text-text-secondary">De</label>
+                        <input
+                          type="time"
+                          value={settings.quietStart || '22:00'}
+                          onChange={(e) => updateSettings({ quietStart: e.target.value })}
+                          className="input max-w-[130px]"
+                        />
+                        <label className="text-sm text-text-secondary">à</label>
+                        <input
+                          type="time"
+                          value={settings.quietEnd || '07:00'}
+                          onChange={(e) => updateSettings({ quietEnd: e.target.value })}
+                          className="input max-w-[130px]"
+                        />
+                      </div>
+                    )}
                   </div>
                   <div className="card">
                     <h4 className="font-semibold mb-2">Son de notification</h4>

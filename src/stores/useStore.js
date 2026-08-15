@@ -21,6 +21,11 @@ export const defaultSettings = {
   // Son de notification personnalisé (data URL ; vide = son système)
   notificationSound: '',
   notificationSoundName: '',
+  // Ne pas déranger : coupe toutes les notifications
+  dnd: false,
+  quietHoursEnabled: false,
+  quietStart: '22:00',
+  quietEnd: '07:00',
   startMinimized: false,
   fontSize: 'medium', // small | medium | large | xlarge
   fontFamily: 'Inter',
@@ -28,6 +33,13 @@ export const defaultSettings = {
   compactMode: false,
   showAppIcons: true,
   animationsEnabled: true,
+  // Couleur d'accent qui suit la couleur du profil actif
+  accentPerProfile: false,
+  // Barre système (tray) : fermer la fenêtre la réduit dans le tray
+  closeToTray: true,
+  // Raccourci global pour afficher/masquer Orbit depuis n'importe où
+  globalHotkeyEnabled: false,
+  globalHotkey: 'CommandOrControl+Alt+O',
   // Picture-in-Picture automatique : sortir la vidéo en mini-fenêtre quand on
   // quitte l'app (activé par défaut)
   autoPictureInPicture: true,

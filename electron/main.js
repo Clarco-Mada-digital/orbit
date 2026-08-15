@@ -1,4 +1,4 @@
-import { app, BrowserWindow, session, ipcMain, shell, Notification, dialog, net, screen, Menu, clipboard, globalShortcut } from 'electron';
+import { app, BrowserWindow, session, ipcMain, shell, Notification, dialog, net, screen, Menu, clipboard, globalShortcut, Tray, nativeImage } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import crypto from 'node:crypto';
@@ -13,6 +13,77 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 let mainWindow;
+
+// --- Barre système (tray) + fenêtre ----------------------------------------
+let tray = null;
+let isQuitting = false;
+let closeToTray = true; // synchronisé depuis les réglages du renderer
+let trayInfoShown = false;
+let summonAccel = null;
+
+function showMainWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+}
+
+function toggleMainWindow() {
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isVisible() && mainWindow.isFocused()) mainWindow.hide();
+  else showMainWindow();
+}
+
+function createTray() {
+  if (tray) return;
+  try {
+    const iconPath = path.join(__dirname, '../build/icon.png');
+    let img = nativeImage.createFromPath(iconPath);
+    if (!img.isEmpty()) {
+      try {
+        img = img.resize({ width: 18, height: 18 });
+      } catch {
+        /* garde l'original */
+      }
+    }
+    tray = new Tray(img.isEmpty() ? iconPath : img);
+    tray.setToolTip('Orbit');
+    tray.setContextMenu(
+      Menu.buildFromTemplate([
+        { label: 'Afficher Orbit', click: showMainWindow },
+        { type: 'separator' },
+        {
+          label: 'Quitter',
+          click: () => {
+            isQuitting = true;
+            app.quit();
+          },
+        },
+      ])
+    );
+    tray.on('click', toggleMainWindow);
+  } catch (err) {
+    console.error('[orbit] tray échoué:', err.message);
+  }
+}
+
+// Raccourci global d'invocation (afficher/masquer). accelerator null = désactivé.
+function setSummonHotkey(accelerator) {
+  try {
+    if (summonAccel) {
+      globalShortcut.unregister(summonAccel);
+      summonAccel = null;
+    }
+    if (accelerator) {
+      const ok = globalShortcut.register(accelerator, toggleMainWindow);
+      if (ok) summonAccel = accelerator;
+      return { success: ok };
+    }
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: String(err.message || err) };
+  }
+}
 
 const isDev = !app.isPackaged;
 const VITE_DEV_SERVER_URL = 'http://localhost:5173';
@@ -926,7 +997,28 @@ function createWindow() {
   mainWindow.on('move', persistWindowState);
   mainWindow.on('maximize', persistWindowState);
   mainWindow.on('unmaximize', persistWindowState);
-  mainWindow.on('close', () => {
+  mainWindow.on('close', (e) => {
+    // Fermer-vers-le-tray : on masque au lieu de quitter (sauf « Quitter » réel)
+    if (!isQuitting && closeToTray && tray) {
+      e.preventDefault();
+      mainWindow.hide();
+      if (!trayInfoShown) {
+        trayInfoShown = true;
+        try {
+          if (Notification.isSupported()) {
+            new Notification({
+              title: 'Orbit continue en arrière-plan',
+              body: 'Clic sur l’icône de la barre système pour rouvrir, clic droit → Quitter.',
+              icon: path.join(__dirname, '../build/icon.png'),
+              silent: true,
+            }).show();
+          }
+        } catch {
+          /* ignore */
+        }
+      }
+      return;
+    }
     if (mainWindow && !mainWindow.isDestroyed()) {
       const maximized = mainWindow.isMaximized();
       saveWindowState({ ...(maximized ? mainWindow.getNormalBounds() : mainWindow.getBounds()), maximized });
@@ -1062,6 +1154,13 @@ ipcMain.handle('window:close', () => {
   return { success: true };
 });
 
+// Barre système : fermer-vers-le-tray + raccourci global d'invocation
+ipcMain.handle('tray:setCloseToTray', (_e, enabled) => {
+  closeToTray = enabled !== false;
+  return { success: true };
+});
+ipcMain.handle('tray:setSummonHotkey', (_e, accelerator) => setSummonHotkey(accelerator || null));
+
 // ---------------------------------------------------------------------------
 // Notifications système (messages non lus des apps)
 // ---------------------------------------------------------------------------
@@ -1098,8 +1197,13 @@ ipcMain.handle('notifications:show', (_event, { title, body, appId, silent } = {
 // Badge de la fenêtre (dock macOS / Unity) = total de messages non lus
 ipcMain.handle('notifications:setBadge', (_event, count) => {
   try {
+    const n = Math.max(0, count || 0);
     if (typeof app.setBadgeCount === 'function') {
-      app.setBadgeCount(Math.max(0, count || 0));
+      app.setBadgeCount(n);
+    }
+    // Infobulle du tray = nombre de messages non lus
+    if (tray && !tray.isDestroyed?.()) {
+      tray.setToolTip(n > 0 ? `Orbit — ${n} non lu${n > 1 ? 's' : ''}` : 'Orbit');
     }
     return { success: true };
   } catch (err) {
@@ -1809,6 +1913,7 @@ app.whenReady().then(() => {
   }
 
   createWindow();
+  createTray();
 
   // Recharger les extensions au démarrage (Electron ne les garde pas en mémoire)
   for (const p of EXT_PARTITIONS) {
@@ -1843,6 +1948,10 @@ app.on('web-contents-created', (_event, contents) => {
     }
     return openExternalHandler({ url });
   });
+});
+
+app.on('before-quit', () => {
+  isQuitting = true;
 });
 
 app.on('will-quit', () => {
