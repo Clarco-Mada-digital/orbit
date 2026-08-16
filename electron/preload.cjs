@@ -54,6 +54,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openDownloadsFolder: () => ipcRenderer.invoke('downloads:openFolder'),
   // Téléchargement vidéo/audio (yt-dlp) — mode: 'video' | 'audio'
   downloadMedia: (url, mode) => ipcRenderer.invoke('media:download', { url, mode }),
+  // Ouvrir une app dans une fenêtre détachée (même session)
+  openDetached: (payload) => ipcRenderer.invoke('app:openDetached', payload),
   // Mise à jour automatique
   getVersion: () => ipcRenderer.invoke('app:getVersion'),
   checkForUpdate: () => ipcRenderer.invoke('update:check'),

@@ -1719,6 +1719,51 @@ function startMediaDownload(url, mode) {
 }
 ipcMain.handle('media:download', (_e, { url, mode } = {}) => startMediaDownload(url, mode));
 
+// Ouvrir une app dans une fenêtre DÉTACHÉE (séparée), en réutilisant la même
+// partition → session/connexion partagée avec l'onglet embarqué.
+const detachedWindows = new Map();
+ipcMain.handle('app:openDetached', (_e, { appId, url, partition, title } = {}) => {
+  if (!url || !/^https?:\/\//.test(url) || !partition) return { success: false };
+  const existing = detachedWindows.get(appId);
+  if (existing && !existing.isDestroyed()) {
+    if (existing.isMinimized()) existing.restore();
+    existing.show();
+    existing.focus();
+    return { success: true };
+  }
+  const icon = nativeImage.createFromPath(resourcePath('build/icon.png'));
+  const win = new BrowserWindow({
+    width: 1100,
+    height: 780,
+    minWidth: 600,
+    minHeight: 400,
+    title: title || 'Orbit',
+    backgroundColor: '#0a0a0f',
+    autoHideMenuBar: true,
+    ...(process.platform !== 'darwin' && !icon.isEmpty() ? { icon } : {}),
+    webPreferences: {
+      partition,
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      spellcheck: true,
+    },
+  });
+  win.setMenuBarVisibility(false);
+  win.webContents.setUserAgent(CHROME_UA);
+  // Popups (OAuth, connexion) : fenêtre enfant avec la MÊME session
+  win.webContents.setWindowOpenHandler(({ url: u }) => {
+    if (/^https?:\/\//.test(u)) {
+      return { action: 'allow', overrideBrowserWindowOptions: { webPreferences: { partition } } };
+    }
+    return { action: 'deny' };
+  });
+  win.loadURL(url);
+  detachedWindows.set(appId, win);
+  win.on('closed', () => detachedWindows.delete(appId));
+  return { success: true };
+});
+
 // ---------------------------------------------------------------------------
 // IPC — Extensions Chrome
 // ---------------------------------------------------------------------------

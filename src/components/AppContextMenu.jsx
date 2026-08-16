@@ -15,10 +15,12 @@ import {
   Layers,
   Eraser,
   MoreHorizontal,
+  AppWindow,
   Check as CheckIcon,
 } from 'lucide-react';
 import { useStore } from '../stores/useStore';
 import { getWebview } from '../lib/webviewRegistry';
+import { appPartition } from '../lib/session';
 import EditAppModal from './EditAppModal';
 
 // Menu contextuel (clic droit) sur une app de la sidebar :
@@ -116,7 +118,7 @@ export default function AppContextMenu({ appId, x, y, onClose }) {
       : containing
         ? 180 + containers.length * 40
         : showMore
-          ? 470
+          ? 510
           : 300;
   const style = {
     width,
@@ -152,6 +154,17 @@ export default function AppContextMenu({ appId, x, y, onClose }) {
 
   const handleMove = (targetProfileId) => {
     moveAppToProfile(appId, targetProfileId);
+    onClose();
+  };
+
+  const openDetached = () => {
+    const sharedSession = !!profiles.find((p) => p.id === app.profileId)?.sharedSession;
+    window.electronAPI?.openDetached?.({
+      appId,
+      url: app.url,
+      partition: appPartition(app, sharedSession),
+      title: app.name,
+    });
     onClose();
   };
 
@@ -361,6 +374,13 @@ export default function AppContextMenu({ appId, x, y, onClose }) {
                 className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-bg-hover transition-colors"
               >
                 <Edit3 size={15} /> Renommer l'application
+              </button>
+              <button
+                onClick={openDetached}
+                disabled={!app.url}
+                className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-bg-hover transition-colors disabled:opacity-40"
+              >
+                <AppWindow size={15} /> Ouvrir dans une fenêtre
               </button>
               <button
                 onClick={() => {
