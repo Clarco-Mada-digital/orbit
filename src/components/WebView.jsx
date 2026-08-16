@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { AlertTriangle, RotateCw } from 'lucide-react';
 import { useStore } from '../stores/useStore';
 import { useLoadingStore } from '../lib/loadingStore';
 import { useMediaStore } from '../lib/mediaStore';
@@ -68,6 +69,7 @@ export default function WebView({ app, active, visible, flexLayout }) {
   // se recharge (navigation, reload…). Délai de 500 ms avant d'apparaître
   // pour ne pas clignoter sur les recharges rapides (ex. redirections).
   const [loading, setLoading] = useState(false);
+  const [crashed, setCrashed] = useState(false);
   const loadingTimer = useRef(null);
 
   // URL de démarrage fixée AU MONTAGE de l'app : jamais une page de connexion
@@ -163,7 +165,17 @@ export default function WebView({ app, active, visible, flexLayout }) {
     //     visuel au clic, comme dans un navigateur)
     //   - le voile plein cadre n'apparaît qu'après 500 ms, pour ne pas
     //     clignoter sur les recharges rapides (redirections…)
+    // Crash du processus de rendu de l'app → on propose de recharger plutôt
+    // qu'un cadre figé/blanc.
+    const handleRenderGone = (e) => {
+      // 'clean-exit' = fermeture normale (ex. navigation) : pas un crash.
+      if (e && e.reason === 'clean-exit') return;
+      console.warn('[orbit] webview planté', app.name, e?.reason || '');
+      setCrashed(true);
+    };
+
     const startLoading = () => {
+      setCrashed(false);
       setAppLoading(app.id, true);
       clearTimeout(loadingTimer.current);
       loadingTimer.current = setTimeout(() => setLoading(true), 500);
@@ -237,6 +249,8 @@ export default function WebView({ app, active, visible, flexLayout }) {
     wv.addEventListener('page-title-updated', handleTitle);
     wv.addEventListener('favicon-updated', handleFavicon);
     wv.addEventListener('did-fail-load', handleDidFailLoad);
+    wv.addEventListener('render-process-gone', handleRenderGone);
+    wv.addEventListener('crashed', handleRenderGone); // héritage (Electron ancien)
     wv.addEventListener('did-start-loading', startLoading);
     wv.addEventListener('did-stop-loading', stopLoading);
 
@@ -257,6 +271,8 @@ export default function WebView({ app, active, visible, flexLayout }) {
       wv.removeEventListener('page-title-updated', handleTitle);
       wv.removeEventListener('favicon-updated', handleFavicon);
       wv.removeEventListener('did-fail-load', handleDidFailLoad);
+      wv.removeEventListener('render-process-gone', handleRenderGone);
+      wv.removeEventListener('crashed', handleRenderGone);
       wv.removeEventListener('did-start-loading', startLoading);
       wv.removeEventListener('did-stop-loading', stopLoading);
     };
@@ -365,6 +381,34 @@ export default function WebView({ app, active, visible, flexLayout }) {
       {loading && visible && (
         <div className="orbit-progress" aria-hidden="true">
           <div className="orbit-progress__bar" />
+        </div>
+      )}
+
+      {/* Récupération de crash : le processus de rendu de l'app a planté */}
+      {crashed && visible && (
+        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-4 bg-bg-base/95 backdrop-blur-sm text-center p-6">
+          <div className="w-14 h-14 rounded-2xl bg-error/15 flex items-center justify-center">
+            <AlertTriangle size={28} className="text-error" />
+          </div>
+          <div>
+            <p className="font-semibold">« {app.name} » a cessé de répondre</p>
+            <p className="text-sm text-text-muted mt-1">
+              La page a planté. Vous pouvez la recharger sans perdre votre session.
+            </p>
+          </div>
+          <button
+            onClick={() => {
+              setCrashed(false);
+              try {
+                ref.current?.reload();
+              } catch {
+                /* ignore */
+              }
+            }}
+            className="btn btn-primary btn-sm"
+          >
+            <RotateCw size={15} /> Recharger l'application
+          </button>
         </div>
       )}
     </div>
