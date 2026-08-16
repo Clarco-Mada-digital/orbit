@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { ChevronUp, ChevronDown, X } from 'lucide-react';
 import { getWebview } from '../lib/webviewRegistry';
+import { useT } from '../lib/i18n';
 
 // Barre « Rechercher dans la page » (Ctrl/Cmd+F) : pilote la recherche native
 // du <webview> actif via findInPage / stopFindInPage.
@@ -8,6 +9,7 @@ export default function FindBar({ appId, onClose }) {
   const [query, setQuery] = useState('');
   const [result, setResult] = useState({ active: 0, total: 0 });
   const inputRef = useRef(null);
+  const t = useT();
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -71,7 +73,7 @@ export default function FindBar({ appId, onClose }) {
         value={query}
         onChange={onChange}
         onKeyDown={onKeyDown}
-        placeholder="Rechercher dans la page…"
+        placeholder={t('find.placeholder')}
         className="bg-transparent outline-none text-sm w-52 px-1"
       />
       <span className="text-xs text-text-muted min-w-[52px] text-center tabular-nums">
@@ -81,7 +83,7 @@ export default function FindBar({ appId, onClose }) {
         onClick={() => search(query, false, true)}
         disabled={!result.total}
         className="btn-icon w-7 h-7 disabled:opacity-40"
-        title="Précédent (Maj+Entrée)"
+        title={t('find.prev')}
       >
         <ChevronUp size={15} />
       </button>
@@ -89,11 +91,11 @@ export default function FindBar({ appId, onClose }) {
         onClick={() => search(query, true, true)}
         disabled={!result.total}
         className="btn-icon w-7 h-7 disabled:opacity-40"
-        title="Suivant (Entrée)"
+        title={t('find.next')}
       >
         <ChevronDown size={15} />
       </button>
-      <button onClick={onClose} className="btn-icon w-7 h-7" title="Fermer (Échap)">
+      <button onClick={onClose} className="btn-icon w-7 h-7" title={t('find.close')}>
         <X size={15} />
       </button>
     </div>

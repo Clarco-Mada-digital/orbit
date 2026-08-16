@@ -4,6 +4,7 @@ import { useStore } from '../stores/useStore';
 import { EMOJI_CHOICES, COLOR_CHOICES, faviconServiceUrl } from '../lib/appIcons';
 import { homeUrlFor } from '../lib/urls';
 import AppIcon from './AppIcon';
+import { useT } from '../lib/i18n';
 
 function normalizeUrl(url) {
   const trimmed = (url || '').trim();
@@ -16,6 +17,7 @@ function normalizeUrl(url) {
 // icône (emoji, favicon du site ou image téléversée) et couleur.
 export default function EditAppModal({ app, onClose }) {
   const updateApp = useStore((s) => s.updateApp);
+  const t = useT();
   const [name, setName] = useState(app.name);
   const [url, setUrl] = useState(app.url || '');
   const [emoji, setEmoji] = useState(app.icon || '🌐');
@@ -71,8 +73,8 @@ export default function EditAppModal({ app, onClose }) {
       <div className="w-full max-w-lg bg-bg-secondary border border-border rounded-2xl shadow-2xl overflow-hidden animate-scale-in">
         {/* Header */}
         <div className="h-14 border-b border-border flex items-center justify-between px-5">
-          <h3 className="font-semibold">Modifier « {app.name} »</h3>
-          <button onClick={onClose} className="btn-icon" title="Fermer">
+          <h3 className="font-semibold">{t('edit.title', { name: app.name })}</h3>
+          <button onClick={onClose} className="btn-icon" title={t('common.close')}>
             <X size={18} />
           </button>
         </div>
@@ -80,7 +82,7 @@ export default function EditAppModal({ app, onClose }) {
         <div className="p-5 space-y-5 max-h-[70vh] overflow-y-auto">
           {/* Nom */}
           <div>
-            <label className="text-xs text-text-muted block mb-1.5">Nom</label>
+            <label className="text-xs text-text-muted block mb-1.5">{t('edit.name')}</label>
             <input
               type="text"
               value={name}
@@ -100,7 +102,7 @@ export default function EditAppModal({ app, onClose }) {
                   type="text"
                   value={url}
                   onChange={(e) => setUrl(e.target.value)}
-                  placeholder="exemple.com"
+                  placeholder={t('edit.urlPlaceholder')}
                   className="input pl-10"
                 />
               </div>
@@ -109,7 +111,7 @@ export default function EditAppModal({ app, onClose }) {
 
           {/* Icône */}
           <div>
-            <label className="text-xs text-text-muted block mb-1.5">Icône</label>
+            <label className="text-xs text-text-muted block mb-1.5">{t('edit.icon')}</label>
             <div className="flex items-center gap-3 mb-3">
               {/* Aperçu de l'icône choisie */}
               <div
@@ -129,14 +131,14 @@ export default function EditAppModal({ app, onClose }) {
                 <button
                   onClick={() => fileRef.current?.click()}
                   className="btn btn-secondary btn-sm"
-                  title="Téléverser votre propre image"
+                  title={t('edit.uploadTitle')}
                 >
-                  <ImageIcon size={14} /> Image…
+                  <ImageIcon size={14} /> {t('edit.image')}
                 </button>
                 <button
                   onClick={() => setUseSiteFavicon((v) => !v)}
                   className={`btn btn-sm ${useSiteFavicon ? 'btn-primary' : 'btn-secondary'}`}
-                  title="Utiliser le favicon du site"
+                  title={t('edit.faviconTitle')}
                 >
                   <Globe size={14} /> Favicon
                 </button>
@@ -144,7 +146,7 @@ export default function EditAppModal({ app, onClose }) {
                   <button
                     onClick={() => setIconImage('')}
                     className="btn btn-secondary btn-sm text-error hover:bg-error/10"
-                    title="Retirer l'image téléversée"
+                    title={t('edit.removeImage')}
                   >
                     <Trash2 size={14} />
                   </button>
@@ -183,7 +185,7 @@ export default function EditAppModal({ app, onClose }) {
 
           {/* Couleur */}
           <div>
-            <label className="text-xs text-text-muted block mb-1.5">Couleur</label>
+            <label className="text-xs text-text-muted block mb-1.5">{t('edit.color')}</label>
             <div className="flex gap-1.5 flex-wrap">
               {COLOR_CHOICES.map((c) => (
                 <button
@@ -201,7 +203,7 @@ export default function EditAppModal({ app, onClose }) {
           {/* Proxy / VPN spécifique à cette app */}
           <div>
             <label className="text-xs text-text-muted block mb-1.5">
-              Proxy / VPN (vide = suit le profil / le global)
+              {t('edit.proxyLabel')}
             </label>
             <input
               type="text"
@@ -216,10 +218,10 @@ export default function EditAppModal({ app, onClose }) {
         {/* Footer */}
         <div className="px-5 py-4 border-t border-border flex gap-2">
           <button onClick={handleSave} className="flex-1 btn btn-primary">
-            <Check size={16} /> Enregistrer
+            <Check size={16} /> {t('common.save')}
           </button>
           <button onClick={onClose} className="btn btn-secondary">
-            Annuler
+            {t('common.cancel')}
           </button>
         </div>
       </div>

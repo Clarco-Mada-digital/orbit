@@ -21,6 +21,7 @@ import {
 import { useStore } from '../stores/useStore';
 import { getWebview } from '../lib/webviewRegistry';
 import { appPartition } from '../lib/session';
+import { useT } from '../lib/i18n';
 import EditAppModal from './EditAppModal';
 
 // Menu contextuel (clic droit) sur une app de la sidebar :
@@ -48,6 +49,7 @@ export default function AppContextMenu({ appId, x, y, onClose }) {
   const [newCtn, setNewCtn] = useState('');
   const [name, setName] = useState('');
   const [showMore, setShowMore] = useState(false);
+  const t = useT();
   const app = apps.find((a) => a.id === appId);
   const menuRef = useRef(null);
 
@@ -142,7 +144,7 @@ export default function AppContextMenu({ appId, x, y, onClose }) {
   const handleUninstall = () => {
     if (
       confirm(
-        `Désinstaller « ${app.name} » ?\nL'application ira dans la corbeille (Boutique → Corbeille) et pourra être restaurée avec sa session.`
+        t('ctx.confirmUninstall', { name: app.name })
       )
     ) {
       // Déplacé vers la corbeille — la session est conservée tant qu'on ne
@@ -171,7 +173,7 @@ export default function AppContextMenu({ appId, x, y, onClose }) {
   const handleClearData = () => {
     if (
       confirm(
-        `Effacer les données de « ${app.name} » ?\nCookies, cache et connexion seront supprimés, et l'app se rechargera.`
+        t('ctx.confirmClear', { name: app.name })
       )
     ) {
       window.electronAPI?.clearAppSession?.({
@@ -218,13 +220,13 @@ export default function AppContextMenu({ appId, x, y, onClose }) {
             onKeyDown={(e) => {
               if (e.key === 'Enter') saveRename();
             }}
-            placeholder="Nouveau nom…"
+            placeholder={t('ctx.newName')}
             className="input text-sm"
             autoFocus
           />
           <div className="flex gap-2 mt-2">
             <button onClick={saveRename} className="flex-1 btn btn-primary btn-sm">
-              <Check size={14} /> Enregistrer
+              <Check size={14} /> {t('common.save')}
             </button>
             <button
               onClick={() => {
@@ -233,7 +235,7 @@ export default function AppContextMenu({ appId, x, y, onClose }) {
               }}
               className="btn btn-secondary btn-sm"
             >
-              <X size={14} /> Annuler
+              <X size={14} /> {t('common.cancel')}
             </button>
           </div>
         </div>
@@ -242,11 +244,11 @@ export default function AppContextMenu({ appId, x, y, onClose }) {
           <div className="px-3 py-1.5 text-xs text-text-muted flex items-center gap-2 border-b border-border mb-0.5">
             <ArrowRightLeft size={13} className="flex-shrink-0" />
             <span className="truncate">
-              Déplacer « {app.name} » vers&nbsp;:
+              {t('ctx.moveTo', { name: app.name })}
             </span>
           </div>
           {otherProfiles.length === 0 ? (
-            <div className="px-3 py-2 text-xs text-text-muted">Aucun autre profil</div>
+            <div className="px-3 py-2 text-xs text-text-muted">{t('ctx.noOtherProfile')}</div>
           ) : (
             otherProfiles.map((p) => (
               <button
@@ -264,21 +266,21 @@ export default function AppContextMenu({ appId, x, y, onClose }) {
             onClick={() => setMoving(false)}
             className="w-full flex items-center gap-3 px-3 py-2 text-sm text-text-secondary hover:bg-bg-hover transition-colors"
           >
-            <X size={15} /> Retour
+            <X size={15} /> {t('common.back')}
           </button>
         </div>
       ) : containing ? (
         <div className="py-0.5">
           <div className="px-3 py-1.5 text-xs text-text-muted flex items-center gap-2 border-b border-border mb-0.5">
             <Layers size={13} className="flex-shrink-0" />
-            <span className="truncate">Conteneur de « {app.name} »</span>
+            <span className="truncate">{t('ctx.containerOf', { name: app.name })}</span>
           </div>
           <button
             onClick={() => assignContainer(null)}
             className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-bg-hover transition-colors"
           >
             <span className="w-3 h-3 rounded-full border border-border flex-shrink-0" />
-            <span className="flex-1 text-left">Aucun</span>
+            <span className="flex-1 text-left">{t('ctx.none')}</span>
             {!app.containerId && <CheckIcon size={14} className="text-accent-primary" />}
           </button>
           {containers.map((c) => (
@@ -304,12 +306,12 @@ export default function AppContextMenu({ appId, x, y, onClose }) {
               onKeyDown={(e) => {
                 if (e.key === 'Enter') createContainer();
               }}
-              placeholder="Nouveau conteneur…"
+              placeholder={t('ctx.newContainer')}
               className="input text-sm"
             />
             <div className="flex gap-2 mt-2">
               <button onClick={createContainer} className="flex-1 btn btn-primary btn-sm">
-                <Check size={14} /> Créer &amp; assigner
+                <Check size={14} /> {t('ctx.createAssign')}
               </button>
               <button onClick={() => setContaining(false)} className="btn btn-secondary btn-sm">
                 <X size={14} />
@@ -336,7 +338,7 @@ export default function AppContextMenu({ appId, x, y, onClose }) {
               }}
               className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-bg-hover transition-colors"
             >
-              <Play size={15} /> Ouvrir
+              <Play size={15} /> {t('ctx.open')}
             </button>
           )}
           <button
@@ -347,7 +349,7 @@ export default function AppContextMenu({ appId, x, y, onClose }) {
             className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-bg-hover transition-colors"
           >
             <Moon size={15} />
-            {app.sleeping ? 'Réveiller' : 'Mettre en veille'}
+            {app.sleeping ? t('ctx.wake') : t('ctx.sleep')}
           </button>
           <button
             onClick={() => {
@@ -357,13 +359,13 @@ export default function AppContextMenu({ appId, x, y, onClose }) {
             className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-bg-hover transition-colors"
           >
             {app.muted ? <Bell size={15} /> : <BellOff size={15} />}
-            {app.muted ? 'Réactiver les notifications' : 'Couper les notifications'}
+            {app.muted ? t('ctx.unmute') : t('ctx.mute')}
           </button>
           <button
             onClick={() => setEditing(true)}
             className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-bg-hover transition-colors"
           >
-            <Pencil size={15} /> Modifier (icône, URL, couleur…)
+            <Pencil size={15} /> {t('ctx.editApp')}
           </button>
 
           {/* Actions secondaires, repliées par défaut pour alléger le menu */}
@@ -373,14 +375,14 @@ export default function AppContextMenu({ appId, x, y, onClose }) {
                 onClick={startRename}
                 className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-bg-hover transition-colors"
               >
-                <Edit3 size={15} /> Renommer l'application
+                <Edit3 size={15} /> {t('ctx.rename')}
               </button>
               <button
                 onClick={openDetached}
                 disabled={!app.url}
                 className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-bg-hover transition-colors disabled:opacity-40"
               >
-                <AppWindow size={15} /> Ouvrir dans une fenêtre
+                <AppWindow size={15} /> {t('ctx.openWindow')}
               </button>
               <button
                 onClick={() => {
@@ -391,14 +393,14 @@ export default function AppContextMenu({ appId, x, y, onClose }) {
                 disabled={!app.url}
                 className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-bg-hover transition-colors disabled:opacity-40"
               >
-                <ExternalLink size={15} /> Ouvrir dans le navigateur
+                <ExternalLink size={15} /> {t('ctx.openBrowser')}
               </button>
               {profiles.length > 1 && (
                 <button
                   onClick={() => setMoving(true)}
                   className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-bg-hover transition-colors"
                 >
-                  <ArrowRightLeft size={15} /> Déplacer vers un profil
+                  <ArrowRightLeft size={15} /> {t('ctx.moveProfile')}
                   <ChevronRight size={14} className="ml-auto text-text-muted" />
                 </button>
               )}
@@ -406,14 +408,14 @@ export default function AppContextMenu({ appId, x, y, onClose }) {
                 onClick={() => setContaining(true)}
                 className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-bg-hover transition-colors"
               >
-                <Layers size={15} /> Conteneur (multi-comptes)
+                <Layers size={15} /> {t('ctx.container')}
                 <ChevronRight size={14} className="ml-auto text-text-muted" />
               </button>
               <button
                 onClick={handleClearData}
                 className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-bg-hover transition-colors"
               >
-                <Eraser size={15} /> Effacer les données du site
+                <Eraser size={15} /> {t('ctx.clearData')}
               </button>
             </>
           )}
@@ -423,7 +425,7 @@ export default function AppContextMenu({ appId, x, y, onClose }) {
             className="w-full flex items-center gap-3 px-3 py-2 text-sm text-text-muted hover:bg-bg-hover transition-colors"
           >
             <MoreHorizontal size={15} />
-            {showMore ? 'Voir moins' : 'Voir plus…'}
+            {showMore ? t('ctx.less') : t('ctx.more')}
           </button>
 
           <div className="my-1 border-t border-border"></div>
@@ -431,7 +433,7 @@ export default function AppContextMenu({ appId, x, y, onClose }) {
             onClick={handleUninstall}
             className="w-full flex items-center gap-3 px-3 py-2 text-sm text-error hover:bg-error/10 transition-colors"
           >
-            <Trash2 size={15} /> Désinstaller
+            <Trash2 size={15} /> {t('common.uninstall')}
           </button>
         </>
       )}

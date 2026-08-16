@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import { X, Plus, Edit2, Trash2 } from 'lucide-react';
 import { useStore } from '../stores/useStore';
+import { useT } from '../lib/i18n';
 
 export default function ProfileManager({ onClose }) {
   const { profiles, activeProfile, setActiveProfile, addProfile, updateProfile, deleteProfile } = useStore();
+  const t = useT();
   const [editing, setEditing] = useState(null);
   const [creating, setCreating] = useState(false);
   const [formData, setFormData] = useState({ name: '', emoji: '💼', color: '#6366f1', proxy: '' });
@@ -40,10 +42,10 @@ export default function ProfileManager({ onClose }) {
 
   const handleDelete = (profileId) => {
     if (profiles.length === 1) {
-      alert('Vous devez avoir au moins un profil !');
+      alert(t('pm.needOne'));
       return;
     }
-    if (confirm('Êtes-vous sûr de vouloir supprimer ce profil ? Toutes les apps associées seront supprimées.')) {
+    if (confirm(t('pm.confirmDelete'))) {
       deleteProfile(profileId);
     }
   };
@@ -53,7 +55,7 @@ export default function ProfileManager({ onClose }) {
       <div className="w-full max-w-2xl bg-bg-secondary border border-border rounded-2xl shadow-2xl overflow-hidden animate-scale-in">
         {/* Header */}
         <div className="h-16 border-b border-border flex items-center justify-between px-6">
-          <h2 className="text-xl font-bold">Gestion des profils</h2>
+          <h2 className="text-xl font-bold">{t('pm.title')}</h2>
           <button onClick={onClose} className="btn-icon">
             <X size={20} />
           </button>
@@ -76,12 +78,12 @@ export default function ProfileManager({ onClose }) {
                     type="text"
                     value={formData.name}
                     onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    placeholder="Nom du profil"
+                    placeholder={t('pm.namePlaceholder')}
                     className="input"
                   />
                   <div className="flex gap-2">
                     <div>
-                      <label className="text-xs text-text-muted block mb-2">Emoji</label>
+                      <label className="text-xs text-text-muted block mb-2">{t('pm.emoji')}</label>
                       <div className="flex gap-1 flex-wrap">
                         {emojis.map((emoji) => (
                           <button
@@ -99,7 +101,7 @@ export default function ProfileManager({ onClose }) {
                       </div>
                     </div>
                     <div>
-                      <label className="text-xs text-text-muted block mb-2">Couleur</label>
+                      <label className="text-xs text-text-muted block mb-2">{t('pm.color')}</label>
                       <div className="flex gap-1 flex-wrap max-w-[200px]">
                         {colors.map((color) => (
                           <button
@@ -116,7 +118,7 @@ export default function ProfileManager({ onClose }) {
                   </div>
                   <div>
                     <label className="text-xs text-text-muted block mb-1.5">
-                      Proxy / VPN de ce profil (vide = réglage global)
+                      {t('pm.proxyLabel')}
                     </label>
                     <input
                       type="text"
@@ -128,10 +130,10 @@ export default function ProfileManager({ onClose }) {
                   </div>
                   <div className="flex gap-2">
                     <button onClick={handleSave} className="btn btn-primary">
-                      Enregistrer
+                      {t('common.save')}
                     </button>
                     <button onClick={() => setEditing(null)} className="btn btn-secondary">
-                      Annuler
+                      {t('common.cancel')}
                     </button>
                   </div>
                 </div>
@@ -147,7 +149,7 @@ export default function ProfileManager({ onClose }) {
                   <div className="flex-1">
                     <h3 className="font-semibold">{profile.name}</h3>
                     <p className="text-sm text-text-muted mb-1.5">
-                      {profile.id === activeProfile && '✓ Actif'}
+                      {profile.id === activeProfile && t('pm.active')}
                     </p>
                     <label className="flex items-center gap-2 cursor-pointer text-xs text-text-secondary">
                       <input
@@ -157,11 +159,7 @@ export default function ProfileManager({ onClose }) {
                           const enabling = !profile.sharedSession;
                           if (
                             enabling &&
-                            !confirm(
-                              'Partager les connexions dans « ' +
-                                profile.name +
-                                ' » ?\n\nLes apps de ce profil partageront un seul compte par service, comme un navigateur : connectez-vous à Google une fois → Gmail, YouTube, Drive suivent (fini la 2FA à répéter).\n\nÀ savoir : les apps vont se recharger et il faudra vous reconnecter une fois. Ce mode empêche d’avoir 2 comptes du même service dans ce profil.'
-                            )
+                            !confirm(t('pm.confirmShared', { name: profile.name }))
                           ) {
                             return;
                           }
@@ -169,11 +167,11 @@ export default function ProfileManager({ onClose }) {
                         }}
                         className="w-9 h-5 bg-bg-hover rounded-full relative cursor-pointer appearance-none checked:bg-accent-primary transition-colors after:content-[''] after:absolute after:top-0.5 after:left-0.5 after:w-4 after:h-4 after:bg-white after:rounded-full after:transition-transform checked:after:translate-x-4"
                       />
-                      <span>Partager les connexions (SSO navigateur)</span>
+                      <span>{t('pm.shareLabel')}</span>
                     </label>
                     <div className="mt-2">
                       <div className="text-xs text-text-muted mb-1.5">
-                        Couleur d'accent du profil (active « Accent par profil » dans Réglages → Apparence)
+                        {t('pm.accentLabel')}
                       </div>
                       <div className="flex gap-1.5 flex-wrap">
                         {colors.slice(0, 12).map((c) => {
@@ -199,20 +197,20 @@ export default function ProfileManager({ onClose }) {
                         onClick={() => setActiveProfile(profile.id)}
                         className="btn btn-secondary btn-sm"
                       >
-                        Activer
+                        {t('pm.activate')}
                       </button>
                     )}
                     <button
                       onClick={() => handleEdit(profile)}
                       className="btn-icon"
-                      title="Éditer"
+                      title={t('common.edit')}
                     >
                       <Edit2 size={18} />
                     </button>
                     <button
                       onClick={() => handleDelete(profile.id)}
                       className="btn-icon text-error"
-                      title="Supprimer"
+                      title={t('common.delete')}
                     >
                       <Trash2 size={18} />
                     </button>
@@ -229,13 +227,13 @@ export default function ProfileManager({ onClose }) {
                 type="text"
                 value={formData.name}
                 onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                placeholder="Nom du profil"
+                placeholder={t('pm.namePlaceholder')}
                 className="input"
                 autoFocus
               />
               <div className="flex gap-2">
                 <div>
-                  <label className="text-xs text-text-muted block mb-2">Emoji</label>
+                  <label className="text-xs text-text-muted block mb-2">{t('pm.emoji')}</label>
                   <div className="flex gap-1 flex-wrap">
                     {emojis.map((emoji) => (
                       <button
@@ -253,7 +251,7 @@ export default function ProfileManager({ onClose }) {
                   </div>
                 </div>
                 <div>
-                  <label className="text-xs text-text-muted block mb-2">Couleur</label>
+                  <label className="text-xs text-text-muted block mb-2">{t('pm.color')}</label>
                   <div className="flex gap-1 flex-wrap max-w-[200px]">
                     {colors.map((color) => (
                       <button
@@ -270,7 +268,7 @@ export default function ProfileManager({ onClose }) {
               </div>
               <div className="flex gap-2">
                 <button onClick={handleSave} className="btn btn-primary">
-                  Créer
+                  {t('pm.create')}
                 </button>
                 <button
                   onClick={() => {
@@ -279,7 +277,7 @@ export default function ProfileManager({ onClose }) {
                   }}
                   className="btn btn-secondary"
                 >
-                  Annuler
+                  {t('common.cancel')}
                 </button>
               </div>
             </div>
@@ -289,7 +287,7 @@ export default function ProfileManager({ onClose }) {
               className="w-full card hover:bg-bg-hover flex items-center justify-center gap-2 py-6 cursor-pointer transition-all border-2 border-dashed border-border hover:border-accent-primary"
             >
               <Plus size={24} />
-              <span className="font-medium">Nouveau profil</span>
+              <span className="font-medium">{t('pm.newProfile')}</span>
             </button>
           )}
         </div>

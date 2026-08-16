@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Lock, Delete, ArrowRight } from 'lucide-react';
 import OrbitLogo from './OrbitLogo';
+import { useT } from '../lib/i18n';
 
 // Écran/panneau de saisie de code, réutilisable :
 //   variant="app"     → déverrouillage global (plein écran, au lancement)
@@ -26,6 +27,7 @@ export default function LockScreen({
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
   const inputRef = useRef(null);
+  const t = useT();
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -49,19 +51,19 @@ export default function LockScreen({
       // Définition d'un code : saisie puis confirmation
       if (step === 'enter') {
         if (pin.length < 4) {
-          setError('Code trop court (4 caractères minimum)');
+          setError(t('lock.tooShort'));
           return;
         }
         setStep('confirm');
         return;
       }
       if (confirmPin !== pin) {
-        setError('Les deux codes ne correspondent pas');
+        setError(t('lock.mismatch'));
         setConfirmPin('');
         return;
       }
     } else if (pin.length < 4) {
-      setError('Code trop court');
+      setError(t('lock.tooShort2'));
       return;
     }
 
@@ -69,7 +71,7 @@ export default function LockScreen({
     try {
       const res = await onSubmit(pin);
       if (res && !res.success) {
-        setError(res.error || 'Code incorrect');
+        setError(res.error || t('lock.wrong'));
         setPin('');
         setConfirmPin('');
         setStep('enter');
@@ -99,15 +101,15 @@ export default function LockScreen({
             {fullScreen ? <OrbitLogo size={26} /> : <Lock size={24} className="text-accent-primary" />}
           </div>
           <h2 className="text-lg font-semibold">
-            {title || (confirm ? 'Définir un code' : 'Orbit est verrouillé')}
+            {title || (confirm ? t('lock.setTitle') : t('lock.lockedTitle'))}
           </h2>
           <p className="text-sm text-text-muted mt-1">
             {subtitle ||
               (confirm
                 ? step === 'confirm'
-                  ? 'Confirmez le code'
-                  : 'Choisissez un code (chiffres ou texte)'
-                : 'Entrez votre code pour continuer')}
+                  ? t('lock.confirm')
+                  : t('lock.choose')
+                : t('lock.enter'))}
           </p>
         </div>
 
@@ -143,7 +145,7 @@ export default function LockScreen({
           <button
             onClick={backspace}
             className="h-11 rounded-lg bg-bg-secondary border border-border hover:bg-bg-hover flex items-center justify-center transition-colors"
-            title="Effacer"
+            title={t('lock.clear')}
           >
             <Delete size={18} />
           </button>
@@ -157,7 +159,7 @@ export default function LockScreen({
             onClick={validate}
             disabled={busy}
             className="h-11 rounded-lg bg-accent-primary text-white hover:bg-accent-hover flex items-center justify-center transition-colors disabled:opacity-50"
-            title="Valider"
+            title={t('lock.validate')}
           >
             <ArrowRight size={18} />
           </button>
@@ -168,7 +170,7 @@ export default function LockScreen({
             onClick={onCancel}
             className="w-full btn btn-secondary btn-sm mt-1"
           >
-            Annuler
+            {t('common.cancel')}
           </button>
         )}
       </div>

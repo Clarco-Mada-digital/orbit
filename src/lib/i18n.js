@@ -146,6 +146,118 @@ export const fr = {
   'qs.tip2': 'Glisser-déposer une app pour la réordonner dans la sidebar',
   'qs.tip3': 'Bouton ⧉ en haut : écran partagé (2 apps côte à côte ou haut / bas)',
   'qs.tip4': 'Tapez « help » ici pour revoir cette aide à tout moment',
+
+  // Communs (dialogues)
+  'common.edit': 'Éditer',
+  'common.delete': 'Supprimer',
+  'common.back': 'Retour',
+  'common.uninstall': 'Désinstaller',
+
+  // Rechercher dans la page
+  'find.placeholder': 'Rechercher dans la page…',
+  'find.prev': 'Précédent (Maj+Entrée)',
+  'find.next': 'Suivant (Entrée)',
+  'find.close': 'Fermer (Échap)',
+
+  // Verrouillage
+  'lock.setTitle': 'Définir un code',
+  'lock.lockedTitle': 'Orbit est verrouillé',
+  'lock.confirm': 'Confirmez le code',
+  'lock.choose': 'Choisissez un code (chiffres ou texte)',
+  'lock.enter': 'Entrez votre code pour continuer',
+  'lock.clear': 'Effacer',
+  'lock.validate': 'Valider',
+  'lock.tooShort': 'Code trop court (4 caractères minimum)',
+  'lock.tooShort2': 'Code trop court',
+  'lock.mismatch': 'Les deux codes ne correspondent pas',
+  'lock.wrong': 'Code incorrect',
+
+  // Menu contextuel d'app
+  'ctx.open': 'Ouvrir',
+  'ctx.wake': 'Réveiller',
+  'ctx.sleep': 'Mettre en veille',
+  'ctx.unmute': 'Réactiver les notifications',
+  'ctx.mute': 'Couper les notifications',
+  'ctx.rename': 'Renommer l’application',
+  'ctx.editApp': 'Modifier (icône, URL, couleur…)',
+  'ctx.openWindow': 'Ouvrir dans une fenêtre',
+  'ctx.openBrowser': 'Ouvrir dans le navigateur',
+  'ctx.moveProfile': 'Déplacer vers un profil',
+  'ctx.container': 'Conteneur (multi-comptes)',
+  'ctx.clearData': 'Effacer les données du site',
+  'ctx.more': 'Voir plus…',
+  'ctx.less': 'Voir moins',
+  'ctx.newName': 'Nouveau nom…',
+  'ctx.noOtherProfile': 'Aucun autre profil',
+  'ctx.moveTo': 'Déplacer « {name} » vers :',
+  'ctx.containerOf': 'Conteneur de « {name} »',
+  'ctx.none': 'Aucun',
+  'ctx.newContainer': 'Nouveau conteneur…',
+  'ctx.createAssign': 'Créer & assigner',
+  'ctx.confirmUninstall':
+    'Désinstaller « {name} » ?\nL’application ira dans la corbeille (Boutique → Corbeille) et pourra être restaurée avec sa session.',
+  'ctx.confirmClear':
+    'Effacer les données de « {name} » ?\nCookies, cache et connexion seront supprimés, et l’app se rechargera.',
+
+  // Gestion des profils
+  'pm.title': 'Gestion des profils',
+  'pm.namePlaceholder': 'Nom du profil',
+  'pm.emoji': 'Emoji',
+  'pm.color': 'Couleur',
+  'pm.proxyLabel': 'Proxy / VPN de ce profil (vide = réglage global)',
+  'pm.active': '✓ Actif',
+  'pm.shareLabel': 'Partager les connexions (SSO navigateur)',
+  'pm.accentLabel':
+    'Couleur d’accent du profil (active « Accent par profil » dans Réglages → Apparence)',
+  'pm.activate': 'Activer',
+  'pm.create': 'Créer',
+  'pm.newProfile': 'Nouveau profil',
+  'pm.needOne': 'Vous devez avoir au moins un profil !',
+  'pm.confirmDelete':
+    'Êtes-vous sûr de vouloir supprimer ce profil ? Toutes les apps associées seront supprimées.',
+  'pm.confirmShared':
+    'Partager les connexions dans « {name} » ?\n\nLes apps de ce profil partageront un seul compte par service, comme un navigateur : connectez-vous à Google une fois → Gmail, YouTube, Drive suivent (fini la 2FA à répéter).\n\nÀ savoir : les apps vont se recharger et il faudra vous reconnecter une fois. Ce mode empêche d’avoir 2 comptes du même service dans ce profil.',
+
+  // Modale d'édition d'app
+  'edit.title': 'Modifier « {name} »',
+  'edit.name': 'Nom',
+  'edit.urlPlaceholder': 'exemple.com',
+  'edit.icon': 'Icône',
+  'edit.color': 'Couleur',
+  'edit.image': 'Image…',
+  'edit.uploadTitle': 'Téléverser votre propre image',
+  'edit.faviconTitle': 'Utiliser le favicon du site',
+  'edit.removeImage': 'Retirer l’image téléversée',
+  'edit.proxyLabel': 'Proxy / VPN (vide = suit le profil / le global)',
+
+  // Boutique d'applications
+  'store.available': '{n} applications disponibles',
+  'store.searchPlaceholder': 'Rechercher une application...',
+  'store.addTitle': 'Ajouter une application qui n’est pas dans la liste',
+  'store.addApp': 'Ajouter une app',
+  'store.all': 'Toutes',
+  'store.customTitle': 'Ajouter une application personnalisée',
+  'store.customDesc': 'N’importe quel site web peut devenir une application Orbit',
+  'store.namePlaceholder': 'Ex : Mon tableau de bord',
+  'store.image': 'Image',
+  'store.removeImage': 'Retirer l’image',
+  'store.faviconTitle': 'Utiliser le favicon du site à la place de l’emoji',
+  'store.faviconSite': 'Favicon du site',
+  'store.faviconHint': 'Entrez une URL valide pour prévisualiser le favicon',
+  'store.add': 'Ajouter',
+  'store.trash': 'Corbeille',
+  'store.emptyTrash': 'Vider la corbeille',
+  'store.confirmEmptyTrash':
+    'Vider la corbeille ? Les apps et leurs sessions seront supprimées définitivement.',
+  'store.restore': 'Restaurer (avec sa session)',
+  'store.deleteForever': 'Supprimer définitivement',
+  'store.installedOne': '✓ {n} compte installé',
+  'store.installedMany': '✓ {n} comptes installés',
+  'store.addAccountTitle': 'Ajouter un autre compte (session séparée)',
+  'store.account': 'Compte',
+  'store.uninstallAccountTitle': 'Désinstaller un compte',
+  'store.install': 'Installer',
+  'store.noApps': 'Aucune application trouvée',
 };
 
 export const en = {
@@ -284,6 +396,118 @@ export const en = {
   'qs.tip2': 'Drag and drop an app to reorder it in the sidebar',
   'qs.tip3': 'The ⧉ button at the top: split screen (2 apps side by side or top/bottom)',
   'qs.tip4': 'Type “help” here to see this help again anytime',
+
+  // Common (dialogs)
+  'common.edit': 'Edit',
+  'common.delete': 'Delete',
+  'common.back': 'Back',
+  'common.uninstall': 'Uninstall',
+
+  // Find in page
+  'find.placeholder': 'Find in page…',
+  'find.prev': 'Previous (Shift+Enter)',
+  'find.next': 'Next (Enter)',
+  'find.close': 'Close (Esc)',
+
+  // Lock
+  'lock.setTitle': 'Set a code',
+  'lock.lockedTitle': 'Orbit is locked',
+  'lock.confirm': 'Confirm the code',
+  'lock.choose': 'Choose a code (digits or text)',
+  'lock.enter': 'Enter your code to continue',
+  'lock.clear': 'Clear',
+  'lock.validate': 'Confirm',
+  'lock.tooShort': 'Code too short (4 characters minimum)',
+  'lock.tooShort2': 'Code too short',
+  'lock.mismatch': 'The two codes do not match',
+  'lock.wrong': 'Wrong code',
+
+  // App context menu
+  'ctx.open': 'Open',
+  'ctx.wake': 'Wake up',
+  'ctx.sleep': 'Put to sleep',
+  'ctx.unmute': 'Enable notifications',
+  'ctx.mute': 'Mute notifications',
+  'ctx.rename': 'Rename application',
+  'ctx.editApp': 'Edit (icon, URL, color…)',
+  'ctx.openWindow': 'Open in a window',
+  'ctx.openBrowser': 'Open in browser',
+  'ctx.moveProfile': 'Move to a profile',
+  'ctx.container': 'Container (multi-account)',
+  'ctx.clearData': 'Clear site data',
+  'ctx.more': 'Show more…',
+  'ctx.less': 'Show less',
+  'ctx.newName': 'New name…',
+  'ctx.noOtherProfile': 'No other profile',
+  'ctx.moveTo': 'Move “{name}” to:',
+  'ctx.containerOf': 'Container of “{name}”',
+  'ctx.none': 'None',
+  'ctx.newContainer': 'New container…',
+  'ctx.createAssign': 'Create & assign',
+  'ctx.confirmUninstall':
+    'Uninstall “{name}”?\nThe app will go to the trash (Store → Trash) and can be restored with its session.',
+  'ctx.confirmClear':
+    'Clear data for “{name}”?\nCookies, cache and login will be removed, and the app will reload.',
+
+  // Profile manager
+  'pm.title': 'Manage profiles',
+  'pm.namePlaceholder': 'Profile name',
+  'pm.emoji': 'Emoji',
+  'pm.color': 'Color',
+  'pm.proxyLabel': 'Proxy / VPN for this profile (empty = global setting)',
+  'pm.active': '✓ Active',
+  'pm.shareLabel': 'Share logins (browser SSO)',
+  'pm.accentLabel':
+    'Profile accent color (enable “Accent per profile” in Settings → Appearance)',
+  'pm.activate': 'Activate',
+  'pm.create': 'Create',
+  'pm.newProfile': 'New profile',
+  'pm.needOne': 'You must have at least one profile!',
+  'pm.confirmDelete':
+    'Are you sure you want to delete this profile? All associated apps will be deleted.',
+  'pm.confirmShared':
+    'Share logins in “{name}”?\n\nApps in this profile will share a single account per service, like a browser: sign in to Google once → Gmail, YouTube, Drive follow (no more repeated 2FA).\n\nNote: apps will reload and you’ll need to sign in once. This mode prevents having 2 accounts of the same service in this profile.',
+
+  // Edit app modal
+  'edit.title': 'Edit “{name}”',
+  'edit.name': 'Name',
+  'edit.urlPlaceholder': 'example.com',
+  'edit.icon': 'Icon',
+  'edit.color': 'Color',
+  'edit.image': 'Image…',
+  'edit.uploadTitle': 'Upload your own image',
+  'edit.faviconTitle': 'Use the site favicon',
+  'edit.removeImage': 'Remove uploaded image',
+  'edit.proxyLabel': 'Proxy / VPN (empty = follows profile / global)',
+
+  // App store
+  'store.available': '{n} apps available',
+  'store.searchPlaceholder': 'Search for an app...',
+  'store.addTitle': 'Add an app that is not in the list',
+  'store.addApp': 'Add an app',
+  'store.all': 'All',
+  'store.customTitle': 'Add a custom app',
+  'store.customDesc': 'Any website can become an Orbit app',
+  'store.namePlaceholder': 'e.g. My dashboard',
+  'store.image': 'Image',
+  'store.removeImage': 'Remove image',
+  'store.faviconTitle': 'Use the site favicon instead of the emoji',
+  'store.faviconSite': 'Site favicon',
+  'store.faviconHint': 'Enter a valid URL to preview the favicon',
+  'store.add': 'Add',
+  'store.trash': 'Trash',
+  'store.emptyTrash': 'Empty trash',
+  'store.confirmEmptyTrash':
+    'Empty the trash? The apps and their sessions will be permanently deleted.',
+  'store.restore': 'Restore (with its session)',
+  'store.deleteForever': 'Delete permanently',
+  'store.installedOne': '✓ {n} account installed',
+  'store.installedMany': '✓ {n} accounts installed',
+  'store.addAccountTitle': 'Add another account (separate session)',
+  'store.account': 'Account',
+  'store.uninstallAccountTitle': 'Uninstall an account',
+  'store.install': 'Install',
+  'store.noApps': 'No app found',
 };
 
 const dicts = { fr, en };

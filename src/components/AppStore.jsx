@@ -5,6 +5,7 @@ import { recipes, categories } from '../lib/recipes';
 import { homeUrlFor } from '../lib/urls';
 import { EMOJI_CHOICES, COLOR_CHOICES, getHostname, faviconServiceUrl } from '../lib/appIcons';
 import AppIcon from './AppIcon';
+import { useT } from '../lib/i18n';
 
 // Aperçu du favicon avec repli automatique (Google s2 → icon.horse)
 function FaviconPreview({ url, className = '' }) {
@@ -32,6 +33,7 @@ function normalizeUrl(url) {
 }
 
 export default function AppStore({ onClose }) {
+  const t = useT();
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [showCustomForm, setShowCustomForm] = useState(false);
@@ -157,7 +159,7 @@ export default function AppStore({ onClose }) {
             <div>
               <h2 className="text-xl font-bold">App Store</h2>
               <p className="text-sm text-text-muted">
-                {filteredRecipes.length} applications disponibles
+                {t('store.available', { n: filteredRecipes.length })}
               </p>
             </div>
           </div>
@@ -176,7 +178,7 @@ export default function AppStore({ onClose }) {
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Rechercher une application..."
+                placeholder={t('store.searchPlaceholder')}
                 className="input pl-11"
               />
             </div>
@@ -186,10 +188,10 @@ export default function AppStore({ onClose }) {
                 setSearch('');
               }}
               className={`btn ${showCustomForm ? 'btn-secondary' : 'btn-primary'} whitespace-nowrap`}
-              title="Ajouter une application qui n'est pas dans la liste"
+              title={t('store.addTitle')}
             >
               <Plus size={16} />
-              Ajouter une app
+              {t('store.addApp')}
             </button>
           </div>
 
@@ -203,7 +205,7 @@ export default function AppStore({ onClose }) {
                   : 'bg-bg-elevated text-text-secondary hover:bg-bg-hover'
               }`}
             >
-              Toutes
+              {t('store.all')}
             </button>
             {Object.entries(categories).map(([id, cat]) => (
               <button
@@ -226,21 +228,21 @@ export default function AppStore({ onClose }) {
               <div className="flex items-center gap-3">
                 <Wand2 size={20} className="text-accent-primary" />
                 <div>
-                  <h4 className="font-semibold">Ajouter une application personnalisée</h4>
+                  <h4 className="font-semibold">{t('store.customTitle')}</h4>
                   <p className="text-sm text-text-muted">
-                    N'importe quel site web peut devenir une application Orbit
+                    {t('store.customDesc')}
                   </p>
                 </div>
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="text-xs text-text-muted block mb-1.5">Nom</label>
+                  <label className="text-xs text-text-muted block mb-1.5">{t('edit.name')}</label>
                   <input
                     type="text"
                     value={customForm.name}
                     onChange={(e) => setCustomForm({ ...customForm, name: e.target.value })}
-                    placeholder="Ex : Mon tableau de bord"
+                    placeholder={t('store.namePlaceholder')}
                     className="input"
                     autoFocus
                   />
@@ -254,7 +256,7 @@ export default function AppStore({ onClose }) {
                       value={customForm.url}
                       onChange={(e) => setCustomForm({ ...customForm, url: e.target.value })}
                       onKeyDown={(e) => e.key === 'Enter' && handleAddCustom()}
-                      placeholder="exemple.com"
+                      placeholder={t('edit.urlPlaceholder')}
                       className="input pl-10"
                     />
                   </div>
@@ -262,7 +264,7 @@ export default function AppStore({ onClose }) {
               </div>
 
               <div>
-                <label className="text-xs text-text-muted block mb-1.5">Icône</label>
+                <label className="text-xs text-text-muted block mb-1.5">{t('edit.icon')}</label>
                 <div className="flex gap-1.5 flex-wrap items-center">
                   {/* Image téléversée par l'utilisateur */}
                   <input
@@ -279,10 +281,10 @@ export default function AppStore({ onClose }) {
                         ? 'bg-accent-primary/10 border-accent-primary text-accent-primary'
                         : 'bg-bg-elevated border-border text-text-secondary hover:bg-bg-hover'
                     }`}
-                    title="Téléverser votre propre image"
+                    title={t('edit.uploadTitle')}
                   >
                     <Upload size={14} />
-                    Image
+                    {t('store.image')}
                   </button>
                   {customImage && (
                     <div className="relative">
@@ -295,7 +297,7 @@ export default function AppStore({ onClose }) {
                       <button
                         onClick={() => setCustomImage('')}
                         className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-error text-white flex items-center justify-center"
-                        title="Retirer l'image"
+                        title={t('store.removeImage')}
                       >
                         <X size={12} />
                       </button>
@@ -330,10 +332,10 @@ export default function AppStore({ onClose }) {
                         ? 'bg-accent-primary/10 border-accent-primary text-accent-primary'
                         : 'bg-bg-elevated border-border text-text-secondary hover:bg-bg-hover'
                     }`}
-                    title="Utiliser le favicon du site à la place de l'emoji"
+                    title={t('store.faviconTitle')}
                   >
                     <ImageIcon size={14} />
-                    Favicon du site
+                    {t('store.faviconSite')}
                     {faviconPreview && (
                       <FaviconPreview url={customForm.url} />
                     )}
@@ -341,13 +343,13 @@ export default function AppStore({ onClose }) {
                 </div>
                 {useFavicon && !getHostname(customForm.url) && (
                   <p className="text-xs text-text-muted mt-1.5">
-                    Entrez une URL valide pour prévisualiser le favicon
+                    {t('store.faviconHint')}
                   </p>
                 )}
               </div>
 
               <div>
-                <label className="text-xs text-text-muted block mb-1.5">Couleur</label>
+                <label className="text-xs text-text-muted block mb-1.5">{t('edit.color')}</label>
                 <div className="flex gap-1.5 flex-wrap">
                   {COLOR_CHOICES.map((color) => (
                     <button
@@ -368,10 +370,10 @@ export default function AppStore({ onClose }) {
                   disabled={!customForm.name.trim() || !customForm.url.trim()}
                   className="btn btn-primary"
                 >
-                  <Plus size={16} /> Ajouter
+                  <Plus size={16} /> {t('store.add')}
                 </button>
                 <button onClick={() => setShowCustomForm(false)} className="btn btn-secondary">
-                  Annuler
+                  {t('common.cancel')}
                 </button>
               </div>
             </div>
@@ -386,17 +388,17 @@ export default function AppStore({ onClose }) {
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
                   <Trash2 size={16} className="text-text-muted" />
-                  <h4 className="font-semibold text-sm">Corbeille</h4>
+                  <h4 className="font-semibold text-sm">{t('store.trash')}</h4>
                   <span className="text-xs text-text-muted">({trash.length})</span>
                 </div>
                 <button
                   onClick={() => {
-                    if (confirm('Vider la corbeille ? Les apps et leurs sessions seront supprimées définitivement.'))
+                    if (confirm(t('store.confirmEmptyTrash')))
                       emptyTrash();
                   }}
                   className="text-xs text-error hover:underline"
                 >
-                  Vider la corbeille
+                  {t('store.emptyTrash')}
                 </button>
               </div>
               <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
@@ -417,14 +419,14 @@ export default function AppStore({ onClose }) {
                     <button
                       onClick={() => restoreApp(item.id)}
                       className="btn-icon w-7 h-7"
-                      title="Restaurer (avec sa session)"
+                      title={t('store.restore')}
                     >
                       <RotateCcw size={14} />
                     </button>
                     <button
                       onClick={() => purgeTrashApp(item.id)}
                       className="btn-icon w-7 h-7 text-error"
-                      title="Supprimer définitivement"
+                      title={t('store.deleteForever')}
                     >
                       <X size={14} />
                     </button>
@@ -463,21 +465,21 @@ export default function AppStore({ onClose }) {
                   {isInstalled ? (
                     <div className="space-y-2">
                       <div className="text-xs text-text-muted text-center">
-                        ✓ {instances.length} compte{instances.length > 1 ? 's' : ''} installé{instances.length > 1 ? 's' : ''}
+                        {t(instances.length > 1 ? 'store.installedMany' : 'store.installedOne', { n: instances.length })}
                       </div>
                       <div className="flex gap-2">
                         <button
                           onClick={() => handleInstall(recipe)}
                           className="flex-1 btn btn-secondary"
-                          title="Ajouter un autre compte (session séparée)"
+                          title={t('store.addAccountTitle')}
                         >
                           <Plus size={14} />
-                          Compte
+                          {t('store.account')}
                         </button>
                         <button
                           onClick={() => handleUninstall(recipe)}
                           className="btn btn-secondary text-error hover:bg-error/10"
-                          title="Désinstaller un compte"
+                          title={t('store.uninstallAccountTitle')}
                         >
                           <Trash2 size={14} />
                         </button>
@@ -489,7 +491,7 @@ export default function AppStore({ onClose }) {
                       className="w-full btn btn-primary"
                     >
                       <Plus size={14} />
-                      Installer
+                      {t('store.install')}
                     </button>
                   )}
                 </div>
@@ -500,7 +502,7 @@ export default function AppStore({ onClose }) {
           {filteredRecipes.length === 0 && (
             <div className="text-center py-16 text-text-muted">
               <Search size={48} className="mx-auto mb-4 opacity-50" />
-              <p>Aucune application trouvée</p>
+              <p>{t('store.noApps')}</p>
             </div>
           )}
         </div>
