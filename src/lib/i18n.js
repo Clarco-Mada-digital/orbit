@@ -77,6 +77,8 @@ export const fr = {
   'tb.splitExit': 'Quitter le partage',
   'tb.workspaces': 'Espaces de travail',
   'tb.workspacesEmpty': 'Aucun espace. Enregistre la disposition actuelle ci-dessous.',
+  'tb.workspacesHelp':
+    'Un espace mémorise le profil, l’app affichée et l’écran partagé du moment. Clique dessus plus tard pour tout rouvrir d’un coup.',
   'tb.saveLayout': 'Enregistrer la disposition actuelle',
   'tb.workspacePrompt': 'Nom de l’espace de travail :',
   'tb.workspaceDefault': 'Mon espace',
@@ -629,6 +631,8 @@ export const en = {
   'tb.splitExit': 'Exit split',
   'tb.workspaces': 'Workspaces',
   'tb.workspacesEmpty': 'No workspace yet. Save the current layout below.',
+  'tb.workspacesHelp':
+    'A workspace remembers the current profile, displayed app and split screen. Click it later to reopen everything at once.',
   'tb.saveLayout': 'Save current layout',
   'tb.workspacePrompt': 'Workspace name:',
   'tb.workspaceDefault': 'My workspace',

@@ -422,9 +422,15 @@ export default function Topbar({ onOpenQuickSwitcher }) {
             </button>
 
             {showWsMenu && (
-              <div className="absolute right-0 top-full mt-2 w-64 bg-bg-elevated border border-border rounded-xl shadow-2xl overflow-hidden z-50 animate-scale-in">
-                <div className="px-4 py-3 border-b border-border font-semibold text-sm">
-                  {t('tb.workspaces')}
+              <div
+                className="absolute right-0 top-full mt-2 w-64 bg-bg-elevated border border-border rounded-xl shadow-2xl overflow-hidden z-50 animate-scale-in"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="px-4 py-3 border-b border-border">
+                  <div className="font-semibold text-sm">{t('tb.workspaces')}</div>
+                  <p className="text-[11px] text-text-muted mt-1 leading-snug">
+                    {t('tb.workspacesHelp')}
+                  </p>
                 </div>
                 <div className="py-1 max-h-64 overflow-y-auto">
                   {workspaces.length === 0 ? (
