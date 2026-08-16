@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
 import { KeyRound, RefreshCw, ShieldCheck, ShieldAlert, Loader2, Link } from 'lucide-react';
 import { useStore } from '../stores/useStore';
+import { useT } from '../lib/i18n';
 
 // Onglet KeePassXC des Paramètres : état du pont, association, activer/désactiver
 export default function KeepassSettings() {
   const { settings, updateSettings } = useStore();
+  const t = useT();
   const [status, setStatus] = useState(null); // { enabled, associated, kpRunning, error, associationIds }
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState(null); // { type: 'ok' | 'err', text }
@@ -39,13 +41,13 @@ export default function KeepassSettings() {
     try {
       const res = await window.electronAPI?.keepassAssociate?.();
       if (res?.success) {
-        setMsg({ type: 'ok', text: `✓ Associé à KeePassXC (identifiant : ${res.id})` });
+        setMsg({ type: 'ok', text: t('kp.associatedMsg', { id: res.id }) });
       } else {
         setMsg({
           type: 'err',
           text:
             res?.error ||
-            'Association échouée. Vérifiez que KeePassXC est ouvert avec la base déverrouillée et que « Intégration navigateur » est activée.',
+            t('kp.assocFailed'),
         });
       }
     } catch (err) {
@@ -62,14 +64,13 @@ export default function KeepassSettings() {
       <div className="card">
         <h4 className="font-semibold mb-2 flex items-center gap-2">
           <KeyRound size={18} className="text-accent-primary" />
-          Remplissage automatique des identifiants
+          {t('kp.autofillTitle')}
         </h4>
         <p className="text-sm text-text-muted mb-4">
-          Quand vous cliquez sur un champ identifiant / mot de passe dans une app,
-          Orbit demande les identifiants à KeePassXC et remplit le formulaire.
+          {t('kp.autofillDesc')}
         </p>
         <label className="flex items-center justify-between">
-          <span className="font-medium">Activer l'auto-remplissage</span>
+          <span className="font-medium">{t('kp.enableAutofill')}</span>
           <input
             type="checkbox"
             checked={enabled}
@@ -82,15 +83,15 @@ export default function KeepassSettings() {
       {/* État de la connexion */}
       <div className="card">
         <div className="flex items-center justify-between mb-4">
-          <h4 className="font-semibold">Connexion à KeePassXC</h4>
+          <h4 className="font-semibold">{t('kp.connection')}</h4>
           <button onClick={() => refresh()} className="btn btn-secondary btn-sm" disabled={busy}>
             {busy ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} />}
-            Vérifier
+            {t('kp.check')}
           </button>
         </div>
 
         {!status ? (
-          <p className="text-sm text-text-muted">Chargement…</p>
+          <p className="text-sm text-text-muted">{t('kp.loading')}</p>
         ) : (
           <div className="space-y-3">
             {/* KeePassXC tourne ? */}
@@ -102,12 +103,11 @@ export default function KeepassSettings() {
               )}
               <div>
                 <div className="font-medium text-sm">
-                  {status.kpRunning ? 'KeePassXC est détecté' : "KeePassXC n'est pas joignable"}
+                  {status.kpRunning ? t('kp.detected') : t('kp.notReachable')}
                 </div>
                 {!status.kpRunning && (
                   <p className="text-xs text-text-muted">
-                    Ouvrez KeePassXC avec votre base déverrouillée, puis dans ses Paramètres →
-                    Intégration navigateur → activez « Intégration navigateur ».
+                    {t('kp.notReachableHint')}
                     {status.error ? ` (${status.error})` : ''}
                   </p>
                 )}
@@ -124,12 +124,12 @@ export default function KeepassSettings() {
               <div>
                 <div className="font-medium text-sm">
                   {status.associated
-                    ? `Associé à la base (${status.associationIds?.join(', ')})`
-                    : "Pas encore associé à une base"}
+                    ? t('kp.associatedTo', { ids: status.associationIds?.join(', ') })
+                    : t('kp.notAssociated')}
                 </div>
                 {!status.associated && (
                   <p className="text-xs text-text-muted">
-                    Cliquez sur « Associer » ci-dessous, puis approuvez la demande dans KeePassXC.
+                    {t('kp.notAssociatedHint')}
                   </p>
                 )}
               </div>
@@ -155,37 +155,23 @@ export default function KeepassSettings() {
           className="btn btn-primary mt-4 w-full"
         >
           {busy ? <Loader2 size={16} className="animate-spin" /> : <Link size={16} />}
-          {status?.associated ? "Associer un autre navigateur / re-associer" : 'Associer Orbit à KeePassXC'}
+          {status?.associated ? t('kp.reassociate') : t('kp.associate')}
         </button>
         {!status?.kpRunning && (
           <p className="text-xs text-text-muted mt-2">
-            L'association nécessite que KeePassXC soit détecté (voir ci-dessus).
+            {t('kp.needDetected')}
           </p>
         )}
       </div>
 
       {/* Comment ça marche */}
       <div className="card">
-        <h4 className="font-semibold mb-2">Comment ça marche</h4>
+        <h4 className="font-semibold mb-2">{t('kp.howTitle')}</h4>
         <ul className="text-sm text-text-muted space-y-2">
-          <li>
-            • <strong className="text-text-primary">Une seule association</strong> : cliquez sur
-            « Associer », approuvez dans KeePassXC — c'est fait, pour toujours.
-          </li>
-          <li>
-            • <strong className="text-text-primary">Remplissage automatique</strong> : dans une
-            app, cliquez sur le champ identifiant ou mot de passe → Orbit demande les identifiants
-            à KeePassXC pour le site affiché et les remplit.
-          </li>
-          <li>
-            • <strong className="text-text-primary">Aucun mot de passe stocké par Orbit</strong> :
-            les identifiants transitent chiffrés (NaCl) entre KeePassXC et l'app, jamais écrits sur
-            le disque.
-          </li>
-          <li>
-            • <strong className="text-text-primary">Multi-comptes</strong> : chaque app / compte
-            garde sa propre session ; le remplissage suit l'URL affichée.
-          </li>
+          <li>• {t('kp.how1')}</li>
+          <li>• {t('kp.how2')}</li>
+          <li>• {t('kp.how3')}</li>
+          <li>• {t('kp.how4')}</li>
         </ul>
       </div>
     </div>

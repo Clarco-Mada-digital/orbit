@@ -314,7 +314,7 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
                   {t('qs.shortcutsLabel')}
                 </h4>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {shortcutKeys().map((s, i) => (
+                  {shortcutKeys(t).map((s, i) => (
                     <div
                       key={i}
                       className="flex items-center justify-between gap-3 bg-bg-secondary border border-border rounded-lg px-3 py-2"

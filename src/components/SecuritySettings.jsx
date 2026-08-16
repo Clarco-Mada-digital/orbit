@@ -3,12 +3,14 @@ import { Lock, LockKeyhole, ShieldCheck, ShieldOff } from 'lucide-react';
 import { useStore } from '../stores/useStore';
 import { useSecurityStore } from '../lib/securityStore';
 import LockScreen from './LockScreen';
+import { useT } from '../lib/i18n';
 
 // Réglages de verrouillage : code global (au lancement) + code par profil.
 // Les codes ne transitent que vers le process principal (electron/security.js),
 // qui garde une empreinte scrypt chiffrée via le trousseau de l'OS.
 export default function SecuritySettings() {
   const { profiles, settings, updateSettings } = useStore();
+  const t = useT();
   const security = useSecurityStore();
   const [action, setAction] = useState(null); // { fn, title, subtitle, confirm }
 
@@ -37,11 +39,10 @@ export default function SecuritySettings() {
       <div className="card">
         <div className="flex items-center gap-2 mb-2">
           <ShieldCheck size={18} className="text-accent-primary" />
-          <h4 className="font-semibold">Verrouiller Orbit au démarrage</h4>
+          <h4 className="font-semibold">{t('sec.appLockTitle')}</h4>
         </div>
         <p className="text-sm text-text-muted mb-4">
-          Un code est demandé à chaque ouverture d'Orbit. Sans lui, personne ne peut voir vos
-          comptes connectés. Le code n'est jamais stocké en clair.
+          {t('sec.appLockDesc')}
         </p>
 
         {security.appLockEnabled ? (
@@ -50,13 +51,13 @@ export default function SecuritySettings() {
               onClick={() =>
                 setAction({
                   fn: (pin) => run(api.setAppLock, pin),
-                  title: 'Nouveau code',
+                  title: t('sec.newCode'),
                   confirm: true,
                 })
               }
               className="btn btn-secondary btn-sm"
             >
-              Modifier le code
+              {t('sec.changeCode')}
             </button>
             <button
               onClick={async () => {
@@ -65,20 +66,20 @@ export default function SecuritySettings() {
               }}
               className="btn btn-secondary btn-sm"
             >
-              <Lock size={14} /> Verrouiller maintenant
+              <Lock size={14} /> {t('sec.lockNow')}
             </button>
             <button
               onClick={() =>
                 setAction({
                   fn: (pin) => run(api.removeAppLock, pin),
-                  title: 'Désactiver le verrou',
-                  subtitle: 'Entrez le code actuel pour confirmer',
+                  title: t('sec.disableLockTitle'),
+                  subtitle: t('sec.enterCurrentConfirm'),
                   confirm: false,
                 })
               }
               className="btn btn-sm text-error hover:bg-error/10"
             >
-              <ShieldOff size={14} /> Désactiver
+              <ShieldOff size={14} /> {t('sec.disable')}
             </button>
           </div>
         ) : (
@@ -86,20 +87,20 @@ export default function SecuritySettings() {
             onClick={() =>
               setAction({
                 fn: (pin) => run(api.setAppLock, pin),
-                title: 'Définir un code',
+                title: t('lock.setTitle'),
                 confirm: true,
               })
             }
             className="btn btn-primary btn-sm"
           >
-            <Lock size={14} /> Activer le verrou
+            <Lock size={14} /> {t('sec.enableLock')}
           </button>
         )}
 
         <div className="mt-4 pt-4 border-t border-border">
-          <label className="block text-sm font-medium mb-1.5">Verrouillage automatique</label>
+          <label className="block text-sm font-medium mb-1.5">{t('sec.autoLock')}</label>
           <p className="text-xs text-text-muted mb-2">
-            Verrouille Orbit après une période d'inactivité (nécessite un code global).
+            {t('sec.autoLockDesc')}
           </p>
           <select
             value={settings.autoLockMinutes || 0}
@@ -107,11 +108,11 @@ export default function SecuritySettings() {
             className="input max-w-xs"
             disabled={!security.appLockEnabled}
           >
-            <option value={0}>Désactivé</option>
-            <option value={5}>Après 5 minutes</option>
-            <option value={10}>Après 10 minutes</option>
-            <option value={15}>Après 15 minutes</option>
-            <option value={30}>Après 30 minutes</option>
+            <option value={0}>{t('sec.disabled')}</option>
+            <option value={5}>{t('sec.after5')}</option>
+            <option value={10}>{t('sec.after10')}</option>
+            <option value={15}>{t('st.sleep15')}</option>
+            <option value={30}>{t('st.sleep30')}</option>
           </select>
         </div>
       </div>
@@ -120,11 +121,10 @@ export default function SecuritySettings() {
       <div className="card">
         <div className="flex items-center gap-2 mb-2">
           <LockKeyhole size={18} className="text-accent-primary" />
-          <h4 className="font-semibold">Verrouiller un profil</h4>
+          <h4 className="font-semibold">{t('sec.profileLockTitle')}</h4>
         </div>
         <p className="text-sm text-text-muted mb-4">
-          Un profil verrouillé reste masqué (ses apps ne se chargent pas) tant que son code n'est
-          pas saisi. Idéal pour séparer « perso » et « pro ».
+          {t('sec.profileLockDesc')}
         </p>
 
         <div className="space-y-2">
@@ -141,9 +141,9 @@ export default function SecuritySettings() {
                   <div className="text-xs text-text-muted">
                     {locked
                       ? isProfileUnlocked(p.id)
-                        ? 'Verrouillé · déverrouillé pour cette session'
-                        : 'Verrouillé'
-                      : 'Non verrouillé'}
+                        ? t('sec.lockedUnlockedSession')
+                        : t('sec.locked')
+                      : t('sec.notLocked')}
                   </div>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
@@ -154,7 +154,7 @@ export default function SecuritySettings() {
                         await security.refresh();
                       }}
                       className="btn btn-secondary btn-sm"
-                      title="Reverrouiller maintenant"
+                      title={t('sec.relockNow')}
                     >
                       <Lock size={13} />
                     </button>
@@ -164,27 +164,27 @@ export default function SecuritySettings() {
                       onClick={() =>
                         setAction({
                           fn: (pin) => run((v) => api.removeProfileLock(p.id, v), pin),
-                          title: `Déverrouiller « ${p.name} »`,
-                          subtitle: 'Entrez le code actuel pour retirer le verrou',
+                          title: t('sec.unlockProfileTitle', { name: p.name }),
+                          subtitle: t('sec.enterCurrentRemove'),
                           confirm: false,
                         })
                       }
                       className="btn btn-sm text-error hover:bg-error/10"
                     >
-                      Retirer le code
+                      {t('sec.removeCode')}
                     </button>
                   ) : (
                     <button
                       onClick={() =>
                         setAction({
                           fn: (pin) => run((v) => api.setProfileLock(p.id, v), pin),
-                          title: `Code pour « ${p.name} »`,
+                          title: t('sec.codeForProfile', { name: p.name }),
                           confirm: true,
                         })
                       }
                       className="btn btn-secondary btn-sm"
                     >
-                      <Lock size={13} /> Définir un code
+                      <Lock size={13} /> {t('lock.setTitle')}
                     </button>
                   )}
                 </div>

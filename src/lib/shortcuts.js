@@ -81,24 +81,26 @@ export function matchShortcutInput(input) {
   return null;
 }
 
-// Liste d'affichage (panneau « help ») — adaptée à la plateforme
-export function shortcutKeys() {
+// Liste d'affichage (panneau « help ») — adaptée à la plateforme.
+// Accepte une fonction de traduction `t` (i18n) ; sans elle, retombe sur le FR.
+export function shortcutKeys(t) {
+  const d = (key, fr) => (typeof t === 'function' ? t(key) : fr);
   const mac = isMac();
   const M = mac ? '⌘' : 'Alt';
   return [
-    { keys: [M, 'K'], desc: 'Rechercher partout (ce panneau)' },
-    { keys: [M, ','], desc: 'Paramètres' },
-    { keys: [M, '⇧', 'O'], desc: "Boutique d'applications" },
-    { keys: [M, '⇧', 'P'], desc: 'Gérer les profils' },
-    { keys: [M, 'S'], desc: "Mettre en veille / réveiller l'app active" },
-    { keys: [M, 'B'], desc: 'Réduire / agrandir la barre latérale' },
-    { keys: [M, '⇧', 'M'], desc: 'Tout marquer comme lu' },
-    { keys: mac ? [M, '`'] : [M, 'Page ↓'], desc: "Passer à l'app suivante" },
-    { keys: mac ? [M, '⇧', '`'] : [M, 'Page ↑'], desc: "Passer à l'app précédente" },
-    { keys: [M, '1…9'], desc: 'Aller directement à l’app n° 1 à 9' },
-    { keys: [M, '+'], desc: 'Zoom avant (app active)' },
-    { keys: [M, '−'], desc: 'Zoom arrière (app active)' },
-    { keys: [M, '0'], desc: 'Réinitialiser le zoom' },
-    { keys: ['Échap'], desc: 'Fermer / annuler' },
+    { keys: [M, 'K'], desc: d('sc.search', 'Rechercher partout (ce panneau)') },
+    { keys: [M, ','], desc: d('sc.settings', 'Paramètres') },
+    { keys: [M, '⇧', 'O'], desc: d('sc.store', "Boutique d'applications") },
+    { keys: [M, '⇧', 'P'], desc: d('sc.profiles', 'Gérer les profils') },
+    { keys: [M, 'S'], desc: d('sc.sleep', "Mettre en veille / réveiller l'app active") },
+    { keys: [M, 'B'], desc: d('sc.sidebar', 'Réduire / agrandir la barre latérale') },
+    { keys: [M, '⇧', 'M'], desc: d('sc.markAll', 'Tout marquer comme lu') },
+    { keys: mac ? [M, '`'] : [M, 'Page ↓'], desc: d('sc.nextApp', "Passer à l'app suivante") },
+    { keys: mac ? [M, '⇧', '`'] : [M, 'Page ↑'], desc: d('sc.prevApp', "Passer à l'app précédente") },
+    { keys: [M, '1…9'], desc: d('sc.gotoApp', 'Aller directement à l’app n° 1 à 9') },
+    { keys: [M, '+'], desc: d('sc.zoomIn', 'Zoom avant (app active)') },
+    { keys: [M, '−'], desc: d('sc.zoomOut', 'Zoom arrière (app active)') },
+    { keys: [M, '0'], desc: d('sc.zoomReset', 'Réinitialiser le zoom') },
+    { keys: [d('sc.escKey', 'Échap')], desc: d('sc.escape', 'Fermer / annuler') },
   ];
 }

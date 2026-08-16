@@ -407,6 +407,138 @@ export const fr = {
   // Réglages — À propos
   'st.license': 'Licence',
   'st.licenseText': 'Orbit est un logiciel open-source sous licence MIT.',
+
+  // Descriptions des raccourcis
+  'sc.search': 'Rechercher partout (ce panneau)',
+  'sc.settings': 'Paramètres',
+  'sc.store': "Boutique d'applications",
+  'sc.profiles': 'Gérer les profils',
+  'sc.sleep': "Mettre en veille / réveiller l'app active",
+  'sc.sidebar': 'Réduire / agrandir la barre latérale',
+  'sc.markAll': 'Tout marquer comme lu',
+  'sc.nextApp': "Passer à l'app suivante",
+  'sc.prevApp': "Passer à l'app précédente",
+  'sc.gotoApp': 'Aller directement à l’app n° 1 à 9',
+  'sc.zoomIn': 'Zoom avant (app active)',
+  'sc.zoomOut': 'Zoom arrière (app active)',
+  'sc.zoomReset': 'Réinitialiser le zoom',
+  'sc.escape': 'Fermer / annuler',
+  'sc.escKey': 'Échap',
+
+  // KeePassXC
+  'kp.autofillTitle': 'Remplissage automatique des identifiants',
+  'kp.autofillDesc':
+    'Quand vous cliquez sur un champ identifiant / mot de passe dans une app, Orbit demande les identifiants à KeePassXC et remplit le formulaire.',
+  'kp.enableAutofill': "Activer l'auto-remplissage",
+  'kp.connection': 'Connexion à KeePassXC',
+  'kp.check': 'Vérifier',
+  'kp.loading': 'Chargement…',
+  'kp.detected': 'KeePassXC est détecté',
+  'kp.notReachable': "KeePassXC n'est pas joignable",
+  'kp.notReachableHint':
+    'Ouvrez KeePassXC avec votre base déverrouillée, puis dans ses Paramètres → Intégration navigateur → activez « Intégration navigateur ».',
+  'kp.associatedTo': 'Associé à la base ({ids})',
+  'kp.notAssociated': 'Pas encore associé à une base',
+  'kp.notAssociatedHint':
+    'Cliquez sur « Associer » ci-dessous, puis approuvez la demande dans KeePassXC.',
+  'kp.associatedMsg': '✓ Associé à KeePassXC (identifiant : {id})',
+  'kp.assocFailed':
+    'Association échouée. Vérifiez que KeePassXC est ouvert avec la base déverrouillée et que « Intégration navigateur » est activée.',
+  'kp.reassociate': 'Associer un autre navigateur / re-associer',
+  'kp.associate': 'Associer Orbit à KeePassXC',
+  'kp.needDetected': "L'association nécessite que KeePassXC soit détecté (voir ci-dessus).",
+  'kp.howTitle': 'Comment ça marche',
+  'kp.how1':
+    'Une seule association : cliquez sur « Associer », approuvez dans KeePassXC — c’est fait, pour toujours.',
+  'kp.how2':
+    'Remplissage automatique : dans une app, cliquez sur le champ identifiant ou mot de passe → Orbit demande les identifiants à KeePassXC pour le site affiché et les remplit.',
+  'kp.how3':
+    "Aucun mot de passe stocké par Orbit : les identifiants transitent chiffrés (NaCl) entre KeePassXC et l'app, jamais écrits sur le disque.",
+  'kp.how4':
+    "Multi-comptes : chaque app / compte garde sa propre session ; le remplissage suit l'URL affichée.",
+
+  // Sauvegarde
+  'bk.invalid': 'Fichier de sauvegarde invalide',
+  'bk.saved': 'Sauvegarde enregistrée.',
+  'bk.savedEnc': 'Sauvegarde enregistrée (chiffrée).',
+  'bk.exportFail': "Échec de l'export",
+  'bk.restored': 'Configuration restaurée. Rechargement…',
+  'bk.importFail': "Échec de l'import",
+  'bk.wrongPwd': 'Mot de passe incorrect',
+  'bk.exportTitle': 'Exporter la configuration',
+  'bk.exportDesc':
+    'Enregistre vos profils, apps et réglages dans un fichier. Idéal comme sauvegarde ou pour migrer vers un autre PC. Les sessions/comptes connectés ne sont pas inclus (ils restent sur la machine).',
+  'bk.exportPwdPlaceholder': 'Mot de passe (optionnel, pour chiffrer)',
+  'bk.export': 'Exporter',
+  'bk.encNote': 'Le fichier sera chiffré (AES-256). Sans ce mot de passe, il sera illisible.',
+  'bk.importTitle': 'Importer / restaurer',
+  'bk.importDesc': 'Remplace la configuration actuelle par celle du fichier. Orbit se recharge ensuite.',
+  'bk.filePwdPlaceholder': 'Mot de passe du fichier',
+  'bk.unlock': 'Déverrouiller',
+  'bk.chooseFile': 'Choisir un fichier…',
+
+  // Sécurité
+  'sec.appLockTitle': 'Verrouiller Orbit au démarrage',
+  'sec.appLockDesc':
+    "Un code est demandé à chaque ouverture d'Orbit. Sans lui, personne ne peut voir vos comptes connectés. Le code n'est jamais stocké en clair.",
+  'sec.newCode': 'Nouveau code',
+  'sec.changeCode': 'Modifier le code',
+  'sec.lockNow': 'Verrouiller maintenant',
+  'sec.disableLockTitle': 'Désactiver le verrou',
+  'sec.enterCurrentConfirm': 'Entrez le code actuel pour confirmer',
+  'sec.disable': 'Désactiver',
+  'sec.enableLock': 'Activer le verrou',
+  'sec.autoLock': 'Verrouillage automatique',
+  'sec.autoLockDesc': "Verrouille Orbit après une période d'inactivité (nécessite un code global).",
+  'sec.disabled': 'Désactivé',
+  'sec.after5': 'Après 5 minutes',
+  'sec.after10': 'Après 10 minutes',
+  'sec.profileLockTitle': 'Verrouiller un profil',
+  'sec.profileLockDesc':
+    "Un profil verrouillé reste masqué (ses apps ne se chargent pas) tant que son code n'est pas saisi. Idéal pour séparer « perso » et « pro ».",
+  'sec.lockedUnlockedSession': 'Verrouillé · déverrouillé pour cette session',
+  'sec.locked': 'Verrouillé',
+  'sec.notLocked': 'Non verrouillé',
+  'sec.relockNow': 'Reverrouiller maintenant',
+  'sec.unlockProfileTitle': 'Déverrouiller « {name} »',
+  'sec.enterCurrentRemove': 'Entrez le code actuel pour retirer le verrou',
+  'sec.removeCode': 'Retirer le code',
+  'sec.codeForProfile': 'Code pour « {name} »',
+
+  // Extensions
+  'ex.webstoreTitle': 'Installer depuis le Chrome Web Store',
+  'ex.webstoreDesc':
+    "Collez le lien de l'extension (ex. chromewebstore.google.com/detail/…) ou son ID. Orbit télécharge et installe automatiquement.",
+  'ex.altTitle': 'Méthodes alternatives',
+  'ex.altDesc':
+    "Un dossier d'extension dépaqueté (celui qui contient manifest.json) ou un fichier .crx téléchargé ailleurs.",
+  'ex.fromFolder': 'Depuis un dossier…',
+  'ex.fromCrx': 'Depuis un fichier .crx…',
+  'ex.installedTitle': 'Extensions installées',
+  'ex.reloadAppsTitle': 'Recharger toutes les apps ouvertes pour (ré)appliquer les extensions',
+  'ex.reloadApps': 'Recharger les apps',
+  'ex.none': 'Aucune extension installée',
+  'ex.enabled': '· activée',
+  'ex.disabledLabel': '· désactivée',
+  'ex.optionsTitle': "Ouvrir la page d'options de l'extension",
+  'ex.toggleTitle': 'Activer / Désactiver',
+  'ex.mv3title': 'Manifest V3 (récent) : certaines fonctions peuvent ne pas marcher dans Orbit',
+  'ex.mv2title': 'Manifest V2 (classique) : le mieux supporté',
+  'ex.srcCrx': 'fichier .crx',
+  'ex.srcFolder': 'dossier',
+  'ex.webstoreCantInstall': "Impossible d'installer cette extension depuis le Chrome Web Store",
+  'ex.alreadyInstalled': 'Cette extension est déjà installée.',
+  'ex.cantInstall': "Impossible d'installer cette extension",
+  'ex.confirmRemove': "Désinstaller l'extension « {name} » ?",
+  'ex.limitsTitle': 'Limites du support des extensions',
+  'ex.limits1':
+    "Orbit utilise le support natif d'Electron : les content scripts, le stockage local et le webRequest fonctionnent (bloqueurs de publicité comme uBlock Origin, Dark Reader…).",
+  'ex.limits2':
+    "En revanche, les popups de barre d'outils (icône cliquable de l'extension) et le native messaging (connexion à une application locale) ne sont pas disponibles dans les webviews. Les extensions qui en ont besoin (gestionnaires de mots de passe) affichent un avertissement ⚠️ dans la liste et ne pourront pas se connecter à l'application locale. Bon à savoir : pour KeePassXC, Orbit intègre un pont natif (onglet KeePassXC des Paramètres) qui remplace l'extension — association en un clic et remplissage automatique des identifiants. Les extensions sont appliquées à tous les profils.",
+  'ex.limits3':
+    "Les extensions qui ont une page d'options (uBlock Origin, Dark Reader…) se configurent avec le bouton ⚙️ de la liste ci-dessus.",
+  'ex.limits4':
+    "Une extension installée ne s'applique qu'aux pages rechargées après son installation : utilisez le bouton ⟳ de la barre d'URL pour recharger une app déjà ouverte.",
 };
 
 export const en = {
@@ -806,6 +938,137 @@ export const en = {
   // Settings — About
   'st.license': 'License',
   'st.licenseText': 'Orbit is open-source software under the MIT license.',
+
+  // Shortcut descriptions
+  'sc.search': 'Search everywhere (this panel)',
+  'sc.settings': 'Settings',
+  'sc.store': 'App store',
+  'sc.profiles': 'Manage profiles',
+  'sc.sleep': 'Sleep / wake the active app',
+  'sc.sidebar': 'Collapse / expand the sidebar',
+  'sc.markAll': 'Mark all as read',
+  'sc.nextApp': 'Go to next app',
+  'sc.prevApp': 'Go to previous app',
+  'sc.gotoApp': 'Jump directly to app #1 to #9',
+  'sc.zoomIn': 'Zoom in (active app)',
+  'sc.zoomOut': 'Zoom out (active app)',
+  'sc.zoomReset': 'Reset zoom',
+  'sc.escape': 'Close / cancel',
+  'sc.escKey': 'Esc',
+
+  // KeePassXC
+  'kp.autofillTitle': 'Automatic credential filling',
+  'kp.autofillDesc':
+    'When you click a username / password field in an app, Orbit asks KeePassXC for the credentials and fills the form.',
+  'kp.enableAutofill': 'Enable auto-fill',
+  'kp.connection': 'Connection to KeePassXC',
+  'kp.check': 'Check',
+  'kp.loading': 'Loading…',
+  'kp.detected': 'KeePassXC detected',
+  'kp.notReachable': 'KeePassXC is not reachable',
+  'kp.notReachableHint':
+    'Open KeePassXC with your database unlocked, then in its Settings → Browser Integration → enable “Browser Integration”.',
+  'kp.associatedTo': 'Associated with the database ({ids})',
+  'kp.notAssociated': 'Not associated with a database yet',
+  'kp.notAssociatedHint': 'Click “Associate” below, then approve the request in KeePassXC.',
+  'kp.associatedMsg': '✓ Associated with KeePassXC (id: {id})',
+  'kp.assocFailed':
+    'Association failed. Make sure KeePassXC is open with the database unlocked and that “Browser Integration” is enabled.',
+  'kp.reassociate': 'Associate another browser / re-associate',
+  'kp.associate': 'Associate Orbit with KeePassXC',
+  'kp.needDetected': 'Association requires KeePassXC to be detected (see above).',
+  'kp.howTitle': 'How it works',
+  'kp.how1':
+    'A single association: click “Associate”, approve in KeePassXC — done, forever.',
+  'kp.how2':
+    'Automatic filling: in an app, click the username or password field → Orbit asks KeePassXC for the credentials of the displayed site and fills them.',
+  'kp.how3':
+    'No password stored by Orbit: credentials travel encrypted (NaCl) between KeePassXC and the app, never written to disk.',
+  'kp.how4':
+    'Multi-account: each app / account keeps its own session; filling follows the displayed URL.',
+
+  // Backup
+  'bk.invalid': 'Invalid backup file',
+  'bk.saved': 'Backup saved.',
+  'bk.savedEnc': 'Backup saved (encrypted).',
+  'bk.exportFail': 'Export failed',
+  'bk.restored': 'Configuration restored. Reloading…',
+  'bk.importFail': 'Import failed',
+  'bk.wrongPwd': 'Wrong password',
+  'bk.exportTitle': 'Export configuration',
+  'bk.exportDesc':
+    'Saves your profiles, apps and settings to a file. Ideal as a backup or to migrate to another PC. Logged-in sessions/accounts are not included (they stay on the machine).',
+  'bk.exportPwdPlaceholder': 'Password (optional, to encrypt)',
+  'bk.export': 'Export',
+  'bk.encNote': 'The file will be encrypted (AES-256). Without this password, it will be unreadable.',
+  'bk.importTitle': 'Import / restore',
+  'bk.importDesc': 'Replaces the current configuration with the one from the file. Orbit then reloads.',
+  'bk.filePwdPlaceholder': 'File password',
+  'bk.unlock': 'Unlock',
+  'bk.chooseFile': 'Choose a file…',
+
+  // Security
+  'sec.appLockTitle': 'Lock Orbit on startup',
+  'sec.appLockDesc':
+    'A code is required each time Orbit opens. Without it, nobody can see your logged-in accounts. The code is never stored in plain text.',
+  'sec.newCode': 'New code',
+  'sec.changeCode': 'Change code',
+  'sec.lockNow': 'Lock now',
+  'sec.disableLockTitle': 'Disable lock',
+  'sec.enterCurrentConfirm': 'Enter the current code to confirm',
+  'sec.disable': 'Disable',
+  'sec.enableLock': 'Enable lock',
+  'sec.autoLock': 'Automatic lock',
+  'sec.autoLockDesc': 'Locks Orbit after a period of inactivity (requires a global code).',
+  'sec.disabled': 'Disabled',
+  'sec.after5': 'After 5 minutes',
+  'sec.after10': 'After 10 minutes',
+  'sec.profileLockTitle': 'Lock a profile',
+  'sec.profileLockDesc':
+    'A locked profile stays hidden (its apps do not load) until its code is entered. Ideal to separate “personal” and “work”.',
+  'sec.lockedUnlockedSession': 'Locked · unlocked for this session',
+  'sec.locked': 'Locked',
+  'sec.notLocked': 'Not locked',
+  'sec.relockNow': 'Re-lock now',
+  'sec.unlockProfileTitle': 'Unlock “{name}”',
+  'sec.enterCurrentRemove': 'Enter the current code to remove the lock',
+  'sec.removeCode': 'Remove code',
+  'sec.codeForProfile': 'Code for “{name}”',
+
+  // Extensions
+  'ex.webstoreTitle': 'Install from the Chrome Web Store',
+  'ex.webstoreDesc':
+    'Paste the extension link (e.g. chromewebstore.google.com/detail/…) or its ID. Orbit downloads and installs it automatically.',
+  'ex.altTitle': 'Alternative methods',
+  'ex.altDesc':
+    'An unpacked extension folder (the one containing manifest.json) or a .crx file downloaded elsewhere.',
+  'ex.fromFolder': 'From a folder…',
+  'ex.fromCrx': 'From a .crx file…',
+  'ex.installedTitle': 'Installed extensions',
+  'ex.reloadAppsTitle': 'Reload all open apps to (re)apply the extensions',
+  'ex.reloadApps': 'Reload apps',
+  'ex.none': 'No extension installed',
+  'ex.enabled': '· enabled',
+  'ex.disabledLabel': '· disabled',
+  'ex.optionsTitle': 'Open the extension’s options page',
+  'ex.toggleTitle': 'Enable / Disable',
+  'ex.mv3title': 'Manifest V3 (recent): some features may not work in Orbit',
+  'ex.mv2title': 'Manifest V2 (classic): best supported',
+  'ex.srcCrx': '.crx file',
+  'ex.srcFolder': 'folder',
+  'ex.webstoreCantInstall': 'Unable to install this extension from the Chrome Web Store',
+  'ex.alreadyInstalled': 'This extension is already installed.',
+  'ex.cantInstall': 'Unable to install this extension',
+  'ex.confirmRemove': 'Uninstall the extension “{name}”?',
+  'ex.limitsTitle': 'Extension support limits',
+  'ex.limits1':
+    'Orbit uses Electron’s native support: content scripts, local storage and webRequest work (ad blockers like uBlock Origin, Dark Reader…).',
+  'ex.limits2':
+    'However, toolbar popups (the extension’s clickable icon) and native messaging (connecting to a local app) are not available in webviews. Extensions that need them (password managers) show a ⚠️ warning in the list and won’t be able to connect to the local app. Good to know: for KeePassXC, Orbit includes a native bridge (KeePassXC tab in Settings) that replaces the extension — one-click association and automatic credential filling. Extensions apply to all profiles.',
+  'ex.limits3':
+    'Extensions with an options page (uBlock Origin, Dark Reader…) are configured with the ⚙️ button in the list above.',
+  'ex.limits4':
+    'An installed extension only applies to pages reloaded after its installation: use the ⟳ button in the URL bar to reload an already-open app.',
 };
 
 const dicts = { fr, en };

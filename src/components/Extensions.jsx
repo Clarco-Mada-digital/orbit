@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { Puzzle, FolderOpen, FileArchive, Trash2, Loader2, Info, Globe, Download, Settings2, AlertTriangle, RotateCw } from 'lucide-react';
 import { useStore } from '../stores/useStore';
 import { getAllWebviews } from '../lib/webviewRegistry';
+import { useT } from '../lib/i18n';
 
 // Recharge toutes les apps ouvertes : indispensable après un changement
 // d'extensions, car les content scripts ne s'injectent que sur une navigation
@@ -19,6 +20,7 @@ function reloadAllApps() {
 // Infos d'une extension : version du manifeste (V2/V3) + avertissements
 // (fonctionnalités non supportées par Electron). Chargés via le main process.
 function ExtWarnings({ ext }) {
+  const t = useT();
   const [info, setInfo] = useState(null);
 
   useEffect(() => {
@@ -49,8 +51,8 @@ function ExtWarnings({ ext }) {
         }`}
         title={
           isV3
-            ? 'Manifest V3 (récent) : certaines fonctions peuvent ne pas marcher dans Orbit'
-            : 'Manifest V2 (classique) : le mieux supporté'
+            ? t('ex.mv3title')
+            : t('ex.mv2title')
         }
       >
         {isV3 ? 'Manifest V3' : 'Manifest V2'}
@@ -70,6 +72,7 @@ function ExtWarnings({ ext }) {
 // Les extensions sont injectées dans toutes les sessions (profils) via le
 // main process.
 export default function Extensions() {
+  const t = useT();
   const { extensions, updateExtensions } = useStore();
   const [busy, setBusy] = useState(null); // 'webstore' | 'folder' | 'crx' | null
   const [storeUrl, setStoreUrl] = useState('');
@@ -93,8 +96,8 @@ export default function Extensions() {
     ext.source === 'webstore'
       ? 'Chrome Web Store'
       : ext.source === 'crx' || ext.managed
-        ? 'fichier .crx'
-        : 'dossier';
+        ? t('ex.srcCrx')
+        : t('ex.srcFolder');
 
   // ---- Installation depuis le Chrome Web Store (URL ou ID) ----
   const handleWebStore = async () => {
@@ -103,12 +106,12 @@ export default function Extensions() {
     try {
       const res = await window.electronAPI?.installWebStoreExtension?.(storeUrl);
       if (!res || !res.success) {
-        setError(res?.error || "Impossible d'installer cette extension depuis le Chrome Web Store");
+        setError(res?.error || t('ex.webstoreCantInstall'));
         return;
       }
       const ext = res.extension;
       if (extensions.some((e) => e.id === ext.id)) {
-        setError('Cette extension est déjà installée.');
+        setError(t('ex.alreadyInstalled'));
         return;
       }
       // Recharge les apps ouvertes pour activer l'extension immédiatement
@@ -134,7 +137,7 @@ export default function Extensions() {
 
       const res = await window.electronAPI?.installExtension?.({ kind, path: picked });
       if (!res || !res.success) {
-        setError(res?.error || "Impossible d'installer cette extension");
+        setError(res?.error || t('ex.cantInstall'));
         return;
       }
       const ext = res.extension;
@@ -159,7 +162,7 @@ export default function Extensions() {
   };
 
   const handleRemove = async (ext) => {
-    if (!confirm(`Désinstaller l'extension « ${ext.name} » ?`)) return;
+    if (!confirm(t('ex.confirmRemove', { name: ext.name }))) return;
     await window.electronAPI?.uninstallExtension?.({
       id: ext.id,
       path: ext.path,
@@ -183,15 +186,9 @@ export default function Extensions() {
       <div className="card">
         <div className="flex items-center gap-2 mb-2">
           <Globe size={18} className="text-accent-primary" />
-          <h4 className="font-semibold">Installer depuis le Chrome Web Store</h4>
+          <h4 className="font-semibold">{t('ex.webstoreTitle')}</h4>
         </div>
-        <p className="text-sm text-text-muted mb-4">
-          Collez le lien de l'extension (ex.{' '}
-          <span className="text-text-secondary">
-            chromewebstore.google.com/detail/u-block-origin/cjpalh…
-          </span>{' '}
-          ) ou son ID. Orbit télécharge et installe automatiquement.
-        </p>
+        <p className="text-sm text-text-muted mb-4">{t('ex.webstoreDesc')}</p>
         <div className="flex gap-2">
           <div className="relative flex-1">
             <Download className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" size={16} />
@@ -210,20 +207,15 @@ export default function Extensions() {
             className="btn btn-primary whitespace-nowrap"
           >
             {busy === 'webstore' ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
-            Installer
+            {t('store.install')}
           </button>
         </div>
       </div>
 
       {/* Méthodes alternatives */}
       <div className="card">
-        <h4 className="font-semibold mb-2">Méthodes alternatives</h4>
-        <p className="text-sm text-text-muted mb-4">
-          Un dossier d'extension dépaqueté (celui qui contient{' '}
-          <code className="px-1 py-0.5 bg-bg-secondary border border-border rounded text-xs">manifest.json</code>{' '}
-          ) ou un fichier <code className="px-1 py-0.5 bg-bg-secondary border border-border rounded text-xs">.crx</code>{' '}
-          téléchargé ailleurs.
-        </p>
+        <h4 className="font-semibold mb-2">{t('ex.altTitle')}</h4>
+        <p className="text-sm text-text-muted mb-4">{t('ex.altDesc')}</p>
         <div className="flex gap-3">
           <button
             onClick={() => handleAdd('folder')}
@@ -231,7 +223,7 @@ export default function Extensions() {
             className="btn btn-secondary"
           >
             {busy === 'folder' ? <Loader2 size={16} className="animate-spin" /> : <FolderOpen size={16} />}
-            Depuis un dossier…
+            {t('ex.fromFolder')}
           </button>
           <button
             onClick={() => handleAdd('crx')}
@@ -239,7 +231,7 @@ export default function Extensions() {
             className="btn btn-secondary"
           >
             {busy === 'crx' ? <Loader2 size={16} className="animate-spin" /> : <FileArchive size={16} />}
-            Depuis un fichier .crx…
+            {t('ex.fromCrx')}
           </button>
         </div>
         {error && (
@@ -253,15 +245,15 @@ export default function Extensions() {
       <div className="card">
         <div className="flex items-center gap-2 mb-4">
           <Puzzle size={18} className="text-accent-primary" />
-          <h4 className="font-semibold">Extensions installées</h4>
+          <h4 className="font-semibold">{t('ex.installedTitle')}</h4>
           <span className="text-xs text-text-muted">({extensions.length})</span>
           {extensions.length > 0 && (
             <button
               onClick={reloadAllApps}
               className="ml-auto text-xs text-accent-primary hover:text-accent-hover flex items-center gap-1"
-              title="Recharger toutes les apps ouvertes pour (ré)appliquer les extensions"
+              title={t('ex.reloadAppsTitle')}
             >
-              <RotateCw size={13} /> Recharger les apps
+              <RotateCw size={13} /> {t('ex.reloadApps')}
             </button>
           )}
         </div>
@@ -269,7 +261,7 @@ export default function Extensions() {
         {extensions.length === 0 ? (
           <div className="text-center py-8 text-text-muted text-sm">
             <div className="text-3xl mb-2">🧩</div>
-            <p>Aucune extension installée</p>
+            <p>{t('ex.none')}</p>
           </div>
         ) : (
           <div className="space-y-3">
@@ -290,18 +282,18 @@ export default function Extensions() {
                   <div className="text-xs text-text-muted">
                     v{ext.version} · {sourceLabel(ext)}
                     {' '}
-                    {ext.enabled ? '· activée' : '· désactivée'}
+                    {ext.enabled ? t('ex.enabled') : t('ex.disabledLabel')}
                   </div>
                   <ExtWarnings ext={ext} />
                 </div>
                 <button
                   onClick={() => openOptions(ext)}
                   className="btn-icon flex-shrink-0"
-                  title="Ouvrir la page d'options de l'extension"
+                  title={t('ex.optionsTitle')}
                 >
                   <Settings2 size={16} />
                 </button>
-                <label className="flex items-center cursor-pointer flex-shrink-0" title="Activer / Désactiver">
+                <label className="flex items-center cursor-pointer flex-shrink-0" title={t('ex.toggleTitle')}>
                   <input
                     type="checkbox"
                     checked={ext.enabled}
@@ -312,7 +304,7 @@ export default function Extensions() {
                 <button
                   onClick={() => handleRemove(ext)}
                   className="btn-icon text-error flex-shrink-0"
-                  title="Désinstaller"
+                  title={t('common.uninstall')}
                 >
                   <Trash2 size={16} />
                 </button>
@@ -327,32 +319,11 @@ export default function Extensions() {
         <div className="flex gap-3">
           <Info size={18} className="text-accent-primary flex-shrink-0 mt-0.5" />
           <div className="text-sm text-text-muted space-y-2">
-            <p className="font-medium text-text-primary">Limites du support des extensions</p>
-            <p>
-              Orbit utilise le support natif d'Electron : les <strong>content scripts</strong>, le{' '}
-              <strong>stockage local</strong> et le <strong>webRequest</strong> fonctionnent
-              (bloqueurs de publicité comme uBlock Origin, Dark Reader…).
-            </p>
-            <p>
-              En revanche, les <strong>popups de barre d'outils</strong> (icône cliquable de
-              l'extension) et le <strong>native messaging</strong> (connexion à une application
-              locale) ne sont pas disponibles dans les webviews. Les extensions qui en ont
-              besoin (gestionnaires de mots de passe) affichent un <strong>avertissement ⚠️</strong>
-              dans la liste et ne pourront pas se connecter à l'application locale.
-              <strong>Bon à savoir</strong> : pour KeePassXC, Orbit intègre un <strong>pont natif</strong>
-              (onglet KeePassXC des Paramètres) qui remplace l'extension — association en un
-              clic et remplissage automatique des identifiants dans les apps.
-              Les extensions sont appliquées à <strong>tous les profils</strong>.
-            </p>
-            <p>
-              Les extensions qui ont une page d'options (uBlock Origin, Dark Reader…) se
-              configurent avec le bouton <strong>⚙️</strong> de la liste ci-dessus.
-            </p>
-            <p>
-              Une extension installée ne s'applique qu'aux pages <strong>rechargées après</strong> son
-              installation : utilisez le bouton ⟳ de la barre d'URL pour recharger une app déjà
-              ouverte.
-            </p>
+            <p className="font-medium text-text-primary">{t('ex.limitsTitle')}</p>
+            <p>{t('ex.limits1')}</p>
+            <p>{t('ex.limits2')}</p>
+            <p>{t('ex.limits3')}</p>
+            <p>{t('ex.limits4')}</p>
           </div>
         </div>
       </div>

@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Download, Upload, ShieldCheck, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
 import { useStore, defaultSettings } from '../stores/useStore';
+import { useT } from '../lib/i18n';
 
 // Champs de configuration inclus dans une sauvegarde (on exclut l'état
 // transitoire : app active, écran partagé…).
@@ -20,7 +21,7 @@ function buildPayload() {
 
 function applyPayload(data) {
   if (!data || !Array.isArray(data.profiles) || !Array.isArray(data.apps)) {
-    throw new Error('Fichier de sauvegarde invalide');
+    throw new Error(t('bk.invalid'));
   }
   useStore.setState({
     profiles: data.profiles,
@@ -35,6 +36,7 @@ function applyPayload(data) {
 }
 
 export default function BackupSettings() {
+  const t = useT();
   const [exportPwd, setExportPwd] = useState('');
   const [busy, setBusy] = useState(null); // 'export' | 'import' | null
   const [msg, setMsg] = useState(null); // { type: 'ok'|'err', text }
@@ -51,10 +53,10 @@ export default function BackupSettings() {
         password: exportPwd || '',
       });
       if (res?.success) {
-        setMsg({ type: 'ok', text: `Sauvegarde enregistrée${res.encrypted ? ' (chiffrée)' : ''}.` });
+        setMsg({ type: 'ok', text: res.encrypted ? t('bk.savedEnc') : t('bk.saved') });
         setExportPwd('');
       } else if (!res?.canceled) {
-        setMsg({ type: 'err', text: res?.error || "Échec de l'export" });
+        setMsg({ type: 'err', text: res?.error || t('bk.exportFail') });
       }
     } finally {
       setBusy(null);
@@ -64,7 +66,7 @@ export default function BackupSettings() {
   const finishImport = (data) => {
     try {
       applyPayload(data);
-      setMsg({ type: 'ok', text: 'Configuration restaurée. Rechargement…' });
+      setMsg({ type: 'ok', text: t('bk.restored') });
       setTimeout(() => window.location.reload(), 800);
     } catch (err) {
       setMsg({ type: 'err', text: String(err.message || err) });
@@ -78,7 +80,7 @@ export default function BackupSettings() {
     try {
       const res = await window.electronAPI?.backupImport?.();
       if (!res?.success) {
-        if (!res?.canceled) setMsg({ type: 'err', text: res?.error || "Échec de l'import" });
+        if (!res?.canceled) setMsg({ type: 'err', text: res?.error || t('bk.importFail') });
         return;
       }
       if (res.encrypted) {
@@ -98,7 +100,7 @@ export default function BackupSettings() {
       setImportPwd('');
       finishImport(res.data);
     } else {
-      setMsg({ type: 'err', text: res?.error || 'Mot de passe incorrect' });
+      setMsg({ type: 'err', text: res?.error || t('bk.wrongPwd') });
     }
   };
 
@@ -107,30 +109,27 @@ export default function BackupSettings() {
       <div className="card">
         <div className="flex items-center gap-2 mb-2">
           <Download size={18} className="text-accent-primary" />
-          <h4 className="font-semibold">Exporter la configuration</h4>
+          <h4 className="font-semibold">{t('bk.exportTitle')}</h4>
         </div>
         <p className="text-sm text-text-muted mb-4">
-          Enregistre vos profils, apps et réglages dans un fichier. Idéal comme sauvegarde ou pour
-          migrer vers un autre PC. Les sessions/comptes connectés ne sont pas inclus (ils restent
-          sur la machine).
+          {t('bk.exportDesc')}
         </p>
         <div className="flex gap-2">
           <input
             type="password"
             value={exportPwd}
             onChange={(e) => setExportPwd(e.target.value)}
-            placeholder="Mot de passe (optionnel, pour chiffrer)"
+            placeholder={t('bk.exportPwdPlaceholder')}
             className="input flex-1"
           />
           <button onClick={handleExport} disabled={busy === 'export'} className="btn btn-primary whitespace-nowrap">
             {busy === 'export' ? <Loader2 size={16} className="animate-spin" /> : <Download size={16} />}
-            Exporter
+            {t('bk.export')}
           </button>
         </div>
         {exportPwd && (
           <p className="text-xs text-text-muted mt-2 flex items-center gap-1">
-            <ShieldCheck size={12} /> Le fichier sera chiffré (AES-256). Sans ce mot de passe, il
-            sera illisible.
+            <ShieldCheck size={12} /> {t('bk.encNote')}
           </p>
         )}
       </div>
@@ -138,10 +137,10 @@ export default function BackupSettings() {
       <div className="card">
         <div className="flex items-center gap-2 mb-2">
           <Upload size={18} className="text-accent-primary" />
-          <h4 className="font-semibold">Importer / restaurer</h4>
+          <h4 className="font-semibold">{t('bk.importTitle')}</h4>
         </div>
         <p className="text-sm text-text-muted mb-4">
-          Remplace la configuration actuelle par celle du fichier. Orbit se recharge ensuite.
+          {t('bk.importDesc')}
         </p>
         {pendingBlob ? (
           <div className="flex gap-2">
@@ -150,21 +149,21 @@ export default function BackupSettings() {
               value={importPwd}
               onChange={(e) => setImportPwd(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleDecrypt()}
-              placeholder="Mot de passe du fichier"
+              placeholder={t('bk.filePwdPlaceholder')}
               className="input flex-1"
               autoFocus
             />
             <button onClick={handleDecrypt} className="btn btn-primary whitespace-nowrap">
-              Déverrouiller
+              {t('bk.unlock')}
             </button>
             <button onClick={() => setPendingBlob(null)} className="btn btn-secondary">
-              Annuler
+              {t('common.cancel')}
             </button>
           </div>
         ) : (
           <button onClick={handleImport} disabled={busy === 'import'} className="btn btn-secondary">
             {busy === 'import' ? <Loader2 size={16} className="animate-spin" /> : <Upload size={16} />}
-            Choisir un fichier…
+            {t('bk.chooseFile')}
           </button>
         )}
       </div>

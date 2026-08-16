@@ -101,7 +101,7 @@ export default function Settings({ onClose }) {
   ];
 
   // Source unique des raccourcis (adaptés à la plateforme)
-  const shortcuts = shortcutKeys().map((s) => ({
+  const shortcuts = shortcutKeys(t).map((s) => ({
     name: s.desc,
     keys: s.keys.join(' + '),
   }));
