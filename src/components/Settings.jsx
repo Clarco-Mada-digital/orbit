@@ -8,6 +8,7 @@ import SecuritySettings from './SecuritySettings';
 import BackupSettings from './BackupSettings';
 import { shortcutKeys } from '../lib/shortcuts';
 import { useT } from '../lib/i18n';
+import { builtinSoundNames, getBuiltinSound } from '../lib/sounds';
 
 // Polices proposées, groupées par style. Chaque entrée est rendue
 // dans sa propre police → aperçu en direct avant de choisir.
@@ -830,6 +831,31 @@ export default function Settings({ onClose }) {
                     <p className="text-sm text-text-muted mb-4">
                       Personnalisez le son joué à la réception d'un message. Vide = son système.
                     </p>
+
+                    {/* Sons proposés (intégrés) — clic = sélectionner + écouter */}
+                    <div className="flex flex-wrap gap-2 mb-4">
+                      {builtinSoundNames.map((name) => {
+                        const selected = settings.notificationSoundName === name;
+                        return (
+                          <button
+                            key={name}
+                            onClick={() => {
+                              const url = getBuiltinSound(name);
+                              updateSettings({ notificationSound: url, notificationSoundName: name });
+                              try {
+                                new Audio(url).play().catch(() => {});
+                              } catch {
+                                /* ignore */
+                              }
+                            }}
+                            className={`btn btn-sm ${selected ? 'btn-primary' : 'btn-secondary'}`}
+                          >
+                            🔊 {name}
+                          </button>
+                        );
+                      })}
+                    </div>
+
                     <div className="flex items-center gap-3 flex-wrap">
                       <span className="text-sm text-text-secondary">
                         {settings.notificationSound

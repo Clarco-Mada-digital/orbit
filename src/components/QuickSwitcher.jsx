@@ -19,19 +19,14 @@ import {
 import { useStore } from '../stores/useStore';
 import AppIcon from './AppIcon';
 import { shortcutKeys } from '../lib/shortcuts';
-
-const TIPS = [
-  'Clic droit sur une app : ouvrir, veille, renommer, modifier, désinstaller…',
-  'Glisser-déposer une app pour la réordonner dans la sidebar',
-  'Bouton ⧉ en haut : écran partagé (2 apps côte à côte ou haut / bas)',
-  'Tapez « help » ici pour revoir cette aide à tout moment',
-];
+import { useT } from '../lib/i18n';
 
 // Recherche « partout » : apps, profils ET actions (paramètres, boutique…)
 export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, onOpenProfileManager }) {
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState(0);
   const inputRef = useRef(null);
+  const t = useT();
   const {
     apps,
     profiles,
@@ -65,8 +60,8 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
     const list = [
       {
         id: 'help',
-        name: 'Aide & raccourcis',
-        subtitle: 'Tout savoir sur les raccourcis clavier',
+        name: t('qs.help'),
+        subtitle: t('qs.helpSub'),
         icon: <Keyboard size={22} />,
         color: '#8b5cf6',
         keywords: ['aide', 'help', 'raccourci', 'shortcut', 'touche', 'clavier'],
@@ -75,8 +70,8 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
       },
       {
         id: 'settings',
-        name: 'Paramètres',
-        subtitle: 'Thème, polices, KeePassXC…',
+        name: t('common.settings'),
+        subtitle: t('qs.settingsSub'),
         icon: <Settings size={22} />,
         color: '#64748b',
         keywords: ['parametre', 'settings', 'reglage', 'theme', 'police'],
@@ -84,8 +79,8 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
       },
       {
         id: 'store',
-        name: "Boutique d'applications",
-        subtitle: 'Installer de nouvelles apps',
+        name: t('sb.store'),
+        subtitle: t('qs.storeSub'),
         icon: <Grid size={22} />,
         color: '#6366f1',
         keywords: ['boutique', 'store', 'installer', 'app', 'application'],
@@ -93,8 +88,8 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
       },
       {
         id: 'profiles',
-        name: 'Gérer les profils',
-        subtitle: 'Créer, renommer, supprimer des profils',
+        name: t('sb.manageProfiles'),
+        subtitle: t('qs.profilesSub'),
         icon: <User size={22} />,
         color: '#10b981',
         keywords: ['profil', 'profile', 'compte', 'espace'],
@@ -102,8 +97,8 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
       },
       {
         id: 'sidebar',
-        name: sidebarCollapsed ? 'Étendre la sidebar' : 'Réduire la sidebar',
-        subtitle: sidebarCollapsed ? 'Afficher les noms des apps' : 'Ne garder que les icônes',
+        name: sidebarCollapsed ? t('qs.sidebarExpand') : t('qs.sidebarCollapse'),
+        subtitle: sidebarCollapsed ? t('qs.sidebarExpandSub') : t('qs.sidebarCollapseSub'),
         icon: <PanelLeft size={22} />,
         color: '#f59e0b',
         keywords: ['sidebar', 'barre', 'lateral', 'reduire', 'etendre', 'icone'],
@@ -113,8 +108,8 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
         ? [
             {
               id: 'sleep',
-              name: `Mettre « ${apps.find((a) => a.id === activeApp)?.name || ''} » en veille`,
-              subtitle: 'Fermer l’app pour économiser les ressources',
+              name: t('qs.sleep', { name: apps.find((a) => a.id === activeApp)?.name || '' }),
+              subtitle: t('qs.sleepSub'),
               icon: <Moon size={22} />,
               color: '#3b82f6',
               keywords: ['veille', 'sleep', 'fermer', 'arriere-plan'],
@@ -122,8 +117,8 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
             },
             {
               id: 'zoomin',
-              name: 'Zoom avant',
-              subtitle: 'Agrandir l’affichage de l’app active',
+              name: t('qs.zoomIn'),
+              subtitle: t('qs.zoomInSub'),
               icon: <ZoomIn size={22} />,
               color: '#14b8a6',
               keywords: ['zoom', 'agrandir', 'grossir'],
@@ -131,8 +126,8 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
             },
             {
               id: 'zoomout',
-              name: 'Zoom arrière',
-              subtitle: 'Réduire l’affichage de l’app active',
+              name: t('qs.zoomOut'),
+              subtitle: t('qs.zoomOutSub'),
               icon: <ZoomOut size={22} />,
               color: '#14b8a6',
               keywords: ['zoom', 'reduire', 'diminuer'],
@@ -140,8 +135,8 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
             },
             {
               id: 'zoomreset',
-              name: 'Réinitialiser le zoom',
-              subtitle: 'Revenir à 100 %',
+              name: t('qs.zoomReset'),
+              subtitle: t('qs.zoomResetSub'),
               icon: <ZoomOut size={22} />,
               color: '#14b8a6',
               keywords: ['zoom', 'reinitialiser', '100'],
@@ -153,8 +148,8 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
         ? [
             {
               id: 'unsplit',
-              name: 'Quitter le partage d’écran',
-              subtitle: 'Revenir à une seule app affichée',
+              name: t('qs.unsplit'),
+              subtitle: t('qs.unsplitSub'),
               icon: <Unplug size={22} />,
               color: '#ef4444',
               keywords: ['partage', 'split', 'ecran', 'quitter'],
@@ -164,8 +159,8 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
         : []),
       {
         id: 'readall',
-        name: 'Tout marquer comme lu',
-        subtitle: 'Effacer tous les badges de notifications',
+        name: t('qs.readall'),
+        subtitle: t('qs.readallSub'),
         icon: <CheckCheck size={22} />,
         color: '#10b981',
         keywords: ['notification', 'lu', 'badge', 'marquer'],
@@ -174,8 +169,8 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
       // Espaces de travail enregistrés : ouvrables directement depuis la palette
       ...workspaces.map((ws) => ({
         id: `ws-${ws.id}`,
-        name: `Espace : ${ws.name}`,
-        subtitle: 'Ouvrir cet espace de travail',
+        name: t('qs.workspaceName', { name: ws.name }),
+        subtitle: t('qs.workspaceSub'),
         icon: <LayoutGrid size={22} />,
         color: '#a855f7',
         keywords: ['espace', 'workspace', 'disposition', 'layout', ws.name.toLowerCase()],
@@ -184,6 +179,7 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
     ];
     return list;
   }, [
+    t,
     workspaces,
     applyWorkspace,
     sidebarCollapsed,
@@ -232,7 +228,7 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
           type: 'profile',
           id: `profile-${p.id}`,
           name: p.name,
-          subtitle: 'Changer de profil',
+          subtitle: t('qs.switchProfile'),
           emoji: p.emoji,
           color: p.color,
           action: () => setActiveProfile(p.id),
@@ -291,10 +287,10 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
               setQuery(e.target.value);
               setSelected(0);
             }}
-            placeholder="Rechercher apps, profils, actions… (tapez « help » pour l'aide)"
+            placeholder={t('qs.placeholder')}
             className="flex-1 bg-transparent text-lg outline-none"
           />
-          <button onClick={onClose} className="btn-icon" title="Fermer">
+          <button onClick={onClose} className="btn-icon" title={t('common.close')}>
             <X size={20} />
           </button>
         </div>
@@ -307,17 +303,15 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
                 <HelpCircle size={20} />
               </div>
               <div>
-                <h3 className="font-semibold">Aide & raccourcis clavier</h3>
-                <p className="text-sm text-text-muted">
-                  Tout ce qu'il faut savoir pour aller vite dans Orbit
-                </p>
+                <h3 className="font-semibold">{t('qs.helpTitle')}</h3>
+                <p className="text-sm text-text-muted">{t('qs.helpSubtitle')}</p>
               </div>
             </div>
 
             <div className="p-5 space-y-5">
               <div>
                 <h4 className="text-xs font-semibold text-text-muted uppercase mb-2">
-                  Raccourcis clavier
+                  {t('qs.shortcutsLabel')}
                 </h4>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                   {shortcutKeys().map((s, i) => (
@@ -342,12 +336,12 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
               </div>
 
               <div>
-                <h4 className="text-xs font-semibold text-text-muted uppercase mb-2">Astuces</h4>
+                <h4 className="text-xs font-semibold text-text-muted uppercase mb-2">{t('qs.tips')}</h4>
                 <ul className="space-y-1.5">
-                  {TIPS.map((t, i) => (
+                  {[t('qs.tip1'), t('qs.tip2'), t('qs.tip3'), t('qs.tip4')].map((tip, i) => (
                     <li key={i} className="flex items-start gap-2 text-sm text-text-secondary">
                       <span className="text-accent-primary mt-0.5">✦</span>
-                      {t}
+                      {tip}
                     </li>
                   ))}
                 </ul>
@@ -359,10 +353,10 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
           <div className="max-h-96 overflow-y-auto">
             {results.length === 0 ? (
               <div className="p-8 text-center text-text-muted">
-                <p>Aucun résultat pour « {query} »</p>
+                <p>{t('qs.noResults', { query })}</p>
                 {query.trim() && (
                   <p className="text-sm mt-1">
-                    Essayez « help » pour l'aide des raccourcis
+                    {t('qs.tryHelp')}
                   </p>
                 )}
               </div>
@@ -408,16 +402,16 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
         {/* Indications */}
         <div className="px-4 py-3 bg-bg-secondary border-t border-border flex items-center gap-4 text-xs text-text-muted">
           <span>
-            <kbd className="px-2 py-1 bg-bg-elevated border border-border rounded">↵</kbd> sélectionner
+            <kbd className="px-2 py-1 bg-bg-elevated border border-border rounded">↵</kbd> {t('qs.hintSelect')}
           </span>
           <span>
-            <kbd className="px-2 py-1 bg-bg-elevated border border-border rounded">↑↓</kbd> naviguer
+            <kbd className="px-2 py-1 bg-bg-elevated border border-border rounded">↑↓</kbd> {t('qs.hintNavigate')}
           </span>
           <span>
-            <kbd className="px-2 py-1 bg-bg-elevated border border-border rounded">help</kbd> aide
+            <kbd className="px-2 py-1 bg-bg-elevated border border-border rounded">help</kbd> {t('qs.hintHelp')}
           </span>
           <span>
-            <kbd className="px-2 py-1 bg-bg-elevated border border-border rounded">esc</kbd> fermer
+            <kbd className="px-2 py-1 bg-bg-elevated border border-border rounded">esc</kbd> {t('qs.hintClose')}
           </span>
         </div>
       </div>

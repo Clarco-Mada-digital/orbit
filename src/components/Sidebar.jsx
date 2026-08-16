@@ -7,10 +7,12 @@ import AppIcon from './AppIcon';
 import { useSecurityStore } from '../lib/securityStore';
 import { useMediaStore } from '../lib/mediaStore';
 import { getWebview } from '../lib/webviewRegistry';
+import { useT } from '../lib/i18n';
 
 export default function Sidebar({ collapsed, onToggle, onOpenSettings, onOpenStore, onOpenProfileManager, onSelectApp }) {
   const { profiles, activeProfile, setActiveProfile, getProfileApps, activeApp, settings, reorderApps, containers } = useStore();
   const { lockedProfileIds, unlockedProfileIds } = useSecurityStore();
+  const t = useT();
   const media = useMediaStore((s) => s.media);
   const setMedia = useMediaStore((s) => s.setMedia);
 
@@ -113,7 +115,7 @@ export default function Sidebar({ collapsed, onToggle, onOpenSettings, onOpenSto
           <button
             onClick={onOpenProfileManager}
             className="flex items-center gap-3 flex-1 min-w-0 hover:opacity-80 transition-opacity"
-            title="Gérer les profils"
+            title={t('sb.manageProfiles')}
           >
             <div className="text-2xl flex-shrink-0">{currentProfile?.emoji}</div>
             <div className="flex-1 text-left min-w-0">
@@ -126,7 +128,7 @@ export default function Sidebar({ collapsed, onToggle, onOpenSettings, onOpenSto
           <button
             onClick={onOpenProfileManager}
             className="flex-1 flex justify-center py-1 hover:opacity-80 transition-opacity"
-            title="Gérer les profils"
+            title={t('sb.manageProfiles')}
           >
             <div className="text-xl">{currentProfile?.emoji}</div>
           </button>
@@ -134,7 +136,7 @@ export default function Sidebar({ collapsed, onToggle, onOpenSettings, onOpenSto
         <button
           onClick={onToggle}
           className={`btn-icon ${collapsed ? 'w-8 h-8' : ''}`}
-          title={collapsed ? 'Développer la sidebar' : 'Réduire la sidebar'}
+          title={collapsed ? t('sb.expand') : t('sb.collapse')}
         >
           {collapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
         </button>
@@ -144,11 +146,11 @@ export default function Sidebar({ collapsed, onToggle, onOpenSettings, onOpenSto
       <div className={`${padding} border-b border-border`}>
         {!collapsed && (
           <div className="flex items-center justify-between mb-2 px-2">
-            <div className="text-xs font-semibold text-text-muted uppercase">Profils</div>
+            <div className="text-xs font-semibold text-text-muted uppercase">{t('sb.profiles')}</div>
             <button
               onClick={onOpenProfileManager}
               className="text-xs text-accent-primary hover:text-accent-hover"
-              title="Gérer les profils"
+              title={t('sb.manageProfiles')}
             >
               <User size={14} />
             </button>
@@ -173,7 +175,7 @@ export default function Sidebar({ collapsed, onToggle, onOpenSettings, onOpenSto
                 <>
                   <span className="font-medium text-sm flex-1 text-left truncate">{profile.name}</span>
                   {profileShowsLock(profile.id) && (
-                    <Lock size={13} className="text-text-muted flex-shrink-0" title="Profil verrouillé" />
+                    <Lock size={13} className="text-text-muted flex-shrink-0" title={t('sb.profileLocked')} />
                   )}
                   {profile.id === activeProfile && !profileShowsLock(profile.id) && (
                     <div className="w-2 h-2 rounded-full bg-accent-primary flex-shrink-0"></div>
@@ -194,7 +196,7 @@ export default function Sidebar({ collapsed, onToggle, onOpenSettings, onOpenSto
         {apps.some((a) => a.isFavorite) && (
           <div className="mb-3">
             {!collapsed && (
-              <div className="text-xs font-semibold text-text-muted uppercase mb-2 px-2">Favoris</div>
+              <div className="text-xs font-semibold text-text-muted uppercase mb-2 px-2">{t('sb.favorites')}</div>
             )}
             <div className={`flex flex-wrap ${collapsed ? 'justify-center' : ''} gap-1`}>
               {apps
@@ -217,13 +219,13 @@ export default function Sidebar({ collapsed, onToggle, onOpenSettings, onOpenSto
           </div>
         )}
         {!collapsed && (
-          <div className="text-xs font-semibold text-text-muted uppercase mb-2 px-2">Applications</div>
+          <div className="text-xs font-semibold text-text-muted uppercase mb-2 px-2">{t('sb.applications')}</div>
         )}
         {apps.length === 0 ? (
           !collapsed && (
             <div className="text-center py-8 text-text-muted text-sm">
               <div className="text-3xl mb-2">📦</div>
-              <p>Aucune application</p>
+              <p>{t('sb.noApps')}</p>
               <button onClick={onOpenStore} className="btn btn-primary btn-sm mt-3">
                 <Plus size={14} />
                 Ajouter
@@ -290,7 +292,7 @@ export default function Sidebar({ collapsed, onToggle, onOpenSettings, onOpenSto
                   {app.sleeping && (
                     <span
                       className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-bg-elevated border border-border flex items-center justify-center"
-                      title="En veille"
+                      title={t('sb.sleeping')}
                     >
                       <Moon size={9} className="text-text-muted" />
                     </span>
@@ -325,13 +327,13 @@ export default function Sidebar({ collapsed, onToggle, onOpenSettings, onOpenSto
                             ? 'text-error hover:text-error'
                             : 'text-accent-primary hover:text-accent-hover'
                         }`}
-                        title={media[app.id]?.audioMuted ? 'Réactiver le son' : 'Couper le son'}
+                        title={media[app.id]?.audioMuted ? t('sb.unmute') : t('sb.mute')}
                       >
                         {media[app.id]?.audioMuted ? <VolumeX size={13} /> : <Volume2 size={13} />}
                       </span>
                     )}
                     {app.muted && (
-                      <BellOff size={13} className="text-text-muted flex-shrink-0" title="Notifications coupées" />
+                      <BellOff size={13} className="text-text-muted flex-shrink-0" title={t('sb.notifMuted')} />
                     )}
                     {app.unread > 0 && !app.sleeping && (
                       <span className="badge flex-shrink-0">{app.unread > 99 ? '99+' : app.unread}</span>
@@ -354,7 +356,7 @@ export default function Sidebar({ collapsed, onToggle, onOpenSettings, onOpenSto
             <button
               onClick={onOpenStore}
               className={`w-full btn btn-primary ${settings.compactMode ? 'text-xs py-2' : 'text-sm'}`}
-              title="Boutique d'applications"
+              title={t('sb.store')}
             >
               <Grid size={16} />
               Boutique
@@ -363,7 +365,7 @@ export default function Sidebar({ collapsed, onToggle, onOpenSettings, onOpenSto
               <button
                 onClick={onOpenProfileManager}
                 className={`flex-1 btn btn-secondary ${settings.compactMode ? 'text-xs py-1.5' : 'text-xs'}`}
-                title="Gérer les profils"
+                title={t('sb.manageProfiles')}
               >
                 <User size={14} />
                 Profils
@@ -371,7 +373,7 @@ export default function Sidebar({ collapsed, onToggle, onOpenSettings, onOpenSto
               <button
                 onClick={onOpenSettings}
                 className={`flex-1 btn btn-secondary ${settings.compactMode ? 'text-xs py-1.5' : 'text-xs'}`}
-                title="Paramètres"
+                title={t('common.settings')}
               >
                 <Settings size={14} />
                 Réglages
@@ -383,14 +385,14 @@ export default function Sidebar({ collapsed, onToggle, onOpenSettings, onOpenSto
             <button
               onClick={onOpenStore}
               className="w-full btn-icon flex items-center justify-center"
-              title="Boutique"
+              title={t('sb.storeShort')}
             >
               <Grid size={18} />
             </button>
             <button
               onClick={onOpenSettings}
               className="w-full btn-icon flex items-center justify-center"
-              title="Paramètres"
+              title={t('common.settings')}
             >
               <Settings size={18} />
             </button>

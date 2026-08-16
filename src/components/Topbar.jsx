@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { ArrowLeft, ArrowRight, RotateCw, Star, Bell, Search, CheckCheck, Puzzle, Settings2, Power, ZoomIn, ZoomOut, Columns2, Rows2, Unplug, Moon, LayoutGrid, Plus, Trash2 } from 'lucide-react';
 import { useStore } from '../stores/useStore';
+import { useT } from '../lib/i18n';
 import { useLoadingStore } from '../lib/loadingStore';
 import { getWebview } from '../lib/webviewRegistry';
 import OrbitLogo from './OrbitLogo';
@@ -75,6 +76,7 @@ export default function Topbar({ onOpenQuickSwitcher }) {
     applyWorkspace,
     deleteWorkspace,
   } = useStore();
+  const t = useT();
   const [showNotifPanel, setShowNotifPanel] = useState(false);
   const notifRef = useRef(null);
   const [extMenu, setExtMenu] = useState(null); // { ext, info } | null
@@ -189,7 +191,7 @@ export default function Topbar({ onOpenQuickSwitcher }) {
           onClick={handleBack}
           disabled={!activeApp}
           className="btn-icon disabled:opacity-30"
-          title="Retour"
+          title={t('tb.back')}
         >
           <ArrowLeft size={18} />
         </button>
@@ -197,7 +199,7 @@ export default function Topbar({ onOpenQuickSwitcher }) {
           onClick={handleForward}
           disabled={!activeApp}
           className="btn-icon disabled:opacity-30"
-          title="Avancer"
+          title={t('tb.forward')}
         >
           <ArrowRight size={18} />
         </button>
@@ -205,7 +207,7 @@ export default function Topbar({ onOpenQuickSwitcher }) {
           onClick={handleReload}
           disabled={!activeApp}
           className="btn-icon disabled:opacity-30"
-          title={isLoading ? 'Chargement…' : 'Actualiser'}
+          title={isLoading ? t('tb.loading') : t('tb.reload')}
         >
           {/* L'icône tourne pendant tout le chargement de la page : signe
               visible que l'app recharge (comme dans un navigateur). */}
@@ -231,21 +233,21 @@ export default function Topbar({ onOpenQuickSwitcher }) {
           <button
             onClick={() => adjustAppZoom(activeApp, -0.1)}
             className="btn-icon w-8 h-8"
-            title="Zoom arrière (Alt − / ⌘ −)"
+            title={t('tb.zoomOut')}
           >
             <ZoomOut size={16} />
           </button>
           <button
             onClick={() => resetAppZoom(activeApp)}
             className="text-xs font-medium min-w-[44px] px-1 py-1 text-center rounded hover:bg-bg-hover transition-colors"
-            title="Réinitialiser le zoom (Alt 0 / ⌘ 0)"
+            title={t('tb.zoomReset')}
           >
             {Math.round((app?.zoom || 1) * 100)}%
           </button>
           <button
             onClick={() => adjustAppZoom(activeApp, 0.1)}
             className="btn-icon w-8 h-8"
-            title="Zoom avant (Alt + / ⌘ +)"
+            title={t('tb.zoomIn')}
           >
             <ZoomIn size={16} />
           </button>
@@ -260,7 +262,7 @@ export default function Topbar({ onOpenQuickSwitcher }) {
             className="w-full max-w-md mx-auto h-9 px-4 bg-bg-elevated border border-border rounded-lg flex items-center gap-3 text-text-muted hover:border-accent-primary/50 transition-all text-sm"
           >
             <Search size={18} />
-            <span>Rechercher des apps, onglets, actions... ⌘K</span>
+            <span>{t('tb.search')}</span>
           </button>
         )}
       </div>
@@ -332,7 +334,7 @@ export default function Topbar({ onOpenQuickSwitcher }) {
               <button
                 onClick={() => setShowSplitMenu((v) => !v)}
                 className={`btn-icon ${showSplitMenu || splitActive ? 'bg-bg-hover text-accent-primary' : ''}`}
-                title="Écran partagé"
+                title={t('tb.split')}
               >
                 <Columns2 size={18} />
               </button>
@@ -340,15 +342,15 @@ export default function Topbar({ onOpenQuickSwitcher }) {
               {showSplitMenu && (
                 <div className="absolute right-0 top-full mt-2 w-64 bg-bg-elevated border border-border rounded-xl shadow-2xl overflow-hidden z-50 animate-scale-in">
                   <div className="px-4 py-3 border-b border-border flex items-center justify-between">
-                    <span className="font-semibold text-sm">Écran partagé</span>
+                    <span className="font-semibold text-sm">{t('tb.split')}</span>
                     {(!splitView || splitView.appIds.length === 2) && (
                       <button
                         onClick={toggleSplitDirection}
                         className="btn-icon w-7 h-7"
                         title={
                           splitView?.direction === 'col'
-                            ? 'Côte à côte'
-                            : 'Haut / bas'
+                            ? t('tb.sideBySide')
+                            : t('tb.topBottom')
                         }
                       >
                         {splitView?.direction === 'col' ? (
@@ -361,8 +363,8 @@ export default function Topbar({ onOpenQuickSwitcher }) {
                   </div>
                   <div className="px-4 py-2 text-xs text-text-muted border-b border-border">
                     {splitView
-                      ? `Cliquez pour ajouter ou retirer (${splitView.appIds.length}/4)`
-                      : 'Choisissez une app à afficher en même temps'}
+                      ? t('tb.splitAddRemove', { n: splitView.appIds.length })
+                      : t('tb.splitChoose')}
                   </div>
                   <div className="py-1 max-h-64 overflow-y-auto">
                     {splitPartners.map((partner) => {
@@ -396,7 +398,7 @@ export default function Topbar({ onOpenQuickSwitcher }) {
                         }}
                         className="w-full flex items-center gap-3 px-4 py-2 text-sm text-error hover:bg-error/10 transition-colors"
                       >
-                        <Unplug size={15} /> Quitter le partage
+                        <Unplug size={15} /> {t('tb.splitExit')}
                       </button>
                     </div>
                   )}
@@ -410,7 +412,7 @@ export default function Topbar({ onOpenQuickSwitcher }) {
             <button
               onClick={() => setShowWsMenu((v) => !v)}
               className={`btn-icon ${showWsMenu ? 'bg-bg-hover text-accent-primary' : ''}`}
-              title="Espaces de travail"
+              title={t('tb.workspaces')}
             >
               <LayoutGrid size={18} />
             </button>
@@ -418,12 +420,12 @@ export default function Topbar({ onOpenQuickSwitcher }) {
             {showWsMenu && (
               <div className="absolute right-0 top-full mt-2 w-64 bg-bg-elevated border border-border rounded-xl shadow-2xl overflow-hidden z-50 animate-scale-in">
                 <div className="px-4 py-3 border-b border-border font-semibold text-sm">
-                  Espaces de travail
+                  {t('tb.workspaces')}
                 </div>
                 <div className="py-1 max-h-64 overflow-y-auto">
                   {workspaces.length === 0 ? (
                     <div className="px-4 py-3 text-xs text-text-muted">
-                      Aucun espace. Enregistre la disposition actuelle ci-dessous.
+                      {t('tb.workspacesEmpty')}
                     </div>
                   ) : (
                     workspaces.map((ws) => (
@@ -447,7 +449,7 @@ export default function Topbar({ onOpenQuickSwitcher }) {
                         <button
                           onClick={() => deleteWorkspace(ws.id)}
                           className="btn-icon w-7 h-7 opacity-0 group-hover:opacity-100 text-error"
-                          title="Supprimer"
+                          title={t('common.remove')}
                         >
                           <Trash2 size={14} />
                         </button>
@@ -458,7 +460,7 @@ export default function Topbar({ onOpenQuickSwitcher }) {
                 <div className="border-t border-border py-1">
                   <button
                     onClick={() => {
-                      const name = window.prompt('Nom de l’espace de travail :', 'Mon espace');
+                      const name = window.prompt(t('tb.workspacePrompt'), t('tb.workspaceDefault'));
                       if (name) {
                         saveWorkspace(name);
                         setShowWsMenu(false);
@@ -466,7 +468,7 @@ export default function Topbar({ onOpenQuickSwitcher }) {
                     }}
                     className="w-full flex items-center gap-3 px-4 py-2 text-sm hover:bg-bg-hover transition-colors"
                   >
-                    <Plus size={15} /> Enregistrer la disposition actuelle
+                    <Plus size={15} /> {t('tb.saveLayout')}
                   </button>
                 </div>
               </div>
@@ -477,7 +479,7 @@ export default function Topbar({ onOpenQuickSwitcher }) {
             <button
               onClick={toggleFavorite}
               className={`btn-icon ${app?.isFavorite ? 'text-yellow-500' : ''}`}
-              title={app?.isFavorite ? 'Retirer des favoris' : 'Ajouter aux favoris'}
+              title={app?.isFavorite ? t('tb.favRemove') : t('tb.favAdd')}
             >
               <Star size={18} fill={app?.isFavorite ? 'currentColor' : 'none'} />
             </button>
@@ -493,7 +495,7 @@ export default function Topbar({ onOpenQuickSwitcher }) {
             <button
               onClick={() => setShowNotifPanel((prev) => !prev)}
               className={`btn-icon relative ${showNotifPanel ? 'bg-bg-hover' : ''}`}
-              title="Notifications"
+              title={t('tb.notifications')}
             >
               <Bell size={18} />
               {totalUnread > 0 && (
@@ -507,17 +509,17 @@ export default function Topbar({ onOpenQuickSwitcher }) {
             {showNotifPanel && (
               <div className="absolute right-0 top-full mt-2 w-80 bg-bg-elevated border border-border rounded-xl shadow-2xl overflow-hidden z-50 animate-scale-in">
                 <div className="px-4 py-3 border-b border-border flex items-center justify-between gap-2">
-                  <span className="font-semibold text-sm">Notifications</span>
+                  <span className="font-semibold text-sm">{t('tb.notifications')}</span>
                   <div className="flex items-center gap-3">
                     <button
                       onClick={() => updateSettings({ dnd: !settings.dnd })}
                       className={`text-xs flex items-center gap-1 ${
                         settings.dnd ? 'text-accent-primary' : 'text-text-muted hover:text-text-primary'
                       }`}
-                      title="Ne pas déranger"
+                      title={t('tb.dnd')}
                     >
                       <Moon size={13} />
-                      {settings.dnd ? 'DND activé' : 'Ne pas déranger'}
+                      {settings.dnd ? t('tb.dndOn') : t('tb.dnd')}
                     </button>
                     {unreadApps.length > 0 && (
                       <button
@@ -525,7 +527,7 @@ export default function Topbar({ onOpenQuickSwitcher }) {
                         className="text-xs text-accent-primary hover:text-accent-hover flex items-center gap-1"
                       >
                         <CheckCheck size={13} />
-                        Tout lire
+                        {t('tb.readShort')}
                       </button>
                     )}
                   </div>
@@ -535,7 +537,7 @@ export default function Topbar({ onOpenQuickSwitcher }) {
                   {unreadApps.length === 0 ? (
                     <div className="px-4 py-8 text-center text-text-muted text-sm">
                       <div className="text-3xl mb-2">🔕</div>
-                      <p>Aucune notification</p>
+                      <p>{t('tb.noNotifications')}</p>
                     </div>
                   ) : (
                     unreadApps.map((a) => (
@@ -575,7 +577,7 @@ export default function Topbar({ onOpenQuickSwitcher }) {
           <button
             onClick={() => window.electronAPI?.minimizeWindow?.()}
             className="w-10 h-8 hover:bg-bg-hover flex items-center justify-center transition-colors"
-            title="Réduire"
+            title={t('tb.minimize')}
           >
             <svg width="12" height="2" viewBox="0 0 12 2" fill="currentColor">
               <rect width="12" height="2" />
@@ -584,7 +586,7 @@ export default function Topbar({ onOpenQuickSwitcher }) {
           <button
             onClick={() => window.electronAPI?.maximizeWindow?.()}
             className="w-10 h-8 hover:bg-bg-hover flex items-center justify-center transition-colors"
-            title="Agrandir / Restaurer"
+            title={t('tb.maximize')}
           >
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">
               <rect x="1" y="1" width="10" height="10" />
@@ -593,7 +595,7 @@ export default function Topbar({ onOpenQuickSwitcher }) {
           <button
             onClick={() => window.electronAPI?.closeWindow?.()}
             className="w-10 h-8 hover:bg-error flex items-center justify-center transition-colors"
-            title="Fermer"
+            title={t('common.close')}
           >
             <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.5">
               <path d="M1 1l10 10M11 1L1 11" />
