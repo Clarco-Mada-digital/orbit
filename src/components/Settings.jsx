@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { X, User, Palette, Bell, Zap, Info, Keyboard, Puzzle, Check, KeyRound, ShieldCheck, Ban, Archive, Globe } from 'lucide-react';
 import { useStore } from '../stores/useStore';
 import ProfileManager from './ProfileManager';
@@ -54,6 +54,32 @@ const fontGroups = [
 export default function Settings({ onClose }) {
   const [activeTab, setActiveTab] = useState('general');
   const [showProfileManager, setShowProfileManager] = useState(false);
+  const [appVersion, setAppVersion] = useState('');
+  const [updateMsg, setUpdateMsg] = useState('');
+  const [checking, setChecking] = useState(false);
+
+  useEffect(() => {
+    window.electronAPI?.getVersion?.().then((v) => v && setAppVersion(v));
+  }, []);
+
+  const checkUpdate = async () => {
+    setChecking(true);
+    setUpdateMsg('');
+    const r = await window.electronAPI?.checkForUpdate?.();
+    setChecking(false);
+    if (!r) return;
+    if (r.success === false) {
+      setUpdateMsg(
+        r.reason === 'unsupported'
+          ? "Mise à jour auto indisponible dans ce mode (dispo uniquement sur l'AppImage)."
+          : 'Impossible de vérifier pour le moment.'
+      );
+    } else if (r.version && appVersion && r.version !== appVersion) {
+      setUpdateMsg(`Version ${r.version} disponible — téléchargement en cours…`);
+    } else {
+      setUpdateMsg('Orbit est à jour.');
+    }
+  };
   const { settings, updateSettings, apps, profiles } = useStore();
 
   const tabs = [
@@ -149,6 +175,17 @@ export default function Settings({ onClose }) {
                         );
                       })}
                     </select>
+                  </div>
+
+                  <div className="card">
+                    <h4 className="font-semibold mb-2">Mises à jour</h4>
+                    <p className="text-sm text-text-muted mb-3">
+                      Version installée : <span className="font-medium">{appVersion || '—'}</span>
+                    </p>
+                    <button onClick={checkUpdate} disabled={checking} className="btn btn-secondary btn-sm">
+                      {checking ? 'Vérification…' : 'Rechercher les mises à jour'}
+                    </button>
+                    {updateMsg && <p className="text-sm mt-2 text-text-muted">{updateMsg}</p>}
                   </div>
 
                   <div className="card">

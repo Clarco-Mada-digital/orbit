@@ -54,6 +54,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openDownloadsFolder: () => ipcRenderer.invoke('downloads:openFolder'),
   // Téléchargement vidéo/audio (yt-dlp) — mode: 'video' | 'audio'
   downloadMedia: (url, mode) => ipcRenderer.invoke('media:download', { url, mode }),
+  // Mise à jour automatique
+  getVersion: () => ipcRenderer.invoke('app:getVersion'),
+  checkForUpdate: () => ipcRenderer.invoke('update:check'),
+  installUpdate: () => ipcRenderer.invoke('update:install'),
+  onUpdate: (callback) => {
+    const channels = ['update:available', 'update:progress', 'update:downloaded', 'update:error'];
+    const listeners = channels.map((ch) => {
+      const l = (_e, payload) => callback(ch.replace('update:', ''), payload);
+      ipcRenderer.on(ch, l);
+      return [ch, l];
+    });
+    return () => listeners.forEach(([ch, l]) => ipcRenderer.removeListener(ch, l));
+  },
   // Bloqueur de pub natif
   adblock: {
     setEnabled: (on) => ipcRenderer.invoke('adblock:setEnabled', on),

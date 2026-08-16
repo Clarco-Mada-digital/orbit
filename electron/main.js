@@ -7,6 +7,7 @@ import { init as initKeepass, setEnabled as keepassSetEnabled, getLogins as keep
 import * as security from './security.js';
 import * as adblock from './adblock.js';
 import * as downloader from './downloader.js';
+import electronUpdater from 'electron-updater';
 import { matchShortcutInput } from '../src/lib/shortcuts.js';
 import { fileURLToPath } from 'url';
 
@@ -2014,6 +2015,53 @@ ipcMain.handle('sessions:clear', (_event, { sessionKey, profileId, appId } = {})
 // ---------------------------------------------------------------------------
 // Lifecycle
 // ---------------------------------------------------------------------------
+// --- Mise à jour automatique (electron-updater) ----------------------------
+const { autoUpdater } = electronUpdater;
+
+// L'auto-update Linux ne fonctionne que depuis une AppImage (pas .deb/dev).
+function updateSupported() {
+  if (isDev || !app.isPackaged) return false;
+  if (process.platform === 'linux' && !process.env.APPIMAGE) return false;
+  return true;
+}
+
+let updateInitDone = false;
+function initAutoUpdate() {
+  if (updateInitDone || !updateSupported()) return;
+  updateInitDone = true;
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+  const send = (channel, payload) => {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload);
+  };
+  autoUpdater.on('update-available', (info) => send('update:available', { version: info?.version }));
+  autoUpdater.on('download-progress', (p) => send('update:progress', { percent: Math.round(p?.percent || 0) }));
+  autoUpdater.on('update-downloaded', (info) => send('update:downloaded', { version: info?.version }));
+  autoUpdater.on('error', (e) => send('update:error', { message: String(e?.message || e) }));
+  autoUpdater.checkForUpdates().catch(() => {});
+}
+
+ipcMain.handle('update:check', async () => {
+  if (!updateSupported()) return { success: false, reason: 'unsupported' };
+  initAutoUpdate();
+  try {
+    const r = await autoUpdater.checkForUpdates();
+    return { success: true, version: r?.updateInfo?.version || null };
+  } catch (e) {
+    return { success: false, reason: String(e?.message || e) };
+  }
+});
+ipcMain.handle('update:install', () => {
+  isQuitting = true;
+  try {
+    autoUpdater.quitAndInstall();
+  } catch {
+    /* ignore */
+  }
+  return { success: true };
+});
+ipcMain.handle('app:getVersion', () => app.getVersion());
+
 app.whenReady().then(() => {
   // Seconde instance : on a déjà quitté plus haut, on ne construit rien.
   if (!gotInstanceLock) return;
@@ -2054,6 +2102,9 @@ app.whenReady().then(() => {
 
   createWindow();
   createTray();
+
+  // Mise à jour automatique (après un court délai, laisser la fenêtre s'afficher)
+  setTimeout(initAutoUpdate, 6000);
 
   // Recharger les extensions au démarrage (Electron ne les garde pas en mémoire)
   for (const p of EXT_PARTITIONS) {

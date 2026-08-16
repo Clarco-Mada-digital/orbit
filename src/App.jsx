@@ -9,6 +9,7 @@ import AppStore from './components/AppStore';
 import WebView from './components/WebView';
 import LockScreen from './components/LockScreen';
 import FindBar from './components/FindBar';
+import UpdateBanner from './components/UpdateBanner';
 import { useStore } from './stores/useStore';
 import { useSecurityStore } from './lib/securityStore';
 import { useMediaStore } from './lib/mediaStore';
@@ -851,6 +852,9 @@ export default function App() {
       {appLocked && (
         <LockScreen variant="app" onSubmit={handleUnlockApp} />
       )}
+
+      {/* Mise à jour automatique */}
+      <UpdateBanner />
     </div>
   );
 }
