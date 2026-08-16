@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { ArrowLeft, ArrowRight, RotateCw, Star, Bell, Search, CheckCheck, Puzzle, Settings2, Power, ZoomIn, ZoomOut, Columns2, Rows2, Unplug, Moon } from 'lucide-react';
+import { ArrowLeft, ArrowRight, RotateCw, Star, Bell, Search, CheckCheck, Puzzle, Settings2, Power, ZoomIn, ZoomOut, Columns2, Rows2, Unplug, Moon, LayoutGrid, Plus, Trash2 } from 'lucide-react';
 import { useStore } from '../stores/useStore';
 import { useLoadingStore } from '../lib/loadingStore';
 import { getWebview } from '../lib/webviewRegistry';
@@ -70,6 +70,10 @@ export default function Topbar({ onOpenQuickSwitcher }) {
     setSplitView,
     clearSplitView,
     toggleSplitDirection,
+    workspaces,
+    saveWorkspace,
+    applyWorkspace,
+    deleteWorkspace,
   } = useStore();
   const [showNotifPanel, setShowNotifPanel] = useState(false);
   const notifRef = useRef(null);
@@ -77,6 +81,8 @@ export default function Topbar({ onOpenQuickSwitcher }) {
   const extMenuRef = useRef(null);
   const [showSplitMenu, setShowSplitMenu] = useState(false);
   const splitMenuRef = useRef(null);
+  const [showWsMenu, setShowWsMenu] = useState(false);
+  const wsMenuRef = useRef(null);
   const app = apps.find((a) => a.id === activeApp);
 
   // Apps du même profil que l'app active (candidats à l'écran partagé)
@@ -128,6 +134,9 @@ export default function Topbar({ onOpenQuickSwitcher }) {
       }
       if (splitMenuRef.current && !splitMenuRef.current.contains(e.target)) {
         setShowSplitMenu(false);
+      }
+      if (wsMenuRef.current && !wsMenuRef.current.contains(e.target)) {
+        setShowWsMenu(false);
       }
     };
     window.addEventListener('click', onClick);
@@ -395,6 +404,74 @@ export default function Topbar({ onOpenQuickSwitcher }) {
               )}
             </div>
           )}
+
+          {/* Espaces de travail : mémorise app active + disposition */}
+          <div className="relative" ref={wsMenuRef}>
+            <button
+              onClick={() => setShowWsMenu((v) => !v)}
+              className={`btn-icon ${showWsMenu ? 'bg-bg-hover text-accent-primary' : ''}`}
+              title="Espaces de travail"
+            >
+              <LayoutGrid size={18} />
+            </button>
+
+            {showWsMenu && (
+              <div className="absolute right-0 top-full mt-2 w-64 bg-bg-elevated border border-border rounded-xl shadow-2xl overflow-hidden z-50 animate-scale-in">
+                <div className="px-4 py-3 border-b border-border font-semibold text-sm">
+                  Espaces de travail
+                </div>
+                <div className="py-1 max-h-64 overflow-y-auto">
+                  {workspaces.length === 0 ? (
+                    <div className="px-4 py-3 text-xs text-text-muted">
+                      Aucun espace. Enregistre la disposition actuelle ci-dessous.
+                    </div>
+                  ) : (
+                    workspaces.map((ws) => (
+                      <div
+                        key={ws.id}
+                        className="w-full flex items-center gap-2 px-2 py-1 hover:bg-bg-hover transition-colors group"
+                      >
+                        <button
+                          onClick={() => {
+                            applyWorkspace(ws.id);
+                            setShowWsMenu(false);
+                          }}
+                          className="flex-1 flex items-center gap-3 px-2 py-1 text-sm text-left truncate"
+                        >
+                          <LayoutGrid size={15} className="text-text-muted flex-shrink-0" />
+                          <span className="flex-1 truncate">{ws.name}</span>
+                          {ws.splitView && (
+                            <span className="text-[10px] text-text-muted">split</span>
+                          )}
+                        </button>
+                        <button
+                          onClick={() => deleteWorkspace(ws.id)}
+                          className="btn-icon w-7 h-7 opacity-0 group-hover:opacity-100 text-error"
+                          title="Supprimer"
+                        >
+                          <Trash2 size={14} />
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+                <div className="border-t border-border py-1">
+                  <button
+                    onClick={() => {
+                      const name = window.prompt('Nom de l’espace de travail :', 'Mon espace');
+                      if (name) {
+                        saveWorkspace(name);
+                        setShowWsMenu(false);
+                      }
+                    }}
+                    className="w-full flex items-center gap-3 px-4 py-2 text-sm hover:bg-bg-hover transition-colors"
+                  >
+                    <Plus size={15} /> Enregistrer la disposition actuelle
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
 
           {activeApp && (
             <button

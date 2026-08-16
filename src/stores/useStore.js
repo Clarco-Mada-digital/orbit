@@ -135,6 +135,10 @@ export const useStore = create(
       // { appIds: [idA, idB], direction: 'row' (côte à côte) | 'col' (haut/bas) }
       splitView: null,
 
+      // Espaces de travail enregistrés : profil + app active + disposition (split)
+      // { id, name, profileId, activeApp, splitView }
+      workspaces: [],
+
       // Settings
       settings: { ...defaultSettings },
 
@@ -360,6 +364,35 @@ export const useStore = create(
               }
             : null,
         })),
+
+      // --- Espaces de travail --------------------------------------------
+      // Capture l'état actuel (profil, app active, split) sous un nom
+      saveWorkspace: (name) =>
+        set((state) => ({
+          workspaces: [
+            ...state.workspaces,
+            {
+              id: `ws-${Date.now()}`,
+              name: (name || 'Espace').trim() || 'Espace',
+              profileId: state.activeProfile,
+              activeApp: state.activeApp,
+              splitView: state.splitView ? { ...state.splitView } : null,
+            },
+          ],
+        })),
+      // Restaure un espace enregistré
+      applyWorkspace: (id) =>
+        set((state) => {
+          const ws = state.workspaces.find((w) => w.id === id);
+          if (!ws) return {};
+          return {
+            activeProfile: ws.profileId || state.activeProfile,
+            activeApp: ws.activeApp || null,
+            splitView: ws.splitView ? { ...ws.splitView } : null,
+          };
+        }),
+      deleteWorkspace: (id) =>
+        set((state) => ({ workspaces: state.workspaces.filter((w) => w.id !== id) })),
 
       reorderApps: (profileId, appIds) =>
         set((state) => ({
