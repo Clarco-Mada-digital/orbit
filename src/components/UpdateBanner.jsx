@@ -80,7 +80,7 @@ export default function UpdateBanner() {
               </div>
             )}
           </div>
-          <button onClick={() => setDismissed(true)} className="btn-icon w-7 h-7" title="Masquer">
+          <button onClick={() => setDismissed(true)} className="btn-icon w-7 h-7" title={t('common.hide')}>
             <X size={15} />
           </button>
         </div>

@@ -2,11 +2,13 @@ import { Play, Pause, PictureInPicture2, Music, SkipBack, SkipForward, ExternalL
 import { useStore } from '../stores/useStore';
 import { useMediaStore } from '../lib/mediaStore';
 import { mediaToggle, mediaPip, mediaPrev, mediaNext, pickNowPlaying } from '../lib/mediaControls';
+import { useT } from '../lib/i18n';
 
 // Mini-barre « lecture en cours » dans la Topbar : pilote l'audio/vidéo qui
 // joue (précédent / pause / suivant / PiP) sans revenir sur l'app, et permet
 // de détacher un mini-lecteur flottant toujours au-dessus.
 export default function NowPlaying() {
+  const t = useT();
   const { apps, activeApp, setActiveApp, setActiveProfile } = useStore();
   const media = useMediaStore((s) => s.media);
 
@@ -28,7 +30,7 @@ export default function NowPlaying() {
       <button
         onClick={() => mediaPrev(appId)}
         className="w-6 h-6 rounded-full flex items-center justify-center hover:bg-bg-hover flex-shrink-0"
-        title="Piste précédente"
+        title={t('np.prevTrack')}
       >
         <SkipBack size={13} />
       </button>
@@ -42,7 +44,7 @@ export default function NowPlaying() {
       <button
         onClick={() => mediaNext(appId)}
         className="w-6 h-6 rounded-full flex items-center justify-center hover:bg-bg-hover flex-shrink-0"
-        title="Piste suivante"
+        title={t('np.nextTrack')}
       >
         <SkipForward size={13} />
       </button>
@@ -61,14 +63,14 @@ export default function NowPlaying() {
       <button
         onClick={() => mediaPip(appId)}
         className="w-6 h-6 rounded-full flex items-center justify-center hover:bg-bg-hover flex-shrink-0"
-        title="Picture-in-Picture (vidéo)"
+        title={t('np.pip')}
       >
         <PictureInPicture2 size={14} />
       </button>
       <button
         onClick={() => window.electronAPI?.miniPlayer?.open?.()}
         className="w-6 h-6 rounded-full flex items-center justify-center hover:bg-bg-hover flex-shrink-0"
-        title="Détacher le mini-lecteur (flottant, toujours au-dessus)"
+        title={t('np.detach')}
       >
         <ExternalLink size={13} />
       </button>

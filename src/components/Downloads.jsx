@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { Download, FolderOpen, X, CheckCircle2, AlertCircle, Trash2, File } from 'lucide-react';
 import { useDownloadsStore } from '../lib/downloadsStore';
+import { useT } from '../lib/i18n';
 
 // Octets → format lisible (Ko, Mo…)
 function humanSize(bytes) {
@@ -20,6 +21,7 @@ function humanSize(bytes) {
 // seule fois.
 export default function Downloads() {
   const { downloads, upsert, remove, clearFinished } = useDownloadsStore();
+  const t = useT();
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
@@ -53,7 +55,7 @@ export default function Downloads() {
       <button
         onClick={() => setOpen((v) => !v)}
         className={`btn-icon relative ${open ? 'bg-bg-hover' : ''}`}
-        title="Téléchargements"
+        title={t('dl.title')}
       >
         <Download size={18} className={active.length > 0 ? 'text-accent-primary' : undefined} />
         {active.length > 0 && (
@@ -66,12 +68,12 @@ export default function Downloads() {
       {open && (
         <div className="absolute right-0 top-full mt-2 w-96 bg-bg-elevated border border-border rounded-xl shadow-2xl overflow-hidden z-50 animate-scale-in">
           <div className="px-4 py-3 border-b border-border flex items-center justify-between">
-            <span className="font-semibold text-sm">Téléchargements</span>
+            <span className="font-semibold text-sm">{t('dl.title')}</span>
             <div className="flex items-center gap-2">
               <button
                 onClick={() => window.electronAPI?.openDownloadsFolder?.()}
                 className="text-xs text-accent-primary hover:text-accent-hover flex items-center gap-1"
-                title="Ouvrir le dossier Téléchargements"
+                title={t('dl.openFolder')}
               >
                 <FolderOpen size={13} /> Dossier
               </button>
@@ -79,7 +81,7 @@ export default function Downloads() {
                 <button
                   onClick={clearFinished}
                   className="text-xs text-text-muted hover:text-text-primary flex items-center gap-1"
-                  title="Effacer la liste (les fichiers restent sur le disque)"
+                  title={t('dl.clearList')}
                 >
                   <Trash2 size={13} /> Effacer
                 </button>
@@ -112,7 +114,7 @@ export default function Downloads() {
                         className={`block w-full text-left font-medium text-sm truncate ${
                           done ? 'hover:text-accent-primary cursor-pointer' : 'cursor-default'
                         }`}
-                        title={done ? 'Ouvrir le fichier' : d.filename}
+                        title={done ? t('dl.openFile') : d.filename}
                       >
                         {d.filename}
                       </button>
@@ -120,7 +122,7 @@ export default function Downloads() {
                         {done
                           ? humanSize(d.totalBytes || d.receivedBytes)
                           : failed
-                            ? 'Téléchargement interrompu'
+                            ? t('dl.interrupted')
                             : pct !== null
                               ? `${humanSize(d.receivedBytes)} / ${humanSize(d.totalBytes)} · ${pct}%`
                               : humanSize(d.receivedBytes)}
@@ -131,7 +133,7 @@ export default function Downloads() {
                         <button
                           onClick={() => window.electronAPI?.revealDownload?.(d.id)}
                           className="btn-icon w-8 h-8"
-                          title="Afficher dans le dossier"
+                          title={t('dl.showInFolder')}
                         >
                           <FolderOpen size={15} />
                         </button>
@@ -140,7 +142,7 @@ export default function Downloads() {
                         <button
                           onClick={() => window.electronAPI?.cancelDownload?.(d.id)}
                           className="btn-icon w-8 h-8 text-error"
-                          title="Annuler"
+                          title={t('common.cancel')}
                         >
                           <X size={15} />
                         </button>
@@ -148,7 +150,7 @@ export default function Downloads() {
                         <button
                           onClick={() => remove(d.id)}
                           className="btn-icon w-8 h-8 text-text-muted"
-                          title="Retirer de la liste"
+                          title={t('dl.removeFromList')}
                         >
                           <X size={15} />
                         </button>

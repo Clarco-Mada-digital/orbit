@@ -152,6 +152,27 @@ export const fr = {
   'common.delete': 'Supprimer',
   'common.back': 'Retour',
   'common.uninstall': 'Désinstaller',
+  'common.hide': 'Masquer',
+  'common.reload': "Recharger l'application",
+  'common.retry': 'Réessayer',
+  'eb.title': 'Une erreur est survenue',
+  'eb.desc':
+    'L’interface a rencontré un problème inattendu. Vos profils, applications et sessions sont intacts — un rechargement règle généralement la situation.',
+
+  // Téléchargements
+  'dl.title': 'Téléchargements',
+  'dl.openFolder': 'Ouvrir le dossier Téléchargements',
+  'dl.clearList': 'Effacer la liste (les fichiers restent sur le disque)',
+  'dl.openFile': 'Ouvrir le fichier',
+  'dl.interrupted': 'Téléchargement interrompu',
+  'dl.showInFolder': 'Afficher dans le dossier',
+  'dl.removeFromList': 'Retirer de la liste',
+
+  // Lecture en cours
+  'np.prevTrack': 'Piste précédente',
+  'np.nextTrack': 'Piste suivante',
+  'np.pip': 'Picture-in-Picture (vidéo)',
+  'np.detach': 'Détacher le mini-lecteur (flottant, toujours au-dessus)',
 
   // Rechercher dans la page
   'find.placeholder': 'Rechercher dans la page…',
@@ -683,6 +704,27 @@ export const en = {
   'common.delete': 'Delete',
   'common.back': 'Back',
   'common.uninstall': 'Uninstall',
+  'common.hide': 'Hide',
+  'common.reload': 'Reload the app',
+  'common.retry': 'Retry',
+  'eb.title': 'Something went wrong',
+  'eb.desc':
+    'The interface hit an unexpected problem. Your profiles, apps and sessions are intact — reloading usually fixes it.',
+
+  // Downloads
+  'dl.title': 'Downloads',
+  'dl.openFolder': 'Open the Downloads folder',
+  'dl.clearList': 'Clear the list (files stay on disk)',
+  'dl.openFile': 'Open the file',
+  'dl.interrupted': 'Download interrupted',
+  'dl.showInFolder': 'Show in folder',
+  'dl.removeFromList': 'Remove from list',
+
+  // Now playing
+  'np.prevTrack': 'Previous track',
+  'np.nextTrack': 'Next track',
+  'np.pip': 'Picture-in-Picture (video)',
+  'np.detach': 'Detach the mini-player (floating, always on top)',
 
   // Find in page
   'find.placeholder': 'Find in page…',
