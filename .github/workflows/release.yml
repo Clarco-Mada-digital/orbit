@@ -1,0 +1,43 @@
+name: Release
+
+# Se déclenche quand on pousse un tag de version (ex. v1.3.0).
+# Construit Orbit sur Linux ET Windows et publie les artefacts (AppImage, .deb,
+# .exe) dans la release GitHub correspondante.
+on:
+  push:
+    tags:
+      - 'v*'
+  # Permet de lancer manuellement depuis l'onglet « Actions » (utile pour
+  # (re)générer les artefacts d'une version déjà publiée, ex. le .exe Windows).
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build & publish
+        env:
+          # Fourni automatiquement par GitHub Actions ; electron-builder l'utilise
+          # pour uploader les artefacts dans la release du tag.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npm run release:ci
