@@ -10,7 +10,8 @@
     "preview": "vite preview",
     "icons": "node scripts/generate-icons.js",
     "electron:dev": "concurrently \"npm run dev\" \"wait-on http://localhost:5173 && electron .\"",
-    "electron:build": "npm run icons && npm run build && electron-builder"
+    "electron:build": "npm run icons && npm run build && electron-builder",
+    "release": "npm run icons && npm run build && electron-builder --linux AppImage --publish always"
   },
   "keywords": [
     "electron",
