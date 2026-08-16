@@ -14,6 +14,7 @@ import {
   BellOff,
   Layers,
   Eraser,
+  MoreHorizontal,
   Check as CheckIcon,
 } from 'lucide-react';
 import { useStore } from '../stores/useStore';
@@ -44,6 +45,7 @@ export default function AppContextMenu({ appId, x, y, onClose }) {
   const [containing, setContaining] = useState(false);
   const [newCtn, setNewCtn] = useState('');
   const [name, setName] = useState('');
+  const [showMore, setShowMore] = useState(false);
   const app = apps.find((a) => a.id === appId);
   const menuRef = useRef(null);
 
@@ -113,7 +115,9 @@ export default function AppContextMenu({ appId, x, y, onClose }) {
       ? 130 + otherProfiles.length * 44
       : containing
         ? 180 + containers.length * 40
-        : 460;
+        : showMore
+          ? 470
+          : 300;
   const style = {
     width,
     left: Math.max(8, Math.min(x, window.innerWidth - width - 8)),
@@ -343,50 +347,65 @@ export default function AppContextMenu({ appId, x, y, onClose }) {
             {app.muted ? 'Réactiver les notifications' : 'Couper les notifications'}
           </button>
           <button
-            onClick={startRename}
-            className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-bg-hover transition-colors"
-          >
-            <Edit3 size={15} /> Renommer l'application
-          </button>
-          <button
             onClick={() => setEditing(true)}
             className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-bg-hover transition-colors"
           >
             <Pencil size={15} /> Modifier (icône, URL, couleur…)
           </button>
-          <button
-            onClick={() => {
-              // Le main process redirige window.open vers le navigateur système
-              if (app.url) window.open(app.url, '_blank');
-              onClose();
-            }}
-            disabled={!app.url}
-            className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-bg-hover transition-colors disabled:opacity-40"
-          >
-            <ExternalLink size={15} /> Ouvrir dans le navigateur
-          </button>
-          {profiles.length > 1 && (
-            <button
-              onClick={() => setMoving(true)}
-              className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-bg-hover transition-colors"
-            >
-              <ArrowRightLeft size={15} /> Déplacer vers un profil
-              <ChevronRight size={14} className="ml-auto text-text-muted" />
-            </button>
+
+          {/* Actions secondaires, repliées par défaut pour alléger le menu */}
+          {showMore && (
+            <>
+              <button
+                onClick={startRename}
+                className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-bg-hover transition-colors"
+              >
+                <Edit3 size={15} /> Renommer l'application
+              </button>
+              <button
+                onClick={() => {
+                  // Le main process redirige window.open vers le navigateur système
+                  if (app.url) window.open(app.url, '_blank');
+                  onClose();
+                }}
+                disabled={!app.url}
+                className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-bg-hover transition-colors disabled:opacity-40"
+              >
+                <ExternalLink size={15} /> Ouvrir dans le navigateur
+              </button>
+              {profiles.length > 1 && (
+                <button
+                  onClick={() => setMoving(true)}
+                  className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-bg-hover transition-colors"
+                >
+                  <ArrowRightLeft size={15} /> Déplacer vers un profil
+                  <ChevronRight size={14} className="ml-auto text-text-muted" />
+                </button>
+              )}
+              <button
+                onClick={() => setContaining(true)}
+                className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-bg-hover transition-colors"
+              >
+                <Layers size={15} /> Conteneur (multi-comptes)
+                <ChevronRight size={14} className="ml-auto text-text-muted" />
+              </button>
+              <button
+                onClick={handleClearData}
+                className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-bg-hover transition-colors"
+              >
+                <Eraser size={15} /> Effacer les données du site
+              </button>
+            </>
           )}
+
           <button
-            onClick={() => setContaining(true)}
-            className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-bg-hover transition-colors"
+            onClick={() => setShowMore((v) => !v)}
+            className="w-full flex items-center gap-3 px-3 py-2 text-sm text-text-muted hover:bg-bg-hover transition-colors"
           >
-            <Layers size={15} /> Conteneur (multi-comptes)
-            <ChevronRight size={14} className="ml-auto text-text-muted" />
+            <MoreHorizontal size={15} />
+            {showMore ? 'Voir moins' : 'Voir plus…'}
           </button>
-          <button
-            onClick={handleClearData}
-            className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-bg-hover transition-colors"
-          >
-            <Eraser size={15} /> Effacer les données du site
-          </button>
+
           <div className="my-1 border-t border-border"></div>
           <button
             onClick={handleUninstall}
