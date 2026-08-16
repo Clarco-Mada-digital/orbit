@@ -15,6 +15,19 @@ const __dirname = path.dirname(__filename);
 
 let mainWindow;
 
+// Résout un chemin de ressource vers le VRAI fichier sur disque. En packagé,
+// les ressources sont dans app.asar (illisible par nativeImage / la couche
+// X11-GTK) : on privilégie leur copie dé-packagée (app.asar.unpacked), rendue
+// disponible par "asarUnpack" dans package.json.
+function resourcePath(rel) {
+  if (app.isPackaged) {
+    const unpacked = path.join(process.resourcesPath, 'app.asar.unpacked', rel);
+    if (fs.existsSync(unpacked)) return unpacked;
+    return path.join(process.resourcesPath, 'app.asar', rel);
+  }
+  return path.join(__dirname, '..', rel);
+}
+
 // --- Barre système (tray) + fenêtre ----------------------------------------
 let tray = null;
 let isQuitting = false;
@@ -40,9 +53,8 @@ function toggleMainWindow() {
 // l'échelle lui-même) — redimensionner un 1024px en 18px rendait une icône vide.
 function trayIconPath() {
   const candidates = [
-    path.join(__dirname, '../dist/icons/icon-32.png'), // build packagé
-    path.join(__dirname, '../public/icons/icon-32.png'), // dev
-    path.join(__dirname, '../build/icon.png'), // repli
+    resourcePath('dist/icons/icon-32.png'), // 32px net, dé-packagé sur disque
+    resourcePath('build/icon.png'), // repli 1024px
   ];
   for (const p of candidates) {
     try {
@@ -62,7 +74,7 @@ function createTray() {
     // l'icône (un chemin dans app.asar donne une icône « fantôme »).
     let image = nativeImage.createFromPath(trayIconPath());
     if (image.isEmpty()) {
-      image = nativeImage.createFromPath(path.join(__dirname, '../build/icon.png'));
+      image = nativeImage.createFromPath(resourcePath('build/icon.png'));
     }
     if (!image.isEmpty()) {
       try {
@@ -1004,6 +1016,11 @@ function createWindow() {
       ? { width: saved.width, height: saved.height, x: saved.x, y: saved.y }
       : defaultBounds;
 
+  // Icône de la fenêtre en nativeImage (et NON un chemin) : un chemin dans
+  // app.asar n'est pas lisible par la couche X11/GTK → _NET_WM_ICON reste vide
+  // et la barre des tâches n'affiche aucune icône.
+  const appIcon = nativeImage.createFromPath(resourcePath('build/icon.png'));
+
   mainWindow = new BrowserWindow({
     ...restored,
     minWidth: 980,
@@ -1012,9 +1029,7 @@ function createWindow() {
     autoHideMenuBar: true,
     backgroundColor: '#0a0a0f',
     // Icône de la fenêtre (Linux/Windows)
-    ...(process.platform !== 'darwin'
-      ? { icon: path.join(__dirname, '../build/icon.png') }
-      : {}),
+    ...(process.platform !== 'darwin' && !appIcon.isEmpty() ? { icon: appIcon } : {}),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,
@@ -1024,6 +1039,11 @@ function createWindow() {
       spellcheck: true,
     },
   });
+
+  // Renforce _NET_WM_ICON (barre des tâches / liste des fenêtres sous Linux)
+  if (process.platform !== 'darwin' && !appIcon.isEmpty()) {
+    mainWindow.setIcon(appIcon);
+  }
 
   if (isDev) {
     mainWindow.loadURL(VITE_DEV_SERVER_URL);
