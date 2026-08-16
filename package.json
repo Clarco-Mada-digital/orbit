@@ -1,7 +1,7 @@
 {
   "name": "orbit",
   "version": "1.3.0",
-  "description": "Station alternative - Modern web app hub",
+  "description": "Orbit — toutes vos apps web dans une seule fenêtre (Windows, macOS, Linux)",
   "main": "electron/main.js",
   "type": "module",
   "scripts": {
@@ -16,7 +16,7 @@
   },
   "keywords": [
     "electron",
-    "station",
+    "webapps",
     "workspace",
     "productivity"
   ],

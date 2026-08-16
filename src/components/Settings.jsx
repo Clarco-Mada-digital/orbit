@@ -893,13 +893,50 @@ export default function Settings({ onClose }) {
                       </svg>
                     </div>
                     <h2 className="text-2xl font-bold mb-2">Orbit 🛰</h2>
-                    <p className="text-text-muted mb-1">Version 1.1.0</p>
+                    <p className="text-text-muted mb-1">Version {appVersion || '—'}</p>
                     <p className="text-sm text-text-muted mb-6">
-                      Alternative moderne à Station
+                      Toutes vos apps web réunies dans une seule fenêtre — Windows, macOS et Linux.
                     </p>
-                    <div className="flex gap-3 justify-center">
-                      <button className="btn btn-secondary btn-sm">Documentation</button>
-                      <button className="btn btn-secondary btn-sm">GitHub</button>
+                    <div className="flex gap-3 justify-center flex-wrap">
+                      <button
+                        onClick={() =>
+                          window.open('https://github.com/Clarco-Mada-digital/orbit', '_blank')
+                        }
+                        className="btn btn-secondary btn-sm"
+                      >
+                        GitHub
+                      </button>
+                      <button
+                        onClick={() =>
+                          window.open(
+                            'https://github.com/Clarco-Mada-digital/orbit/releases',
+                            '_blank'
+                          )
+                        }
+                        className="btn btn-secondary btn-sm"
+                      >
+                        Notes de version
+                      </button>
+                      <button onClick={checkUpdate} disabled={checking} className="btn btn-secondary btn-sm">
+                        {checking ? 'Vérification…' : 'Vérifier les mises à jour'}
+                      </button>
+                    </div>
+                    {updateMsg && <p className="text-xs text-text-muted mt-3">{updateMsg}</p>}
+                  </div>
+
+                  <div className="card">
+                    <h4 className="font-semibold mb-3">Ce qu'Orbit sait faire</h4>
+                    <div className="text-sm text-text-muted grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5">
+                      <p>🎯 Profils multiples & sessions isolées</p>
+                      <p>👥 Conteneurs multi-comptes</p>
+                      <p>🖥️ Écran partagé & espaces de travail</p>
+                      <p>🪟 Fenêtre détachée</p>
+                      <p>🔎 Recherche dans la page & zoom par app</p>
+                      <p>🔐 Verrouillage (global, profil, auto)</p>
+                      <p>💾 Sauvegarde chiffrée</p>
+                      <p>🎬 Téléchargement vidéo/audio</p>
+                      <p>🛡️ Bloqueur de pub & KeePassXC</p>
+                      <p>🔄 Mises à jour automatiques</p>
                     </div>
                   </div>
 

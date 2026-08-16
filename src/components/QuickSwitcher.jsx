@@ -14,6 +14,7 @@ import {
   CheckCheck,
   Keyboard,
   HelpCircle,
+  LayoutGrid,
 } from 'lucide-react';
 import { useStore } from '../stores/useStore';
 import AppIcon from './AppIcon';
@@ -45,6 +46,8 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
     markAllRead,
     adjustAppZoom,
     resetAppZoom,
+    workspaces,
+    applyWorkspace,
   } = useStore();
 
   useEffect(() => {
@@ -168,9 +171,21 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
         keywords: ['notification', 'lu', 'badge', 'marquer'],
         run: () => markAllRead(),
       },
+      // Espaces de travail enregistrés : ouvrables directement depuis la palette
+      ...workspaces.map((ws) => ({
+        id: `ws-${ws.id}`,
+        name: `Espace : ${ws.name}`,
+        subtitle: 'Ouvrir cet espace de travail',
+        icon: <LayoutGrid size={22} />,
+        color: '#a855f7',
+        keywords: ['espace', 'workspace', 'disposition', 'layout', ws.name.toLowerCase()],
+        run: () => applyWorkspace(ws.id),
+      })),
     ];
     return list;
   }, [
+    workspaces,
+    applyWorkspace,
     sidebarCollapsed,
     setSidebarCollapsed,
     activeApp,

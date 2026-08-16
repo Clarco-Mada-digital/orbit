@@ -10,6 +10,7 @@ import WebView from './components/WebView';
 import LockScreen from './components/LockScreen';
 import FindBar from './components/FindBar';
 import UpdateBanner from './components/UpdateBanner';
+import Welcome from './components/Welcome';
 import { useStore } from './stores/useStore';
 import { useSecurityStore } from './lib/securityStore';
 import { useMediaStore } from './lib/mediaStore';
@@ -73,6 +74,8 @@ export default function App() {
     setSplitView,
     clearSplitView,
     toggleSplitDirection,
+    onboarded,
+    setOnboarded,
   } = useStore();
 
   // App de démarrage : au lancement, ouvre l'app choisie (une seule fois).
@@ -855,6 +858,11 @@ export default function App() {
 
       {/* Mise à jour automatique */}
       <UpdateBanner />
+
+      {/* Bienvenue au tout premier lancement */}
+      {!onboarded && !appLocked && (
+        <Welcome onClose={() => setOnboarded(true)} onOpenStore={() => setShowAppStore(true)} />
+      )}
     </div>
   );
 }

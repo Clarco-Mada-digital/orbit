@@ -1,114 +1,84 @@
 # Orbit 🛰
 
-**Alternative moderne à Station** - Hub applicatif tout-en-un pour Windows, macOS et Linux.
+**Hub applicatif tout-en-un** pour Windows, macOS et Linux — regroupez toutes vos
+apps web (Gmail, Slack, Notion, ChatGPT…) dans une seule fenêtre, avec profils,
+sessions isolées et multi-comptes.
 
-![Orbit Screenshot](https://via.placeholder.com/1200x600/0a0a0f/6366f1?text=Orbit+-+Modern+App+Hub)
+![Orbit](docs/orbit-welcome.png)
+
+> D'autres captures (interface principale, écran partagé…) sont les bienvenues :
+> déposez vos PNG dans `docs/` et référencez-les ici.
+
+## ⬇️ Téléchargement
+
+Récupérez la dernière version sur la page des **[Releases](https://github.com/Clarco-Mada-digital/orbit/releases/latest)** :
+
+| Plateforme | Fichier |
+|-----------|---------|
+| 🪟 **Windows** | `Orbit-Setup-<version>.exe` (installateur) ou `Orbit-<version>.exe` (portable) |
+| 🐧 **Linux** | `Orbit-<version>.AppImage` (portable, mise à jour auto) ou `orbit_<version>_amd64.deb` |
+| 🍎 **macOS** | `Orbit-<version>.dmg` |
+
+> L'app n'est pas signée : Windows (SmartScreen) et macOS (Gatekeeper) afficheront
+> un avertissement « éditeur inconnu ». Choisissez « Exécuter quand même » /
+> clic droit → Ouvrir.
 
 ## ✨ Fonctionnalités
 
-- 🎯 **Profils multiples** - Séparez vie pro et perso (Travail 💼, Personnel 🏠, etc.)
-- 🚀 **80+ applications** intégrées - Gmail, Slack, Notion, GitHub, ChatGPT et plus
-- ⚡ **Quick Switcher** - Recherche ultra-rapide avec `Cmd/Ctrl + K`
-- 🎨 **Thèmes & personnalisation** - Clair, sombre ou auto avec couleurs d'accent
-- 📱 **Interface fluide** - Sidebar rétractable, animations modernes
-- 🔒 **Sessions isolées** - Chaque app a son propre espace (cookies, storage)
-- 🌐 **Contournement X-Frame-Options** - Gmail, Slack et sites bloqués fonctionnent !
-- 💾 **Sauvegarde automatique** - Vos apps et profils persistent entre sessions
+- 🎯 **Profils multiples** — séparez pro et perso (Travail 💼, Personnel 🏠…)
+- 🔒 **Sessions isolées** — chaque app a son coffre à cookies ; profil « partagé » possible (SSO)
+- 👥 **Conteneurs multi-comptes** — plusieurs comptes d'un même service (2 Gmail…)
+- 🖥️ **Écran partagé & espaces de travail** — 2 à 4 apps côte à côte, dispositions enregistrées
+- 🪟 **Fenêtre détachée** — sortez une app dans sa propre fenêtre (2ᵉ écran)
+- ⚡ **Quick Switcher** (`Ctrl/Cmd + K`) et **recherche dans la page** (`Ctrl/Cmd + F`)
+- 🔎 **Zoom par app**, **veille** des apps inactives, **favoris**
+- 🔐 **Verrouillage** (global + par profil) et **verrouillage auto** après inactivité
+- 💾 **Sauvegarde/restauration chiffrée** de la configuration
+- 🎬 **Téléchargement vidéo/audio** (yt-dlp) depuis n'importe quel site
+- 🛡️ **Bloqueur de pub** intégré et **remplissage KeePassXC**
+- 🔄 **Mises à jour automatiques** (AppImage / Windows)
+- 🎨 **Thèmes** clair/sombre/auto, polices et couleur d'accent
 
-## 🚀 Installation
-
-### Prérequis
-- Node.js 18+ et npm
-- Git
-
-### Développement
+## 🚀 Développement
 
 ```bash
-# Cloner le repo
-git clone https://github.com/votre-username/orbit.git
+git clone https://github.com/Clarco-Mada-digital/orbit.git
 cd orbit
-
-# Installer les dépendances
 npm install
-
-# Lancer en mode développement
 npm run electron:dev
 ```
 
-### Build production
+### Build local
 
 ```bash
-# Build pour votre plateforme
-npm run electron:build
-
-# Les binaires seront dans dist-electron/
+npm run electron:build   # binaires dans dist-electron/ (plateforme courante)
 ```
 
-## 🎮 Utilisation
+## 📦 Publier une version
 
-### Raccourcis clavier
+Les builds multi-plateformes sont automatisés par **GitHub Actions** : il suffit de
+pousser un tag de version.
 
-| Raccourci | Action |
-|-----------|--------|
-| `Cmd/Ctrl + K` | Quick Switcher |
-| `Cmd/Ctrl + ,` | Paramètres |
-| `Escape` | Fermer overlay |
-| `Cmd/Ctrl + L` | Focus URL bar |
-| `Cmd/Ctrl + R` | Recharger app active |
+```bash
+npm version minor -m "chore(release): v%s"   # bump + commit + tag
+git push origin master --follow-tags          # déclenche le CI
+```
 
-### Ajouter une application
-
-1. Cliquez sur **+ Ajouter** dans la sidebar
-2. Choisissez parmi 80+ apps pré-configurées
-3. Ou ajoutez une app personnalisée (nom, URL, icône)
-
-### Gérer les profils
-
-1. Ouvrez les paramètres (`Cmd/Ctrl + ,`)
-2. Allez dans **Profils**
-3. Créez, éditez ou supprimez des profils
+Le workflow compile sur Linux, Windows et macOS puis publie automatiquement la
+release avec tous les artefacts et des notes de version générées depuis les
+commits.
 
 ## 🏗️ Architecture
 
-- **Frontend** : React 18 + Vite + TailwindCSS
-- **Desktop** : Electron + `<webview>` embarquées (partitions par profil pour isoler les sessions)
-- **State** : Zustand (persist dans localStorage)
-- **Animations** : Framer Motion
+- **Frontend** : React 18 + Vite + TailwindCSS + Zustand (persisté)
+- **Desktop** : Electron 43, `<webview>` embarquées (partitions par profil/app)
+- **Mises à jour** : electron-updater (feed GitHub Releases)
 - **Icons** : Lucide React
-
-## 📦 Stack technique
-
-```json
-{
-  "electron": "^33.3.1",
-  "react": "^18.3.1",
-  "vite": "^6.0.7",
-  "tailwindcss": "^3.4.17",
-  "zustand": "^5.0.2",
-  "framer-motion": "^11.15.0"
-}
-```
-
-## 🤝 Contribution
-
-Les contributions sont les bienvenues !
-
-1. Fork le projet
-2. Créez une branche (`git checkout -b feature/AmazingFeature`)
-3. Commit (`git commit -m 'Add AmazingFeature'`)
-4. Push (`git push origin feature/AmazingFeature`)
-5. Ouvrez une Pull Request
 
 ## 📄 Licence
 
 MIT © 2026
 
-## 🙏 Inspirations
-
-- [Station](https://github.com/getstation/desktop-app) - L'original (abandonné)
-- [Franz](https://meetfranz.com/) - Multi-messenger
-- [Wavebox](https://wavebox.io/) - Browser pour apps web
-
 ---
 
-Fait avec ❤️ pour remplacer Station
+Fait avec ❤️ pour rassembler vos apps web au même endroit.

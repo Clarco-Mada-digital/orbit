@@ -139,6 +139,9 @@ export const useStore = create(
       // { id, name, profileId, activeApp, splitView }
       workspaces: [],
 
+      // Onboarding : écran de bienvenue au tout premier lancement
+      onboarded: false,
+
       // Settings
       settings: { ...defaultSettings },
 
@@ -393,6 +396,8 @@ export const useStore = create(
         }),
       deleteWorkspace: (id) =>
         set((state) => ({ workspaces: state.workspaces.filter((w) => w.id !== id) })),
+
+      setOnboarded: (v) => set({ onboarded: v !== false }),
 
       reorderApps: (profileId, appIds) =>
         set((state) => ({
