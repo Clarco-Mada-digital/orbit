@@ -70,12 +70,12 @@
         "deb"
       ],
       "category": "Utility",
-      "icon": "build/icon.png",
+      "icon": "build/icons",
       "desktop": {
         "entry": {
           "Name": "Orbit",
           "Comment": "Hub applicatif — vos apps web dans une seule fenêtre",
-          "StartupWMClass": "Orbit"
+          "StartupWMClass": "orbit"
         }
       }
     },
