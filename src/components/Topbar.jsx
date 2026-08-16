@@ -85,6 +85,8 @@ export default function Topbar({ onOpenQuickSwitcher }) {
   const splitMenuRef = useRef(null);
   const [showWsMenu, setShowWsMenu] = useState(false);
   const wsMenuRef = useRef(null);
+  const [wsSaving, setWsSaving] = useState(false);
+  const [wsName, setWsName] = useState('');
   const app = apps.find((a) => a.id === activeApp);
 
   // Apps du même profil que l'app active (candidats à l'écran partagé)
@@ -139,6 +141,8 @@ export default function Topbar({ onOpenQuickSwitcher }) {
       }
       if (wsMenuRef.current && !wsMenuRef.current.contains(e.target)) {
         setShowWsMenu(false);
+        setWsSaving(false);
+        setWsName('');
       }
     };
     window.addEventListener('click', onClick);
@@ -458,18 +462,68 @@ export default function Topbar({ onOpenQuickSwitcher }) {
                   )}
                 </div>
                 <div className="border-t border-border py-1">
-                  <button
-                    onClick={() => {
-                      const name = window.prompt(t('tb.workspacePrompt'), t('tb.workspaceDefault'));
-                      if (name) {
-                        saveWorkspace(name);
-                        setShowWsMenu(false);
-                      }
-                    }}
-                    className="w-full flex items-center gap-3 px-4 py-2 text-sm hover:bg-bg-hover transition-colors"
-                  >
-                    <Plus size={15} /> {t('tb.saveLayout')}
-                  </button>
+                  {wsSaving ? (
+                    <div className="px-3 py-2">
+                      <input
+                        type="text"
+                        value={wsName}
+                        onChange={(e) => setWsName(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            const name = wsName.trim();
+                            if (name) {
+                              saveWorkspace(name);
+                              setWsSaving(false);
+                              setWsName('');
+                              setShowWsMenu(false);
+                            }
+                          } else if (e.key === 'Escape') {
+                            setWsSaving(false);
+                            setWsName('');
+                          }
+                        }}
+                        placeholder={t('tb.workspacePrompt')}
+                        className="input text-sm"
+                        autoFocus
+                      />
+                      <div className="flex gap-2 mt-2">
+                        <button
+                          onClick={() => {
+                            const name = wsName.trim();
+                            if (name) {
+                              saveWorkspace(name);
+                              setWsSaving(false);
+                              setWsName('');
+                              setShowWsMenu(false);
+                            }
+                          }}
+                          disabled={!wsName.trim()}
+                          className="flex-1 btn btn-primary btn-sm disabled:opacity-40"
+                        >
+                          {t('common.save')}
+                        </button>
+                        <button
+                          onClick={() => {
+                            setWsSaving(false);
+                            setWsName('');
+                          }}
+                          className="btn btn-secondary btn-sm"
+                        >
+                          {t('common.cancel')}
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      onClick={() => {
+                        setWsName(t('tb.workspaceDefault'));
+                        setWsSaving(true);
+                      }}
+                      className="w-full flex items-center gap-3 px-4 py-2 text-sm hover:bg-bg-hover transition-colors"
+                    >
+                      <Plus size={15} /> {t('tb.saveLayout')}
+                    </button>
+                  )}
                 </div>
               </div>
             )}
