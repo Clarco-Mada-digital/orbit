@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { Download, RefreshCw, X } from 'lucide-react';
+import { useT } from '../lib/i18n';
 
 // Bannière discrète de mise à jour (electron-updater). S'affiche quand une
 // version est disponible / en cours de téléchargement / prête à installer.
@@ -8,6 +9,7 @@ export default function UpdateBanner() {
   const [version, setVersion] = useState('');
   const [percent, setPercent] = useState(0);
   const [dismissed, setDismissed] = useState(false);
+  const t = useT();
 
   useEffect(() => {
     const off = window.electronAPI?.onUpdate?.((type, payload) => {
@@ -41,17 +43,19 @@ export default function UpdateBanner() {
             <RefreshCw size={18} className="text-accent-primary" />
           </div>
           <div className="flex-1 min-w-0">
-            <p className="font-semibold text-sm">Mise à jour prête {version && `(${version})`}</p>
-            <p className="text-xs text-text-muted mt-0.5">Redémarre Orbit pour l'installer.</p>
+            <p className="font-semibold text-sm">
+              {t('update.ready')} {version && `(${version})`}
+            </p>
+            <p className="text-xs text-text-muted mt-0.5">{t('update.readyDesc')}</p>
             <div className="flex gap-2 mt-2.5">
               <button
                 onClick={() => window.electronAPI?.installUpdate?.()}
                 className="btn btn-primary btn-sm"
               >
-                Redémarrer et installer
+                {t('update.restart')}
               </button>
               <button onClick={() => setDismissed(true)} className="btn btn-ghost btn-sm">
-                Plus tard
+                {t('update.later')}
               </button>
             </div>
           </div>
@@ -64,8 +68,8 @@ export default function UpdateBanner() {
           <div className="flex-1 min-w-0">
             <p className="font-semibold text-sm">
               {status === 'progress'
-                ? `Téléchargement de la mise à jour… ${percent}%`
-                : `Mise à jour ${version} disponible`}
+                ? t('update.downloading', { percent })
+                : t('update.available', { version })}
             </p>
             {status === 'progress' && (
               <div className="h-1.5 bg-bg-hover rounded-full mt-1.5 overflow-hidden">

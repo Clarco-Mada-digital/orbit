@@ -7,6 +7,7 @@ import KeepassSettings from './KeepassSettings';
 import SecuritySettings from './SecuritySettings';
 import BackupSettings from './BackupSettings';
 import { shortcutKeys } from '../lib/shortcuts';
+import { useT } from '../lib/i18n';
 
 // Polices proposées, groupées par style. Chaque entrée est rendue
 // dans sa propre police → aperçu en direct avant de choisir.
@@ -81,6 +82,7 @@ export default function Settings({ onClose }) {
     }
   };
   const { settings, updateSettings, apps, profiles } = useStore();
+  const t = useT();
 
   const tabs = [
     { id: 'general', name: 'Général', icon: Zap },
@@ -147,6 +149,19 @@ export default function Settings({ onClose }) {
             <div className="flex-1 overflow-y-auto p-6">
               {activeTab === 'general' && (
                 <div className="space-y-6">
+                  <div className="card">
+                    <h4 className="font-semibold mb-3">{t('settings.language')}</h4>
+                    <select
+                      value={settings.language || 'auto'}
+                      onChange={(e) => updateSettings({ language: e.target.value })}
+                      className="input max-w-xs"
+                    >
+                      <option value="auto">{t('settings.language.auto')}</option>
+                      <option value="fr">Français</option>
+                      <option value="en">English</option>
+                    </select>
+                  </div>
+
                   <div className="card">
                     <h4 className="font-semibold mb-4">Démarrage</h4>
                     <label className="flex items-center justify-between mb-4">
@@ -893,10 +908,10 @@ export default function Settings({ onClose }) {
                       </svg>
                     </div>
                     <h2 className="text-2xl font-bold mb-2">Orbit 🛰</h2>
-                    <p className="text-text-muted mb-1">Version {appVersion || '—'}</p>
-                    <p className="text-sm text-text-muted mb-6">
-                      Toutes vos apps web réunies dans une seule fenêtre — Windows, macOS et Linux.
+                    <p className="text-text-muted mb-1">
+                      {t('about.version', { version: appVersion || '—' })}
                     </p>
+                    <p className="text-sm text-text-muted mb-6">{t('about.tagline')}</p>
                     <div className="flex gap-3 justify-center flex-wrap">
                       <button
                         onClick={() =>
@@ -904,7 +919,7 @@ export default function Settings({ onClose }) {
                         }
                         className="btn btn-secondary btn-sm"
                       >
-                        GitHub
+                        {t('about.github')}
                       </button>
                       <button
                         onClick={() =>
@@ -915,17 +930,17 @@ export default function Settings({ onClose }) {
                         }
                         className="btn btn-secondary btn-sm"
                       >
-                        Notes de version
+                        {t('about.releaseNotes')}
                       </button>
                       <button onClick={checkUpdate} disabled={checking} className="btn btn-secondary btn-sm">
-                        {checking ? 'Vérification…' : 'Vérifier les mises à jour'}
+                        {checking ? t('about.checking') : t('about.checkUpdates')}
                       </button>
                     </div>
                     {updateMsg && <p className="text-xs text-text-muted mt-3">{updateMsg}</p>}
                   </div>
 
                   <div className="card">
-                    <h4 className="font-semibold mb-3">Ce qu'Orbit sait faire</h4>
+                    <h4 className="font-semibold mb-3">{t('about.features')}</h4>
                     <div className="text-sm text-text-muted grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-1.5">
                       <p>🎯 Profils multiples & sessions isolées</p>
                       <p>👥 Conteneurs multi-comptes</p>
@@ -941,7 +956,7 @@ export default function Settings({ onClose }) {
                   </div>
 
                   <div className="card">
-                    <h4 className="font-semibold mb-2">Technologies</h4>
+                    <h4 className="font-semibold mb-2">{t('about.tech')}</h4>
                     <div className="text-sm text-text-muted space-y-1">
                       <p>• Electron + React + Vite</p>
                       <p>• TailwindCSS + Zustand</p>

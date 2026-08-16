@@ -14,6 +14,7 @@ function hostnameOf(url) {
 // Paramètres par défaut — utilisés pour la migration des anciennes données
 export const defaultSettings = {
   theme: 'dark', // dark | light | auto
+  language: 'auto', // auto | fr | en
   accentColor: '#6366f1',
   sidebarPosition: 'left',
   autoHideTopbar: false,
