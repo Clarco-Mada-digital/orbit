@@ -73,31 +73,31 @@ export default function Settings({ onClose }) {
     if (r.success === false) {
       setUpdateMsg(
         r.reason === 'unsupported'
-          ? "Mise à jour auto indisponible dans ce mode (dispo uniquement sur l'AppImage)."
-          : 'Impossible de vérifier pour le moment.'
+          ? t('st.upd.unsupported')
+          : t('st.upd.cantCheck')
       );
     } else if (r.version && appVersion && r.version !== appVersion) {
-      setUpdateMsg(`Version ${r.version} disponible — téléchargement en cours…`);
+      setUpdateMsg(t('st.upd.available', { version: r.version }));
     } else {
-      setUpdateMsg('Orbit est à jour.');
+      setUpdateMsg(t('st.upd.upToDate'));
     }
   };
   const { settings, updateSettings, apps, profiles } = useStore();
   const t = useT();
 
   const tabs = [
-    { id: 'general', name: 'Général', icon: Zap },
-    { id: 'appearance', name: 'Apparence', icon: Palette },
-    { id: 'display', name: 'Affichage', icon: Palette },
-    { id: 'profiles', name: 'Profils', icon: User },
-    { id: 'shortcuts', name: 'Raccourcis', icon: Keyboard },
-    { id: 'extensions', name: 'Extensions', icon: Puzzle },
+    { id: 'general', name: t('st.tab.general'), icon: Zap },
+    { id: 'appearance', name: t('st.tab.appearance'), icon: Palette },
+    { id: 'display', name: t('st.tab.display'), icon: Palette },
+    { id: 'profiles', name: t('st.tab.profiles'), icon: User },
+    { id: 'shortcuts', name: t('st.tab.shortcuts'), icon: Keyboard },
+    { id: 'extensions', name: t('st.tab.extensions'), icon: Puzzle },
     { id: 'keepass', name: 'KeePassXC', icon: KeyRound },
-    { id: 'security', name: 'Sécurité', icon: ShieldCheck },
-    { id: 'privacy', name: 'Confidentialité', icon: Ban },
-    { id: 'backup', name: 'Sauvegarde', icon: Archive },
-    { id: 'notifications', name: 'Notifications', icon: Bell },
-    { id: 'about', name: 'À propos', icon: Info },
+    { id: 'security', name: t('st.tab.security'), icon: ShieldCheck },
+    { id: 'privacy', name: t('st.tab.privacy'), icon: Ban },
+    { id: 'backup', name: t('st.tab.backup'), icon: Archive },
+    { id: 'notifications', name: t('st.tab.notifications'), icon: Bell },
+    { id: 'about', name: t('st.tab.about'), icon: Info },
   ];
 
   // Source unique des raccourcis (adaptés à la plateforme)
@@ -113,7 +113,7 @@ export default function Settings({ onClose }) {
           {/* Sidebar */}
           <div className="w-64 bg-bg-primary border-r border-border flex flex-col">
             <div className="p-6 border-b border-border">
-              <h2 className="text-xl font-bold">Paramètres</h2>
+              <h2 className="text-xl font-bold">{t('common.settings')}</h2>
             </div>
             <nav className="flex-1 p-3 overflow-y-auto">
               {tabs.map((tab) => {
@@ -164,9 +164,9 @@ export default function Settings({ onClose }) {
                   </div>
 
                   <div className="card">
-                    <h4 className="font-semibold mb-4">Démarrage</h4>
+                    <h4 className="font-semibold mb-4">{t('st.startup')}</h4>
                     <label className="flex items-center justify-between mb-4">
-                      <span>Démarrer minimisé</span>
+                      <span>{t('st.startMinimized')}</span>
                       <input
                         type="checkbox"
                         checked={settings.startMinimized}
@@ -174,14 +174,14 @@ export default function Settings({ onClose }) {
                         className="w-12 h-6 bg-bg-hover rounded-full relative cursor-pointer appearance-none checked:bg-accent-primary transition-colors after:content-[''] after:absolute after:top-1 after:left-1 after:w-4 after:h-4 after:bg-white after:rounded-full after:transition-transform checked:after:translate-x-6"
                       />
                     </label>
-                    <label className="block text-sm font-medium mb-1.5">Application au démarrage</label>
+                    <label className="block text-sm font-medium mb-1.5">{t('st.startupApp')}</label>
                     <select
                       value={settings.startupApp || ''}
                       onChange={(e) => updateSettings({ startupApp: e.target.value })}
                       className="input max-w-sm"
                     >
-                      <option value="">Reprendre la dernière app</option>
-                      <option value="none">Aucune (écran d'accueil)</option>
+                      <option value="">{t('st.resumeLast')}</option>
+                      <option value="none">{t('st.startupNone')}</option>
                       {apps.map((a) => {
                         const prof = profiles.find((p) => p.id === a.profileId);
                         return (
@@ -194,23 +194,23 @@ export default function Settings({ onClose }) {
                   </div>
 
                   <div className="card">
-                    <h4 className="font-semibold mb-2">Mises à jour</h4>
+                    <h4 className="font-semibold mb-2">{t('st.updates')}</h4>
                     <p className="text-sm text-text-muted mb-3">
-                      Version installée : <span className="font-medium">{appVersion || '—'}</span>
+                      {t('st.installedVersion')} <span className="font-medium">{appVersion || '—'}</span>
                     </p>
                     <button onClick={checkUpdate} disabled={checking} className="btn btn-secondary btn-sm">
-                      {checking ? 'Vérification…' : 'Rechercher les mises à jour'}
+                      {checking ? t('about.checking') : t('st.upd.check')}
                     </button>
                     {updateMsg && <p className="text-sm mt-2 text-text-muted">{updateMsg}</p>}
                   </div>
 
                   <div className="card">
-                    <h4 className="font-semibold mb-4">Barre système (tray)</h4>
+                    <h4 className="font-semibold mb-4">{t('st.tray')}</h4>
                     <label className="flex items-center justify-between mb-3">
                       <div>
-                        <div className="font-medium">Réduire dans la barre système</div>
+                        <div className="font-medium">{t('st.closeToTray')}</div>
                         <div className="text-sm text-text-muted">
-                          Fermer la fenêtre garde Orbit en fond (icône du tray) au lieu de quitter
+                          {t('st.closeToTrayDesc')}
                         </div>
                       </div>
                       <input
@@ -222,9 +222,9 @@ export default function Settings({ onClose }) {
                     </label>
                     <label className="flex items-center justify-between mb-2">
                       <div>
-                        <div className="font-medium">Raccourci global d'invocation</div>
+                        <div className="font-medium">{t('st.globalHotkey')}</div>
                         <div className="text-sm text-text-muted">
-                          Afficher / masquer Orbit depuis n'importe où
+                          {t('st.globalHotkeyDesc')}
                         </div>
                       </div>
                       <input
@@ -239,7 +239,7 @@ export default function Settings({ onClose }) {
                             );
                             if (res && res.success === false) {
                               alert(
-                                'Ce raccourci est indisponible (déjà utilisé par le système ?). Essayez-en un autre, ex. CommandOrControl+Shift+O.'
+                                t('st.hotkeyUnavailable')
                               );
                             }
                           }
@@ -258,7 +258,7 @@ export default function Settings({ onClose }) {
                               settings.globalHotkey || 'CommandOrControl+Alt+O'
                             );
                             if (res && res.success === false) {
-                              alert('Ce raccourci est indisponible. Essayez une autre combinaison.');
+                              alert(t('st.hotkeyUnavailable2'));
                             }
                           }}
                           placeholder="CommandOrControl+Alt+O"
@@ -274,11 +274,11 @@ export default function Settings({ onClose }) {
                   </div>
 
                   <div className="card">
-                    <h4 className="font-semibold mb-4">Interface</h4>
+                    <h4 className="font-semibold mb-4">{t('st.interface')}</h4>
                     <label className="flex items-center justify-between mb-3">
                       <div>
-                        <div className="font-medium">Masquer la barre supérieure</div>
-                        <div className="text-sm text-text-muted">En mode plein écran</div>
+                        <div className="font-medium">{t('st.hideTopbar')}</div>
+                        <div className="text-sm text-text-muted">{t('st.hideTopbarDesc')}</div>
                       </div>
                       <input
                         type="checkbox"
@@ -289,9 +289,9 @@ export default function Settings({ onClose }) {
                     </label>
                     <label className="flex items-center justify-between mb-3">
                       <div>
-                        <div className="font-medium">Picture-in-Picture automatique</div>
+                        <div className="font-medium">{t('st.autoPip')}</div>
                         <div className="text-sm text-text-muted">
-                          Sort la vidéo en mini-fenêtre flottante quand vous changez d'app
+                          {t('st.autoPipDesc')}
                         </div>
                       </div>
                       <input
@@ -303,9 +303,9 @@ export default function Settings({ onClose }) {
                     </label>
                     <label className="flex items-center justify-between">
                       <div>
-                        <div className="font-medium">Touches média du clavier</div>
+                        <div className="font-medium">{t('st.mediaKeys')}</div>
                         <div className="text-sm text-text-muted">
-                          Les touches ⏯ ⏭ ⏮ pilotent la lecture en cours (même hors d'Orbit)
+                          {t('st.mediaKeysDesc')}
                         </div>
                       </div>
                       <input
@@ -318,22 +318,19 @@ export default function Settings({ onClose }) {
                   </div>
 
                   <div className="card">
-                    <h4 className="font-semibold mb-2">Ressources</h4>
-                    <p className="text-sm text-text-muted mb-3">
-                      Met en veille les apps inactives pour libérer la mémoire. L'app active,
-                      l'écran partagé et les apps qui jouent un son ne sont jamais mises en veille.
-                    </p>
-                    <label className="block text-sm font-medium mb-1.5">Mise en veille automatique</label>
+                    <h4 className="font-semibold mb-2">{t('st.resources')}</h4>
+                    <p className="text-sm text-text-muted mb-3">{t('st.resourcesDesc')}</p>
+                    <label className="block text-sm font-medium mb-1.5">{t('st.autoSleep')}</label>
                     <select
                       value={settings.autoSleepMinutes || 0}
                       onChange={(e) => updateSettings({ autoSleepMinutes: parseInt(e.target.value, 10) })}
                       className="input max-w-xs"
                     >
-                      <option value={0}>Désactivée</option>
-                      <option value={15}>Après 15 minutes</option>
-                      <option value={30}>Après 30 minutes</option>
-                      <option value={60}>Après 1 heure</option>
-                      <option value={120}>Après 2 heures</option>
+                      <option value={0}>{t('st.sleepOff')}</option>
+                      <option value={15}>{t('st.sleep15')}</option>
+                      <option value={30}>{t('st.sleep30')}</option>
+                      <option value={60}>{t('st.sleep60')}</option>
+                      <option value={120}>{t('st.sleep120')}</option>
                     </select>
                   </div>
                 </div>
@@ -342,14 +339,14 @@ export default function Settings({ onClose }) {
               {activeTab === 'display' && (
                 <div className="space-y-6">
                   <div className="card">
-                    <h4 className="font-semibold mb-4">Taille de police</h4>
+                    <h4 className="font-semibold mb-4">{t('st.fontSize')}</h4>
                     <div className="space-y-3">
                       <div className="flex gap-3">
                         {[
-                          { value: 'small', label: 'Petite', size: '12px' },
-                          { value: 'medium', label: 'Moyenne', size: '14px' },
-                          { value: 'large', label: 'Grande', size: '16px' },
-                          { value: 'xlarge', label: 'Très grande', size: '18px' },
+                          { value: 'small', label: t('st.small'), size: '12px' },
+                          { value: 'medium', label: t('st.medium'), size: '14px' },
+                          { value: 'large', label: t('st.large'), size: '16px' },
+                          { value: 'xlarge', label: t('st.xlarge'), size: '18px' },
                         ].map((option) => (
                           <button
                             key={option.value}
@@ -368,9 +365,9 @@ export default function Settings({ onClose }) {
                   </div>
 
                   <div className="card">
-                    <h4 className="font-semibold mb-4">Police de caractères</h4>
+                    <h4 className="font-semibold mb-4">{t('st.fontFamily')}</h4>
                     <p className="text-sm text-text-muted mb-4">
-                      Le changement s'applique instantanément à toute l'interface
+                      {t('st.fontFamilyDesc')}
                     </p>
                     <div className="space-y-5">
                       {fontGroups.map((group) => (
@@ -415,7 +412,7 @@ export default function Settings({ onClose }) {
                   </div>
 
                   <div className="card">
-                    <h4 className="font-semibold mb-4">Zoom de l'interface</h4>
+                    <h4 className="font-semibold mb-4">{t('st.uiZoom')}</h4>
                     <div className="space-y-3">
                       <div className="flex items-center gap-4">
                         <span className="text-sm font-medium min-w-[60px]">{settings.uiScale ?? 100}%</span>
@@ -453,12 +450,12 @@ export default function Settings({ onClose }) {
                   </div>
 
                   <div className="card">
-                    <h4 className="font-semibold mb-4">Options d'affichage</h4>
+                    <h4 className="font-semibold mb-4">{t('st.displayOptions')}</h4>
                     <div className="space-y-3">
                       <label className="flex items-center justify-between">
                         <div>
-                          <div className="font-medium">Mode compact</div>
-                          <div className="text-sm text-text-muted">Réduit l'espacement entre les éléments</div>
+                          <div className="font-medium">{t('st.compact')}</div>
+                          <div className="text-sm text-text-muted">{t('st.compactDesc')}</div>
                         </div>
                         <input
                           type="checkbox"
@@ -470,8 +467,8 @@ export default function Settings({ onClose }) {
 
                       <label className="flex items-center justify-between">
                         <div>
-                          <div className="font-medium">Animations</div>
-                          <div className="text-sm text-text-muted">Active les transitions et animations</div>
+                          <div className="font-medium">{t('st.animations')}</div>
+                          <div className="text-sm text-text-muted">{t('st.animationsDesc')}</div>
                         </div>
                         <input
                           type="checkbox"
@@ -483,8 +480,8 @@ export default function Settings({ onClose }) {
 
                       <label className="flex items-center justify-between">
                         <div>
-                          <div className="font-medium">Icônes d'applications</div>
-                          <div className="text-sm text-text-muted">Affiche les icônes colorées dans la sidebar</div>
+                          <div className="font-medium">{t('st.appIcons')}</div>
+                          <div className="text-sm text-text-muted">{t('st.appIconsDesc')}</div>
                         </div>
                         <input
                           type="checkbox"
@@ -501,7 +498,7 @@ export default function Settings({ onClose }) {
               {activeTab === 'appearance' && (
                 <div className="space-y-6">
                   <div className="card">
-                    <h4 className="font-semibold mb-4">Thème</h4>
+                    <h4 className="font-semibold mb-4">{t('st.theme')}</h4>
                     <div className="flex gap-3">
                       {['dark', 'light', 'auto'].map((theme) => (
                         <button
@@ -513,16 +510,16 @@ export default function Settings({ onClose }) {
                               : 'border-border hover:border-accent-primary/50'
                           }`}
                         >
-                          {theme === 'dark' && '🌙 Sombre'}
-                          {theme === 'light' && '☀️ Clair'}
-                          {theme === 'auto' && '🌓 Auto'}
+                          {theme === 'dark' && t('st.themeDark')}
+                          {theme === 'light' && t('st.themeLight')}
+                          {theme === 'auto' && t('st.themeAuto')}
                         </button>
                       ))}
                     </div>
                   </div>
 
                   <div className="card">
-                    <h4 className="font-semibold mb-4">Couleur d'accent</h4>
+                    <h4 className="font-semibold mb-4">{t('st.accentColor')}</h4>
                     <div className="flex gap-3 flex-wrap">
                       {[
                         { name: 'Indigo', value: '#6366f1' },
@@ -549,10 +546,9 @@ export default function Settings({ onClose }) {
                     </div>
                     <label className="flex items-center justify-between mt-4 pt-4 border-t border-border">
                       <div>
-                        <div className="font-medium">Accent par profil</div>
+                        <div className="font-medium">{t('st.accentPerProfile')}</div>
                         <div className="text-sm text-text-muted">
-                          L'accent suit la couleur choisie pour chaque profil (dans Profils → chaque
-                          profil a sa palette). Repère visuel pro / perso.
+                          {t('st.accentPerProfileDesc')}
                         </div>
                       </div>
                       <input
@@ -571,18 +567,18 @@ export default function Settings({ onClose }) {
                   <div className="card">
                     <div className="flex items-center justify-between mb-4">
                       <div>
-                        <h4 className="font-semibold">Gestion des profils</h4>
-                        <p className="text-sm text-text-muted">Créez et gérez vos espaces de travail</p>
+                        <h4 className="font-semibold">{t('pm.title')}</h4>
+                        <p className="text-sm text-text-muted">{t('st.profilesDesc')}</p>
                       </div>
                       <button 
                         onClick={() => setShowProfileManager(true)}
                         className="btn btn-primary"
                       >
-                        Gérer
+                        {t('st.manage')}
                       </button>
                     </div>
                     <p className="text-sm text-text-muted">
-                      Les profils vous permettent de séparer vos applications en espaces distincts (Travail, Personnel, Projets, etc.)
+                      {t('st.profilesDesc2')}
                     </p>
                   </div>
                 </div>
@@ -591,7 +587,7 @@ export default function Settings({ onClose }) {
               {activeTab === 'shortcuts' && (
                 <div className="space-y-6">
                   <div className="card">
-                    <h4 className="font-semibold mb-4">Raccourcis clavier</h4>
+                    <h4 className="font-semibold mb-4">{t('qs.shortcutsLabel')}</h4>
                     <div className="space-y-3">
                       {shortcuts.map((shortcut) => (
                         <div key={shortcut.name} className="flex items-center justify-between py-2">
@@ -619,19 +615,13 @@ export default function Settings({ onClose }) {
                   <div className="card">
                     <div className="flex items-center gap-2 mb-2">
                       <Ban size={18} className="text-accent-primary" />
-                      <h4 className="font-semibold">Bloqueur de pub &amp; traceurs</h4>
+                      <h4 className="font-semibold">{t('st.adblockTitle')}</h4>
                     </div>
-                    <p className="text-sm text-text-muted mb-4">
-                      Blocage natif intégré (listes type EasyList), au niveau réseau, pour toutes
-                      les apps et tous les profils — sans extension. Plus efficace et fiable que les
-                      extensions de blocage, qui ne fonctionnent pas dans Orbit.
-                    </p>
+                    <p className="text-sm text-text-muted mb-4">{t('st.adblockDesc')}</p>
                     <label className="flex items-center justify-between">
                       <div>
-                        <div className="font-medium">Activer le blocage</div>
-                        <div className="text-sm text-text-muted">
-                          Bloque les publicités et traceurs connus
-                        </div>
+                        <div className="font-medium">{t('st.adblockEnable')}</div>
+                        <div className="text-sm text-text-muted">{t('st.adblockEnableDesc')}</div>
                       </div>
                       <input
                         type="checkbox"
@@ -640,24 +630,15 @@ export default function Settings({ onClose }) {
                         className="w-12 h-6 bg-bg-hover rounded-full relative cursor-pointer appearance-none checked:bg-accent-primary transition-colors after:content-[''] after:absolute after:top-1 after:left-1 after:w-4 after:h-4 after:bg-white after:rounded-full after:transition-transform checked:after:translate-x-6"
                       />
                     </label>
-                    <p className="text-xs text-text-muted mt-3">
-                      Après changement, rechargez une app déjà ouverte (bouton ⟳) pour que l'effet
-                      s'applique. La première activation télécharge les listes (puis elles sont mises
-                      en cache, y compris hors-ligne).
-                    </p>
+                    <p className="text-xs text-text-muted mt-3">{t('st.adblockHint')}</p>
                   </div>
 
                   <div className="card">
                     <div className="flex items-center gap-2 mb-2">
                       <Globe size={18} className="text-accent-primary" />
-                      <h4 className="font-semibold">Proxy / VPN</h4>
+                      <h4 className="font-semibold">{t('st.proxyTitle')}</h4>
                     </div>
-                    <p className="text-sm text-text-muted mb-3">
-                      Fait passer le trafic par un proxy (SOCKS5 ou HTTP) — pratique pour utiliser un
-                      VPN. Proxy <strong>global</strong> ici ; surchargeable <strong>par profil</strong>{' '}
-                      (Profils) et <strong>par app</strong> (clic droit → Modifier). Vide = connexion
-                      directe.
-                    </p>
+                    <p className="text-sm text-text-muted mb-3">{t('st.proxyDesc')}</p>
                     <input
                       type="text"
                       value={settings.globalProxy || ''}
@@ -665,37 +646,30 @@ export default function Settings({ onClose }) {
                       placeholder="socks5://127.0.0.1:1080"
                       className="input"
                     />
-                    <p className="text-xs text-text-muted mt-2">
-                      Ex. <code>socks5://host:port</code>, <code>http://host:port</code>, ou avec
-                      identifiants <code>socks5://user:pass@host:port</code>. SOCKS5 d'un VPN, proxy
-                      local (Mullvad), ou votre propre serveur. Rechargez l'app après changement.
-                    </p>
+                    <p className="text-xs text-text-muted mt-2">{t('st.proxyHint')}</p>
                   </div>
 
                   <div className="card">
-                    <h4 className="font-semibold mb-2">Traduction &amp; lecture vocale</h4>
-                    <p className="text-sm text-text-muted mb-4">
-                      Clic droit sur une page → « Traduire la sélection » ou « Lire à voix haute »
-                      (intégré, sans extension).
-                    </p>
+                    <h4 className="font-semibold mb-2">{t('st.translateTitle')}</h4>
+                    <p className="text-sm text-text-muted mb-4">{t('st.translateDesc')}</p>
 
-                    <label className="block text-sm font-medium mb-1.5">Langue de traduction</label>
+                    <label className="block text-sm font-medium mb-1.5">{t('st.translateLang')}</label>
                     <select
                       value={settings.translateTarget || 'fr'}
                       onChange={(e) => updateSettings({ translateTarget: e.target.value })}
                       className="input max-w-xs mb-4"
                     >
                       {[
-                        { v: 'fr', l: 'Français' },
-                        { v: 'en', l: 'Anglais' },
-                        { v: 'es', l: 'Espagnol' },
-                        { v: 'de', l: 'Allemand' },
-                        { v: 'it', l: 'Italien' },
-                        { v: 'pt', l: 'Portugais' },
-                        { v: 'ar', l: 'Arabe' },
-                        { v: 'zh-CN', l: 'Chinois (simplifié)' },
-                        { v: 'ru', l: 'Russe' },
-                        { v: 'ja', l: 'Japonais' },
+                        { v: 'fr', l: t('st.lang.fr') },
+                        { v: 'en', l: t('st.lang.en') },
+                        { v: 'es', l: t('st.lang.es') },
+                        { v: 'de', l: t('st.lang.de') },
+                        { v: 'it', l: t('st.lang.it') },
+                        { v: 'pt', l: t('st.lang.pt') },
+                        { v: 'ar', l: t('st.lang.ar') },
+                        { v: 'zh-CN', l: t('st.lang.zh') },
+                        { v: 'ru', l: t('st.lang.ru') },
+                        { v: 'ja', l: t('st.lang.ja') },
                       ].map((o) => (
                         <option key={o.v} value={o.v}>
                           {o.l}
@@ -703,11 +677,11 @@ export default function Settings({ onClose }) {
                       ))}
                     </select>
 
-                    <label className="block text-sm font-medium mb-1.5">Moteur de traduction</label>
+                    <label className="block text-sm font-medium mb-1.5">{t('st.translateEngine')}</label>
                     <div className="flex gap-3 mb-3">
                       {[
-                        { v: 'google', l: 'Google', d: 'Rapide, sans configuration' },
-                        { v: 'libretranslate', l: 'LibreTranslate', d: 'Privé / auto-hébergé' },
+                        { v: 'google', l: 'Google', d: t('st.engineGoogleDesc') },
+                        { v: 'libretranslate', l: 'LibreTranslate', d: t('st.engineLibreDesc') },
                       ].map((o) => (
                         <button
                           key={o.v}
@@ -730,30 +704,21 @@ export default function Settings({ onClose }) {
                           type="text"
                           value={settings.libreTranslateUrl || ''}
                           onChange={(e) => updateSettings({ libreTranslateUrl: e.target.value })}
-                          placeholder="URL du serveur (ex. http://localhost:5000)"
+                          placeholder={t('st.libreUrlPlaceholder')}
                           className="input"
                         />
                         <input
                           type="password"
                           value={settings.libreTranslateApiKey || ''}
                           onChange={(e) => updateSettings({ libreTranslateApiKey: e.target.value })}
-                          placeholder="Clé API (optionnelle)"
+                          placeholder={t('st.libreKeyPlaceholder')}
                           className="input"
                         />
-                        <p className="text-xs text-text-muted">
-                          LibreTranslate est open-source et auto-hébergeable (Docker :{' '}
-                          <code className="px-1 py-0.5 bg-bg-secondary border border-border rounded">
-                            libretranslate/libretranslate
-                          </code>
-                          ). Avec un serveur local, vos textes ne quittent pas votre machine.
-                        </p>
+                        <p className="text-xs text-text-muted">{t('st.libreHint')}</p>
                       </div>
                     )}
                     {settings.translateEngine !== 'libretranslate' && (
-                      <p className="text-xs text-text-muted">
-                        Le moteur Google envoie le texte sélectionné à Google pour la traduction.
-                        Pour un traitement privé, choisissez LibreTranslate.
-                      </p>
+                      <p className="text-xs text-text-muted">{t('st.googleHint')}</p>
                     )}
                   </div>
                 </div>
@@ -762,14 +727,11 @@ export default function Settings({ onClose }) {
               {activeTab === 'notifications' && (
                 <div className="space-y-6">
                   <div className="card">
-                    <h4 className="font-semibold mb-4">Notifications</h4>
+                    <h4 className="font-semibold mb-4">{t('tb.notifications')}</h4>
                     <label className="flex items-center justify-between">
                       <div>
-                        <div className="font-medium">Notifications système</div>
-                        <div className="text-sm text-text-muted">
-                          Affiche une notification système quand une app reçoit de nouveaux messages
-                          (sauf si elle est ouverte ou en veille)
-                        </div>
+                        <div className="font-medium">{t('st.notifSystem')}</div>
+                        <div className="text-sm text-text-muted">{t('st.notifSystemDesc')}</div>
                       </div>
                       <input
                         type="checkbox"
@@ -780,11 +742,11 @@ export default function Settings({ onClose }) {
                     </label>
                   </div>
                   <div className="card">
-                    <h4 className="font-semibold mb-4">Ne pas déranger</h4>
+                    <h4 className="font-semibold mb-4">{t('tb.dnd')}</h4>
                     <label className="flex items-center justify-between mb-3">
                       <div>
-                        <div className="font-medium">Activer maintenant</div>
-                        <div className="text-sm text-text-muted">Coupe toutes les notifications</div>
+                        <div className="font-medium">{t('st.dndNow')}</div>
+                        <div className="text-sm text-text-muted">{t('st.dndNowDesc')}</div>
                       </div>
                       <input
                         type="checkbox"
@@ -795,10 +757,8 @@ export default function Settings({ onClose }) {
                     </label>
                     <label className="flex items-center justify-between mb-3">
                       <div>
-                        <div className="font-medium">Plages horaires silencieuses</div>
-                        <div className="text-sm text-text-muted">
-                          Coupe automatiquement les notifications sur une plage (ex. la nuit)
-                        </div>
+                        <div className="font-medium">{t('st.quietHours')}</div>
+                        <div className="text-sm text-text-muted">{t('st.quietHoursDesc')}</div>
                       </div>
                       <input
                         type="checkbox"
@@ -809,14 +769,14 @@ export default function Settings({ onClose }) {
                     </label>
                     {settings.quietHoursEnabled && (
                       <div className="flex items-center gap-3">
-                        <label className="text-sm text-text-secondary">De</label>
+                        <label className="text-sm text-text-secondary">{t('st.from')}</label>
                         <input
                           type="time"
                           value={settings.quietStart || '22:00'}
                           onChange={(e) => updateSettings({ quietStart: e.target.value })}
                           className="input max-w-[130px]"
                         />
-                        <label className="text-sm text-text-secondary">à</label>
+                        <label className="text-sm text-text-secondary">{t('st.to')}</label>
                         <input
                           type="time"
                           value={settings.quietEnd || '07:00'}
@@ -827,10 +787,8 @@ export default function Settings({ onClose }) {
                     )}
                   </div>
                   <div className="card">
-                    <h4 className="font-semibold mb-2">Son de notification</h4>
-                    <p className="text-sm text-text-muted mb-4">
-                      Personnalisez le son joué à la réception d'un message. Vide = son système.
-                    </p>
+                    <h4 className="font-semibold mb-2">{t('st.notifSound')}</h4>
+                    <p className="text-sm text-text-muted mb-4">{t('st.notifSoundDesc')}</p>
 
                     {/* Sons proposés (intégrés) — clic = sélectionner + écouter */}
                     <div className="flex flex-wrap gap-2 mb-4">
@@ -859,12 +817,12 @@ export default function Settings({ onClose }) {
                     <div className="flex items-center gap-3 flex-wrap">
                       <span className="text-sm text-text-secondary">
                         {settings.notificationSound
-                          ? `🔊 ${settings.notificationSoundName || 'Son personnalisé'}`
-                          : 'Son système (par défaut)'}
+                          ? `🔊 ${settings.notificationSoundName || t('st.customSound')}`
+                          : t('st.systemSound')}
                       </span>
                       <div className="flex gap-2 ml-auto">
                         <label className="btn btn-secondary btn-sm cursor-pointer">
-                          Choisir un son…
+                          {t('st.chooseSound')}
                           <input
                             type="file"
                             accept="audio/*"
@@ -874,7 +832,7 @@ export default function Settings({ onClose }) {
                               e.target.value = '';
                               if (!file) return;
                               if (file.size > 1024 * 1024) {
-                                alert('Son trop lourd (max 1 Mo). Choisissez un son court.');
+                                alert(t('st.soundTooHeavy'));
                                 return;
                               }
                               const reader = new FileReader();
@@ -899,7 +857,7 @@ export default function Settings({ onClose }) {
                               }}
                               className="btn btn-secondary btn-sm"
                             >
-                              Tester
+                              {t('st.testSound')}
                             </button>
                             <button
                               onClick={() =>
@@ -907,7 +865,7 @@ export default function Settings({ onClose }) {
                               }
                               className="btn btn-sm text-error hover:bg-error/10"
                             >
-                              Par défaut
+                              {t('st.defaultSound')}
                             </button>
                           </>
                         )}
@@ -915,11 +873,8 @@ export default function Settings({ onClose }) {
                     </div>
                   </div>
                   <div className="card">
-                    <h4 className="font-semibold mb-4">Centre de notifications</h4>
-                    <p className="text-sm text-text-muted">
-                      Cliquez sur la cloche 🔔 dans la barre supérieure pour voir toutes vos apps
-                      avec des messages non lus et y accéder en un clic.
-                    </p>
+                    <h4 className="font-semibold mb-4">{t('st.notifCenter')}</h4>
+                    <p className="text-sm text-text-muted">{t('st.notifCenterDesc')}</p>
                   </div>
                 </div>
               )}
@@ -991,10 +946,8 @@ export default function Settings({ onClose }) {
                   </div>
 
                   <div className="card">
-                    <h4 className="font-semibold mb-2">Licence</h4>
-                    <p className="text-sm text-text-muted">
-                      Orbit est un logiciel open-source sous licence MIT.
-                    </p>
+                    <h4 className="font-semibold mb-2">{t('st.license')}</h4>
+                    <p className="text-sm text-text-muted">{t('st.licenseText')}</p>
                   </div>
                 </div>
               )}

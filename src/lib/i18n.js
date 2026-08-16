@@ -258,6 +258,155 @@ export const fr = {
   'store.uninstallAccountTitle': 'Désinstaller un compte',
   'store.install': 'Installer',
   'store.noApps': 'Aucune application trouvée',
+
+  // Réglages — onglets
+  'st.tab.general': 'Général',
+  'st.tab.appearance': 'Apparence',
+  'st.tab.display': 'Affichage',
+  'st.tab.profiles': 'Profils',
+  'st.tab.shortcuts': 'Raccourcis',
+  'st.tab.extensions': 'Extensions',
+  'st.tab.security': 'Sécurité',
+  'st.tab.privacy': 'Confidentialité',
+  'st.tab.backup': 'Sauvegarde',
+  'st.tab.notifications': 'Notifications',
+  'st.tab.about': 'À propos',
+
+  // Réglages — mises à jour
+  'st.upd.unsupported': "Mise à jour auto indisponible dans ce mode (dispo uniquement sur l'AppImage).",
+  'st.upd.cantCheck': 'Impossible de vérifier pour le moment.',
+  'st.upd.available': 'Version {version} disponible — téléchargement en cours…',
+  'st.upd.upToDate': 'Orbit est à jour.',
+  'st.upd.check': 'Rechercher les mises à jour',
+  'st.updates': 'Mises à jour',
+  'st.installedVersion': 'Version installée :',
+
+  // Réglages — Général
+  'st.startup': 'Démarrage',
+  'st.startMinimized': 'Démarrer minimisé',
+  'st.startupApp': 'Application au démarrage',
+  'st.resumeLast': 'Reprendre la dernière app',
+  'st.startupNone': "Aucune (écran d'accueil)",
+  'st.tray': 'Barre système (tray)',
+  'st.closeToTray': 'Réduire dans la barre système',
+  'st.closeToTrayDesc': 'Fermer la fenêtre garde Orbit en fond (icône du tray) au lieu de quitter',
+  'st.globalHotkey': "Raccourci global d'invocation",
+  'st.globalHotkeyDesc': "Afficher / masquer Orbit depuis n'importe où",
+  'st.hotkeyUnavailable':
+    'Ce raccourci est indisponible (déjà utilisé par le système ?). Essayez-en un autre, ex. CommandOrControl+Shift+O.',
+  'st.hotkeyUnavailable2': 'Ce raccourci est indisponible. Essayez une autre combinaison.',
+  'st.interface': 'Interface',
+  'st.hideTopbar': 'Masquer la barre supérieure',
+  'st.hideTopbarDesc': 'En mode plein écran',
+  'st.autoPip': 'Picture-in-Picture automatique',
+  'st.autoPipDesc': "Sort la vidéo en mini-fenêtre flottante quand vous changez d'app",
+  'st.mediaKeys': 'Touches média du clavier',
+  'st.mediaKeysDesc': "Les touches ⏯ ⏭ ⏮ pilotent la lecture en cours (même hors d'Orbit)",
+  'st.resources': 'Ressources',
+  'st.resourcesDesc':
+    "Met en veille les apps inactives pour libérer la mémoire. L'app active, l'écran partagé et les apps qui jouent un son ne sont jamais mises en veille.",
+  'st.autoSleep': 'Mise en veille automatique',
+  'st.sleepOff': 'Désactivée',
+  'st.sleep15': 'Après 15 minutes',
+  'st.sleep30': 'Après 30 minutes',
+  'st.sleep60': 'Après 1 heure',
+  'st.sleep120': 'Après 2 heures',
+
+  // Réglages — Affichage
+  'st.fontSize': 'Taille de police',
+  'st.small': 'Petite',
+  'st.medium': 'Moyenne',
+  'st.large': 'Grande',
+  'st.xlarge': 'Très grande',
+  'st.fontFamily': 'Police de caractères',
+  'st.fontFamilyDesc': "Le changement s'applique instantanément à toute l'interface",
+  'st.uiZoom': "Zoom de l'interface",
+  'st.displayOptions': "Options d'affichage",
+  'st.compact': 'Mode compact',
+  'st.compactDesc': "Réduit l'espacement entre les éléments",
+  'st.animations': 'Animations',
+  'st.animationsDesc': 'Active les transitions et animations',
+  'st.appIcons': "Icônes d'applications",
+  'st.appIconsDesc': 'Affiche les icônes colorées dans la sidebar',
+
+  // Réglages — Apparence
+  'st.theme': 'Thème',
+  'st.themeDark': '🌙 Sombre',
+  'st.themeLight': '☀️ Clair',
+  'st.themeAuto': '🌓 Auto',
+  'st.accentColor': "Couleur d'accent",
+  'st.accentPerProfile': 'Accent par profil',
+  'st.accentPerProfileDesc':
+    "L'accent suit la couleur choisie pour chaque profil (dans Profils → chaque profil a sa palette). Repère visuel pro / perso.",
+
+  // Réglages — Profils
+  'st.profilesDesc': 'Créez et gérez vos espaces de travail',
+  'st.manage': 'Gérer',
+  'st.profilesDesc2':
+    'Les profils vous permettent de séparer vos applications en espaces distincts (Travail, Personnel, Projets, etc.)',
+
+  // Réglages — Confidentialité
+  'st.adblockTitle': 'Bloqueur de pub & traceurs',
+  'st.adblockDesc':
+    'Blocage natif intégré (listes type EasyList), au niveau réseau, pour toutes les apps et tous les profils — sans extension. Plus efficace et fiable que les extensions de blocage, qui ne fonctionnent pas dans Orbit.',
+  'st.adblockEnable': 'Activer le blocage',
+  'st.adblockEnableDesc': 'Bloque les publicités et traceurs connus',
+  'st.adblockHint':
+    "Après changement, rechargez une app déjà ouverte (bouton ⟳) pour que l'effet s'applique. La première activation télécharge les listes (puis elles sont mises en cache, y compris hors-ligne).",
+  'st.proxyTitle': 'Proxy / VPN',
+  'st.proxyDesc':
+    'Fait passer le trafic par un proxy (SOCKS5 ou HTTP) — pratique pour utiliser un VPN. Proxy global ici ; surchargeable par profil (Profils) et par app (clic droit → Modifier). Vide = connexion directe.',
+  'st.proxyHint':
+    "Ex. socks5://host:port, http://host:port, ou avec identifiants socks5://user:pass@host:port. SOCKS5 d'un VPN, proxy local (Mullvad), ou votre propre serveur. Rechargez l'app après changement.",
+  'st.translateTitle': 'Traduction & lecture vocale',
+  'st.translateDesc':
+    'Clic droit sur une page → « Traduire la sélection » ou « Lire à voix haute » (intégré, sans extension).',
+  'st.translateLang': 'Langue de traduction',
+  'st.lang.fr': 'Français',
+  'st.lang.en': 'Anglais',
+  'st.lang.es': 'Espagnol',
+  'st.lang.de': 'Allemand',
+  'st.lang.it': 'Italien',
+  'st.lang.pt': 'Portugais',
+  'st.lang.ar': 'Arabe',
+  'st.lang.zh': 'Chinois (simplifié)',
+  'st.lang.ru': 'Russe',
+  'st.lang.ja': 'Japonais',
+  'st.translateEngine': 'Moteur de traduction',
+  'st.engineGoogleDesc': 'Rapide, sans configuration',
+  'st.engineLibreDesc': 'Privé / auto-hébergé',
+  'st.libreUrlPlaceholder': 'URL du serveur (ex. http://localhost:5000)',
+  'st.libreKeyPlaceholder': 'Clé API (optionnelle)',
+  'st.libreHint':
+    'LibreTranslate est open-source et auto-hébergeable (Docker : libretranslate/libretranslate). Avec un serveur local, vos textes ne quittent pas votre machine.',
+  'st.googleHint':
+    'Le moteur Google envoie le texte sélectionné à Google pour la traduction. Pour un traitement privé, choisissez LibreTranslate.',
+
+  // Réglages — Notifications
+  'st.notifSystem': 'Notifications système',
+  'st.notifSystemDesc':
+    "Affiche une notification système quand une app reçoit de nouveaux messages (sauf si elle est ouverte ou en veille)",
+  'st.dndNow': 'Activer maintenant',
+  'st.dndNowDesc': 'Coupe toutes les notifications',
+  'st.quietHours': 'Plages horaires silencieuses',
+  'st.quietHoursDesc': 'Coupe automatiquement les notifications sur une plage (ex. la nuit)',
+  'st.from': 'De',
+  'st.to': 'à',
+  'st.notifSound': 'Son de notification',
+  'st.notifSoundDesc': "Personnalisez le son joué à la réception d'un message. Vide = son système.",
+  'st.customSound': 'Son personnalisé',
+  'st.systemSound': 'Son système (par défaut)',
+  'st.chooseSound': 'Choisir un son…',
+  'st.testSound': 'Tester',
+  'st.defaultSound': 'Par défaut',
+  'st.soundTooHeavy': 'Son trop lourd (max 1 Mo). Choisissez un son court.',
+  'st.notifCenter': 'Centre de notifications',
+  'st.notifCenterDesc':
+    'Cliquez sur la cloche 🔔 dans la barre supérieure pour voir toutes vos apps avec des messages non lus et y accéder en un clic.',
+
+  // Réglages — À propos
+  'st.license': 'Licence',
+  'st.licenseText': 'Orbit est un logiciel open-source sous licence MIT.',
 };
 
 export const en = {
@@ -508,6 +657,155 @@ export const en = {
   'store.uninstallAccountTitle': 'Uninstall an account',
   'store.install': 'Install',
   'store.noApps': 'No app found',
+
+  // Settings — tabs
+  'st.tab.general': 'General',
+  'st.tab.appearance': 'Appearance',
+  'st.tab.display': 'Display',
+  'st.tab.profiles': 'Profiles',
+  'st.tab.shortcuts': 'Shortcuts',
+  'st.tab.extensions': 'Extensions',
+  'st.tab.security': 'Security',
+  'st.tab.privacy': 'Privacy',
+  'st.tab.backup': 'Backup',
+  'st.tab.notifications': 'Notifications',
+  'st.tab.about': 'About',
+
+  // Settings — updates
+  'st.upd.unsupported': 'Auto-update unavailable in this mode (AppImage only).',
+  'st.upd.cantCheck': 'Unable to check right now.',
+  'st.upd.available': 'Version {version} available — downloading…',
+  'st.upd.upToDate': 'Orbit is up to date.',
+  'st.upd.check': 'Check for updates',
+  'st.updates': 'Updates',
+  'st.installedVersion': 'Installed version:',
+
+  // Settings — General
+  'st.startup': 'Startup',
+  'st.startMinimized': 'Start minimized',
+  'st.startupApp': 'App on startup',
+  'st.resumeLast': 'Resume last app',
+  'st.startupNone': 'None (home screen)',
+  'st.tray': 'System tray',
+  'st.closeToTray': 'Minimize to system tray',
+  'st.closeToTrayDesc': 'Closing the window keeps Orbit in the background (tray icon) instead of quitting',
+  'st.globalHotkey': 'Global summon shortcut',
+  'st.globalHotkeyDesc': 'Show / hide Orbit from anywhere',
+  'st.hotkeyUnavailable':
+    'This shortcut is unavailable (already used by the system?). Try another one, e.g. CommandOrControl+Shift+O.',
+  'st.hotkeyUnavailable2': 'This shortcut is unavailable. Try another combination.',
+  'st.interface': 'Interface',
+  'st.hideTopbar': 'Hide the top bar',
+  'st.hideTopbarDesc': 'In fullscreen mode',
+  'st.autoPip': 'Automatic Picture-in-Picture',
+  'st.autoPipDesc': 'Pops the video into a floating mini-window when you switch apps',
+  'st.mediaKeys': 'Keyboard media keys',
+  'st.mediaKeysDesc': 'The ⏯ ⏭ ⏮ keys control current playback (even outside Orbit)',
+  'st.resources': 'Resources',
+  'st.resourcesDesc':
+    'Puts inactive apps to sleep to free memory. The active app, split screen and apps playing sound are never put to sleep.',
+  'st.autoSleep': 'Automatic sleep',
+  'st.sleepOff': 'Disabled',
+  'st.sleep15': 'After 15 minutes',
+  'st.sleep30': 'After 30 minutes',
+  'st.sleep60': 'After 1 hour',
+  'st.sleep120': 'After 2 hours',
+
+  // Settings — Display
+  'st.fontSize': 'Font size',
+  'st.small': 'Small',
+  'st.medium': 'Medium',
+  'st.large': 'Large',
+  'st.xlarge': 'Very large',
+  'st.fontFamily': 'Font family',
+  'st.fontFamilyDesc': 'The change applies instantly across the whole interface',
+  'st.uiZoom': 'Interface zoom',
+  'st.displayOptions': 'Display options',
+  'st.compact': 'Compact mode',
+  'st.compactDesc': 'Reduces spacing between elements',
+  'st.animations': 'Animations',
+  'st.animationsDesc': 'Enables transitions and animations',
+  'st.appIcons': 'App icons',
+  'st.appIconsDesc': 'Shows colored icons in the sidebar',
+
+  // Settings — Appearance
+  'st.theme': 'Theme',
+  'st.themeDark': '🌙 Dark',
+  'st.themeLight': '☀️ Light',
+  'st.themeAuto': '🌓 Auto',
+  'st.accentColor': 'Accent color',
+  'st.accentPerProfile': 'Accent per profile',
+  'st.accentPerProfileDesc':
+    'The accent follows the color chosen for each profile (in Profiles → each profile has its palette). Visual work/personal cue.',
+
+  // Settings — Profiles
+  'st.profilesDesc': 'Create and manage your workspaces',
+  'st.manage': 'Manage',
+  'st.profilesDesc2':
+    'Profiles let you separate your apps into distinct spaces (Work, Personal, Projects, etc.)',
+
+  // Settings — Privacy
+  'st.adblockTitle': 'Ad & tracker blocker',
+  'st.adblockDesc':
+    'Built-in native blocking (EasyList-style lists), at the network level, for all apps and profiles — no extension. More effective and reliable than blocking extensions, which do not work in Orbit.',
+  'st.adblockEnable': 'Enable blocking',
+  'st.adblockEnableDesc': 'Blocks known ads and trackers',
+  'st.adblockHint':
+    'After changing this, reload an already-open app (⟳ button) for the effect to apply. The first activation downloads the lists (then they are cached, including offline).',
+  'st.proxyTitle': 'Proxy / VPN',
+  'st.proxyDesc':
+    'Routes traffic through a proxy (SOCKS5 or HTTP) — handy for using a VPN. Global proxy here; overridable per profile (Profiles) and per app (right-click → Edit). Empty = direct connection.',
+  'st.proxyHint':
+    'e.g. socks5://host:port, http://host:port, or with credentials socks5://user:pass@host:port. A VPN’s SOCKS5, a local proxy (Mullvad), or your own server. Reload the app after changing.',
+  'st.translateTitle': 'Translation & text-to-speech',
+  'st.translateDesc':
+    'Right-click a page → “Translate selection” or “Read aloud” (built-in, no extension).',
+  'st.translateLang': 'Translation language',
+  'st.lang.fr': 'French',
+  'st.lang.en': 'English',
+  'st.lang.es': 'Spanish',
+  'st.lang.de': 'German',
+  'st.lang.it': 'Italian',
+  'st.lang.pt': 'Portuguese',
+  'st.lang.ar': 'Arabic',
+  'st.lang.zh': 'Chinese (simplified)',
+  'st.lang.ru': 'Russian',
+  'st.lang.ja': 'Japanese',
+  'st.translateEngine': 'Translation engine',
+  'st.engineGoogleDesc': 'Fast, no setup',
+  'st.engineLibreDesc': 'Private / self-hosted',
+  'st.libreUrlPlaceholder': 'Server URL (e.g. http://localhost:5000)',
+  'st.libreKeyPlaceholder': 'API key (optional)',
+  'st.libreHint':
+    'LibreTranslate is open-source and self-hostable (Docker: libretranslate/libretranslate). With a local server, your text never leaves your machine.',
+  'st.googleHint':
+    'The Google engine sends the selected text to Google for translation. For private processing, choose LibreTranslate.',
+
+  // Settings — Notifications
+  'st.notifSystem': 'System notifications',
+  'st.notifSystemDesc':
+    'Shows a system notification when an app receives new messages (unless it is open or asleep)',
+  'st.dndNow': 'Enable now',
+  'st.dndNowDesc': 'Mutes all notifications',
+  'st.quietHours': 'Quiet hours',
+  'st.quietHoursDesc': 'Automatically mutes notifications over a time range (e.g. at night)',
+  'st.from': 'From',
+  'st.to': 'to',
+  'st.notifSound': 'Notification sound',
+  'st.notifSoundDesc': 'Customize the sound played when a message arrives. Empty = system sound.',
+  'st.customSound': 'Custom sound',
+  'st.systemSound': 'System sound (default)',
+  'st.chooseSound': 'Choose a sound…',
+  'st.testSound': 'Test',
+  'st.defaultSound': 'Default',
+  'st.soundTooHeavy': 'Sound too heavy (max 1 MB). Choose a short sound.',
+  'st.notifCenter': 'Notification center',
+  'st.notifCenterDesc':
+    'Click the 🔔 bell in the top bar to see all your apps with unread messages and jump to them in one click.',
+
+  // Settings — About
+  'st.license': 'License',
+  'st.licenseText': 'Orbit is open-source software under the MIT license.',
 };
 
 const dicts = { fr, en };
