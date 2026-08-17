@@ -70,21 +70,32 @@ function trayIconPath() {
 function createTray() {
   if (tray) return;
   try {
-    // On passe un nativeImage (pas un chemin) : Electron l'écrit dans un
-    // fichier temporaire du VRAI disque, seul moyen pour AppIndicator de lire
-    // l'icône (un chemin dans app.asar donne une icône « fantôme »).
-    let image = nativeImage.createFromPath(trayIconPath());
-    if (image.isEmpty()) {
-      image = nativeImage.createFromPath(resourcePath('build/icon.png'));
-    }
-    if (!image.isEmpty()) {
-      try {
-        image = image.resize({ width: 24, height: 24 });
-      } catch {
-        /* garde l'original */
+    // Linux (AppIndicator / StatusNotifier) : on passe le CHEMIN du fichier sur
+    // le VRAI disque (app.asar.unpacked, garanti par asarUnpack) directement à
+    // `new Tray()`. C'est la méthode documentée par Electron, et la plus fiable
+    // ici : passer une nativeImage oblige Electron à écrire un fichier temporaire
+    // que certains hôtes SNI (XApp/Cinnamon) ne savent pas toujours lire → icône
+    // manquante ou cassée. Surtout, PAS de resize : l'hôte met l'icône à
+    // l'échelle lui-même, et un redimensionnement préalable (surtout avec un
+    // facteur d'écran > 1) produit parfois une icône vide/déformée.
+    //
+    // ⚠️ RÉGRESSION ÉLECTRON (ne PAS monter au-delà de 43.2.x) : depuis 43.3.0,
+    // Chromium route les items SNI par nom de service, mais les hôtes de tray
+    // Linux (xApp/Cinnamon, extension GNOME AppIndicator) adressent l'item par
+    // son nom UNIQUE (:1.xxx) via Gio.DBusProxy → `GetAll` échoue avec
+    // « error occurred in GetAll » → le watcher ne lit jamais l'icône → le tray
+    // affiche le placeholder « image cassée » (rose, non cliquable). Voir
+    // electron/electron#52674. Electron est épinglé à 43.2.0 dans package.json
+    // (dernière version saine) — vérifier le correctif upstream avant tout bump.
+    if (process.platform === 'linux') {
+      tray = new Tray(trayIconPath());
+    } else {
+      let image = nativeImage.createFromPath(trayIconPath());
+      if (image.isEmpty()) {
+        image = nativeImage.createFromPath(resourcePath('build/icon.png'));
       }
+      tray = new Tray(image);
     }
-    tray = new Tray(image.isEmpty() ? trayIconPath() : image);
     tray.setToolTip('Orbit');
     tray.setContextMenu(
       Menu.buildFromTemplate([
@@ -105,7 +116,7 @@ function createTray() {
     tray.on('click', showMainWindow);
     tray.on('double-click', showMainWindow);
   } catch (err) {
-    console.error('[orbit] tray échoué:', err.message);
+    console.error('[orbit] tray échoué:', err.message, '| icône:', trayIconPath());
   }
 }
 
@@ -1061,10 +1072,22 @@ function createWindow() {
   mainWindow.on('maximize', persistWindowState);
   mainWindow.on('unmaximize', persistWindowState);
   mainWindow.on('close', (e) => {
-    // Fermer-vers-le-tray : on masque au lieu de quitter (sauf « Quitter » réel)
-    if (!isQuitting && closeToTray && tray) {
+    // Fermer-vers-le-tray : on masque au lieu de quitter (sauf « Quitter » réel).
+    // Filet de sécurité : on ne masque QUE si le tray existe ET est vivant.
+    // Un tray cassé (échec de création, hôte SNI indisponible…) rendrait la
+    // fenêtre INACCESSIBLE (aucun moyen de la rouvrir) — dans ce cas, on quitte
+    // plutôt que de piéger l'utilisateur.
+    const trayAlive = Boolean(tray && !tray.isDestroyed?.());
+    if (!isQuitting && closeToTray && trayAlive) {
       e.preventDefault();
       mainWindow.hide();
+      // Rappel des issues de secours : relancer Orbit ramène la fenêtre
+      // (instance unique) et le raccourci global « afficher/masquer » marche
+      // aussi quand la fenêtre est cachée.
+      console.log(
+        '[orbit] fenêtre masquée dans le tray — pour rouvrir : clic tray, relancer Orbit, ou raccourci global' +
+          (summonAccel ? ` (${summonAccel})` : '')
+      );
       if (!trayInfoShown) {
         trayInfoShown = true;
         try {
