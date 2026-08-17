@@ -21,8 +21,14 @@ export default function EditAppModal({ app, onClose }) {
   const [name, setName] = useState(app.name);
   const [url, setUrl] = useState(app.url || '');
   const [emoji, setEmoji] = useState(app.icon || '🌐');
+  // L'utilisateur a-t-il cliqué sur un emoji de la grille ? (distinguer un
+  // choix EXPLICITE de l'emoji par défaut « 🌐 » jamais touché)
+  const [emojiTouched, setEmojiTouched] = useState(false);
   const [iconImage, setIconImage] = useState(app.iconImage || '');
   const [useSiteFavicon, setUseSiteFavicon] = useState(Boolean(app.favicon && !app.iconImage));
+  // Icône effective : emoji choisi explicitement (aujourd'hui ou déjà
+  // enregistré) → il prime ; sinon image/favicon/auto.
+  const effectiveIconEmoji = !iconImage && !useSiteFavicon && (emojiTouched || app.iconEmoji);
   const [color, setColor] = useState(app.color || '#6366f1');
   const [proxy, setProxy] = useState(app.proxy || '');
   const fileRef = useRef(null);
@@ -49,6 +55,8 @@ export default function EditAppModal({ app, onClose }) {
       // Image téléversée : prioritaire sur tout ; vide = retirée
       iconImage: iconImage || undefined,
       favicon: useSiteFavicon ? faviconServiceUrl(url || app.url) : undefined,
+      // Emoji choisi explicitement → prime sur le favicon automatique
+      iconEmoji: effectiveIconEmoji || undefined,
       // Proxy/VPN spécifique à cette app (vide = suit le profil / le global)
       proxy: proxy.trim() || undefined,
     };
@@ -122,7 +130,7 @@ export default function EditAppModal({ app, onClose }) {
                   <img src={iconImage} alt="" className="w-8 h-8 object-contain" draggable={false} />
                 ) : (
                   <AppIcon
-                    app={{ ...app, icon: emoji, iconImage: '', favicon: useSiteFavicon ? faviconServiceUrl(url || app.url) : undefined, url: url || app.url }}
+                    app={{ ...app, icon: emoji, iconImage: '', favicon: useSiteFavicon ? faviconServiceUrl(url || app.url) : undefined, iconEmoji: effectiveIconEmoji, url: url || app.url }}
                     className="w-8 h-8"
                   />
                 )}
@@ -167,6 +175,7 @@ export default function EditAppModal({ app, onClose }) {
                   key={`${e}-${i}`}
                   onClick={() => {
                     setEmoji(e);
+                    setEmojiTouched(true);
                     setIconImage('');
                     setUseSiteFavicon(false);
                   }}

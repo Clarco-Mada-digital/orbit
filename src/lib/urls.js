@@ -43,6 +43,42 @@ export function isTokenUrl(url) {
   }
 }
 
+// Paramètres de requête ÉPHÉMÈRES retirés d'une URL restaurée ou rechargée :
+// jetons CSRF / à usage unique (token/_token, code OAuth, access_token…).
+// Les restaurer tels quels une fois périmés fait échouer la page — ex. le
+// webmail Roundcube d'o2switch répond « Invalid request! No data was
+// received. » → page blanche. Les retirer laisse le site régénérer son propre
+// jeton (ou rediriger vers la connexion si la session est morte), jamais une
+// page cassée. On ne touche PAS aux jetons de session (sid, session, cpsess,
+// signature…) qui restent restaurés tels quels.
+const EPHEMERAL_QUERY_PARAMS = ['token', '_token', 'code', 'access_token'];
+
+export function stripEphemeralParams(url) {
+  if (!url) return url;
+  try {
+    const u = new URL(url);
+    let removed = false;
+    for (const p of EPHEMERAL_QUERY_PARAMS) {
+      if (u.searchParams.has(p)) {
+        u.searchParams.delete(p);
+        removed = true;
+      }
+    }
+    return removed ? u.toString() : url;
+  } catch {
+    return url;
+  }
+}
+
+// URL de rechargement « propre » : l'URL courante sans ses jetons éphémères
+// (undefined si rien à nettoyer → rechargement classique). Utilisée par le
+// bouton Actualiser : un simple wv.reload() rejouerait l'URL avec le jeton
+// périmé → même page blanche.
+export function reloadUrlFor(url) {
+  const cleaned = stripEphemeralParams(url || '');
+  return cleaned && cleaned !== url ? cleaned : undefined;
+}
+
 // URL de démarrage « maison » : l'origine du site si l'URL fournie est une
 // page de connexion éphémère, sinon l'URL telle quelle.
 export function homeUrlFor(url) {
@@ -77,7 +113,9 @@ export function computeStartUrl(app, recipes) {
   // Apps personnalisées ajoutées avec une URL à jeton éphémère : la « maison »
   // reste l'origine du site si c'est une page de connexion.
   if (isLoginPageUrl(home)) home = homeUrlFor(home);
-  if (isTokenUrl(app.url)) return app.url;
+  // URL à jeton : on la restaure, MAIS sans les paramètres éphémères
+  // (token CSRF, code OAuth…) qui font échouer la page une fois périmés.
+  if (isTokenUrl(app.url)) return stripEphemeralParams(app.url);
   if (home && app.url && !sameHost(home, app.url)) return home;
   return isLoginPageUrl(app.url) ? home : app.url;
 }

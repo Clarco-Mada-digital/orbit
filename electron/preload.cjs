@@ -17,6 +17,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setBadgeCount: (count) => ipcRenderer.invoke('notifications:setBadge', count),
   // Purge cookies/session d'un compte désinstallé (clé de session stable)
   clearAppSession: (payload) => ipcRenderer.invoke('sessions:clear', payload),
+  // Purge les cookies d'un hôte précis (session zombie → boucle de redirection)
+  clearHostSession: (payload) => ipcRenderer.invoke('sessions:clearHost', payload),
   // Extensions Chrome
   syncExtensions: (list) => ipcRenderer.invoke('extensions:sync', list),
   installWebStoreExtension: (idOrUrl) => ipcRenderer.invoke('extensions:installWebStore', { idOrUrl }),

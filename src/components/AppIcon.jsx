@@ -35,6 +35,15 @@ export default function AppIcon({ app, className = '', fallbackClassName = '' })
     setSrcIdx(0);
   }, [sources]);
 
+  // Choix EXPLICITE d'un emoji par l'utilisateur (ajout ou édition) : il prime
+  // sur tout — y compris le favicon automatique du site (icon.horse/s2) qui
+  // était affiché quoi qu'il arrive, rendant le choix d'emoji inopérant.
+  if (app.iconEmoji && !app.iconImage) {
+    return (
+      <span className={`leading-none ${fallbackClassName || ''}`}>{app.icon}</span>
+    );
+  }
+
   const current = sources[srcIdx];
 
   if (!current) {

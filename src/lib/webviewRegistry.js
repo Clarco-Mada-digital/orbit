@@ -21,3 +21,9 @@ export function getAllWebviews() {
   return Array.from(registry.values());
 }
 
+// Paires [appId, webview] des apps montées — pour recharger une app avec son
+// URL nettoyée (jetons éphémères retirés) au lieu d'un reload aveugle.
+export function getRegisteredWebviews() {
+  return Array.from(registry.entries());
+}
+

@@ -22,7 +22,7 @@ const READ_MEDIA_FN = `(() => {
     };
   } catch (e) { return { hasMedia: false, paused: true, currentTime: 0, duration: 0, title: '', artist: '', artwork: '' }; }
 })()`;
-import { computeStartUrl } from '../lib/urls';
+import { computeStartUrl, reloadUrlFor } from '../lib/urls';
 import { recipes } from '../lib/recipes';
 import { CHROME_UA } from '../lib/userAgent';
 import { appPartition } from '../lib/session';
@@ -43,6 +43,12 @@ export default function WebView({ app, active, visible, flexLayout }) {
   // exception SYNCHRONE tant que 'dom-ready' n'a pas été émis (webview non
   // attaché) → on ne pilote la page qu'après.
   const domReadyRef = useRef(false);
+  // Filet de sécurité anti boucle de redirection (voir handleDidFailLoad,
+  // ERR_TOO_MANY_REDIRECTS) : horodatage de la dernière récupération. On
+  // n'en déclenche qu'une toutes les 30 s — suffisant pour absorber la rafale
+  // de did-fail-load d'une même boucle, tout en permettant de récupérer d'une
+  // boucle PLUS TARDIVE (ex. rechargement manuel après reconnexion).
+  const redirectLoopRef = useRef(0);
   const updateApp = useStore((s) => s.updateApp);
   const setAppLoading = useLoadingStore((s) => s.setAppLoading);
   const setMedia = useMediaStore((s) => s.setMedia);
@@ -157,6 +163,41 @@ export default function WebView({ app, active, visible, flexLayout }) {
       // -3 = ERR_ABORTED : navigation remplacée par une autre (redirections
       // normales de Gmail/Slack…). Bénin, on ne l'affiche pas comme erreur.
       if (e.errorCode === -3) return;
+      // -310 = ERR_TOO_MANY_REDIRECTS : boucle de redirection. Cause fréquente :
+      // cookie de session « zombie » (session serveur expirée mais cookie
+      // conservé par la persistance des sessions durables) — ex. webmail
+      // Roundcube/o2switch → l'app afficherait l'erreur Chrome (≈ page
+      // blanche). On purge les cookies de l'hôte et on repart de la « maison » :
+      // l'utilisateur retombe sur la page de connexion au lieu d'une page
+      // cassée. (Au plus une tentative toutes les 30 s — si la maison boucle
+      // elle aussi, on ne se bat pas contre le site.)
+      if (e.errorCode === -310 && Date.now() - redirectLoopRef.current > 30000) {
+        redirectLoopRef.current = Date.now();
+        console.warn('[orbit] boucle de redirection détectée — purge de la session', app.name, e.url || '');
+        const sessionKey = app.sessionKey || `${app.profileId}:${app.id}`;
+        let host = '';
+        try {
+          host = new URL(e.url || app.url).hostname;
+        } catch {
+          /* ignore */
+        }
+        const goHome = () => {
+          try {
+            ref.current?.loadURL(app.homeUrl || app.url);
+          } catch {
+            /* ignore */
+          }
+        };
+        if (host && window.electronAPI?.clearHostSession) {
+          window.electronAPI
+            .clearHostSession({ sessionKey, host })
+            .then(goHome)
+            .catch(goHome);
+        } else {
+          goHome();
+        }
+        return;
+      }
       console.warn('[orbit] échec de chargement', app.name, e.errorCode, e.errorDescription);
     };
 
@@ -400,7 +441,10 @@ export default function WebView({ app, active, visible, flexLayout }) {
             onClick={() => {
               setCrashed(false);
               try {
-                ref.current?.reload();
+                // URL nettoyée de ses jetons éphémères (CSRF Roundcube…)
+                const clean = reloadUrlFor(app.url);
+                if (clean) ref.current?.loadURL(clean);
+                else ref.current?.reload();
               } catch {
                 /* ignore */
               }

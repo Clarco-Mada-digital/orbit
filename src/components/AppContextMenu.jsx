@@ -20,6 +20,7 @@ import {
 } from 'lucide-react';
 import { useStore } from '../stores/useStore';
 import { getWebview } from '../lib/webviewRegistry';
+import { reloadUrlFor } from '../lib/urls';
 import { appPartition } from '../lib/session';
 import { useT } from '../lib/i18n';
 import EditAppModal from './EditAppModal';
@@ -182,7 +183,11 @@ export default function AppContextMenu({ appId, x, y, onClose }) {
         appId,
       });
       try {
-        getWebview(appId)?.reload();
+        // Session purgée → l'URL courante (jeton CSRF…) est forcément périmée
+        const wv = getWebview(appId);
+        const clean = reloadUrlFor(app.url);
+        if (clean) wv?.loadURL(clean);
+        else wv?.reload();
       } catch {
         /* ignore */
       }

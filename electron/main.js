@@ -2080,6 +2080,25 @@ ipcMain.handle('sessions:clear', (_event, { sessionKey, profileId, appId } = {})
   }
 });
 
+// Purge les cookies d'un hôte précis (ex. webmail o2switch) : quand la session
+// SERVEUR expire mais que le cookie « zombie » survit (élevé à +1 an par la
+// persistance des sessions durables), le site boucle en redirections
+// (ERR_TOO_MANY_REDIRECTS → page d'erreur ≈ page blanche). On retire alors
+// uniquement les cookies de cet hôte pour revenir à un état de connexion sain.
+ipcMain.handle('sessions:clearHost', async (_event, { sessionKey, host } = {}) => {
+  try {
+    if (!sessionKey || !host) return { success: false, error: 'sessionKey et host requis' };
+    const ses = session.fromPartition(`persist:${sessionKey}`);
+    const cookies = await ses.cookies.get({ domain: host });
+    for (const c of cookies) {
+      await ses.cookies.remove(cookieSetUrl(c), c.name).catch(() => {});
+    }
+    return { success: true, removed: cookies.length };
+  } catch (err) {
+    return { success: false, error: String(err.message || err) };
+  }
+});
+
 // ---------------------------------------------------------------------------
 // Lifecycle
 // ---------------------------------------------------------------------------

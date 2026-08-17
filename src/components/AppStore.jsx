@@ -38,6 +38,9 @@ export default function AppStore({ onClose }) {
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [showCustomForm, setShowCustomForm] = useState(false);
   const [useFavicon, setUseFavicon] = useState(false);
+  // Un emoji a-t-il été choisi EXPLICITEMENT (pas le « 🌐 » par défaut jamais
+  // touché) ? → il doit primer sur le favicon automatique du site.
+  const [customEmojiChosen, setCustomEmojiChosen] = useState(false);
   const [customImage, setCustomImage] = useState(''); // image téléversée (data URL)
   const [customForm, setCustomForm] = useState({
     name: '',
@@ -56,6 +59,7 @@ export default function AppStore({ onClose }) {
     reader.onload = () => {
       setCustomImage(String(reader.result || ''));
       setUseFavicon(false);
+      setCustomEmojiChosen(false);
     };
     reader.readAsDataURL(file);
     e.target.value = '';
@@ -136,6 +140,8 @@ export default function AppStore({ onClose }) {
       color: customForm.color,
       // Image téléversée par l'utilisateur (prioritaire sur le favicon)
       iconImage: customImage || undefined,
+      // Emoji choisi explicitement → prime sur le favicon automatique
+      iconEmoji: customEmojiChosen && !customImage ? true : undefined,
       // Option : utiliser le favicon réel du site dès l'installation
       favicon: useFavicon && getHostname(url) ? faviconServiceUrl(url) : undefined,
       unread: 0,
@@ -145,6 +151,7 @@ export default function AppStore({ onClose }) {
     // Reset et ferme le formulaire
     setCustomForm({ name: '', url: '', icon: '🌐', color: '#6366f1' });
     setUseFavicon(false);
+    setCustomEmojiChosen(false);
     setCustomImage('');
     setShowCustomForm(false);
   };
@@ -310,6 +317,7 @@ export default function AppStore({ onClose }) {
                       onClick={() => {
                         setCustomForm({ ...customForm, icon: emoji });
                         setCustomImage('');
+                        setCustomEmojiChosen(true);
                       }}
                       className={`w-9 h-9 rounded-lg flex items-center justify-center text-xl transition-all ${
                         customForm.icon === emoji && !customImage
@@ -326,6 +334,7 @@ export default function AppStore({ onClose }) {
                     onClick={() => {
                       setUseFavicon((prev) => !prev);
                       setCustomImage('');
+                      setCustomEmojiChosen(false);
                     }}
                     className={`h-9 px-3 rounded-lg flex items-center gap-2 text-xs font-medium transition-all border ${
                       useFavicon

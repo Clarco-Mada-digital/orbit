@@ -1,16 +1,22 @@
 import { useState, useEffect } from 'react';
 import { Puzzle, FolderOpen, FileArchive, Trash2, Loader2, Info, Globe, Download, Settings2, AlertTriangle, RotateCw } from 'lucide-react';
 import { useStore } from '../stores/useStore';
-import { getAllWebviews } from '../lib/webviewRegistry';
+import { getRegisteredWebviews } from '../lib/webviewRegistry';
+import { reloadUrlFor } from '../lib/urls';
 import { useT } from '../lib/i18n';
 
 // Recharge toutes les apps ouvertes : indispensable après un changement
 // d'extensions, car les content scripts ne s'injectent que sur une navigation
 // POSTÉRIEURE au chargement de l'extension (limite d'Electron).
 function reloadAllApps() {
-  for (const wv of getAllWebviews()) {
+  const apps = useStore.getState().apps;
+  for (const [appId, wv] of getRegisteredWebviews()) {
     try {
-      wv.reload();
+      // URL nettoyée de ses jetons éphémères (CSRF Roundcube…) si besoin
+      const app = apps.find((a) => a.id === appId);
+      const clean = reloadUrlFor(app?.url);
+      if (clean) wv.loadURL(clean);
+      else wv.reload();
     } catch {
       /* ignore */
     }

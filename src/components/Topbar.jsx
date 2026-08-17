@@ -3,6 +3,7 @@ import { ArrowLeft, ArrowRight, RotateCw, Star, Bell, Search, CheckCheck, Puzzle
 import { useStore } from '../stores/useStore';
 import { useT } from '../lib/i18n';
 import { useLoadingStore } from '../lib/loadingStore';
+import { reloadUrlFor } from '../lib/urls';
 import { getWebview } from '../lib/webviewRegistry';
 import OrbitLogo from './OrbitLogo';
 import AppIcon from './AppIcon';
@@ -171,7 +172,23 @@ export default function Topbar({ onOpenQuickSwitcher }) {
 
   const handleBack = () => getWebview(activeApp)?.goBack();
   const handleForward = () => getWebview(activeApp)?.goForward();
-  const handleReload = () => getWebview(activeApp)?.reload();
+  const handleReload = () => {
+    const wv = getWebview(activeApp);
+    if (!wv) return;
+    // Ne jamais recharger une URL avec un jeton éphémère (CSRF Roundcube,
+    // code OAuth…) : une fois périmé → « Invalid request » = page blanche.
+    // On navigue vers la version nettoyée, sinon rechargement classique.
+    const clean = reloadUrlFor(app?.url);
+    if (clean) {
+      try {
+        wv.loadURL(clean);
+      } catch {
+        /* ignore */
+      }
+    } else {
+      wv.reload();
+    }
+  };
 
   const toggleFavorite = () => {
     if (app) {
