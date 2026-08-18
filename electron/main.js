@@ -1,6 +1,7 @@
 import { app, BrowserWindow, session, ipcMain, shell, Notification, dialog, net, screen, Menu, clipboard, globalShortcut, Tray, nativeImage, powerMonitor } from 'electron';
 import path from 'path';
 import fs from 'fs';
+import os from 'node:os';
 import crypto from 'node:crypto';
 import { unpackCrx } from './crx.js';
 import { init as initKeepass, setEnabled as keepassSetEnabled, getLogins as keepassGetLogins, associate as keepassAssociate, checkStatus as keepassCheckStatus } from './keepass.js';
@@ -913,6 +914,176 @@ function openExternalHandler({ url }) {
   return { action: 'deny' };
 }
 
+// Durcissement commun à TOUS les <webview> d'Orbit (fenêtre principale comme
+// fenêtres secondaires) : sandbox, preload KeePassXC, contournement des
+// en-têtes, extensions et cookies persistants pour la partition visée.
+// On mémorise aussi la partition de chaque guest — indispensable pour ouvrir
+// un pop-up dans la MÊME session que l'app d'origine.
+let pendingGuestPartition = null;
+const guestPartitions = new Map();
+
+function hardenWebviewAttach(event, webPreferences, params) {
+    // Durcir le guest
+    webPreferences.nodeIntegration = false;
+    webPreferences.contextIsolation = true;
+    webPreferences.sandbox = true;
+    // Garder les apps ACTIVES même quand la fenêtre est masquée/minimisée
+    // (sinon Chromium gèle les timers/polling → plus de notifications quand
+    // Orbit est caché, ex. via le raccourci global).
+    webPreferences.backgroundThrottling = false;
+
+    // Preload de détection/remplissage des identifiants (KeePassXC).
+    // Injecté ici (le main process connaît __dirname ; les preloads
+    // sandboxés, eux, n'y ont pas accès).
+    webPreferences.preload = path.join(__dirname, 'keepass-preload.cjs');
+
+    // Appliquer le contournement X-Frame-Options à la partition du webview
+    // (chaque profil utilise sa propre partition → cookies séparés)
+    const partition = (params && params.partition) || 'persist:default';
+    if (partition !== 'default') {
+      try {
+        const pSes = session.fromPartition(partition);
+        setupHeaderBypass(pSes);
+        setupPermissions(pSes);
+        setupDownloads(pSes);
+      } catch (err) {
+        console.error('[orbit] partition bypass failed:', err);
+      }
+    }
+
+    // UA « client identifié » pour les requêtes Google (connexion Gmail/Drive,
+    // « Se connecter avec Google »), pendant que la page garde CHROME_UA
+    try {
+      setupGoogleUA(session.fromPartition(partition));
+    } catch (err) {
+      console.error('[orbit] partition google UA failed:', err);
+    }
+
+    // Injecter les extensions actives dans la session du webview
+    knownPartitions.add(partition);
+    ensureExtensionsForPartition(partition);
+
+    // Sessions durables : les cookies de session deviennent persistants
+    // (sinon déconnexion à chaque fermeture de l'app)
+    setupSessionCookiePersistence(partition);
+    pendingGuestPartition = partition;
+}
+
+// Associe un <webview> à sa partition : sans ça, un pop-up ouvert depuis
+// l'app ne saurait pas dans quel « coffre à cookies » se placer.
+function rememberGuestPartition(guestContents) {
+  if (!guestContents || pendingGuestPartition === null) return;
+  const partition = pendingGuestPartition;
+  pendingGuestPartition = null;
+  guestPartitions.set(guestContents.id, partition);
+  guestContents.once('destroyed', () => guestPartitions.delete(guestContents.id));
+}
+
+// Style des fenêtres secondaires, choisi dans Paramètres → Apparence :
+//   'orbit'    → habillage Orbit (coins arrondis, en-tête épuré)
+//   'native'   → fenêtre décorée par le système
+//   'external' → navigateur par défaut
+let popupStyle = 'orbit';
+// Thème/accent poussés par l'interface pour habiller les pop-ups à l'identique
+let popupTheme = { theme: 'dark', accent: '#6366f1' };
+const orbitPopups = new Set();
+
+ipcMain.handle('popup:setStyle', (_e, payload) => {
+  if (payload && typeof payload.style === 'string') popupStyle = payload.style;
+  if (payload && payload.theme) popupTheme.theme = payload.theme;
+  if (payload && payload.accent) popupTheme.accent = payload.accent;
+  return { success: true };
+});
+
+// La fenêtre appelante d'un contrôle de pop-up (fermer, réduire…)
+const senderWindow = (event) => BrowserWindow.fromWebContents(event.sender);
+ipcMain.handle('popup:close', (e) => {
+  senderWindow(e)?.close();
+  return { success: true };
+});
+ipcMain.handle('popup:minimize', (e) => {
+  senderWindow(e)?.minimize();
+  return { success: true };
+});
+ipcMain.handle('popup:maximize', (e) => {
+  const win = senderWindow(e);
+  if (win) (win.isMaximized() ? win.unmaximize() : win.maximize());
+  return { success: true };
+});
+ipcMain.handle('popup:openExternal', (_e, url) => {
+  if (typeof url === 'string' && /^https?:\/\//i.test(url)) shell.openExternal(url);
+  return { success: true };
+});
+
+// Fenêtre secondaire habillée par Orbit : cadre sans décoration système, coins
+// arrondis, en-tête maison, et à l'intérieur un <webview> branché sur la MÊME
+// partition que l'app d'origine (sans quoi la connexion échoue).
+function createOrbitPopup(url, partition) {
+  const parentBounds = mainWindow && !mainWindow.isDestroyed() ? mainWindow.getBounds() : null;
+  const width = 920;
+  const height = 720;
+  const win = new BrowserWindow({
+    width,
+    height,
+    minWidth: 420,
+    minHeight: 360,
+    // Centrée sur la fenêtre principale : la pop-up « sort » visuellement d'Orbit
+    ...(parentBounds
+      ? {
+          x: Math.round(parentBounds.x + (parentBounds.width - width) / 2),
+          y: Math.round(parentBounds.y + (parentBounds.height - height) / 2),
+        }
+      : {}),
+    parent: mainWindow,
+    frame: false,
+    transparent: true,
+    backgroundColor: '#00000000',
+    // Une pop-up transparente ne doit pas peindre avant d'être habillée :
+    // sans ça, un rectangle noir apparaît le temps du premier rendu.
+    show: false,
+    autoHideMenuBar: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'popup-preload.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      webviewTag: true,
+      spellcheck: true,
+    },
+  });
+
+  win.webContents.on('will-attach-webview', hardenWebviewAttach);
+  win.webContents.on('did-attach-webview', (_event, guestContents) => {
+    rememberGuestPartition(guestContents);
+    // Menu contextuel natif dans la pop-up aussi (copier un lien, coller un
+    // mot de passe…) — absent par défaut dans un <webview>.
+    guestContents.on('context-menu', (_e, params) => {
+      try {
+        buildGuestContextMenu(guestContents, params).popup({ window: win });
+      } catch (err) {
+        console.error('[orbit] menu contextuel (pop-up) échoué:', err);
+      }
+    });
+  });
+
+  // L'UI de la pop-up elle-même n'ouvre jamais de fenêtre : tout window.open
+  // venant de son <webview> repasse par le gestionnaire global.
+  win.webContents.setWindowOpenHandler(openExternalHandler);
+
+  win.loadFile(path.join(__dirname, 'popup.html'), {
+    query: {
+      url,
+      partition: partition || '',
+      theme: popupTheme.theme,
+      accent: popupTheme.accent,
+    },
+  });
+  win.once('ready-to-show', () => win.show());
+  orbitPopups.add(win);
+  win.on('closed', () => orbitPopups.delete(win));
+  return win;
+}
+
 // Popup d'une app embarquée (OAuth Google, connexion, target=_blank…) →
 // s'ouvre DANS Orbit, dans une fenêtre qui PARTAGE la session du webview.
 // Sans ça, la connexion partait dans le navigateur système et les cookies
@@ -921,6 +1092,19 @@ function openInAppPopup(guestContents, url) {
   if (!url || !(url.startsWith('http://') || url.startsWith('https://'))) {
     return { action: 'deny' };
   }
+
+  if (popupStyle === 'external') {
+    shell.openExternal(url);
+    return { action: 'deny' };
+  }
+
+  if (popupStyle === 'orbit') {
+    // On refuse la fenêtre par défaut d'Electron pour construire la nôtre,
+    // habillée, avec la partition de l'app d'origine.
+    createOrbitPopup(url, guestPartitions.get(guestContents.id));
+    return { action: 'deny' };
+  }
+
   return {
     action: 'allow',
     overrideBrowserWindowOptions: {
@@ -1113,6 +1297,9 @@ function createWindow() {
     // resterait ouverte) sur Windows/Linux.
     if (miniPlayerWindow && !miniPlayerWindow.isDestroyed()) miniPlayerWindow.close();
     if (captiveWindow && !captiveWindow.isDestroyed()) captiveWindow.close();
+    for (const popup of orbitPopups) {
+      if (!popup.isDestroyed()) popup.close();
+    }
     clearInterval(captiveWatchTimer);
   });
 
@@ -1125,56 +1312,17 @@ function createWindow() {
   mainWindow.webContents.setWindowOpenHandler(openExternalHandler);
 
   // Sécuriser les <webview> et appliquer le bypass à leur session
-  mainWindow.webContents.on('will-attach-webview', (event, webPreferences, params) => {
-    // Durcir le guest
-    webPreferences.nodeIntegration = false;
-    webPreferences.contextIsolation = true;
-    webPreferences.sandbox = true;
-    // Garder les apps ACTIVES même quand la fenêtre est masquée/minimisée
-    // (sinon Chromium gèle les timers/polling → plus de notifications quand
-    // Orbit est caché, ex. via le raccourci global).
-    webPreferences.backgroundThrottling = false;
+  mainWindow.webContents.on('will-attach-webview', hardenWebviewAttach);
 
-    // Preload de détection/remplissage des identifiants (KeePassXC).
-    // Injecté ici (le main process connaît __dirname ; les preloads
-    // sandboxés, eux, n'y ont pas accès).
-    webPreferences.preload = path.join(__dirname, 'keepass-preload.cjs');
-
-    // Appliquer le contournement X-Frame-Options à la partition du webview
-    // (chaque profil utilise sa propre partition → cookies séparés)
-    const partition = (params && params.partition) || 'persist:default';
-    if (partition !== 'default') {
-      try {
-        const pSes = session.fromPartition(partition);
-        setupHeaderBypass(pSes);
-        setupPermissions(pSes);
-        setupDownloads(pSes);
-      } catch (err) {
-        console.error('[orbit] partition bypass failed:', err);
-      }
-    }
-
-    // UA « client identifié » pour les requêtes Google (connexion Gmail/Drive,
-    // « Se connecter avec Google »), pendant que la page garde CHROME_UA
-    try {
-      setupGoogleUA(session.fromPartition(partition));
-    } catch (err) {
-      console.error('[orbit] partition google UA failed:', err);
-    }
-
-    // Injecter les extensions actives dans la session du webview
-    knownPartitions.add(partition);
-    ensureExtensionsForPartition(partition);
-
-    // Sessions durables : les cookies de session deviennent persistants
-    // (sinon déconnexion à chaque fermeture de l'app)
-    setupSessionCookiePersistence(partition);
-  });
 
   // Raccourcis GLOBAUX : interceptés AVANT que les apps embarquées ne les
   // voient (before-input-event) → Alt+K, Alt+Page… ouvrent Orbit même quand
   // le focus est dans Gmail/Slack, et les apps gardent leurs raccourcis Ctrl.
   mainWindow.webContents.on('did-attach-webview', (_event, guestContents) => {
+    // La partition vient d'être calculée dans hardenWebviewAttach (les deux
+    // événements se suivent immédiatement pour un même webview).
+    rememberGuestPartition(guestContents);
+
     // Diagnostic : UA réellement reçue par chaque webview. Tout écart avec
     // l'UA Chrome authentique casse WhatsApp (« Chrome 100 ou version
     // ultérieure ») ou la connexion Google.
@@ -1384,6 +1532,45 @@ function createMiniPlayer() {
     miniPlayerWindow = null;
   });
 }
+
+// ---------------------------------------------------------------------------
+// Ressources système (widget « moniteur » de l'en-tête)
+// ---------------------------------------------------------------------------
+// Le pourcentage CPU se calcule sur la DIFFÉRENCE entre deux relevés : une
+// lecture isolée de os.cpus() donne le cumul depuis le démarrage, pas la
+// charge actuelle.
+let lastCpuSample = null;
+
+function cpuTotals() {
+  let idle = 0;
+  let total = 0;
+  for (const cpu of os.cpus()) {
+    for (const t of Object.values(cpu.times)) total += t;
+    idle += cpu.times.idle;
+  }
+  return { idle, total };
+}
+
+ipcMain.handle('system:stats', () => {
+  const sample = cpuTotals();
+  let cpu = null;
+  if (lastCpuSample) {
+    const dTotal = sample.total - lastCpuSample.total;
+    const dIdle = sample.idle - lastCpuSample.idle;
+    if (dTotal > 0) cpu = Math.min(100, Math.max(0, ((dTotal - dIdle) / dTotal) * 100));
+  }
+  lastCpuSample = sample;
+  const totalMem = os.totalmem();
+  const freeMem = os.freemem();
+  return {
+    cpu,
+    cores: os.cpus().length,
+    memUsed: totalMem - freeMem,
+    memTotal: totalMem,
+    uptime: os.uptime(),
+    platform: process.platform,
+  };
+});
 
 ipcMain.handle('miniplayer:open', () => {
   createMiniPlayer();

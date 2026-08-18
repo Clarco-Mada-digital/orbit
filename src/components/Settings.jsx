@@ -6,6 +6,7 @@ import Extensions from './Extensions';
 import KeepassSettings from './KeepassSettings';
 import SecuritySettings from './SecuritySettings';
 import BackupSettings from './BackupSettings';
+import TopbarSettings from './TopbarSettings';
 import { shortcutKeys } from '../lib/shortcuts';
 import { useT } from '../lib/i18n';
 import { builtinSoundNames, getBuiltinSound } from '../lib/sounds';
@@ -558,6 +559,36 @@ export default function Settings({ onClose }) {
                         className="w-12 h-6 bg-bg-hover rounded-full relative cursor-pointer appearance-none checked:bg-accent-primary transition-colors after:content-[''] after:absolute after:top-1 after:left-1 after:w-4 after:h-4 after:bg-white after:rounded-full after:transition-transform checked:after:translate-x-6"
                       />
                     </label>
+                  </div>
+
+                  {/* Composition de l'en-tête + widgets (horloge, météo…) */}
+                  <TopbarSettings />
+
+                  {/* Fenêtres secondaires : pop-ups de connexion, liens ouverts
+                      dans une nouvelle fenêtre… */}
+                  <div className="card">
+                    <h4 className="font-semibold mb-1">{t('st.popupTitle')}</h4>
+                    <p className="text-sm text-text-muted mb-4">{t('st.popupDesc')}</p>
+                    <div className="space-y-2">
+                      {[
+                        ['orbit', t('st.popupOrbit'), t('st.popupOrbitDesc')],
+                        ['native', t('st.popupNative'), t('st.popupNativeDesc')],
+                        ['external', t('st.popupExternal'), t('st.popupExternalDesc')],
+                      ].map(([value, label, desc]) => (
+                        <button
+                          key={value}
+                          onClick={() => updateSettings({ popupStyle: value })}
+                          className={`w-full text-left px-4 py-3 rounded-lg border-2 transition-all ${
+                            (settings.popupStyle || 'orbit') === value
+                              ? 'border-accent-primary bg-accent-primary/10'
+                              : 'border-border hover:border-accent-primary/50'
+                          }`}
+                        >
+                          <div className="font-medium text-sm">{label}</div>
+                          <div className="text-xs text-text-muted mt-0.5">{desc}</div>
+                        </button>
+                      ))}
+                    </div>
                   </div>
                 </div>
               )}

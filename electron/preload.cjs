@@ -133,5 +133,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
       return () => ipcRenderer.removeListener('orbit:relock', listener);
     },
   },
+  // Style des fenêtres secondaires (habillage Orbit / système / navigateur)
+  setPopupStyle: (payload) => ipcRenderer.invoke('popup:setStyle', payload),
+  // Charge CPU / mémoire de la machine (widget « moniteur » de l'en-tête)
+  getSystemStats: () => ipcRenderer.invoke('system:stats'),
   platform: process.platform,
 });

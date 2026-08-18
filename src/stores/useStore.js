@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { recipes } from '../lib/recipes';
+import { DEFAULT_TOPBAR } from '../lib/topbarLayout';
 
 // Hostname d'une URL (pour la migration des favicons)
 function hostnameOf(url) {
@@ -65,6 +66,32 @@ export const defaultSettings = {
   autoLockMinutes: 0,
   // KeePassXC : auto-remplissage des identifiants (activé par défaut)
   keepass: { enabled: true },
+
+  // Composition de l'en-tête : quels modules, dans quelle zone, dans quel
+  // ordre (voir src/lib/topbarLayout.js)
+  topbar: { ...DEFAULT_TOPBAR },
+  // Horloge de l'en-tête
+  clock: {
+    format: '24', // 24 | 12
+    seconds: false,
+    showDate: true,
+    timezones: [], // fuseaux supplémentaires, ex. 'Europe/Paris'
+  },
+  // Météo de l'en-tête (Open-Meteo, sans clé d'API)
+  weather: {
+    city: '',
+    units: 'metric', // metric | imperial
+  },
+  // Minuteur de concentration (Pomodoro)
+  focus: {
+    workMinutes: 25,
+    shortBreakMinutes: 5,
+    longBreakMinutes: 15,
+    autoContinue: false,
+  },
+  // Style des fenêtres secondaires (pop-ups d'apps : connexion Google, liens
+  // ouverts dans une nouvelle fenêtre…)
+  popupStyle: 'orbit', // orbit (habillage Orbit, coins arrondis) | native | external
 };
 
 // Store principal pour gérer les profils, apps, et l'état global
@@ -432,7 +459,11 @@ export const useStore = create(
     }),
     {
       name: 'orbit-storage',
-      version: 8,
+      // v9 : nouveaux réglages (en-tête configurable, horloge, météo,
+      // minuteur, style des fenêtres secondaires). Le bump de version suffit :
+      // la fusion avec `defaultSettings` en tête de `migrate` les ajoute aux
+      // installations existantes.
+      version: 9,
       migrate: (persistedState, version) => {
         // Fusionne les anciennes données avec les paramètres par défaut
         // (évite les champs manquants → bug "input non contrôlé")
@@ -502,6 +533,11 @@ export const useStore = create(
               a.sessionKey ? a : { ...a, sessionKey: `${a.profileId}:${a.id}` }
             ),
           };
+        }
+        // v9 : l'en-tête devient configurable — on part de la disposition
+        // par défaut, qui reproduit exactement la barre précédente.
+        if (version < 9) {
+          next = { ...next, settings: { ...next.settings, topbar: { ...DEFAULT_TOPBAR } } };
         }
         return next;
       },

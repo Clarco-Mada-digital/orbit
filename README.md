@@ -30,7 +30,15 @@ Récupérez la dernière version sur la page des **[Releases](https://github.com
 - 👥 **Conteneurs multi-comptes** — plusieurs comptes d'un même service (2 Gmail…)
 - 🖥️ **Écran partagé & espaces de travail** — 2 à 4 apps côte à côte, dispositions enregistrées
 - 🪟 **Fenêtre détachée** — sortez une app dans sa propre fenêtre (2ᵉ écran)
-- ⚡ **Quick Switcher** (`Ctrl/Cmd + K`) et **recherche dans la page** (`Ctrl/Cmd + F`)
+- ⚡ **Palette de commandes** (`Alt/⌘ + K`) — apps, actions, mais aussi **calculatrice**
+  (`4*4`, `20% de 150`, `sqrt(2)`), **conversions** (`10 km en mi`, `100 usd en eur`,
+  `255 in hex`, `#6366f1`, `today + 30 jours`) — Entrée copie le résultat
+- 🧩 **En-tête configurable** — choisissez les modules affichés et leur zone
+  (gauche / centre / droite) : horloge, météo, batterie, moniteur système,
+  minuteur de concentration (Pomodoro), profil actif…
+- 🪟 **Fenêtres secondaires habillées** — les pop-ups (connexion Google, liens
+  externes) s'ouvrent aux couleurs d'Orbit, coins arrondis et en-tête épuré
+- 🔎 **Recherche dans la page** (`Ctrl/Cmd + F`)
 - 🔎 **Zoom par app**, **veille** des apps inactives, **favoris**
 - 🔐 **Verrouillage** (global + par profil) et **verrouillage auto** après inactivité
 - 💾 **Sauvegarde/restauration chiffrée** de la configuration

@@ -375,6 +375,22 @@ export default function App() {
     window.electronAPI?.keepassSetEnabled?.(settings.keepass?.enabled !== false);
   }, [settings.keepass?.enabled]);
 
+  // Fenêtres secondaires : style choisi + thème courant, pour que les pop-ups
+  // (connexion Google, liens externes…) soient habillées comme la fenêtre.
+  useEffect(() => {
+    const theme =
+      settings.theme === 'auto'
+        ? window.matchMedia?.('(prefers-color-scheme: light)')?.matches
+          ? 'light'
+          : 'dark'
+        : settings.theme;
+    window.electronAPI?.setPopupStyle?.({
+      style: settings.popupStyle || 'orbit',
+      theme,
+      accent: settings.accentColor,
+    });
+  }, [settings.popupStyle, settings.theme, settings.accentColor]);
+
   // Synchroniser le bloqueur de pub natif avec le réglage (activé par défaut)
   useEffect(() => {
     window.electronAPI?.adblock?.setEnabled?.(settings.adblock !== false);

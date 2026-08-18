@@ -15,18 +15,41 @@ import {
   Keyboard,
   HelpCircle,
   LayoutGrid,
+  Calculator,
+  Ruler,
+  Coins,
+  Binary,
+  Palette,
+  CalendarClock,
+  Globe,
+  Copy,
+  Check,
 } from 'lucide-react';
 import { useStore } from '../stores/useStore';
 import AppIcon from './AppIcon';
 import { shortcutKeys } from '../lib/shortcuts';
-import { useT } from '../lib/i18n';
+import { useT, resolveLang } from '../lib/i18n';
+import { useSmartResults, detectUrl } from '../lib/smartSearch';
+
+// Icône + couleur de chaque type de résultat instantané (calcul, conversion…)
+const SMART_STYLE = {
+  calc: { icon: Calculator, color: '#6366f1' },
+  unit: { icon: Ruler, color: '#0ea5e9' },
+  currency: { icon: Coins, color: '#f59e0b' },
+  base: { icon: Binary, color: '#8b5cf6' },
+  color: { icon: Palette, color: '#ec4899' },
+  time: { icon: CalendarClock, color: '#10b981' },
+};
 
 // Recherche « partout » : apps, profils ET actions (paramètres, boutique…)
 export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, onOpenProfileManager }) {
   const [query, setQuery] = useState('');
   const [selected, setSelected] = useState(0);
+  const [copied, setCopied] = useState(null);
   const inputRef = useRef(null);
   const t = useT();
+  const lang = resolveLang(useStore((s) => s.settings?.language));
+  const locale = lang === 'en' ? 'en-US' : 'fr-FR';
   const {
     apps,
     profiles,
@@ -197,11 +220,55 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
     onOpenProfileManager,
   ]);
 
-  // Résultats combinés : apps + profils + actions
+  // Résultats instantanés (calcul, conversions, couleurs, dates, devises)
+  const smart = useSmartResults(isHelpQuery ? '' : query, locale);
+  const url = useMemo(() => (isHelpQuery ? null : detectUrl(query)), [query, isHelpQuery]);
+
+  // Copie une valeur dans le presse-papiers et confirme visuellement
+  const copyValue = async (id, value) => {
+    try {
+      await navigator.clipboard.writeText(String(value));
+      setCopied(id);
+      setTimeout(() => setCopied(null), 1200);
+    } catch {
+      /* presse-papiers refusé : on ne bloque pas la palette */
+    }
+  };
+
+  // Résultats combinés : instantanés + apps + profils + actions
   const results = useMemo(() => {
     const q = trimmed;
     if (isHelpQuery) return []; // le panneau d'aide remplace la liste
     const list = [];
+
+    // Les résultats instantanés passent devant : c'est la réponse cherchée
+    smart.forEach((card) =>
+      list.push({
+        type: 'smart',
+        card,
+        id: card.id,
+        name: card.title,
+        subtitle: card.subtitle,
+        color: (SMART_STYLE[card.kind] || {}).color || '#6366f1',
+        keepOpen: true,
+        action: () => {
+          if (!card.disabled && card.copy) copyValue(card.id, card.copy);
+        },
+      })
+    );
+
+    // Adresse web tapée directement → ouverte dans le navigateur système
+    if (url) {
+      list.push({
+        type: 'url',
+        id: 'smart-url',
+        name: t('qs.openUrl'),
+        subtitle: url,
+        color: '#0ea5e9',
+        action: () => window.open(url, '_blank'),
+      });
+    }
+
     apps
       .filter(
         (app) =>
@@ -245,7 +312,7 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
         list.push({ type: 'action', id: `action-${a.id}`, ...a, action: a.run })
       );
     return list.slice(0, 12);
-  }, [trimmed, isHelpQuery, apps, profiles, actions, setActiveApp, setActiveProfile]);
+  }, [trimmed, isHelpQuery, smart, url, t, apps, profiles, actions, setActiveApp, setActiveProfile]);
 
   // Navigation clavier
   useEffect(() => {
@@ -338,7 +405,7 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
               <div>
                 <h4 className="text-xs font-semibold text-text-muted uppercase mb-2">{t('qs.tips')}</h4>
                 <ul className="space-y-1.5">
-                  {[t('qs.tip1'), t('qs.tip2'), t('qs.tip3'), t('qs.tip4')].map((tip, i) => (
+                  {[t('qs.tip1'), t('qs.tip2'), t('qs.tip3'), t('qs.tip4'), t('qs.tip5')].map((tip, i) => (
                     <li key={i} className="flex items-start gap-2 text-sm text-text-secondary">
                       <span className="text-accent-primary mt-0.5">✦</span>
                       {tip}
@@ -377,10 +444,24 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
                   >
                     <div
                       className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl flex-shrink-0 overflow-hidden"
-                      style={{ backgroundColor: `${result.color}20` }}
+                      style={{
+                        backgroundColor:
+                          result.type === 'smart' && result.card.swatch
+                            ? result.card.swatch
+                            : `${result.color}20`,
+                      }}
                     >
                       {result.type === 'app' ? (
                         <AppIcon app={result.app} className="w-6 h-6 rounded" fallbackClassName="text-2xl" />
+                      ) : result.type === 'smart' ? (
+                        result.card.swatch ? null : (
+                          (() => {
+                            const Icon = (SMART_STYLE[result.card.kind] || SMART_STYLE.calc).icon;
+                            return <Icon size={22} style={{ color: result.color }} />;
+                          })()
+                        )
+                      ) : result.type === 'url' ? (
+                        <Globe size={22} style={{ color: result.color }} />
                       ) : result.type === 'action' ? (
                         result.icon
                       ) : (
@@ -388,10 +469,30 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
                       )}
                     </div>
                     <div className="flex-1 text-left min-w-0">
-                      <div className="font-medium truncate">{result.name}</div>
+                      {/* Un résultat instantané met la RÉPONSE en avant : gros
+                          chiffre lisible, l'expression saisie en dessous. */}
+                      <div
+                        className={
+                          result.type === 'smart'
+                            ? 'text-xl font-semibold truncate tabular-nums'
+                            : 'font-medium truncate'
+                        }
+                      >
+                        {result.name}
+                      </div>
                       <div className="text-sm text-text-muted truncate">{result.subtitle}</div>
                     </div>
-                    <ArrowRight size={18} className="text-text-muted flex-shrink-0" />
+                    {result.type === 'smart' && !result.card.disabled ? (
+                      copied === result.card.id ? (
+                        <span className="flex items-center gap-1 text-xs text-success flex-shrink-0">
+                          <Check size={16} /> {t('qs.copied')}
+                        </span>
+                      ) : (
+                        <Copy size={18} className="text-text-muted flex-shrink-0" />
+                      )
+                    ) : (
+                      <ArrowRight size={18} className="text-text-muted flex-shrink-0" />
+                    )}
                   </button>
                 ))}
               </div>
@@ -409,6 +510,10 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
           </span>
           <span>
             <kbd className="px-2 py-1 bg-bg-elevated border border-border rounded">help</kbd> {t('qs.hintHelp')}
+          </span>
+          <span className="hidden sm:inline">
+            <kbd className="px-2 py-1 bg-bg-elevated border border-border rounded">4*4</kbd>{' '}
+            {t('qs.hintCalc')}
           </span>
           <span>
             <kbd className="px-2 py-1 bg-bg-elevated border border-border rounded">esc</kbd> {t('qs.hintClose')}

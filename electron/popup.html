@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <title>Orbit</title>
+    <style>
+      /* Habillage Orbit des fenêtres secondaires : coins arrondis, en-tête
+         épuré, et la page invitée dans un <webview> qui partage la session de
+         l'app d'origine (sinon la connexion échouerait). */
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      html, body {
+        height: 100%;
+        background: transparent;
+        overflow: hidden;
+        font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+        color: var(--text);
+        user-select: none;
+      }
+      :root {
+        --bg: #13131a;
+        --elevated: #1c1c24;
+        --border: #25252f;
+        --text: #e4e7eb;
+        --muted: #9ca3af;
+        --accent: #6366f1;
+        --radius: 14px;
+      }
+      body.light {
+        --bg: #ffffff;
+        --elevated: #f3f4f8;
+        --border: #e2e5ec;
+        --text: #111827;
+        --muted: #6b7280;
+      }
+      .shell {
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+        background: var(--bg);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        overflow: hidden;
+        box-shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+      }
+      header {
+        height: 42px;
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 0 6px 0 10px;
+        background: var(--bg);
+        border-bottom: 1px solid var(--border);
+        -webkit-app-region: drag;
+      }
+      .nav { display: flex; gap: 2px; -webkit-app-region: no-drag; }
+      button {
+        -webkit-app-region: no-drag;
+        width: 28px; height: 28px;
+        display: flex; align-items: center; justify-content: center;
+        border: none; border-radius: 8px;
+        background: transparent; color: var(--text);
+        cursor: pointer;
+      }
+      button:hover { background: var(--elevated); }
+      button:disabled { opacity: 0.3; cursor: default; }
+      button:disabled:hover { background: transparent; }
+      .close:hover { background: #ef4444; color: #fff; }
+      .win { display: flex; gap: 2px; margin-left: 4px; -webkit-app-region: no-drag; }
+      .id {
+        flex: 1; min-width: 0;
+        display: flex; align-items: center; gap: 8px;
+        padding: 0 6px;
+      }
+      .favicon {
+        width: 16px; height: 16px; flex-shrink: 0;
+        border-radius: 4px; object-fit: contain;
+      }
+      .titles { min-width: 0; line-height: 1.15; }
+      .title {
+        font-size: 12.5px; font-weight: 600;
+        white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+      }
+      .host { font-size: 10.5px; color: var(--muted); display: flex; align-items: center; gap: 3px; }
+      .lock { color: #10b981; }
+      .body { flex: 1; position: relative; background: #fff; }
+      webview { position: absolute; inset: 0; width: 100%; height: 100%; }
+      /* Fine barre de progression pendant le chargement, comme un navigateur */
+      .progress {
+        position: absolute; left: 0; top: 0; height: 2px; width: 0;
+        background: var(--accent);
+        transition: width 0.25s ease, opacity 0.3s ease;
+        z-index: 5;
+      }
+      svg { pointer-events: none; }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <header>
+        <div class="nav">
+          <button id="back" title="Précédent" disabled>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+          </button>
+          <button id="forward" title="Suivant" disabled>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+          </button>
+          <button id="reload" title="Actualiser">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 2v6h-6M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
+          </button>
+        </div>
+
+        <div class="id">
+          <img class="favicon" id="favicon" alt="" />
+          <div class="titles">
+            <div class="title" id="title">Chargement…</div>
+            <div class="host" id="host"></div>
+          </div>
+        </div>
+
+        <div class="win">
+          <button id="external" title="Ouvrir dans le navigateur">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><path d="M15 3h6v6M10 14 21 3"/></svg>
+          </button>
+          <button id="minimize" title="Réduire">
+            <svg width="12" height="2" viewBox="0 0 12 2" fill="currentColor"><rect width="12" height="2"/></svg>
+          </button>
+          <button id="maximize" title="Agrandir">
+            <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="1" width="10" height="10"/></svg>
+          </button>
+          <button id="close" class="close" title="Fermer">
+            <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M1 1l10 10M11 1L1 11"/></svg>
+          </button>
+        </div>
+      </header>
+
+      <div class="body">
+        <div class="progress" id="progress"></div>
+      </div>
+    </div>
+
+    <script src="./popup.js"></script>
+  </body>
+</html>
