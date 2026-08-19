@@ -57,6 +57,39 @@ const recipes = {
   Cloche: () =>
     render(0.8, (t) => (Math.sin(PI2 * 1046 * t) + 0.5 * Math.sin(PI2 * 1568 * t)) * decay(t, 4)),
   Toc: () => render(0.12, (t) => Math.sin(PI2 * 200 * t) * decay(t, 30)),
+  // Sons plus « marquants », pensés pour la fin d'une session Pomodoro :
+  // ils doivent s'entendre depuis l'autre bout de la pièce.
+  Gong: () =>
+    render(
+      1.6,
+      (t) =>
+        (Math.sin(PI2 * 174 * t) + 0.7 * Math.sin(PI2 * 261 * t) + 0.4 * Math.sin(PI2 * 392 * t)) *
+        decay(t, 2),
+    ),
+  Triple: () =>
+    render(0.75, (t) => {
+      const i = Math.floor(t / 0.25); // trois bips de 250 ms
+      const u = t - i * 0.25;
+      return i > 2 ? 0 : Math.sin(PI2 * 880 * u) * decay(u, 14);
+    }),
+  Alarme: () =>
+    render(1.2, (t) => Math.sin(PI2 * (700 + 220 * Math.sin(PI2 * 6 * t)) * t) * decay(t, 1.6)),
+  Zen: () =>
+    render(
+      1.8,
+      (t) =>
+        (Math.sin(PI2 * 528 * t) + 0.5 * Math.sin(PI2 * 792 * t)) *
+        decay(t, 1.8) *
+        Math.min(1, t * 12),
+    ),
+  Montee: () =>
+    render(0.6, (t) => {
+      // Arpège ascendant : do–mi–sol, agréable pour reprendre le travail
+      const notes = [523, 659, 784];
+      const i = Math.min(2, Math.floor(t / 0.2));
+      const u = t - i * 0.2;
+      return Math.sin(PI2 * notes[i] * u) * decay(u, 9);
+    }),
 };
 
 // Noms des sons intégrés (pour l'UI).
@@ -69,4 +102,24 @@ export function getBuiltinSound(name) {
   if (!recipes[name]) return '';
   if (!cache[name]) cache[name] = toWavDataURL(recipes[name]());
   return cache[name];
+}
+
+// Résout l'URL réellement jouable d'un réglage de son : la piste importée
+// (data URL) prime, sinon le son intégré choisi par son nom.
+export function resolveSoundUrl(name, data) {
+  if (data) return data;
+  return getBuiltinSound(name);
+}
+
+// Lecture d'un son avec le volume global d'Orbit (0-100). Silencieux en cas
+// d'échec : un son manquant ne doit jamais casser une notification.
+export function playSound(url, volume = 80) {
+  if (!url) return;
+  try {
+    const audio = new Audio(url);
+    audio.volume = Math.min(1, Math.max(0, (Number(volume) || 0) / 100));
+    audio.play().catch(() => {});
+  } catch {
+    /* ignore */
+  }
 }

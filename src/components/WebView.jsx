@@ -27,6 +27,7 @@ import { recipes } from '../lib/recipes';
 import { CHROME_UA } from '../lib/userAgent';
 import { appPartition } from '../lib/session';
 import { notificationsSilenced } from '../lib/dnd';
+import { getBuiltinSound, playSound } from '../lib/sounds';
 
 // Un <webview> par app installée. Reste monté (masqué proprement) quand
 // l'app n'est pas affichée → l'état de la page est conservé, comme dans
@@ -54,7 +55,11 @@ export default function WebView({ app, active, visible, flexLayout }) {
   const setMedia = useMediaStore((s) => s.setMedia);
   const clearMedia = useMediaStore((s) => s.clearMedia);
   const notificationsEnabled = useStore((s) => s.settings?.notifications !== false);
-  const notifSound = useStore((s) => s.settings?.notificationSound || '');
+  const notifSoundName = useStore((s) => s.settings?.notificationSoundName || '');
+  const notifSoundData = useStore((s) => s.settings?.notificationSound || '');
+  const soundVolume = useStore((s) => s.settings?.soundVolume ?? 80);
+  // Piste réellement jouée : import personnalisé, sinon son intégré choisi
+  const notifSound = notifSoundData || (notifSoundName ? getBuiltinSound(notifSoundName) : '');
   // Réglages « Ne pas déranger » (évalués à l'instant de la notif)
   const dnd = useStore((s) => s.settings?.dnd);
   const quietHoursEnabled = useStore((s) => s.settings?.quietHoursEnabled);
@@ -127,13 +132,7 @@ export default function WebView({ app, active, visible, flexLayout }) {
       ) {
         unreadRef.current = unread; // on monte le plafond
         // Son personnalisé (joué ici) → on coupe le son système côté natif
-        if (notifSound) {
-          try {
-            new Audio(notifSound).play().catch(() => {});
-          } catch {
-            /* ignore */
-          }
-        }
+        playSound(notifSound, soundVolume);
         window.electronAPI.showNotification({
           title: app.name,
           body: `${unread} nouveau${unread > 1 ? 'x' : ''} message${unread > 1 ? 's' : ''} non lu${unread > 1 ? 's' : ''}`,
@@ -317,7 +316,7 @@ export default function WebView({ app, active, visible, flexLayout }) {
       wv.removeEventListener('did-start-loading', startLoading);
       wv.removeEventListener('did-stop-loading', stopLoading);
     };
-  }, [app.id, app.name, app.zoom, app.sleeping, app.muted, active, notificationsEnabled, notifSound, dnd, quietHoursEnabled, quietStart, quietEnd, updateApp, setAppLoading, setMedia, clearMedia]);
+  }, [app.id, app.name, app.zoom, app.sleeping, app.muted, active, notificationsEnabled, notifSound, soundVolume, dnd, quietHoursEnabled, quietStart, quietEnd, updateApp, setAppLoading, setMedia, clearMedia]);
 
   // Quand on ouvre l'app (elle devient active), on la considère LUE : on réarme
   // le plafond de notifications → un prochain message re-notifiera.

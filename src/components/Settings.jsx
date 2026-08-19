@@ -1,5 +1,20 @@
 import { useState, useEffect } from 'react';
-import { X, User, Palette, Bell, Zap, Info, Keyboard, Puzzle, Check, KeyRound, ShieldCheck, Ban, Archive, Globe } from 'lucide-react';
+import {
+  X,
+  User,
+  Palette,
+  Bell,
+  Zap,
+  Info,
+  Keyboard,
+  Puzzle,
+  Check,
+  KeyRound,
+  ShieldCheck,
+  Ban,
+  Archive,
+  Globe,
+} from 'lucide-react';
 import { useStore } from '../stores/useStore';
 import ProfileManager from './ProfileManager';
 import Extensions from './Extensions';
@@ -9,7 +24,8 @@ import BackupSettings from './BackupSettings';
 import TopbarSettings from './TopbarSettings';
 import { shortcutKeys } from '../lib/shortcuts';
 import { useT } from '../lib/i18n';
-import { builtinSoundNames, getBuiltinSound } from '../lib/sounds';
+import { getBuiltinSound, resolveSoundUrl, playSound } from '../lib/sounds';
+import SoundPicker from './SoundPicker';
 
 // Polices proposées, groupées par style. Chaque entrée est rendue
 // dans sa propre police → aperçu en direct avant de choisir.
@@ -72,11 +88,7 @@ export default function Settings({ onClose }) {
     setChecking(false);
     if (!r) return;
     if (r.success === false) {
-      setUpdateMsg(
-        r.reason === 'unsupported'
-          ? t('st.upd.unsupported')
-          : t('st.upd.cantCheck')
-      );
+      setUpdateMsg(r.reason === 'unsupported' ? t('st.upd.unsupported') : t('st.upd.cantCheck'));
     } else if (r.version && appVersion && r.version !== appVersion) {
       setUpdateMsg(t('st.upd.available', { version: r.version }));
     } else {
@@ -141,7 +153,7 @@ export default function Settings({ onClose }) {
           <div className="flex-1 flex flex-col">
             <div className="h-16 border-b border-border flex items-center justify-between px-6">
               <h3 className="text-lg font-semibold">
-                {tabs.find(t => t.id === activeTab)?.name}
+                {tabs.find((t) => t.id === activeTab)?.name}
               </h3>
               <button onClick={onClose} className="btn-icon">
                 <X size={20} />
@@ -197,9 +209,14 @@ export default function Settings({ onClose }) {
                   <div className="card">
                     <h4 className="font-semibold mb-2">{t('st.updates')}</h4>
                     <p className="text-sm text-text-muted mb-3">
-                      {t('st.installedVersion')} <span className="font-medium">{appVersion || '—'}</span>
+                      {t('st.installedVersion')}{' '}
+                      <span className="font-medium">{appVersion || '—'}</span>
                     </p>
-                    <button onClick={checkUpdate} disabled={checking} className="btn btn-secondary btn-sm">
+                    <button
+                      onClick={checkUpdate}
+                      disabled={checking}
+                      className="btn btn-secondary btn-sm"
+                    >
                       {checking ? t('about.checking') : t('st.upd.check')}
                     </button>
                     {updateMsg && <p className="text-sm mt-2 text-text-muted">{updateMsg}</p>}
@@ -210,9 +227,7 @@ export default function Settings({ onClose }) {
                     <label className="flex items-center justify-between mb-3">
                       <div>
                         <div className="font-medium">{t('st.closeToTray')}</div>
-                        <div className="text-sm text-text-muted">
-                          {t('st.closeToTrayDesc')}
-                        </div>
+                        <div className="text-sm text-text-muted">{t('st.closeToTrayDesc')}</div>
                       </div>
                       <input
                         type="checkbox"
@@ -224,9 +239,7 @@ export default function Settings({ onClose }) {
                     <label className="flex items-center justify-between mb-2">
                       <div>
                         <div className="font-medium">{t('st.globalHotkey')}</div>
-                        <div className="text-sm text-text-muted">
-                          {t('st.globalHotkeyDesc')}
-                        </div>
+                        <div className="text-sm text-text-muted">{t('st.globalHotkeyDesc')}</div>
                       </div>
                       <input
                         type="checkbox"
@@ -236,12 +249,10 @@ export default function Settings({ onClose }) {
                           updateSettings({ globalHotkeyEnabled: on });
                           if (on) {
                             const res = await window.electronAPI?.setSummonHotkey?.(
-                              settings.globalHotkey || 'CommandOrControl+Alt+O'
+                              settings.globalHotkey || 'CommandOrControl+Alt+O',
                             );
                             if (res && res.success === false) {
-                              alert(
-                                t('st.hotkeyUnavailable')
-                              );
+                              alert(t('st.hotkeyUnavailable'));
                             }
                           }
                         }}
@@ -256,7 +267,7 @@ export default function Settings({ onClose }) {
                           onChange={(e) => updateSettings({ globalHotkey: e.target.value })}
                           onBlur={async () => {
                             const res = await window.electronAPI?.setSummonHotkey?.(
-                              settings.globalHotkey || 'CommandOrControl+Alt+O'
+                              settings.globalHotkey || 'CommandOrControl+Alt+O',
                             );
                             if (res && res.success === false) {
                               alert(t('st.hotkeyUnavailable2'));
@@ -266,9 +277,9 @@ export default function Settings({ onClose }) {
                           className="input text-sm"
                         />
                         <p className="text-xs text-text-muted">
-                          Ex. <code>CommandOrControl+Shift+O</code>, <code>Super+O</code>. Si rien ne
-                          se passe, la combinaison est sûrement déjà prise par ton bureau — essayes-en
-                          une autre.
+                          Ex. <code>CommandOrControl+Shift+O</code>, <code>Super+O</code>. Si rien
+                          ne se passe, la combinaison est sûrement déjà prise par ton bureau —
+                          essayes-en une autre.
                         </p>
                       </div>
                     )}
@@ -291,9 +302,7 @@ export default function Settings({ onClose }) {
                     <label className="flex items-center justify-between mb-3">
                       <div>
                         <div className="font-medium">{t('st.autoPip')}</div>
-                        <div className="text-sm text-text-muted">
-                          {t('st.autoPipDesc')}
-                        </div>
+                        <div className="text-sm text-text-muted">{t('st.autoPipDesc')}</div>
                       </div>
                       <input
                         type="checkbox"
@@ -305,9 +314,7 @@ export default function Settings({ onClose }) {
                     <label className="flex items-center justify-between">
                       <div>
                         <div className="font-medium">{t('st.mediaKeys')}</div>
-                        <div className="text-sm text-text-muted">
-                          {t('st.mediaKeysDesc')}
-                        </div>
+                        <div className="text-sm text-text-muted">{t('st.mediaKeysDesc')}</div>
                       </div>
                       <input
                         type="checkbox"
@@ -324,7 +331,9 @@ export default function Settings({ onClose }) {
                     <label className="block text-sm font-medium mb-1.5">{t('st.autoSleep')}</label>
                     <select
                       value={settings.autoSleepMinutes || 0}
-                      onChange={(e) => updateSettings({ autoSleepMinutes: parseInt(e.target.value, 10) })}
+                      onChange={(e) =>
+                        updateSettings({ autoSleepMinutes: parseInt(e.target.value, 10) })
+                      }
                       className="input max-w-xs"
                     >
                       <option value={0}>{t('st.sleepOff')}</option>
@@ -367,9 +376,7 @@ export default function Settings({ onClose }) {
 
                   <div className="card">
                     <h4 className="font-semibold mb-4">{t('st.fontFamily')}</h4>
-                    <p className="text-sm text-text-muted mb-4">
-                      {t('st.fontFamilyDesc')}
-                    </p>
+                    <p className="text-sm text-text-muted mb-4">{t('st.fontFamilyDesc')}</p>
                     <div className="space-y-5">
                       {fontGroups.map((group) => (
                         <div key={group.label}>
@@ -402,7 +409,12 @@ export default function Settings({ onClose }) {
                                   >
                                     {font.label}
                                   </span>
-                                  {selected && <Check size={15} className="text-accent-primary flex-shrink-0" />}
+                                  {selected && (
+                                    <Check
+                                      size={15}
+                                      className="text-accent-primary flex-shrink-0"
+                                    />
+                                  )}
                                 </button>
                               );
                             })}
@@ -416,7 +428,9 @@ export default function Settings({ onClose }) {
                     <h4 className="font-semibold mb-4">{t('st.uiZoom')}</h4>
                     <div className="space-y-3">
                       <div className="flex items-center gap-4">
-                        <span className="text-sm font-medium min-w-[60px]">{settings.uiScale ?? 100}%</span>
+                        <span className="text-sm font-medium min-w-[60px]">
+                          {settings.uiScale ?? 100}%
+                        </span>
                         <input
                           type="range"
                           min="80"
@@ -601,16 +615,14 @@ export default function Settings({ onClose }) {
                         <h4 className="font-semibold">{t('pm.title')}</h4>
                         <p className="text-sm text-text-muted">{t('st.profilesDesc')}</p>
                       </div>
-                      <button 
+                      <button
                         onClick={() => setShowProfileManager(true)}
                         className="btn btn-primary"
                       >
                         {t('st.manage')}
                       </button>
                     </div>
-                    <p className="text-sm text-text-muted">
-                      {t('st.profilesDesc2')}
-                    </p>
+                    <p className="text-sm text-text-muted">{t('st.profilesDesc2')}</p>
                   </div>
                 </div>
               )}
@@ -684,7 +696,9 @@ export default function Settings({ onClose }) {
                     <h4 className="font-semibold mb-2">{t('st.translateTitle')}</h4>
                     <p className="text-sm text-text-muted mb-4">{t('st.translateDesc')}</p>
 
-                    <label className="block text-sm font-medium mb-1.5">{t('st.translateLang')}</label>
+                    <label className="block text-sm font-medium mb-1.5">
+                      {t('st.translateLang')}
+                    </label>
                     <select
                       value={settings.translateTarget || 'fr'}
                       onChange={(e) => updateSettings({ translateTarget: e.target.value })}
@@ -708,7 +722,9 @@ export default function Settings({ onClose }) {
                       ))}
                     </select>
 
-                    <label className="block text-sm font-medium mb-1.5">{t('st.translateEngine')}</label>
+                    <label className="block text-sm font-medium mb-1.5">
+                      {t('st.translateEngine')}
+                    </label>
                     <div className="flex gap-3 mb-3">
                       {[
                         { v: 'google', l: 'Google', d: t('st.engineGoogleDesc') },
@@ -817,90 +833,85 @@ export default function Settings({ onClose }) {
                       </div>
                     )}
                   </div>
+                  <SoundPicker
+                    title={t('st.notifSound')}
+                    description={t('st.notifSoundDesc')}
+                    name={settings.notificationSoundName}
+                    data={settings.notificationSound}
+                    volume={settings.soundVolume ?? 80}
+                    allowNone
+                    onChange={({ name, data }) =>
+                      updateSettings({ notificationSoundName: name, notificationSound: data })
+                    }
+                  />
+                  <SoundPicker
+                    title={t('st.focusWorkSound')}
+                    description={t('st.focusWorkSoundDesc')}
+                    name={settings.focusWorkSoundName}
+                    data={settings.focusWorkSound}
+                    volume={settings.soundVolume ?? 80}
+                    noneLabel={t('st.noSound')}
+                    onChange={({ name, data }) =>
+                      updateSettings({ focusWorkSoundName: name, focusWorkSound: data })
+                    }
+                  />
+                  <SoundPicker
+                    title={t('st.focusBreakSound')}
+                    description={t('st.focusBreakSoundDesc')}
+                    name={settings.focusBreakSoundName}
+                    data={settings.focusBreakSound}
+                    volume={settings.soundVolume ?? 80}
+                    noneLabel={t('st.noSound')}
+                    onChange={({ name, data }) =>
+                      updateSettings({ focusBreakSoundName: name, focusBreakSound: data })
+                    }
+                  />
                   <div className="card">
-                    <h4 className="font-semibold mb-2">{t('st.notifSound')}</h4>
-                    <p className="text-sm text-text-muted mb-4">{t('st.notifSoundDesc')}</p>
-
-                    {/* Sons proposés (intégrés) — clic = sélectionner + écouter */}
-                    <div className="flex flex-wrap gap-2 mb-4">
-                      {builtinSoundNames.map((name) => {
-                        const selected = settings.notificationSoundName === name;
-                        return (
-                          <button
-                            key={name}
-                            onClick={() => {
-                              const url = getBuiltinSound(name);
-                              updateSettings({ notificationSound: url, notificationSoundName: name });
-                              try {
-                                new Audio(url).play().catch(() => {});
-                              } catch {
-                                /* ignore */
-                              }
-                            }}
-                            className={`btn btn-sm ${selected ? 'btn-primary' : 'btn-secondary'}`}
-                          >
-                            🔊 {name}
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    <div className="flex items-center gap-3 flex-wrap">
-                      <span className="text-sm text-text-secondary">
-                        {settings.notificationSound
-                          ? `🔊 ${settings.notificationSoundName || t('st.customSound')}`
-                          : t('st.systemSound')}
+                    <div className="flex items-center justify-between mb-1">
+                      <h4 className="font-semibold">{t('st.soundVolume')}</h4>
+                      <span className="text-sm text-text-muted tabular-nums">
+                        {settings.soundVolume ?? 80}%
                       </span>
-                      <div className="flex gap-2 ml-auto">
-                        <label className="btn btn-secondary btn-sm cursor-pointer">
-                          {t('st.chooseSound')}
-                          <input
-                            type="file"
-                            accept="audio/*"
-                            className="hidden"
-                            onChange={(e) => {
-                              const file = e.target.files && e.target.files[0];
-                              e.target.value = '';
-                              if (!file) return;
-                              if (file.size > 1024 * 1024) {
-                                alert(t('st.soundTooHeavy'));
-                                return;
-                              }
-                              const reader = new FileReader();
-                              reader.onload = () =>
-                                updateSettings({
-                                  notificationSound: String(reader.result || ''),
-                                  notificationSoundName: file.name,
-                                });
-                              reader.readAsDataURL(file);
-                            }}
-                          />
-                        </label>
-                        {settings.notificationSound && (
-                          <>
-                            <button
-                              onClick={() => {
-                                try {
-                                  new Audio(settings.notificationSound).play().catch(() => {});
-                                } catch {
-                                  /* ignore */
-                                }
-                              }}
-                              className="btn btn-secondary btn-sm"
-                            >
-                              {t('st.testSound')}
-                            </button>
-                            <button
-                              onClick={() =>
-                                updateSettings({ notificationSound: '', notificationSoundName: '' })
-                              }
-                              className="btn btn-sm text-error hover:bg-error/10"
-                            >
-                              {t('st.defaultSound')}
-                            </button>
-                          </>
-                        )}
+                    </div>
+                    <p className="text-sm text-text-muted mb-4">{t('st.soundVolumeDesc')}</p>
+                    <div className="flex items-center gap-3">
+                      <input
+                        type="range"
+                        min="0"
+                        max="100"
+                        step="5"
+                        value={settings.soundVolume ?? 80}
+                        onChange={(e) => updateSettings({ soundVolume: Number(e.target.value) })}
+                        className="flex-1 accent-accent-primary"
+                      />
+                      <button
+                        onClick={() =>
+                          playSound(
+                            resolveSoundUrl(
+                              settings.notificationSoundName,
+                              settings.notificationSound,
+                            ) || getBuiltinSound('Pop'),
+                            settings.soundVolume ?? 80,
+                          )
+                        }
+                        className="btn btn-secondary btn-sm"
+                      >
+                        {t('st.testSound')}
+                      </button>
+                    </div>
+                  </div>
+                  <div className="card">
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h4 className="font-semibold">{t('st.focusSoundEnabled')}</h4>
+                        <p className="text-sm text-text-muted">{t('st.focusSoundEnabledDesc')}</p>
                       </div>
+                      <input
+                        type="checkbox"
+                        checked={settings.focusSoundEnabled !== false}
+                        onChange={(e) => updateSettings({ focusSoundEnabled: e.target.checked })}
+                        className="w-12 h-6 bg-bg-hover rounded-full relative cursor-pointer appearance-none checked:bg-accent-primary transition-colors after:content-[''] after:absolute after:top-1 after:left-1 after:w-4 after:h-4 after:bg-white after:rounded-full after:transition-transform checked:after:translate-x-6 flex-shrink-0"
+                      />
                     </div>
                   </div>
                   <div className="card">
@@ -914,7 +925,14 @@ export default function Settings({ onClose }) {
                 <div className="space-y-6">
                   <div className="card text-center">
                     <div className="w-20 h-20 mx-auto rounded-full bg-gradient-to-br from-accent-primary to-purple-500 flex items-center justify-center mb-4">
-                      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
+                      <svg
+                        width="48"
+                        height="48"
+                        viewBox="0 0 24 24"
+                        fill="none"
+                        stroke="white"
+                        strokeWidth="2"
+                      >
                         <circle cx="12" cy="12" r="3" />
                         <path d="M12 1v6m0 6v6m8.66-15.66l-4.24 4.24m-4.84 4.84l-4.24 4.24m15.08.08l-4.24-4.24m-4.84-4.84L2.34 2.34" />
                       </svg>
@@ -937,14 +955,18 @@ export default function Settings({ onClose }) {
                         onClick={() =>
                           window.open(
                             'https://github.com/Clarco-Mada-digital/orbit/releases',
-                            '_blank'
+                            '_blank',
                           )
                         }
                         className="btn btn-secondary btn-sm"
                       >
                         {t('about.releaseNotes')}
                       </button>
-                      <button onClick={checkUpdate} disabled={checking} className="btn btn-secondary btn-sm">
+                      <button
+                        onClick={checkUpdate}
+                        disabled={checking}
+                        className="btn btn-secondary btn-sm"
+                      >
                         {checking ? t('about.checking') : t('about.checkUpdates')}
                       </button>
                     </div>
@@ -987,9 +1009,7 @@ export default function Settings({ onClose }) {
         </div>
       </div>
 
-      {showProfileManager && (
-        <ProfileManager onClose={() => setShowProfileManager(false)} />
-      )}
+      {showProfileManager && <ProfileManager onClose={() => setShowProfileManager(false)} />}
     </>
   );
 }

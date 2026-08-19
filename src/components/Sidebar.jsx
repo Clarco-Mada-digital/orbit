@@ -257,7 +257,7 @@ export default function Sidebar({ collapsed, onToggle, onOpenSettings, onOpenSto
                 onDragEnd={handleDragEnd}
                 className={`w-full flex items-center ${collapsed ? 'justify-center' : 'gap-3'} ${
                   settings.compactMode ? 'px-2 py-1.5' : 'px-3 py-2'
-                } rounded-lg transition-all group relative cursor-grab active:cursor-grabbing ${
+                } rounded-lg transition-all group relative cursor-pointer active:cursor-grabbing ${
                   app.id === activeApp
                     ? 'bg-accent-primary/10 text-accent-primary'
                     : 'hover:bg-bg-hover text-text-secondary'

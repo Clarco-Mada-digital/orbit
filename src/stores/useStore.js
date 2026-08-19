@@ -23,6 +23,15 @@ export const defaultSettings = {
   // Son de notification personnalisé (data URL ; vide = son système)
   notificationSound: '',
   notificationSoundName: '',
+  // Volume commun à tous les sons joués par Orbit (0-100)
+  soundVolume: 80,
+  // Sons du minuteur de concentration : un pour la fin d'une session de
+  // travail, un autre pour la fin d'une pause (vide = son intégré nommé)
+  focusSoundEnabled: true,
+  focusWorkSound: '',
+  focusWorkSoundName: 'Gong',
+  focusBreakSound: '',
+  focusBreakSoundName: 'Montee',
   // Ne pas déranger : coupe toutes les notifications
   dnd: false,
   quietHoursEnabled: false,
@@ -464,7 +473,8 @@ export const useStore = create(
     {
       name: 'orbit-storage',
       // v9 : nouveaux réglages (en-tête configurable, horloge, météo,
-      // minuteur, style des fenêtres secondaires). Le bump de version suffit :
+      // minuteur, style des fenêtres secondaires).
+      // v10 : sons du minuteur + volume global. Le bump de version suffit :
       // la fusion avec `defaultSettings` en tête de `migrate` les ajoute aux
       // installations existantes.
       version: 10,

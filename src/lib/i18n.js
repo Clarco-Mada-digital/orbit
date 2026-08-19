@@ -681,6 +681,15 @@ export const fr = {
   'focus.nextBreak': 'C’est le moment de souffler un peu.',
   'focus.nextWork': 'On repart pour une session ?',
   'profile.switch': 'Changer de profil',
+  'st.focusWorkSound': 'Son de fin de session (Pomodoro)',
+  'st.focusWorkSoundDesc': "Joué quand une session de travail se termine — la pause commence.",
+  'st.focusBreakSound': 'Son de fin de pause (Pomodoro)',
+  'st.focusBreakSoundDesc': 'Joué quand la pause se termine — retour au travail.',
+  'st.focusSoundEnabled': 'Sons du minuteur',
+  'st.focusSoundEnabledDesc': 'Jouer un son à chaque fin de session ou de pause.',
+  'st.soundVolume': 'Volume des sons',
+  'st.soundVolumeDesc': "Volume commun à tous les sons joués par Orbit.",
+  'st.noSound': 'Aucun son',
 };
 
 export const en = {
@@ -1353,6 +1362,15 @@ export const en = {
   'focus.nextBreak': 'Time to step away for a bit.',
   'focus.nextWork': 'Ready for another session?',
   'profile.switch': 'Switch profile',
+  'st.focusWorkSound': 'End-of-session sound (Pomodoro)',
+  'st.focusWorkSoundDesc': 'Played when a work session ends — the break starts.',
+  'st.focusBreakSound': 'End-of-break sound (Pomodoro)',
+  'st.focusBreakSoundDesc': 'Played when the break ends — back to work.',
+  'st.focusSoundEnabled': 'Timer sounds',
+  'st.focusSoundEnabledDesc': 'Play a sound at the end of every session or break.',
+  'st.soundVolume': 'Sound volume',
+  'st.soundVolumeDesc': 'Shared volume for every sound Orbit plays.',
+  'st.noSound': 'No sound',
 };
 
 const dicts = { fr, en };

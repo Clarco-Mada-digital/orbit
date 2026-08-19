@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Timer, Play, Pause, RotateCcw, Coffee, Brain } from 'lucide-react';
 import { useStore } from '../../stores/useStore';
 import { useT } from '../../lib/i18n';
+import { resolveSoundUrl, playSound } from '../../lib/sounds';
 
 // Minuteur de concentration (Pomodoro) dans l'en-tête : 25 min de travail,
 // 5 min de pause, pause longue toutes les 4 sessions. Une notification système
@@ -57,10 +58,21 @@ export default function FocusTimer() {
       setLeft(0);
       const nextRounds = phase === 'work' ? rounds + 1 : rounds;
       const next = phase === 'work' ? (nextRounds % 4 === 0 ? 'long' : 'short') : 'work';
+      // Son de fin : plus parlant qu'une simple bannière, surtout quand Orbit
+      // est en arrière-plan. Deux pistes distinctes (travail / pause) pour
+      // savoir ce qui commence sans regarder l'écran.
+      const soundUrl =
+        settings?.focusSoundEnabled === false
+          ? ''
+          : phase === 'work'
+            ? resolveSoundUrl(settings?.focusWorkSoundName, settings?.focusWorkSound)
+            : resolveSoundUrl(settings?.focusBreakSoundName, settings?.focusBreakSound);
+      playSound(soundUrl, settings?.soundVolume ?? 80);
       window.electronAPI?.showNotification?.({
         title: phase === 'work' ? t('focus.doneWork') : t('focus.doneBreak'),
         body: phase === 'work' ? t('focus.nextBreak') : t('focus.nextWork'),
-        silent: false,
+        // Si Orbit joue déjà sa propre piste, le son système ferait doublon
+        silent: !!soundUrl,
       });
       setRounds(nextRounds);
       setPhase(next);
@@ -132,7 +144,11 @@ export default function FocusTimer() {
               {mm}:{ss}
             </div>
             <div className="text-xs text-text-muted mt-1">
-              {phase === 'work' ? t('focus.phaseWork') : phase === 'short' ? t('focus.phaseShort') : t('focus.phaseLong')}
+              {phase === 'work'
+                ? t('focus.phaseWork')
+                : phase === 'short'
+                  ? t('focus.phaseShort')
+                  : t('focus.phaseLong')}
             </div>
             <div className="h-1.5 bg-bg-secondary rounded-full mt-3 overflow-hidden">
               <div
@@ -145,11 +161,18 @@ export default function FocusTimer() {
           </div>
 
           <div className="px-4 pb-3 flex items-center gap-2">
-            <button onClick={toggle} className="btn btn-primary btn-sm flex-1 flex items-center justify-center gap-1.5">
+            <button
+              onClick={toggle}
+              className="btn btn-primary btn-sm flex-1 flex items-center justify-center gap-1.5"
+            >
               {running ? <Pause size={14} /> : <Play size={14} />}
               {running ? t('focus.pause') : t('focus.start')}
             </button>
-            <button onClick={() => reset()} className="btn btn-secondary btn-sm" title={t('focus.reset')}>
+            <button
+              onClick={() => reset()}
+              className="btn btn-secondary btn-sm"
+              title={t('focus.reset')}
+            >
               <RotateCcw size={14} />
             </button>
           </div>
