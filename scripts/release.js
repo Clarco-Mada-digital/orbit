@@ -17,7 +17,15 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 
-const run = (cmd) => execSync(cmd, { stdio: 'inherit' });
+const run = (cmd) => {
+  try {
+    execSync(cmd, { stdio: 'inherit' });
+  } catch (e) {
+    // Affiche l'erreur git réelle au lieu d'une trace Node illisible
+    if (e.stderr) process.stderr.write(e.stderr.toString());
+    process.exit(1);
+  }
+};
 const quiet = (cmd) => execSync(cmd, { encoding: 'utf8' }).trim();
 
 // --- Argument -------------------------------------------------------------
@@ -55,9 +63,13 @@ if (existingTags.split('\n').includes(tag)) {
 // --- Bump de version --------------------------------------------------------
 const pkgPath = new URL('../package.json', import.meta.url).pathname;
 const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
-pkg.version = version;
-writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
-console.log(`✓ package.json → version ${version}`);
+if (pkg.version === version) {
+  console.log(`✓ package.json est déjà en version ${version} — pas de bump nécessaire.`);
+} else {
+  pkg.version = version;
+  writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
+  console.log(`✓ package.json → version ${version}`);
+}
 
 // --- Build de vérification ---------------------------------------------------
 console.log('→ Génération des icônes…');
@@ -68,8 +80,14 @@ run('npm run build');
 
 // --- Commit + tag + push -----------------------------------------------------
 console.log(`→ Commit, tag ${tag} et push…`);
-run('git add package.json');
-run(`git commit -m "chore(release): ${tag}"`);
+// Commit seulement si le bump a modifié quelque chose (sinon « nothing to
+// commit » ferait échouer le script).
+if (quiet('git status --porcelain package.json')) {
+  run('git add package.json');
+  run(`git commit -m "chore(release): ${tag}"`);
+} else {
+  console.log('  (rien à committer — version déjà à jour)');
+}
 run(`git tag ${tag}`);
 run('git push origin HEAD');
 run(`git push origin ${tag}`);
