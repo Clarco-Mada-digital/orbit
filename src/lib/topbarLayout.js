@@ -16,6 +16,14 @@ export const DEFAULT_TOPBAR = {
   right: ['extensions', 'split', 'workspaces', 'favorite', 'nowPlaying', 'downloads', 'notifications'],
 };
 
+// Disposition par défaut de la barre du bas (désactivée par défaut).
+// Mêmes modules que l'en-tête — l'utilisateur choisit ce qu'il y affiche.
+export const DEFAULT_BOTTOMBAR = {
+  left: ['clock'],
+  center: [],
+  right: ['nowPlaying', 'downloads', 'notifications'],
+};
+
 // Catalogue complet. `labelKey` / `descKey` sont des clés i18n.
 export const TOPBAR_MODULES = [
   { id: 'logo', labelKey: 'tbm.logo', descKey: 'tbm.logo.desc' },
@@ -47,11 +55,11 @@ export const moduleById = (id) => TOPBAR_MODULES.find((m) => m.id === id) || nul
 // Nettoie une disposition venue du disque : ids inconnus supprimés (une
 // version antérieure a pu en enregistrer), doublons retirés (sauf séparateurs),
 // zones manquantes complétées.
-export function normalizeTopbar(layout) {
+export function normalizeTopbar(layout, fallback = DEFAULT_TOPBAR) {
   const seen = new Set();
   const out = {};
   for (const zone of TOPBAR_ZONES) {
-    const list = Array.isArray(layout?.[zone]) ? layout[zone] : DEFAULT_TOPBAR[zone];
+    const list = Array.isArray(layout?.[zone]) ? layout[zone] : fallback[zone];
     out[zone] = list.filter((id) => {
       if (!MODULE_IDS.has(id)) return false;
       if (REPEATABLE.has(id)) return true;

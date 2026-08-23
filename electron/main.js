@@ -1255,6 +1255,13 @@ function createWindow() {
   mainWindow.on('move', persistWindowState);
   mainWindow.on('maximize', persistWindowState);
   mainWindow.on('unmaximize', persistWindowState);
+  // Plein écran : prévient le renderer pour masquer barres et sidebar (F11)
+  mainWindow.on('enter-full-screen', () => {
+    if (!mainWindow.isDestroyed()) mainWindow.webContents.send('window:fullscreen-changed', true);
+  });
+  mainWindow.on('leave-full-screen', () => {
+    if (!mainWindow.isDestroyed()) mainWindow.webContents.send('window:fullscreen-changed', false);
+  });
   mainWindow.on('close', (e) => {
     // Fermer-vers-le-tray : on masque au lieu de quitter (sauf « Quitter » réel).
     // Filet de sécurité : on ne masque QUE si le tray existe ET est vivant.
@@ -1390,6 +1397,16 @@ ipcMain.handle('window:maximize', () => {
 ipcMain.handle('window:close', () => {
   if (mainWindow) mainWindow.close();
   return { success: true };
+});
+
+// Plein écran : bascule + état courant (F11 côté renderer)
+ipcMain.handle('window:toggleFullscreen', () => {
+  if (!mainWindow) return { success: false };
+  mainWindow.setFullScreen(!mainWindow.isFullScreen());
+  return { success: true, fullscreen: mainWindow.isFullScreen() };
+});
+ipcMain.handle('window:getFullscreen', () => {
+  return { success: true, fullscreen: mainWindow ? mainWindow.isFullScreen() : false };
 });
 
 // Barre système : fermer-vers-le-tray + raccourci global d'invocation

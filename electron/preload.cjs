@@ -9,6 +9,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   minimizeWindow: () => ipcRenderer.invoke('window:minimize'),
   maximizeWindow: () => ipcRenderer.invoke('window:maximize'),
   closeWindow: () => ipcRenderer.invoke('window:close'),
+  // Plein écran (F11) : bascule + suivi d'état
+  toggleFullscreen: () => ipcRenderer.invoke('window:toggleFullscreen'),
+  getFullscreen: () => ipcRenderer.invoke('window:getFullscreen'),
+  onFullScreenChange: (callback) => {
+    const listener = (_event, fullscreen) => callback(fullscreen);
+    ipcRenderer.on('window:fullscreen-changed', listener);
+    return () => ipcRenderer.removeListener('window:fullscreen-changed', listener);
+  },
   // Barre système (tray) + raccourci global d'invocation
   setCloseToTray: (enabled) => ipcRenderer.invoke('tray:setCloseToTray', enabled),
   setSummonHotkey: (accelerator) => ipcRenderer.invoke('tray:setSummonHotkey', accelerator),

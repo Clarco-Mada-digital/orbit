@@ -91,6 +91,7 @@ export const fr = {
   'tb.noNotifications': 'Aucune notification',
   'tb.minimize': 'Réduire',
   'tb.maximize': 'Agrandir / Restaurer',
+  'tb.exitFullscreen': 'Quitter le plein écran (F11)',
 
   // Sidebar
   'sb.manageProfiles': 'Gérer les profils',
@@ -613,6 +614,9 @@ export const fr = {
   'st.topbarReset': 'Réinitialiser',
   'st.topbarHint':
     'Glissez un module pour le déplacer, d’une zone à l’autre si besoin. Les boutons de fenêtre restent toujours à droite.',
+  'st.bottombarTitle': 'Barre du bas',
+  'st.bottombarDesc': 'Ajoutez une barre en bas de la fenêtre et choisissez ce qu’elle affiche.',
+  'st.bottombarEnable': 'Afficher la barre du bas',
   'st.zone.left': 'Gauche',
   'st.zone.center': 'Centre',
   'st.zone.right': 'Droite',
@@ -760,6 +764,7 @@ export const en = {
   'tb.noNotifications': 'No notifications',
   'tb.minimize': 'Minimize',
   'tb.maximize': 'Maximize / Restore',
+  'tb.exitFullscreen': 'Exit fullscreen (F11)',
 
   // Sidebar
   'sb.manageProfiles': 'Manage profiles',
@@ -1281,6 +1286,9 @@ export const en = {
   'st.topbarReset': 'Reset',
   'st.topbarHint':
     'Drag a module to move it, across zones if you like. Window buttons always stay on the right.',
+  'st.bottombarTitle': 'Bottom bar',
+  'st.bottombarDesc': 'Add a bar at the bottom of the window and choose what it shows.',
+  'st.bottombarEnable': 'Show the bottom bar',
   'st.zone.left': 'Left',
   'st.zone.center': 'Center',
   'st.zone.right': 'Right',

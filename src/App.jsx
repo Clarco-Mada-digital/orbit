@@ -2,6 +2,7 @@ import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'rea
 import { Moon, Play, X, Columns2, Rows2, Plus, Wifi } from 'lucide-react';
 import Sidebar from './components/Sidebar';
 import Topbar from './components/Topbar';
+import Bottombar from './components/Bottombar';
 import QuickSwitcher from './components/QuickSwitcher';
 import Settings from './components/Settings';
 import ProfileManager from './components/ProfileManager';
@@ -434,6 +435,35 @@ export default function App() {
     setActiveApp(appId);
   }, [setActiveApp]);
 
+  // Plein écran (F11) : masque topbar, sidebar et barre du bas pour ne
+  // laisser que l'app. F11 ou le bouton dédié quitte ; bouger la souris sur
+  // le bord supérieur fait réapparaître la topbar (avec le bouton de sortie).
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const [revealTopbar, setRevealTopbar] = useState(false);
+  const toggleFullscreen = useCallback(() => {
+    window.electronAPI?.toggleFullscreen?.();
+  }, []);
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if (e.key === 'F11') {
+        e.preventDefault();
+        window.electronAPI?.toggleFullscreen?.();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    const off = window.electronAPI?.onFullScreenChange?.((fs) => {
+      setIsFullscreen(!!fs);
+      setRevealTopbar(false);
+    });
+    window.electronAPI?.getFullscreen?.().then((res) => {
+      if (res?.success) setIsFullscreen(!!res.fullscreen);
+    }).catch(() => {});
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      if (typeof off === 'function') off();
+    };
+  }, []);
+
   // Appliquer les paramètres d'affichage EN TEMPS RÉEL
   useEffect(() => {
     const root = document.documentElement;
@@ -594,10 +624,30 @@ export default function App() {
   return (
     <div
       className="flex flex-col h-screen bg-bg-primary text-text-primary overflow-hidden"
-      style={{ borderRadius: '12px' }}
+      style={{ borderRadius: isFullscreen ? 0 : '12px' }}
     >
-      {/* Barre unifiée : logo, navigation, URL, notifications + contrôles fenêtre */}
-      <Topbar onOpenQuickSwitcher={() => setShowQuickSwitcher(true)} />
+      {/* Barre unifiée : logo, navigation, URL, notifications + contrôles fenêtre.
+          En plein écran elle disparaît ; elle réapparaît en surimpression quand
+          la souris touche le bord supérieur. */}
+      {!isFullscreen && <Topbar onOpenQuickSwitcher={() => setShowQuickSwitcher(true)} />}
+      {isFullscreen && !revealTopbar && (
+        <div
+          className="fixed top-0 left-0 right-0 h-2 z-[500]"
+          onMouseEnter={() => setRevealTopbar(true)}
+        />
+      )}
+      {isFullscreen && revealTopbar && (
+        <div
+          className="fixed top-0 left-0 right-0 z-[500] shadow-xl"
+          onMouseLeave={() => setRevealTopbar(false)}
+        >
+          <Topbar
+            onOpenQuickSwitcher={() => setShowQuickSwitcher(true)}
+            isFullscreen
+            onToggleFullscreen={toggleFullscreen}
+          />
+        </div>
+      )}
 
       {/* Portail captif : ce réseau Wi-Fi exige une connexion */}
       {captive?.detected && (
@@ -620,7 +670,8 @@ export default function App() {
 
       {/* Layout principal */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Sidebar (fixed) */}
+        {/* Sidebar (fixed) — masquée en plein écran */}
+        {!isFullscreen && (
         <Sidebar
           collapsed={sidebarCollapsed}
           onToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
@@ -629,11 +680,12 @@ export default function App() {
           onOpenProfileManager={() => setShowProfileManager(true)}
           onSelectApp={handleSetActiveApp}
         />
+        )}
 
         {/* Zone principale — marge = largeur sidebar (rem) */}
         <div
           className="flex-1 flex flex-col min-w-0 transition-[margin-left] duration-300"
-          style={{ marginLeft: sidebarWidth }}
+          style={{ marginLeft: isFullscreen ? 0 : sidebarWidth }}
         >
           {/* Apps embarquées : un <webview> par app, reste vivant en arrière-plan.
               Écran partagé :
@@ -843,6 +895,11 @@ export default function App() {
           </div>
         </div>
       </div>
+
+      {/* Barre du bas (optionnelle) — masquée en plein écran */}
+      {!isFullscreen && settings.bottombarEnabled && (
+        <Bottombar onOpenQuickSwitcher={() => setShowQuickSwitcher(true)} />
+      )}
 
       {/* Overlays — au-dessus des webviews car ils sont dans le DOM */}
       {showQuickSwitcher && (

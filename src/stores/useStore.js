@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { recipes } from '../lib/recipes';
-import { DEFAULT_TOPBAR } from '../lib/topbarLayout';
+import { DEFAULT_TOPBAR, DEFAULT_BOTTOMBAR } from '../lib/topbarLayout';
 
 // Hostname d'une URL (pour la migration des favicons)
 function hostnameOf(url) {
@@ -70,6 +70,10 @@ export const defaultSettings = {
   // Composition de l'en-tête : quels modules, dans quelle zone, dans quel
   // ordre (voir src/lib/topbarLayout.js)
   topbar: { ...DEFAULT_TOPBAR },
+  // Barre du bas : désactivée par défaut, même principe de composition que
+  // l'en-tête (quels modules, dans quelle zone, dans quel ordre)
+  bottombarEnabled: false,
+  bottombar: { ...DEFAULT_BOTTOMBAR },
   // Horloge de l'en-tête
   clock: {
     format: '24', // 24 | 12
@@ -463,7 +467,7 @@ export const useStore = create(
       // minuteur, style des fenêtres secondaires). Le bump de version suffit :
       // la fusion avec `defaultSettings` en tête de `migrate` les ajoute aux
       // installations existantes.
-      version: 9,
+      version: 10,
       migrate: (persistedState, version) => {
         // Fusionne les anciennes données avec les paramètres par défaut
         // (évite les champs manquants → bug "input non contrôlé")
@@ -538,6 +542,17 @@ export const useStore = create(
         // par défaut, qui reproduit exactement la barre précédente.
         if (version < 9) {
           next = { ...next, settings: { ...next.settings, topbar: { ...DEFAULT_TOPBAR } } };
+        }
+        // v10 : barre du bas (désactivée par défaut, composition configurable)
+        if (version < 10) {
+          next = {
+            ...next,
+            settings: {
+              ...next.settings,
+              bottombarEnabled: false,
+              bottombar: { ...DEFAULT_BOTTOMBAR },
+            },
+          };
         }
         return next;
       },

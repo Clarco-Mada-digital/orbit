@@ -15,6 +15,7 @@ import { useStore } from '../stores/useStore';
 import { useT } from '../lib/i18n';
 import {
   DEFAULT_TOPBAR,
+  DEFAULT_BOTTOMBAR,
   TOPBAR_ZONES,
   availableModules,
   moduleById,
@@ -23,18 +24,16 @@ import {
 
 const ZONE_ICON = { left: AlignLeft, center: AlignCenter, right: AlignRight };
 
-// Éditeur de l'en-tête : trois colonnes (gauche / centre / droite) dans
-// lesquelles on dépose les modules. Le glisser-déposer sert de geste
-// principal ; le menu « + » reste là pour ceux qui préfèrent cliquer.
-export default function TopbarSettings() {
+// Éditeur de disposition (3 zones gauche / centre / droite) partagé entre
+// l'en-tête et la barre du bas. Glisser-déposer pour déplacer un module,
+// menu « + » pour en ajouter.
+function LayoutEditor({ layout, onApply }) {
   const t = useT();
-  const { settings, updateSettings } = useStore();
-  const layout = normalizeTopbar(settings?.topbar);
   const [addMenu, setAddMenu] = useState(null); // zone en cours d'ajout
   const [drag, setDrag] = useState(null); // { zone, index }
   const [hover, setHover] = useState(null); // { zone, index }
 
-  const apply = (next) => updateSettings({ topbar: normalizeTopbar(next) });
+  const apply = onApply;
 
   const removeAt = (zone, index) => {
     const next = { ...layout, [zone]: layout[zone].filter((_, i) => i !== index) };
@@ -60,24 +59,10 @@ export default function TopbarSettings() {
 
   const available = availableModules(layout);
 
+  // La grille des 3 zones uniquement — l'habillage (titre, bouton reset,
+  // interrupteur) est géré par le composant parent.
   return (
-    <div className="space-y-6">
-      <div className="card">
-        <div className="flex items-start justify-between gap-3 mb-1">
-          <div>
-            <h4 className="font-semibold">{t('st.topbarTitle')}</h4>
-            <p className="text-sm text-text-muted">{t('st.topbarDesc')}</p>
-          </div>
-          <button
-            onClick={() => apply({ ...DEFAULT_TOPBAR })}
-            className="btn btn-secondary btn-sm flex items-center gap-1.5 flex-shrink-0"
-          >
-            <RotateCcw size={13} /> {t('st.topbarReset')}
-          </button>
-        </div>
-
-        {/* Aperçu : la barre telle qu'elle sera, en miniature */}
-        <div className="mt-4 grid grid-cols-1 lg:grid-cols-3 gap-3">
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
           {TOPBAR_ZONES.map((zone) => {
             const ZoneIcon = ZONE_ICON[zone];
             const items = layout[zone];
@@ -179,9 +164,79 @@ export default function TopbarSettings() {
               </div>
             );
           })}
+    </div>
+  );
+}
+
+// Réglages des barres : en-tête (barre du haut) et barre du bas (optionnelle),
+// plus horloge / météo / minuteur de concentration.
+export default function TopbarSettings() {
+  const t = useT();
+  const { settings, updateSettings } = useStore();
+  const topbarLayout = normalizeTopbar(settings?.topbar);
+  const bottombarLayout = normalizeTopbar(settings?.bottombar, DEFAULT_BOTTOMBAR);
+
+  return (
+    <div className="space-y-6">
+      {/* En-tête */}
+      <div className="card">
+        <div className="flex items-start justify-between gap-3 mb-1">
+          <div>
+            <h4 className="font-semibold">{t('st.topbarTitle')}</h4>
+            <p className="text-sm text-text-muted">{t('st.topbarDesc')}</p>
+          </div>
+          <button
+            onClick={() => updateSettings({ topbar: { ...DEFAULT_TOPBAR } })}
+            className="btn btn-secondary btn-sm flex items-center gap-1.5 flex-shrink-0"
+          >
+            <RotateCcw size={13} /> {t('st.topbarReset')}
+          </button>
         </div>
 
+        <div className="mt-4">
+          <LayoutEditor
+            layout={topbarLayout}
+            onApply={(next) => updateSettings({ topbar: normalizeTopbar(next) })}
+          />
+        </div>
         <p className="text-[11px] text-text-muted mt-3">{t('st.topbarHint')}</p>
+      </div>
+
+      {/* Barre du bas (optionnelle) */}
+      <div className="card">
+        <div className="flex items-start justify-between gap-3 mb-1">
+          <div>
+            <h4 className="font-semibold">{t('st.bottombarTitle')}</h4>
+            <p className="text-sm text-text-muted">{t('st.bottombarDesc')}</p>
+          </div>
+          <button
+            onClick={() => updateSettings({ bottombar: { ...DEFAULT_BOTTOMBAR } })}
+            className="btn btn-secondary btn-sm flex items-center gap-1.5 flex-shrink-0"
+          >
+            <RotateCcw size={13} /> {t('st.topbarReset')}
+          </button>
+        </div>
+
+        <label className="flex items-center gap-2 text-sm mt-3">
+          <input
+            type="checkbox"
+            checked={settings.bottombarEnabled === true}
+            onChange={(e) => updateSettings({ bottombarEnabled: e.target.checked })}
+            className="w-4 h-4 accent-accent-primary"
+          />
+          {t('st.bottombarEnable')}
+        </label>
+
+        {settings.bottombarEnabled !== false && (
+          <div className="mt-4">
+            <LayoutEditor
+              layout={bottombarLayout}
+              onApply={(next) =>
+                updateSettings({ bottombar: normalizeTopbar(next, DEFAULT_BOTTOMBAR) })
+              }
+            />
+          </div>
+        )}
       </div>
 
       {/* Réglages de l'horloge */}
