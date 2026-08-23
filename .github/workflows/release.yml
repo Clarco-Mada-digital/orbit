@@ -53,6 +53,10 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${GITHUB_REF_NAME}"
+          # La release existe déjà (créée en brouillon par electron-builder) :
+          # on génère les notes sans tenter de la créer, puis on met à jour
+          # la release existante ET on la publie si elle était en brouillon.
           gh api "repos/${{ github.repository }}/releases/generate-notes" \
-            -f tag_name="$TAG" --jq .body > notes.md
-          gh release edit "$TAG" --repo "${{ github.repository }}" --notes-file notes.md
+            -f tag_name="$TAG" --jq .body > notes.md || echo "Release $TAG" > notes.md
+          gh release edit "$TAG" --repo "${{ github.repository }}" \
+            --notes-file notes.md --draft=false
