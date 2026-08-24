@@ -7,7 +7,7 @@ import { resolveSoundUrl, playSound } from '../../lib/sounds';
 // Minuteur de concentration (Pomodoro) dans l'en-tête : 25 min de travail,
 // 5 min de pause, pause longue toutes les 4 sessions. Une notification système
 // signale la fin — même si Orbit est en arrière-plan.
-export default function FocusTimer() {
+export default function FocusTimer({ placement = 'top' }) {
   const t = useT();
   const settings = useStore((s) => s.settings);
   const cfg = settings?.focus || {};
@@ -130,7 +130,7 @@ export default function FocusTimer() {
       </button>
 
       {open && (
-        <div className="absolute right-0 top-full mt-2 w-64 bg-bg-elevated border border-border rounded-xl shadow-2xl overflow-hidden z-50 animate-scale-in">
+        <div className={`absolute right-0 ${placement === 'bottom' ? 'bottom-full mb-2' : 'top-full mt-2'} w-64 bg-bg-elevated border border-border rounded-xl shadow-2xl overflow-hidden z-50 animate-scale-in`}>
           <div className="px-4 py-3 border-b border-border flex items-center gap-2">
             <Timer size={16} className="text-accent-primary" />
             <span className="font-semibold text-sm">{t('focus.title')}</span>

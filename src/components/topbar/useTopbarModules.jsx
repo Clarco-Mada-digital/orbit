@@ -642,7 +642,7 @@ export function useTopbarModules({ onOpenQuickSwitcher, placement = 'top' }) {
       case 'downloads':
         return (
           <Fragment key={key}>
-            <Downloads />
+            <Downloads placement={placement} />
           </Fragment>
         );
       case 'notifications':
@@ -734,17 +734,17 @@ export function useTopbarModules({ onOpenQuickSwitcher, placement = 'top' }) {
           </Fragment>
         );
       case 'clock':
-        return <ClockWidget key={key} />;
+        return <ClockWidget key={key} placement={placement} />;
       case 'weather':
-        return <WeatherWidget key={key} />;
+        return <WeatherWidget key={key} placement={placement} />;
       case 'battery':
         return <BatteryWidget key={key} />;
       case 'focus':
-        return <FocusTimer key={key} />;
+        return <FocusTimer key={key} placement={placement} />;
       case 'system':
         return <SystemWidget key={key} />;
       case 'profile':
-        return <ProfileWidget key={key} />;
+        return <ProfileWidget key={key} placement={placement} />;
       case 'divider':
         return <div key={key} className="w-px h-5 bg-border flex-shrink-0" />;
       default:
