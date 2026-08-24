@@ -4,7 +4,8 @@ import { getWebview } from './webviewRegistry';
 // Tout passe par le <webview> de l'app : execution de JS pour lecture/pause et
 // Picture-in-Picture, touches média pour piste précédente/suivante.
 
-const CODE_TOGGLE = `(()=>{try{const m=[...document.querySelectorAll('video,audio')].find(x=>x.readyState>0)||document.querySelector('video,audio');if(m){m.paused?m.play():m.pause();}}catch(e){}})()`;
+// Cible l'élément qui JOUE en priorité, sinon le premier média chargé.
+const CODE_TOGGLE = `(()=>{try{const els=[...document.querySelectorAll('video,audio')];const m=els.find(x=>!x.paused&&!x.ended)||els.find(x=>x.readyState>0)||els[0];if(m){m.paused?m.play():m.pause();}}catch(e){}})()`;
 const CODE_PIP = `(()=>{try{const v=document.querySelector('video');if(!v)return;if(document.pictureInPictureElement){document.exitPictureInPicture().catch(()=>{});}else if(v.requestPictureInPicture){v.requestPictureInPicture().catch(()=>{});}}catch(e){}})()`;
 
 // Exécute du JS dans la page de l'app (protégé contre l'exception synchrone
@@ -44,7 +45,7 @@ export const mediaSeek = (appId, fraction) => {
   const f = Math.max(0, Math.min(1, Number(fraction) || 0));
   exec(
     appId,
-    `(()=>{try{const m=document.querySelector('video,audio');if(m&&isFinite(m.duration))m.currentTime=${f}*m.duration;}catch(e){}})()`
+    `(()=>{try{const els=[...document.querySelectorAll('video,audio')];const m=els.find(x=>!x.paused&&!x.ended)||els[0];if(m&&isFinite(m.duration))m.currentTime=${f}*m.duration;}catch(e){}})()`
   );
 };
 

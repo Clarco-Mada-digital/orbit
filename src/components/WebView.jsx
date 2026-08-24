@@ -7,20 +7,28 @@ import { registerWebview, unregisterWebview } from '../lib/webviewRegistry';
 
 // Lu DANS la page (via executeJavaScript) : métadonnées de lecture (Media
 // Session en priorité, sinon le titre de la page) + état lecture/pause.
+// On scanne TOUS les éléments vidéo/audio de la page et on privilégie celui
+// qui JOUE réellement (sinon le premier chargé). Le premier <video> trouvé
+// peut être un lecteur caché ou un son de notification en pause — se fier à
+// lui seul fait croire à tort qu'aucune lecture n'est en cours.
+// playbackState de Media Session sert de filet pour les players en iframe.
 const READ_MEDIA_FN = `(() => {
   try {
+    const els = Array.from(document.querySelectorAll('video, audio'));
+    const el = els.find((x) => !x.paused && !x.ended) || els.find((x) => x.readyState > 0) || els[0];
     const md = navigator.mediaSession && navigator.mediaSession.metadata;
-    const el = document.querySelector('video, audio');
+    const sessionPlaying = !!(navigator.mediaSession && navigator.mediaSession.playbackState === 'playing');
     return {
       hasMedia: !!el,
-      paused: el ? el.paused : true,
+      paused: el ? !!el.paused : true,
+      sessionPlaying,
       currentTime: el && isFinite(el.currentTime) ? el.currentTime : 0,
       duration: el && isFinite(el.duration) ? el.duration : 0,
       title: (md && md.title) || document.title || '',
       artist: (md && md.artist) || '',
       artwork: (md && md.artwork && md.artwork.length ? md.artwork[md.artwork.length - 1].src : '') || '',
     };
-  } catch (e) { return { hasMedia: false, paused: true, currentTime: 0, duration: 0, title: '', artist: '', artwork: '' }; }
+  } catch (e) { return { hasMedia: false, paused: true, sessionPlaying: false, currentTime: 0, duration: 0, title: '', artist: '', artwork: '' }; }
 })()`;
 import { computeStartUrl, reloadUrlFor } from '../lib/urls';
 import { recipes } from '../lib/recipes';
@@ -247,9 +255,11 @@ export default function WebView({ app, active, visible, flexLayout }) {
         const p = wv.executeJavaScript(READ_MEDIA_FN);
         if (p && typeof p.then === 'function') {
           p.then((info) => {
-            if (info && (info.hasMedia || info.title)) {
+            if (info && (info.hasMedia || info.sessionPlaying || info.title)) {
               setMedia(app.id, {
-                playing: !info.paused,
+                // Un média en iframe peut ne pas être visible dans le DOM :
+                // Media Session (playbackState) fait foi dans ce cas.
+                playing: info.sessionPlaying || !info.paused,
                 hasMedia: info.hasMedia,
                 currentTime: info.currentTime,
                 duration: info.duration,
