@@ -18,6 +18,7 @@ import { useMediaStore } from './lib/mediaStore';
 import { mediaToggle, mediaPrev, mediaNext, mediaSeek, pickNowPlaying } from './lib/mediaControls';
 import { appViewKey, appPartition, resolveProxy } from './lib/session';
 import { matchShortcut } from './lib/shortcuts';
+import { reloadApp } from './lib/webviewRegistry';
 
 // Construit l'état à afficher dans le mini-lecteur flottant (ou null)
 function buildMiniPlayerState() {
@@ -522,6 +523,12 @@ export default function App() {
       if (useStore.getState().activeApp) setShowFind(true);
       return;
     }
+    // Ctrl+R / F5 — même comportement que le bouton « Actualiser »
+    if (action === 'reload' || action === 'reload-hard') {
+      const { activeApp: a, apps: all } = useStore.getState();
+      if (a) reloadApp(a, all.find((x) => x.id === a)?.url, action === 'reload-hard');
+      return;
+    }
     if (action === 'toggle-sidebar') {
       const { sidebarCollapsed: c, setSidebarCollapsed: set } = useStore.getState();
       return set(!c);
@@ -717,20 +724,30 @@ export default function App() {
                   // Clé qui change avec le mode de session (isolée ↔ partagée)
                   // pour remonter le webview sur la bonne partition.
                   const vkey = appViewKey(a, profiles.find((p) => p.id === a.profileId)?.sharedSession);
-                  if (!inSplit) {
-                    return (
-                      <WebView
-                        key={vkey}
-                        app={a}
-                        active={inActive && a.id === activeApp}
-                        visible={inActive && a.id === activeApp}
-                      />
-                    );
-                  }
+                  // IMPORTANT — structure d'arbre IDENTIQUE en écran partagé et
+                  // hors partage. Avant, le mode partagé renvoyait un Fragment
+                  // (séparateur + div) et le mode normal un <WebView> nu : à
+                  // chaque entrée/sortie du partage React voyait un type
+                  // d'élément différent, DÉMONTAIT le webview et le remontait
+                  // → la page se rechargeait et l'app pouvait se retrouver
+                  // déconnectée. On garde donc toujours Fragment > div >
+                  // WebView ; hors partage, le div est neutralisé par
+                  // `display: contents` (aucune boîte générée → la mise en page
+                  // est exactement celle d'avant).
+                  const paneStyle = !inSplit
+                    ? { display: 'contents' }
+                    : gridMode
+                      ? undefined
+                      : {
+                          flexGrow: splitSizes ? splitSizes[idx] : 0.5,
+                          flexBasis: 0,
+                          minWidth: 0,
+                          minHeight: 0,
+                        };
                   return (
                     <Fragment key={vkey}>
                       {/* Séparateur ajustable (2 apps seulement) */}
-                      {!gridMode && idx > 0 && (
+                      {inSplit && !gridMode && idx > 0 ? (
                         <div
                           onMouseDown={startSplitDrag}
                           className={`flex-shrink-0 transition-colors ${
@@ -742,16 +759,21 @@ export default function App() {
                               : { height: 6, cursor: 'row-resize' }
                           }
                         />
-                      )}
+                      ) : null}
                       <div
-                        className={`relative min-w-0 min-h-0 bg-bg-secondary ${gridMode ? '' : 'flex'}`}
-                        style={
-                          gridMode
-                            ? undefined
-                            : { flexGrow: splitSizes ? splitSizes[idx] : 0.5, flexBasis: 0, minWidth: 0, minHeight: 0 }
+                        className={
+                          inSplit
+                            ? `relative min-w-0 min-h-0 bg-bg-secondary ${gridMode ? '' : 'flex'}`
+                            : undefined
                         }
+                        style={paneStyle}
                       >
-                        <WebView app={a} active={a.id === activeApp} visible flexLayout />
+                        <WebView
+                          app={a}
+                          active={inActive && a.id === activeApp}
+                          visible={inSplit || (inActive && a.id === activeApp)}
+                          flexLayout={inSplit}
+                        />
                       </div>
                     </Fragment>
                   );

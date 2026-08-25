@@ -28,6 +28,18 @@ export function matchShortcut(e) {
   ) {
     return 'find';
   }
+  // Recharger la page de l'app active : Ctrl+R / ⌘R et F5 — comme dans un
+  // navigateur. Sans ça, Ctrl+R était simplement avalé par l'app embarquée
+  // (aucun raccourci Orbit ne le gérait) et « rien ne se rechargeait ».
+  // Avec Maj (⇧R / ⇧F5) → rechargement FORT, cache ignoré.
+  {
+    const modReload = mac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.altKey;
+    const k0 = (e.key || '').toLowerCase();
+    if (modReload && k0 === 'r') return e.shiftKey ? 'reload-hard' : 'reload';
+    if (k0 === 'f5' && !e.altKey) {
+      return e.shiftKey || e.ctrlKey || e.metaKey ? 'reload-hard' : 'reload';
+    }
+  }
   const mod = mac ? e.metaKey : e.altKey;
   // Modificateur parasite (Ctrl, ou l'autre) → pas un raccourci Orbit
   if (!mod || e.ctrlKey || (mac ? e.altKey : e.metaKey)) return null;
@@ -61,6 +73,16 @@ export function matchShortcutInput(input) {
   ) {
     return 'find';
   }
+  // Recharger : Ctrl+R / ⌘R et F5 (Maj → rechargement fort). Intercepté ICI
+  // pour fonctionner même quand le focus est DANS l'app embarquée.
+  {
+    const modReload = mac ? input.meta && !input.control : input.control && !input.alt;
+    const k0 = String(input.key || '').toLowerCase();
+    if (modReload && k0 === 'r') return input.shift ? 'reload-hard' : 'reload';
+    if (k0 === 'f5' && !input.alt) {
+      return input.shift || input.control || input.meta ? 'reload-hard' : 'reload';
+    }
+  }
   const mod = mac ? input.meta : input.alt;
   if (!mod || input.control || (mac ? input.alt : input.meta)) return null;
   const k = String(input.key || '').toLowerCase();
@@ -89,6 +111,10 @@ export function shortcutKeys(t) {
   const M = mac ? '⌘' : 'Alt';
   return [
     { keys: [M, 'K'], desc: d('sc.search', 'Rechercher partout (ce panneau)') },
+    {
+      keys: [mac ? '⌘' : 'Ctrl', 'R'],
+      desc: d('sc.reload', "Recharger la page de l'app active (⇧ : ignorer le cache)"),
+    },
     { keys: [M, ','], desc: d('sc.settings', 'Paramètres') },
     { keys: [M, '⇧', 'O'], desc: d('sc.store', "Boutique d'applications") },
     { keys: [M, '⇧', 'P'], desc: d('sc.profiles', 'Gérer les profils') },

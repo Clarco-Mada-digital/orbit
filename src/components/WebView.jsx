@@ -454,6 +454,13 @@ export default function WebView({ app, active, visible, flexLayout }) {
         inset: visible ? undefined : 0,
         visibility: visible ? 'visible' : 'hidden',
         pointerEvents: visible ? 'auto' : 'none',
+        // Les apps masquées sont empilées à inset:0 PAR-DESSUS l'app affichée
+        // (ordre du DOM). `pointer-events:none` suffit pour le DOM, mais un
+        // <webview> possède sa propre surface de composition : selon l'ordre
+        // d'empilement, une app masquée pouvait continuer à capter les clics
+        // → « l'app est là mais je n'arrive pas à m'en servir, il faut
+        // recharger ». On force donc l'app visible au-dessus de toutes.
+        zIndex: visible ? 1 : 0,
         // En écran partagé, le webview remplit sa cellule (la taille est
         // pilotée par le conteneur : pane flex/grille + séparateur ajustable)
         ...(visible && flexLayout ? { width: '100%', height: '100%' } : {}),

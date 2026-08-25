@@ -439,6 +439,7 @@ export const fr = {
 
   // Descriptions des raccourcis
   'sc.search': 'Rechercher partout (ce panneau)',
+  'sc.reload': "Recharger la page de l'app active (⇧ : ignorer le cache)",
   'sc.settings': 'Paramètres',
   'sc.store': "Boutique d'applications",
   'sc.profiles': 'Gérer les profils',
@@ -1124,6 +1125,7 @@ export const en = {
 
   // Shortcut descriptions
   'sc.search': 'Search everywhere (this panel)',
+  'sc.reload': 'Reload the active app’s page (⇧: bypass cache)',
   'sc.settings': 'Settings',
   'sc.store': 'App store',
   'sc.profiles': 'Manage profiles',

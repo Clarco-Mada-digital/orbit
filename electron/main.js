@@ -37,6 +37,21 @@ let closeToTray = false; // synchronisé depuis les réglages du renderer (opt-i
 let trayInfoShown = false;
 let summonAccel = null;
 
+// Notifications VIVANTES : tant qu'une notification est à l'écran, on garde une
+// référence forte sur l'objet Electron. Sinon le ramasse-miettes peut le
+// collecter dès la fin du handler qui l'a créée, et ses événements ('click',
+// 'action') ne sont plus jamais délivrés.
+const liveNotifications = new Set();
+function keepNotificationAlive(notif) {
+  liveNotifications.add(notif);
+  const drop = () => liveNotifications.delete(notif);
+  notif.on('close', drop);
+  notif.on('click', drop);
+  notif.on('failed', drop);
+  // Filet : certains serveurs de notification Linux n'émettent jamais 'close'.
+  setTimeout(drop, 5 * 60 * 1000).unref?.();
+}
+
 function showMainWindow() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   if (mainWindow.isMinimized()) mainWindow.restore();
@@ -740,6 +755,7 @@ async function captureGuestPage(wc, mode) {
         silent: true,
       });
       notif.on('click', () => shell.showItemInFolder(savePath));
+      keepNotificationAlive(notif); // sinon le clic « ouvrir le dossier » se perd
       notif.show();
     }
   } catch (err) {
@@ -958,8 +974,20 @@ async function persistOneCookie(ses, c) {
     // ajoutant le point (sinon '.github.com' → '..github.com' → invalide
     // → le cookie existant est SUPPRIMÉ et le nouveau n'est pas posé →
     // session perdue pendant la 2FA → boucle login !)
-    if (!isHostPrefix) {
-      setParams.domain = (current.domain || '').replace(/^\./, '');
+    // Cookie HOST-ONLY (posé sans attribut Domain) : Electron le renvoie avec
+    // un domaine SANS point initial. Lui remettre un `domain` le transforme en
+    // cookie de domaine (.exemple.com), qui ne remplace donc PAS l'original :
+    // le navigateur se retrouve avec DEUX cookies de même nom et en envoie
+    // deux dans l'en-tête Cookie. Beaucoup de serveurs prennent alors le
+    // mauvais (ou rejettent la requête) → déconnexion apparemment aléatoire,
+    // typiquement quand l'app repasse au premier plan et rejoue ses requêtes.
+    // On ne pose donc `domain` que pour un VRAI cookie de domaine (point
+    // initial), et sans ce point (Electron le rajoute lui-même ; '.github.com'
+    // deviendrait '..github.com' → invalide → cookie existant supprimé et
+    // nouveau rejeté → session perdue pendant la 2FA → boucle login).
+    const rawDomain = current.domain || '';
+    if (!isHostPrefix && rawDomain.startsWith('.')) {
+      setParams.domain = rawDomain.slice(1);
     }
 
     await ses.cookies.set(setParams);
@@ -1488,7 +1516,7 @@ function createWindow() {
             new Notification({
               title: 'Orbit continue en arrière-plan',
               body: 'Clic sur l’icône de la barre système pour rouvrir, clic droit → Quitter.',
-              icon: path.join(__dirname, '../build/icon.png'),
+              icon: resourcePath('build/icon.png'),
               silent: true,
             }).show();
           }
@@ -1627,21 +1655,26 @@ ipcMain.handle('notifications:show', (_event, { title, body, appId, silent } = {
     const notif = new Notification({
       title: title || 'Orbit',
       body: body || '',
-      icon: path.join(__dirname, '../build/icon.png'),
+      icon: resourcePath('build/icon.png'),
       // Son perso joué côté renderer → on coupe le son système pour éviter le doublon
       silent: silent === true,
     });
 
     // Clic sur la notification → Orbit revient au premier plan ET ouvre l'app
-    // qui l'a émise (avant, un clic ne faisait rien : on devait retrouver
-    // l'app à la main). La sélection de l'app se fait côté React via IPC.
+    // qui l'a émise. La sélection de l'app se fait côté React via IPC.
     notif.on('click', () => {
+      showMainWindow();
       if (!mainWindow || mainWindow.isDestroyed()) return;
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.show();
-      mainWindow.focus();
       if (appId) mainWindow.webContents.send('orbit:activate-app', appId);
     });
+
+    // Garder la notification EN VIE jusqu'à sa fermeture. Sans cette référence,
+    // l'objet devient éligible au ramasse-miettes dès la fin de ce handler :
+    // la notification reste affichée par le système, mais l'objet JS qui porte
+    // le gestionnaire 'click' peut disparaître → « je clique sur la
+    // notification et rien ne s'ouvre ». C'est la cause la plus fréquente des
+    // clics de notification sans effet dans Electron.
+    keepNotificationAlive(notif);
 
     notif.show();
     return { success: true };

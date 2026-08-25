@@ -1,3 +1,5 @@
+import { reloadUrlFor } from './urls';
+
 // Registre des <webview> par appId — permet à la Topbar de piloter
 // l'app active (retour, avant, recharger, navigation) sans IPC.
 const registry = new Map();
@@ -27,3 +29,26 @@ export function getRegisteredWebviews() {
   return Array.from(registry.entries());
 }
 
+
+// Recharge la page d'une app montée. Logique unique partagée par le bouton
+// « Actualiser » de la Topbar, le menu contextuel et le raccourci Ctrl+R :
+//   • URL nettoyée de ses jetons éphémères (CSRF Roundcube, code OAuth…) →
+//     un reload brut rejouerait un jeton périmé = page d'erreur/blanche ;
+//   • `hard` (Ctrl+⇧+R / ⇧F5) ignore le cache — utile quand une app affiche
+//     une version périmée de son interface.
+export function reloadApp(appId, url, hard = false) {
+  const wv = getWebview(appId);
+  if (!wv) return false;
+  try {
+    if (hard) {
+      wv.reloadIgnoringCache();
+      return true;
+    }
+    const clean = reloadUrlFor(url);
+    if (clean) wv.loadURL(clean);
+    else wv.reload();
+    return true;
+  } catch {
+    return false;
+  }
+}
