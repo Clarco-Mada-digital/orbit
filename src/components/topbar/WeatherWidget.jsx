@@ -40,7 +40,7 @@ const WMO = {
 };
 const describe = (code) => WMO[code] || ['🌡️', '—'];
 
-export default function WeatherWidget({ placement = 'top' }) {
+export default function WeatherWidget({ placement = 'top', align = 'right-0' }) {
   const t = useT();
   const settings = useStore((s) => s.settings);
   const cfg = settings?.weather || {};
@@ -157,7 +157,7 @@ export default function WeatherWidget({ placement = 'top' }) {
       </button>
 
       {open && (
-        <div className={`absolute right-0 ${placement === 'bottom' ? 'bottom-full mb-2' : 'top-full mt-2'} w-72 bg-bg-elevated border border-border rounded-xl shadow-2xl overflow-hidden z-50 animate-scale-in`}>
+        <div className={`absolute ${align} ${placement === 'bottom' ? 'bottom-full mb-2' : 'top-full mt-2'} w-72 bg-bg-elevated border border-border rounded-xl shadow-2xl overflow-hidden z-50 animate-scale-in`}>
           {state === 'error' || !data ? (
             <div className="px-4 py-6 text-center text-sm text-text-muted">
               {state === 'loading' ? t('weather.loading') : t('weather.error', { city })}

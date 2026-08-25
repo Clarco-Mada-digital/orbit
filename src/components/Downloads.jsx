@@ -19,7 +19,7 @@ function humanSize(bytes) {
 // Bouton + panneau de téléchargements (comme un navigateur). Le point d'entrée
 // des événements 'orbit:download' vit ici : la Topbar monte ce composant une
 // seule fois.
-export default function Downloads({ placement = 'top' }) {
+export default function Downloads({ placement = 'top', align = 'right-0' }) {
   const { downloads, upsert, remove, clearFinished } = useDownloadsStore();
   const t = useT();
   const [open, setOpen] = useState(false);
@@ -66,7 +66,7 @@ export default function Downloads({ placement = 'top' }) {
       </button>
 
       {open && (
-        <div className={`absolute right-0 ${placement === 'bottom' ? 'bottom-full mb-2' : 'top-full mt-2'} w-96 bg-bg-elevated border border-border rounded-xl shadow-2xl overflow-hidden z-50 animate-scale-in`}>
+        <div className={`absolute ${align} ${placement === 'bottom' ? 'bottom-full mb-2' : 'top-full mt-2'} w-96 bg-bg-elevated border border-border rounded-xl shadow-2xl overflow-hidden z-50 animate-scale-in`}>
           <div className="px-4 py-3 border-b border-border flex items-center justify-between">
             <span className="font-semibold text-sm">{t('dl.title')}</span>
             <div className="flex items-center gap-2">

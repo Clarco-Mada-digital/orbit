@@ -120,8 +120,11 @@ export function useTopbarModules({ onOpenQuickSwitcher, placement = 'top' }) {
   const [wsName, setWsName] = useState('');
   const app = apps.find((a) => a.id === activeApp);
 
-  // Position des menus déroulants selon que la barre est en haut ou en bas
+  // Position verticale des menus déroulants selon que la barre est en haut ou en bas
   const menuPos = placement === 'bottom' ? 'bottom-full mb-2' : 'top-full mt-2';
+  // Alignement horizontal : un module de la zone GAUCHE ouvre son menu vers la
+  // droite (aligné à gauche), sinon le menu déborderait hors de la fenêtre.
+  const alignFor = (zone) => (zone === 'left' ? 'left-0' : 'right-0');
 
   // Apps du même profil que l'app active (candidats à l'écran partagé)
   const splitPartners = app
@@ -232,7 +235,8 @@ export function useTopbarModules({ onOpenQuickSwitcher, placement = 'top' }) {
   // ---------------------------------------------------------------------
   // Rendu d'un module de barre par son id.
   // ---------------------------------------------------------------------
-  const renderModule = (id, key) => {
+  const renderModule = (id, key, zone = 'right') => {
+    const menuAlign = alignFor(zone);
     switch (id) {
       case 'logo':
         return (
@@ -349,7 +353,7 @@ export function useTopbarModules({ onOpenQuickSwitcher, placement = 'top' }) {
 
                   {/* Menu de l'extension cliquée */}
                   {extMenu && (
-                    <div className={`absolute right-0 ${menuPos} w-56 bg-bg-elevated border border-border rounded-xl shadow-2xl overflow-hidden z-50 animate-scale-in`}>
+                    <div className={`absolute ${menuAlign} ${menuPos} w-56 bg-bg-elevated border border-border rounded-xl shadow-2xl overflow-hidden z-50 animate-scale-in`}>
                       <div className="px-4 py-3 border-b border-border flex items-center gap-3">
                         <div className="w-9 h-9 rounded-lg bg-bg-secondary border border-border flex items-center justify-center flex-shrink-0">
                           {extMenu.info?.iconUrl ? (
@@ -422,7 +426,7 @@ export function useTopbarModules({ onOpenQuickSwitcher, placement = 'top' }) {
                 </button>
 
                 {showSplitMenu && (
-                  <div className={`absolute right-0 ${menuPos} w-64 bg-bg-elevated border border-border rounded-xl shadow-2xl overflow-hidden z-50 animate-scale-in`}>
+                  <div className={`absolute ${menuAlign} ${menuPos} w-64 bg-bg-elevated border border-border rounded-xl shadow-2xl overflow-hidden z-50 animate-scale-in`}>
                     <div className="px-4 py-3 border-b border-border flex items-center justify-between">
                       <span className="font-semibold text-sm">{t('tb.split')}</span>
                       {(!splitView || splitView.appIds.length === 2) && (
@@ -506,7 +510,7 @@ export function useTopbarModules({ onOpenQuickSwitcher, placement = 'top' }) {
 
               {showWsMenu && (
                 <div
-                  className={`absolute right-0 ${menuPos} w-64 bg-bg-elevated border border-border rounded-xl shadow-2xl overflow-hidden z-50 animate-scale-in`}
+                  className={`absolute ${menuAlign} ${menuPos} w-64 bg-bg-elevated border border-border rounded-xl shadow-2xl overflow-hidden z-50 animate-scale-in`}
                   onClick={(e) => e.stopPropagation()}
                 >
                   <div className="px-4 py-3 border-b border-border">
@@ -642,7 +646,7 @@ export function useTopbarModules({ onOpenQuickSwitcher, placement = 'top' }) {
       case 'downloads':
         return (
           <Fragment key={key}>
-            <Downloads placement={placement} />
+            <Downloads placement={placement} align={menuAlign} />
           </Fragment>
         );
       case 'notifications':
@@ -664,7 +668,7 @@ export function useTopbarModules({ onOpenQuickSwitcher, placement = 'top' }) {
 
               {/* Panneau de notifications */}
               {showNotifPanel && (
-                <div className={`absolute right-0 ${menuPos} w-80 bg-bg-elevated border border-border rounded-xl shadow-2xl overflow-hidden z-50 animate-scale-in`}>
+                <div className={`absolute ${menuAlign} ${menuPos} w-80 bg-bg-elevated border border-border rounded-xl shadow-2xl overflow-hidden z-50 animate-scale-in`}>
                   <div className="px-4 py-3 border-b border-border flex items-center justify-between gap-2">
                     <span className="font-semibold text-sm">{t('tb.notifications')}</span>
                     <div className="flex items-center gap-3">
@@ -734,17 +738,17 @@ export function useTopbarModules({ onOpenQuickSwitcher, placement = 'top' }) {
           </Fragment>
         );
       case 'clock':
-        return <ClockWidget key={key} placement={placement} />;
+        return <ClockWidget key={key} placement={placement} align={menuAlign} />;
       case 'weather':
-        return <WeatherWidget key={key} placement={placement} />;
+        return <WeatherWidget key={key} placement={placement} align={menuAlign} />;
       case 'battery':
         return <BatteryWidget key={key} />;
       case 'focus':
-        return <FocusTimer key={key} placement={placement} />;
+        return <FocusTimer key={key} placement={placement} align={menuAlign} />;
       case 'system':
         return <SystemWidget key={key} />;
       case 'profile':
-        return <ProfileWidget key={key} placement={placement} />;
+        return <ProfileWidget key={key} placement={placement} align={menuAlign} />;
       case 'divider':
         return <div key={key} className="w-px h-5 bg-border flex-shrink-0" />;
       default:

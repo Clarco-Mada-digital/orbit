@@ -5,7 +5,7 @@ import { useT } from '../../lib/i18n';
 
 // Pastille du profil actif dans l'en-tête : d'un coup d'œil on sait si on est
 // en « Travail » ou « Perso », et on bascule sans passer par la barre latérale.
-export default function ProfileWidget({ placement = 'top' }) {
+export default function ProfileWidget({ placement = 'top', align = 'right-0' }) {
   const t = useT();
   const { profiles, activeProfile, setActiveProfile } = useStore();
   const [open, setOpen] = useState(false);
@@ -39,7 +39,7 @@ export default function ProfileWidget({ placement = 'top' }) {
       </button>
 
       {open && (
-        <div className={`absolute right-0 ${placement === 'bottom' ? 'bottom-full mb-2' : 'top-full mt-2'} w-52 bg-bg-elevated border border-border rounded-xl shadow-2xl overflow-hidden z-50 animate-scale-in py-1`}>
+        <div className={`absolute ${align} ${placement === 'bottom' ? 'bottom-full mb-2' : 'top-full mt-2'} w-52 bg-bg-elevated border border-border rounded-xl shadow-2xl overflow-hidden z-50 animate-scale-in py-1`}>
           {profiles.map((p) => (
             <button
               key={p.id}

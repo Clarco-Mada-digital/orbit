@@ -7,20 +7,40 @@ import { registerWebview, unregisterWebview } from '../lib/webviewRegistry';
 
 // Lu DANS la page (via executeJavaScript) : métadonnées de lecture (Media
 // Session en priorité, sinon le titre de la page) + état lecture/pause.
-// On scanne TOUS les éléments vidéo/audio de la page et on privilégie celui
-// qui JOUE réellement (sinon le premier chargé). Le premier <video> trouvé
-// peut être un lecteur caché ou un son de notification en pause — se fier à
-// lui seul fait croire à tort qu'aucune lecture n'est en cours.
-// playbackState de Media Session sert de filet pour les players en iframe.
+//
+// Ce qui compte VRAIMENT comme « lecture en cours » :
+//   • un <video>/<audio> qui joue, ou en pause APRÈS avoir été lancé ;
+//   • à défaut, une Media Session renseignée (players en iframe).
+// Sont explicitement écartés :
+//   • les bips de notification des apps (audio de quelques centaines de ms) :
+//     une notification ne doit JAMAIS ouvrir une mini-barre de lecture ;
+//   • les vidéos d'ambiance, muettes et en boucle (bannières de sites) ;
+//   • les lecteurs seulement chargés, jamais lancés (currentTime à 0) — sinon
+//     la barre s'ouvre toute seule sur n'importe quelle page contenant un player.
 const READ_MEDIA_FN = `(() => {
   try {
+    const MIN_DUR = 5; // s — en dessous, c'est un son de notification
     const els = Array.from(document.querySelectorAll('video, audio'));
-    const el = els.find((x) => !x.paused && !x.ended) || els.find((x) => x.readyState > 0) || els[0];
-    const md = navigator.mediaSession && navigator.mediaSession.metadata;
-    const sessionPlaying = !!(navigator.mediaSession && navigator.mediaSession.playbackState === 'playing');
+    const real = els.filter((x) => {
+      if (x.muted && x.loop) return false; // vidéo d'ambiance
+      const d = Number(x.duration);
+      if (isFinite(d) && d > 0 && d < MIN_DUR) return false; // bip / jingle
+      return true;
+    });
+    const playingEl = real.find((x) => !x.paused && !x.ended);
+    const startedEl = real.find((x) => x.paused && !x.ended && x.currentTime > 0);
+    const el = playingEl || startedEl || null;
+    const ms = navigator.mediaSession;
+    const md = ms && ms.metadata;
+    const state = ms && ms.playbackState;
+    const sessionPlaying = state === 'playing';
+    // Media Session sans métadonnées = signal trop faible (une page peut la
+    // laisser à 'playing' après un simple son) → on exige un titre.
+    const sessionActive = !!md && (sessionPlaying || state === 'paused');
+    if (!el && !sessionActive) return { hasMedia: false };
     return {
-      hasMedia: !!el,
-      paused: el ? !!el.paused : true,
+      hasMedia: true,
+      paused: el ? !!el.paused : !sessionPlaying,
       sessionPlaying,
       currentTime: el && isFinite(el.currentTime) ? el.currentTime : 0,
       duration: el && isFinite(el.duration) ? el.duration : 0,
@@ -28,7 +48,7 @@ const READ_MEDIA_FN = `(() => {
       artist: (md && md.artist) || '',
       artwork: (md && md.artwork && md.artwork.length ? md.artwork[md.artwork.length - 1].src : '') || '',
     };
-  } catch (e) { return { hasMedia: false, paused: true, sessionPlaying: false, currentTime: 0, duration: 0, title: '', artist: '', artwork: '' }; }
+  } catch (e) { return { hasMedia: false }; }
 })()`;
 import { computeStartUrl, reloadUrlFor } from '../lib/urls';
 import { recipes } from '../lib/recipes';
@@ -244,55 +264,6 @@ export default function WebView({ app, active, visible, flexLayout }) {
       }
     };
 
-    // « Lecture en cours » : quand un média démarre, on lit ses métadonnées
-    // (Media Session + position/durée) et on met à jour le store → mini-barre
-    // + mini-lecteur flottant. On rafraîchit la position toutes les secondes
-    // PENDANT la lecture (pour la barre de progression), pas quand c'est en pause.
-    let pollTimer = null;
-    const readMedia = () => {
-      if (!domReadyRef.current) return;
-      try {
-        const p = wv.executeJavaScript(READ_MEDIA_FN);
-        if (p && typeof p.then === 'function') {
-          p.then((info) => {
-            if (info && (info.hasMedia || info.sessionPlaying || info.title)) {
-              setMedia(app.id, {
-                // Un média en iframe peut ne pas être visible dans le DOM :
-                // Media Session (playbackState) fait foi dans ce cas.
-                playing: info.sessionPlaying || !info.paused,
-                hasMedia: info.hasMedia,
-                currentTime: info.currentTime,
-                duration: info.duration,
-                title: info.title,
-                artist: info.artist,
-                artwork: info.artwork,
-              });
-            }
-          }).catch(() => {});
-        }
-      } catch {
-        /* ignore */
-      }
-    };
-    const startPolling = () => {
-      clearInterval(pollTimer);
-      pollTimer = setInterval(readMedia, 1000);
-    };
-    const stopPolling = () => {
-      clearInterval(pollTimer);
-      pollTimer = null;
-    };
-    const onMediaPlay = () => {
-      readMedia();
-      startPolling();
-    };
-    const onMediaPaused = () => {
-      readMedia();
-      stopPolling();
-    };
-
-    wv.addEventListener('media-started-playing', onMediaPlay);
-    wv.addEventListener('media-paused', onMediaPaused);
     wv.addEventListener('dom-ready', applyZoom);
     wv.addEventListener('did-navigate', handleNavigate);
     wv.addEventListener('did-navigate-in-page', handleNavigate);
@@ -309,12 +280,8 @@ export default function WebView({ app, active, visible, flexLayout }) {
       // Démontage (veille, suppression…) : le chargement ne peut plus finir,
       // sinon le bouton Actualiser tournerait indéfiniment.
       setAppLoading(app.id, false);
-      clearMedia(app.id);
-      clearInterval(pollTimer);
       clearTimeout(loadingTimer.current);
       clearTimeout(zeroTimerRef.current);
-      wv.removeEventListener('media-started-playing', onMediaPlay);
-      wv.removeEventListener('media-paused', onMediaPaused);
       wv.removeEventListener('dom-ready', applyZoom);
       wv.removeEventListener('did-navigate', handleNavigate);
       wv.removeEventListener('did-navigate-in-page', handleNavigate);
@@ -326,7 +293,89 @@ export default function WebView({ app, active, visible, flexLayout }) {
       wv.removeEventListener('did-start-loading', startLoading);
       wv.removeEventListener('did-stop-loading', stopLoading);
     };
-  }, [app.id, app.name, app.zoom, app.sleeping, app.muted, active, notificationsEnabled, notifSound, soundVolume, dnd, quietHoursEnabled, quietStart, quietEnd, updateApp, setAppLoading, setMedia, clearMedia]);
+  }, [app.id, app.name, app.zoom, app.sleeping, app.muted, active, notificationsEnabled, notifSound, soundVolume, dnd, quietHoursEnabled, quietStart, quietEnd, updateApp, setAppLoading]);
+
+  // « Lecture en cours » — effet DÉDIÉ, volontairement séparé de l'effet
+  // principal ci-dessus : celui-ci se ré-exécute à chaque changement de réglage
+  // (app active, zoom, notifications…). Y loger la détection média coupait le
+  // suivi et vidait le store à chaque changement d'app → la mini-barre
+  // disparaissait alors qu'une vidéo jouait toujours, et ne revenait qu'au
+  // prochain événement média (d'où « il faut cliquer sur pause pour la voir »).
+  //
+  // On sonde donc EN CONTINU tant que le webview est monté : toutes les
+  // secondes pendant la lecture (barre de progression fluide), toutes les
+  // 3 s sinon — assez pour rattraper une lecture démarrée avant l'écoute des
+  // événements, ou un player en iframe qui n'en émet aucun.
+  useEffect(() => {
+    const wv = ref.current;
+    if (!wv) return;
+
+    let timer = null;
+    let stopped = false;
+    let playing = false;
+
+    const schedule = () => {
+      if (stopped) return;
+      clearTimeout(timer);
+      timer = setTimeout(tick, playing ? 1000 : 3000);
+    };
+
+    const tick = () => {
+      if (stopped) return;
+      if (!domReadyRef.current) return schedule();
+      try {
+        const p = wv.executeJavaScript(READ_MEDIA_FN);
+        if (p && typeof p.then === 'function') {
+          p.then((info) => {
+            if (stopped) return;
+            if (info && info.hasMedia) {
+              playing = !!(info.sessionPlaying || !info.paused);
+              setMedia(app.id, {
+                // Un média en iframe peut ne pas être visible dans le DOM :
+                // Media Session (playbackState) fait alors foi.
+                playing,
+                hasMedia: true,
+                currentTime: info.currentTime,
+                duration: info.duration,
+                title: info.title,
+                artist: info.artist,
+                artwork: info.artwork,
+              });
+            } else {
+              // Plus rien ne joue (ou ce n'était qu'un son de notification) :
+              // on retire l'app du store, sinon la mini-barre resterait à
+              // l'écran indéfiniment.
+              playing = false;
+              clearMedia(app.id);
+            }
+            schedule();
+          }).catch(() => schedule());
+        } else {
+          schedule();
+        }
+      } catch {
+        schedule(); // webview pas prêt / détaché
+      }
+    };
+
+    // Les événements du webview ne servent qu'à réagir SANS attendre le
+    // prochain sondage ; ils ne pilotent plus le cycle de vie du suivi.
+    const onMediaEvent = () => {
+      clearTimeout(timer);
+      timer = setTimeout(tick, 100);
+    };
+    wv.addEventListener('media-started-playing', onMediaEvent);
+    wv.addEventListener('media-paused', onMediaEvent);
+    schedule();
+
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+      clearMedia(app.id);
+      wv.removeEventListener('media-started-playing', onMediaEvent);
+      wv.removeEventListener('media-paused', onMediaEvent);
+    };
+  }, [app.id, setMedia, clearMedia]);
 
   // Quand on ouvre l'app (elle devient active), on la considère LUE : on réarme
   // le plafond de notifications → un prochain message re-notifiera.

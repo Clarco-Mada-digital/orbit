@@ -8,7 +8,7 @@ import { resolveLang, useT } from '../../lib/i18n';
 // supplémentaires (utile quand on bosse avec des équipes ailleurs).
 // placement : 'top' (barre en haut → panneau s'ouvre vers le bas)
 // ou 'bottom' (barre en bas → panneau s'ouvre vers le haut).
-export default function ClockWidget({ placement = 'top' }) {
+export default function ClockWidget({ placement = 'top', align = 'right-0' }) {
   const t = useT();
   const settings = useStore((s) => s.settings);
   const lang = resolveLang(settings?.language);
@@ -98,7 +98,7 @@ export default function ClockWidget({ placement = 'top' }) {
       </button>
 
       {open && (
-        <div className={`absolute right-0 ${placement === 'bottom' ? 'bottom-full mb-2' : 'top-full mt-2'} w-64 bg-bg-elevated border border-border rounded-xl shadow-2xl overflow-hidden z-50 animate-scale-in`}>
+        <div className={`absolute ${align} ${placement === 'bottom' ? 'bottom-full mb-2' : 'top-full mt-2'} w-64 bg-bg-elevated border border-border rounded-xl shadow-2xl overflow-hidden z-50 animate-scale-in`}>
           <div className="px-4 py-3 border-b border-border">
             <div className="text-2xl font-semibold tabular-nums">{time}</div>
             <div className="text-sm text-text-muted mt-0.5">

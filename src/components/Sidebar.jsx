@@ -9,7 +9,7 @@ import { useMediaStore } from '../lib/mediaStore';
 import { getWebview } from '../lib/webviewRegistry';
 import { useT } from '../lib/i18n';
 
-export default function Sidebar({ collapsed, onToggle, onOpenSettings, onOpenStore, onOpenProfileManager, onSelectApp }) {
+export default function Sidebar({ collapsed, onToggle, onOpenSettings, onOpenStore, onOpenProfileManager, onSelectApp, bottomOffset = 0 }) {
   const { profiles, activeProfile, setActiveProfile, getProfileApps, activeApp, settings, reorderApps, containers } = useStore();
   const { lockedProfileIds, unlockedProfileIds } = useSecurityStore();
   const t = useT();
@@ -105,9 +105,13 @@ export default function Sidebar({ collapsed, onToggle, onOpenSettings, onOpenSto
 
   return (
     <aside
-      className={`fixed left-0 top-12 bottom-0 bg-bg-secondary border-r border-border transition-all duration-300 flex flex-col z-10 ${
+      className={`fixed left-0 top-12 bg-bg-secondary border-r border-border transition-all duration-300 flex flex-col z-10 ${
         collapsed ? 'w-16' : 'w-[17.5rem]'
       }`}
+      // La barre du bas court sur TOUTE la largeur : la sidebar s'arrête
+      // au-dessus, sinon elle recouvrait la zone gauche de cette barre et les
+      // modules qu'on y place restaient invisibles.
+      style={{ bottom: bottomOffset }}
     >
       {/* Header avec toggle */}
       <div className={`h-14 flex items-center ${collapsed ? 'px-2' : 'px-4'} border-b border-border gap-1`}>

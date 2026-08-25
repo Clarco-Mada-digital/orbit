@@ -21,7 +21,7 @@ export default function Topbar({
   const layout = normalizeTopbar(settings?.topbar);
   const renderZone = (zone, className) => (
     <div className={className}>
-      {(layout[zone] || []).map((id, i) => renderModule(id, `${zone}-${id}-${i}`))}
+      {(layout[zone] || []).map((id, i) => renderModule(id, `${zone}-${id}-${i}`, zone))}
     </div>
   );
 

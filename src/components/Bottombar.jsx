@@ -13,7 +13,7 @@ export default function Bottombar({ onOpenQuickSwitcher }) {
   const layout = normalizeTopbar(settings?.bottombar, DEFAULT_BOTTOMBAR);
   const renderZone = (zone, className) => (
     <div className={className}>
-      {(layout[zone] || []).map((id, i) => renderModule(id, `${zone}-${id}-${i}`))}
+      {(layout[zone] || []).map((id, i) => renderModule(id, `${zone}-${id}-${i}`, zone))}
     </div>
   );
 

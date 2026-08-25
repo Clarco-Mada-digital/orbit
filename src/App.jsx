@@ -612,6 +612,9 @@ export default function App() {
 
   // Largeurs en rem → elles suivent la taille de police réglée
   const sidebarWidth = sidebarCollapsed ? '4rem' : '17.5rem';
+  // Hauteur de la barre du bas (h-10) quand elle est affichée : la sidebar
+  // s'arrête juste au-dessus pour ne pas masquer sa zone gauche.
+  const bottombarHeight = !isFullscreen && settings.bottombarEnabled ? '2.5rem' : 0;
   const hasApps = profileApps.length > 0;
 
   // Un overlay (Réglages, Boutique…) est ouvert : on masque les webviews.
@@ -679,6 +682,7 @@ export default function App() {
           onOpenStore={() => setShowAppStore(true)}
           onOpenProfileManager={() => setShowProfileManager(true)}
           onSelectApp={handleSetActiveApp}
+          bottomOffset={bottombarHeight}
         />
         )}
 

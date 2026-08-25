@@ -559,6 +559,198 @@ async function translateSelection(wc, text) {
 }
 
 // ---------------------------------------------------------------------------
+// Captures d'écran d'une page (clic droit → Capture d'écran)
+// ---------------------------------------------------------------------------
+// Trois modes : la zone VISIBLE (ce qu'on voit), la PAGE ENTIÈRE (au-delà du
+// défilement, via le protocole DevTools) et une SÉLECTION dessinée à la souris.
+// Le PNG part dans « Images/Orbit » ET dans le presse-papiers (coller direct
+// dans un mail, un chat…), avec une entrée dans le panneau Téléchargements.
+
+// Sélecteur de zone injecté DANS la page : superposition + rectangle tiré à la
+// souris. Résout {x,y,width,height} en pixels CSS, ou null si annulé (Échap,
+// clic simple). La superposition est retirée AVANT de résoudre — sinon elle se
+// retrouverait sur la capture.
+const PICK_REGION_JS = `(() => new Promise((resolve) => {
+  try {
+    if (typeof window.__orbitPickCancel__ === 'function') window.__orbitPickCancel__();
+    const ov = document.createElement('div');
+    ov.style.cssText = 'position:fixed;inset:0;z-index:2147483647;cursor:crosshair;background:rgba(15,23,42,.28)';
+    const box = document.createElement('div');
+    box.style.cssText = 'position:fixed;display:none;border:1.5px solid #6366f1;background:rgba(99,102,241,.18);pointer-events:none';
+    const hint = document.createElement('div');
+    hint.textContent = 'Glissez pour choisir la zone — Échap pour annuler';
+    hint.style.cssText = 'position:fixed;top:18px;left:50%;transform:translateX(-50%);padding:7px 14px;border-radius:999px;background:#111827;color:#f3f4f6;font:13px system-ui,sans-serif;box-shadow:0 6px 20px rgba(0,0,0,.4);pointer-events:none';
+    ov.appendChild(box);
+    ov.appendChild(hint);
+
+    let sx = 0, sy = 0, dragging = false, rect = null;
+    const cleanup = () => {
+      window.__orbitPickCancel__ = null;
+      ov.remove();
+      document.removeEventListener('keydown', onKey, true);
+    };
+    // Deux rendus d'attente : la page doit être REPEINTE sans la superposition
+    // avant que le processus principal ne déclenche la capture.
+    const done = (r) => {
+      cleanup();
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve(r)));
+    };
+    const draw = (e) => {
+      const x = Math.min(sx, e.clientX), y = Math.min(sy, e.clientY);
+      const w = Math.abs(e.clientX - sx), h = Math.abs(e.clientY - sy);
+      box.style.left = x + 'px'; box.style.top = y + 'px';
+      box.style.width = w + 'px'; box.style.height = h + 'px';
+      rect = { x: x, y: y, width: w, height: h };
+    };
+    const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(null); } };
+    ov.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      dragging = true; sx = e.clientX; sy = e.clientY;
+      hint.style.display = 'none';
+      box.style.display = 'block';
+      draw(e);
+    });
+    ov.addEventListener('mousemove', (e) => { if (dragging) draw(e); });
+    ov.addEventListener('mouseup', (e) => {
+      if (!dragging) return;
+      dragging = false;
+      draw(e);
+      done(rect && rect.width > 4 && rect.height > 4 ? rect : null);
+    });
+    document.addEventListener('keydown', onKey, true);
+    window.__orbitPickCancel__ = () => done(null);
+    (document.body || document.documentElement).appendChild(ov);
+  } catch (e) { resolve(null); }
+}))()`;
+
+// Dossier des captures : « Images/Orbit », repli sur les téléchargements si le
+// système n'expose pas de dossier Images (certains Linux minimalistes).
+function screenshotDir() {
+  let base;
+  try {
+    base = app.getPath('pictures');
+  } catch {
+    base = app.getPath('downloads');
+  }
+  const dir = path.join(base, 'Orbit');
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    return dir;
+  } catch {
+    return base;
+  }
+}
+
+function screenshotName() {
+  const d = new Date();
+  const p = (n) => String(n).padStart(2, '0');
+  return `Orbit ${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}h${p(d.getMinutes())}m${p(d.getSeconds())}s.png`;
+}
+
+// Page ENTIÈRE : capturePage() s'arrête au viewport. On passe donc par le
+// protocole DevTools (captureBeyondViewport), seul moyen d'aller au-delà du
+// défilement. Chromium plafonne la surface : on borne à 16384 px.
+async function captureFullPage(wc) {
+  const dbg = wc.debugger;
+  let attached = false;
+  try {
+    if (!dbg.isAttached()) {
+      dbg.attach('1.3');
+      attached = true;
+    }
+    const metrics = await dbg.sendCommand('Page.getLayoutMetrics');
+    const size = metrics.cssContentSize || metrics.contentSize || {};
+    const width = Math.min(Math.ceil(size.width || 0), 16384);
+    const height = Math.min(Math.ceil(size.height || 0), 16384);
+    if (!width || !height) throw new Error('taille de page inconnue');
+    const shot = await dbg.sendCommand('Page.captureScreenshot', {
+      format: 'png',
+      captureBeyondViewport: true,
+      fromSurface: true,
+      clip: { x: 0, y: 0, width, height, scale: 1 },
+    });
+    return nativeImage.createFromBuffer(Buffer.from(shot.data, 'base64'));
+  } catch (err) {
+    // DevTools déjà ouverts (mode dev) → le débogueur refuse de s'attacher.
+    // Mieux vaut la zone visible qu'aucune capture.
+    console.error('[orbit] capture page entière indisponible:', err.message);
+    return wc.capturePage();
+  } finally {
+    if (attached) {
+      try {
+        dbg.detach();
+      } catch {
+        /* déjà détaché */
+      }
+    }
+  }
+}
+
+// Sélection : coordonnées rendues en pixels CSS → converties en points
+// indépendants du périphérique (ce qu'attend capturePage) via le zoom de la page.
+async function pickRegion(wc) {
+  const r = await wc.executeJavaScript(PICK_REGION_JS, true);
+  if (!r) return null;
+  const zoom = typeof wc.getZoomFactor === 'function' ? wc.getZoomFactor() : 1;
+  const rect = {
+    x: Math.round(r.x * zoom),
+    y: Math.round(r.y * zoom),
+    width: Math.round(r.width * zoom),
+    height: Math.round(r.height * zoom),
+  };
+  return rect.width > 2 && rect.height > 2 ? rect : null;
+}
+
+async function captureGuestPage(wc, mode) {
+  try {
+    let image;
+    if (mode === 'full') {
+      image = await captureFullPage(wc);
+    } else if (mode === 'selection') {
+      const rect = await pickRegion(wc);
+      if (!rect) return; // annulé par l'utilisateur : rien à signaler
+      image = await wc.capturePage(rect);
+    } else {
+      image = await wc.capturePage();
+    }
+    if (!image || image.isEmpty()) throw new Error('image vide');
+
+    const savePath = uniquePath(path.join(screenshotDir(), screenshotName()));
+    const png = image.toPNG();
+    fs.writeFileSync(savePath, png);
+    clipboard.writeImage(image);
+
+    // Réutilise le panneau Téléchargements : la capture y apparaît terminée,
+    // avec « ouvrir » / « afficher dans le dossier ».
+    broadcastDownload({
+      id: `shot-${Date.now()}`,
+      filename: path.basename(savePath),
+      savePath,
+      url: wc.getURL(),
+      totalBytes: png.length,
+      receivedBytes: png.length,
+      state: 'completed',
+      event: 'done',
+    });
+
+    if (Notification.isSupported()) {
+      const notif = new Notification({
+        title: 'Capture enregistrée',
+        body: `${path.basename(savePath)} — également copiée dans le presse-papiers`,
+        silent: true,
+      });
+      notif.on('click', () => shell.showItemInFolder(savePath));
+      notif.show();
+    }
+  } catch (err) {
+    console.error('[orbit] capture échouée:', err);
+    if (Notification.isSupported()) {
+      new Notification({ title: 'Capture impossible', body: err.message }).show();
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Menu contextuel des pages (clic droit) — absent par défaut dans un <webview>
 // ---------------------------------------------------------------------------
 // Construit un menu natif adapté à ce qui est sous le curseur : image (copier /
@@ -648,6 +840,16 @@ function buildGuestContextMenu(wc, params) {
     t.push({ label: 'Arrêter la lecture', click: () => stopSpeaking(wc) });
     t.push({ type: 'separator' });
   }
+  // Capture d'écran : toujours proposée (même dans un champ de saisie)
+  t.push({
+    label: "Capture d'écran",
+    submenu: [
+      { label: 'Zone visible', click: () => captureGuestPage(wc, 'visible') },
+      { label: 'Page entière', click: () => captureGuestPage(wc, 'full') },
+      { label: 'Sélection…', click: () => captureGuestPage(wc, 'selection') },
+    ],
+  });
+  t.push({ type: 'separator' });
   t.push({ label: 'Précédent', enabled: canBack, click: goBack });
   t.push({ label: 'Suivant', enabled: canFwd, click: goForward });
   t.push({ label: 'Recharger', click: () => wc.reload() });
