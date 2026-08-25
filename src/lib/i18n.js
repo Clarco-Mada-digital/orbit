@@ -106,6 +106,17 @@ export const fr = {
   'sb.unmute': 'Réactiver le son',
   'sb.mute': 'Couper le son',
   'sb.notifMuted': 'Notifications coupées',
+  'sb.signedOut': 'Session perdue — cette app est revenue sur sa page de connexion',
+  'dg.title': 'Journal de diagnostic',
+  'dg.desc':
+    "Incidents des apps depuis le lancement d'Orbit : échecs de chargement, pages qui cessent de répondre, sessions perdues, mises en veille automatiques. Utile quand une app se déconnecte ou cesse de répondre sans raison apparente.",
+  'dg.allApps': 'Toutes les apps',
+  'dg.copy': 'Copier',
+  'dg.clear': 'Vider',
+  'dg.empty': 'Aucun incident enregistré. Bon signe.',
+  'dg.note':
+    "Le journal n'est pas conservé : il repart de zéro à chaque démarrage d'Orbit et ne quitte jamais votre machine.",
+  'st.tab.diagnostics': 'Diagnostic',
   'sb.store': 'Boutique d’applications',
   'sb.storeShort': 'Boutique',
 
@@ -792,6 +803,17 @@ export const en = {
   'sb.unmute': 'Unmute',
   'sb.mute': 'Mute',
   'sb.notifMuted': 'Notifications muted',
+  'sb.signedOut': 'Signed out — this app is back on its sign-in page',
+  'dg.title': 'Diagnostic log',
+  'dg.desc':
+    'App incidents since Orbit started: failed loads, pages that stopped responding, lost sessions, automatic sleep. Useful when an app signs out or freezes for no apparent reason.',
+  'dg.allApps': 'All apps',
+  'dg.copy': 'Copy',
+  'dg.clear': 'Clear',
+  'dg.empty': 'No incidents recorded. Good sign.',
+  'dg.note':
+    'The log is not kept: it starts empty every time Orbit launches, and never leaves your machine.',
+  'st.tab.diagnostics': 'Diagnostics',
   'sb.store': 'App store',
   'sb.storeShort': 'Store',
 

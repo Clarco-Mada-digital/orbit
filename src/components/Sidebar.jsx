@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useStore } from '../stores/useStore';
-import { ChevronLeft, ChevronRight, Plus, Settings, Grid, User, Moon, BellOff, Lock, Volume2, VolumeX } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Settings, Grid, User, Moon, BellOff, Lock, Volume2, VolumeX, LogIn } from 'lucide-react';
 import AppContextMenu from './AppContextMenu';
 import AppIcon from './AppIcon';
 import { useSecurityStore } from '../lib/securityStore';
@@ -339,6 +339,16 @@ export default function Sidebar({ collapsed, onToggle, onOpenSettings, onOpenSto
                     {app.muted && (
                       <BellOff size={13} className="text-text-muted flex-shrink-0" title={t('sb.notifMuted')} />
                     )}
+                    {/* Session perdue : l'app est retombée sur sa page de
+                        connexion. Signalé ici pour ne pas le découvrir en
+                        cliquant dessus (voir WebView → 'session-lost'). */}
+                    {app.signedOut && !app.sleeping && (
+                      <LogIn
+                        size={13}
+                        className="text-warning flex-shrink-0"
+                        title={t('sb.signedOut')}
+                      />
+                    )}
                     {app.unread > 0 && !app.sleeping && (
                       <span className="badge flex-shrink-0">{app.unread > 99 ? '99+' : app.unread}</span>
                     )}
@@ -346,6 +356,12 @@ export default function Sidebar({ collapsed, onToggle, onOpenSettings, onOpenSto
                 )}
                 {collapsed && app.unread > 0 && !app.sleeping && (
                   <div className="absolute -right-0.5 -top-0.5 w-2.5 h-2.5 rounded-full bg-accent-primary border-2 border-bg-secondary"></div>
+                )}
+                {collapsed && app.signedOut && !app.sleeping && (
+                  <div
+                    className="absolute -right-0.5 -bottom-0.5 w-2.5 h-2.5 rounded-full bg-warning border-2 border-bg-secondary"
+                    title={t('sb.signedOut')}
+                  ></div>
                 )}
               </button>
             ))}

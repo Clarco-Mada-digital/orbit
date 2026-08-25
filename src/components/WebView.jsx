@@ -50,7 +50,8 @@ const READ_MEDIA_FN = `(() => {
     };
   } catch (e) { return { hasMedia: false }; }
 })()`;
-import { computeStartUrl, reloadUrlFor } from '../lib/urls';
+import { computeStartUrl, reloadUrlFor, isLoginPageUrl } from '../lib/urls';
+import { logDiagnostic } from '../lib/diagnosticsStore';
 import { recipes } from '../lib/recipes';
 import { CHROME_UA } from '../lib/userAgent';
 import { appPartition } from '../lib/session';
@@ -135,6 +136,37 @@ export default function WebView({ app, active, visible, flexLayout }) {
         /* ignore */
       }
       if (url) updateApp(app.id, { url });
+
+      // « Session perdue » : l'app est retombée d'elle-même sur SA page de
+      // connexion. Jusqu'ici on ne s'en apercevait qu'en cliquant sur l'app —
+      // avec ce marqueur, la barre latérale le signale tout de suite.
+      // On ne compare que sur le MÊME hôte que la maison : un flux OAuth qui
+      // passe par accounts.google.com n'est pas une déconnexion de l'app.
+      if (url) {
+        const home = app.homeUrl || app.url || '';
+        let sameHost = false;
+        try {
+          sameHost = new URL(url).hostname === new URL(home).hostname;
+        } catch {
+          sameHost = false;
+        }
+        const lost = sameHost && isLoginPageUrl(url);
+        // Lecture de l'état COURANT (pas la prop capturée) : on n'écrit que
+        // sur transition, sinon chaque navigation réécrirait le store.
+        const known = !!useStore.getState().apps.find((a) => a.id === app.id)?.signedOut;
+        if (lost !== known) {
+          updateApp(app.id, { signedOut: lost });
+          if (lost) {
+            logDiagnostic(
+              app.id,
+              app.name,
+              'session-lost',
+              'Retour sur la page de connexion',
+              url
+            );
+          }
+        }
+      }
     };
 
     const handleTitle = (e) => {
@@ -201,6 +233,13 @@ export default function WebView({ app, active, visible, flexLayout }) {
       if (e.errorCode === -310 && Date.now() - redirectLoopRef.current > 30000) {
         redirectLoopRef.current = Date.now();
         console.warn('[orbit] boucle de redirection détectée — purge de la session', app.name, e.url || '');
+        logDiagnostic(
+          app.id,
+          app.name,
+          'redirect-loop',
+          'Boucle de redirection — cookies de l’hôte purgés',
+          e.url || app.url || ''
+        );
         const sessionKey = app.sessionKey || `${app.profileId}:${app.id}`;
         let host = '';
         try {
@@ -226,6 +265,13 @@ export default function WebView({ app, active, visible, flexLayout }) {
         return;
       }
       console.warn('[orbit] échec de chargement', app.name, e.errorCode, e.errorDescription);
+      logDiagnostic(
+        app.id,
+        app.name,
+        'load-failed',
+        `Échec de chargement (${e.errorCode})`,
+        `${e.errorDescription || ''} ${e.url || ''}`.trim()
+      );
     };
 
     // Indicateur de chargement. Deux vitesses :
@@ -239,6 +285,7 @@ export default function WebView({ app, active, visible, flexLayout }) {
       // 'clean-exit' = fermeture normale (ex. navigation) : pas un crash.
       if (e && e.reason === 'clean-exit') return;
       console.warn('[orbit] webview planté', app.name, e?.reason || '');
+      logDiagnostic(app.id, app.name, 'crash', 'La page a cessé de répondre', e?.reason || '');
       setCrashed(true);
     };
 

@@ -13,6 +13,7 @@ import {
   ShieldCheck,
   Ban,
   Archive,
+  Stethoscope,
   Globe,
 } from 'lucide-react';
 import { useStore } from '../stores/useStore';
@@ -21,6 +22,7 @@ import Extensions from './Extensions';
 import KeepassSettings from './KeepassSettings';
 import SecuritySettings from './SecuritySettings';
 import BackupSettings from './BackupSettings';
+import Diagnostics from './Diagnostics';
 import TopbarSettings from './TopbarSettings';
 import { shortcutKeys } from '../lib/shortcuts';
 import { useT } from '../lib/i18n';
@@ -110,6 +112,7 @@ export default function Settings({ onClose }) {
     { id: 'privacy', name: t('st.tab.privacy'), icon: Ban },
     { id: 'backup', name: t('st.tab.backup'), icon: Archive },
     { id: 'notifications', name: t('st.tab.notifications'), icon: Bell },
+    { id: 'diagnostics', name: t('st.tab.diagnostics'), icon: Stethoscope },
     { id: 'about', name: t('st.tab.about'), icon: Info },
   ];
 
@@ -920,6 +923,8 @@ export default function Settings({ onClose }) {
                   </div>
                 </div>
               )}
+
+              {activeTab === 'diagnostics' && <Diagnostics />}
 
               {activeTab === 'about' && (
                 <div className="space-y-6">

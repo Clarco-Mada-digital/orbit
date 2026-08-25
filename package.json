@@ -1,6 +1,6 @@
 {
   "name": "orbit",
-  "version": "1.7.0",
+  "version": "1.7.1",
   "description": "Orbit — toutes vos apps web dans une seule fenêtre (Windows, macOS, Linux)",
   "main": "electron/main.js",
   "type": "module",

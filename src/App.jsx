@@ -19,6 +19,7 @@ import { mediaToggle, mediaPrev, mediaNext, mediaSeek, pickNowPlaying } from './
 import { appViewKey, appPartition, resolveProxy } from './lib/session';
 import { matchShortcut } from './lib/shortcuts';
 import { reloadApp } from './lib/webviewRegistry';
+import { logDiagnostic } from './lib/diagnosticsStore';
 
 // Construit l'état à afficher dans le mini-lecteur flottant (ou null)
 function buildMiniPlayerState() {
@@ -166,7 +167,18 @@ export default function App() {
           lastSeen[a.id] = now; // première observation → on démarre le compteur
           continue;
         }
-        if (now - lastSeen[a.id] > thresholdMs) st.toggleAppSleep(a.id);
+        if (now - lastSeen[a.id] > thresholdMs) {
+          st.toggleAppSleep(a.id);
+          // Tracé dans le journal : une app qui s'endort ferme sa page, ce qui
+          // ressemble à une déconnexion vue de l'utilisateur. Savoir que c'est
+          // la veille automatique évite de chercher un bug ailleurs.
+          logDiagnostic(
+            a.id,
+            a.name,
+            'sleep',
+            `Mise en veille automatique après ${mins} min d'inactivité`
+          );
+        }
       }
     };
     const id = setInterval(tick, 60000);
