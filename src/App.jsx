@@ -608,7 +608,7 @@ export default function App() {
     if (action === 'next-app' || action === 'prev-app') {
       const { activeProfile, apps: all, activeApp, setActiveApp: setAa } = useStore.getState();
       const list = all
-        .filter((a) => a.profileId === activeProfile && !a.sleeping)
+        .filter((a) => appVisibleIn(a, activeProfile) && !a.sleeping)
         .sort((a, b) => a.order - b.order);
       if (list.length === 0) return;
       const idx = list.findIndex((a) => a.id === activeApp);
@@ -623,7 +623,7 @@ export default function App() {
     if (m) {
       const { activeProfile, apps: all, setActiveApp: setAa } = useStore.getState();
       const list = all
-        .filter((a) => a.profileId === activeProfile && !a.sleeping)
+        .filter((a) => appVisibleIn(a, activeProfile) && !a.sleeping)
         .sort((a, b) => a.order - b.order);
       const target = list[parseInt(m[1], 10) - 1];
       if (target) setAa(target.id);
@@ -676,7 +676,11 @@ export default function App() {
         useStore.getState();
       const target = all.find((a) => a.id === appId);
       if (!target) return;
-      setProfile(target.profileId);
+      // Une app de portée « tous les profils » est déjà atteignable d'où l'on
+      // est : basculer sur son profil d'origine ferait changer tout le reste de
+      // l'écran pour rien.
+      const { activeProfile: cur } = useStore.getState();
+      if (!appVisibleIn(target, cur)) setProfile(target.profileId);
       if (target.sleeping) toggleSleep(target.id);
       setAa(target.id);
     });
@@ -827,10 +831,15 @@ export default function App() {
             style={{ visibility: overlayOpen ? 'hidden' : 'visible' }}
           >
             {liveApps.map((a) => {
-                  // Une app n'est « active/visible » que si elle appartient au
-                  // profil courant. Les autres restent montées mais masquées
-                  // (leur page/session survivent à la bascule de profil).
-                  const inActive = a.profileId === activeProfile;
+                  // Une app n'est « active/visible » que si elle est ATTEIGNABLE
+                  // depuis le profil courant — ce qui inclut les apps de portée
+                  // « tous les profils ». Tester l'appartenance stricte les
+                  // montait sans jamais les afficher : elles apparaissaient dans
+                  // la barre latérale mais leur page restait invisible hors de
+                  // leur profil d'origine.
+                  // Les autres restent montées mais masquées (leur page et leur
+                  // session survivent à la bascule de profil).
+                  const inActive = appVisibleIn(a, activeProfile);
                   const inSplit = inActive && activeSplit && activeSplit.appIds.includes(a.id);
                   const idx = inSplit ? activeSplit.appIds.indexOf(a.id) : -1;
                   const gridMode = activeSplit && activeSplit.appIds.length >= 3;
