@@ -52,6 +52,12 @@ export function matchShortcut(e) {
   if (shift && k === 'm') return 'mark-all-read';
   if (k === 's') return 'toggle-sleep';
   if (k === 'b') return 'toggle-sidebar';
+  if (shift && k === 'h') return 'toggle-bars';
+  // Profil suivant / précédent : même geste que pour les apps, avec ⇧.
+  // Doit être testé AVANT la version sans ⇧, sinon Alt+⇧+Page↓ serait avalé
+  // par « app suivante ».
+  if (shift && k === 'pagedown') return 'next-profile';
+  if (shift && k === 'pageup') return 'prev-profile';
   if (k === 'pagedown') return 'next-app';
   if (k === 'pageup') return 'prev-app';
   if (/^[1-9]$/.test(k)) return `app-${k}`;
@@ -94,6 +100,12 @@ export function matchShortcutInput(input) {
   if (shift && k === 'm') return 'mark-all-read';
   if (k === 's') return 'toggle-sleep';
   if (k === 'b') return 'toggle-sidebar';
+  if (shift && k === 'h') return 'toggle-bars';
+  // Profil suivant / précédent : même geste que pour les apps, avec ⇧.
+  // Doit être testé AVANT la version sans ⇧, sinon Alt+⇧+Page↓ serait avalé
+  // par « app suivante ».
+  if (shift && k === 'pagedown') return 'next-profile';
+  if (shift && k === 'pageup') return 'prev-profile';
   if (k === 'pagedown') return 'next-app';
   if (k === 'pageup') return 'prev-app';
   if (/^[1-9]$/.test(k)) return `app-${k}`;
@@ -121,8 +133,20 @@ export function shortcutKeys(t) {
     { keys: [M, 'S'], desc: d('sc.sleep', "Mettre en veille / réveiller l'app active") },
     { keys: [M, 'B'], desc: d('sc.sidebar', 'Réduire / agrandir la barre latérale') },
     { keys: [M, '⇧', 'M'], desc: d('sc.markAll', 'Tout marquer comme lu') },
+    {
+      keys: [M, '⇧', 'H'],
+      desc: d('sc.bars', 'Afficher / masquer les barres cachées (mode épuré)'),
+    },
     { keys: mac ? [M, '`'] : [M, 'Page ↓'], desc: d('sc.nextApp', "Passer à l'app suivante") },
     { keys: mac ? [M, '⇧', '`'] : [M, 'Page ↑'], desc: d('sc.prevApp', "Passer à l'app précédente") },
+    {
+      keys: [M, '⇧', 'Page ↓'],
+      desc: d('sc.nextProfile', 'Passer au profil suivant'),
+    },
+    {
+      keys: [M, '⇧', 'Page ↑'],
+      desc: d('sc.prevProfile', 'Passer au profil précédent'),
+    },
     { keys: [M, '1…9'], desc: d('sc.gotoApp', 'Aller directement à l’app n° 1 à 9') },
     { keys: [M, '+'], desc: d('sc.zoomIn', 'Zoom avant (app active)') },
     { keys: [M, '−'], desc: d('sc.zoomOut', 'Zoom arrière (app active)') },

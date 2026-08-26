@@ -14,6 +14,7 @@ import {
   Ban,
   Archive,
   Stethoscope,
+  Volume2,
   Globe,
 } from 'lucide-react';
 import { useStore } from '../stores/useStore';
@@ -23,6 +24,8 @@ import KeepassSettings from './KeepassSettings';
 import SecuritySettings from './SecuritySettings';
 import BackupSettings from './BackupSettings';
 import Diagnostics from './Diagnostics';
+import PasswordVault from './PasswordVault';
+import VoiceSettings from './VoiceSettings';
 import TopbarSettings from './TopbarSettings';
 import { shortcutKeys } from '../lib/shortcuts';
 import { useT } from '../lib/i18n';
@@ -107,11 +110,13 @@ export default function Settings({ onClose }) {
     { id: 'profiles', name: t('st.tab.profiles'), icon: User },
     { id: 'shortcuts', name: t('st.tab.shortcuts'), icon: Keyboard },
     { id: 'extensions', name: t('st.tab.extensions'), icon: Puzzle },
+    { id: 'passwords', name: t('st.tab.passwords'), icon: KeyRound },
     { id: 'keepass', name: 'KeePassXC', icon: KeyRound },
     { id: 'security', name: t('st.tab.security'), icon: ShieldCheck },
     { id: 'privacy', name: t('st.tab.privacy'), icon: Ban },
     { id: 'backup', name: t('st.tab.backup'), icon: Archive },
     { id: 'notifications', name: t('st.tab.notifications'), icon: Bell },
+    { id: 'voice', name: t('st.tab.voice'), icon: Volume2 },
     { id: 'diagnostics', name: t('st.tab.diagnostics'), icon: Stethoscope },
     { id: 'about', name: t('st.tab.about'), icon: Info },
   ];
@@ -290,15 +295,49 @@ export default function Settings({ onClose }) {
 
                   <div className="card">
                     <h4 className="font-semibold mb-4">{t('st.interface')}</h4>
+                    {/* Mode épuré : chaque barre peut disparaître et revenir au
+                        survol du bord de l'écran. Remplace l'ancien
+                        interrupteur unique, qui n'était branché à rien. */}
+                    <div className="mb-4">
+                      <div className="font-medium">{t('st.zen')}</div>
+                      <div className="text-sm text-text-muted mb-3">{t('st.zenDesc')}</div>
+                      <div className="flex flex-wrap gap-2">
+                        {[
+                          { id: 'top', label: t('st.zen.top') },
+                          { id: 'left', label: t('st.zen.left') },
+                          { id: 'bottom', label: t('st.zen.bottom') },
+                        ].map((zone) => {
+                          const on = Boolean(settings.autoHide?.[zone.id]);
+                          return (
+                            <button
+                              key={zone.id}
+                              onClick={() =>
+                                updateSettings({
+                                  autoHide: { ...(settings.autoHide || {}), [zone.id]: !on },
+                                })
+                              }
+                              className={`px-3 py-1.5 rounded-lg text-sm border transition-colors ${
+                                on
+                                  ? 'border-accent-primary bg-accent-primary/10 text-accent-primary'
+                                  : 'border-border text-text-secondary hover:bg-bg-hover'
+                              }`}
+                            >
+                              {zone.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <p className="text-xs text-text-muted mt-2">{t('st.zenHint')}</p>
+                    </div>
                     <label className="flex items-center justify-between mb-3">
                       <div>
-                        <div className="font-medium">{t('st.hideTopbar')}</div>
-                        <div className="text-sm text-text-muted">{t('st.hideTopbarDesc')}</div>
+                        <div className="font-medium">{t('st.nativeCtxMenu')}</div>
+                        <div className="text-sm text-text-muted">{t('st.nativeCtxMenuDesc')}</div>
                       </div>
                       <input
                         type="checkbox"
-                        checked={settings.autoHideTopbar}
-                        onChange={(e) => updateSettings({ autoHideTopbar: e.target.checked })}
+                        checked={settings.nativeContextMenu === true}
+                        onChange={(e) => updateSettings({ nativeContextMenu: e.target.checked })}
                         className="w-12 h-6 bg-bg-hover rounded-full relative cursor-pointer appearance-none checked:bg-accent-primary transition-colors after:content-[''] after:absolute after:top-1 after:left-1 after:w-4 after:h-4 after:bg-white after:rounded-full after:transition-transform checked:after:translate-x-6"
                       />
                     </label>
@@ -650,6 +689,8 @@ export default function Settings({ onClose }) {
 
               {activeTab === 'extensions' && <Extensions />}
 
+              {activeTab === 'passwords' && <PasswordVault />}
+
               {activeTab === 'keepass' && <KeepassSettings />}
 
               {activeTab === 'security' && <SecuritySettings />}
@@ -923,6 +964,8 @@ export default function Settings({ onClose }) {
                   </div>
                 </div>
               )}
+
+              {activeTab === 'voice' && <VoiceSettings />}
 
               {activeTab === 'diagnostics' && <Diagnostics />}
 

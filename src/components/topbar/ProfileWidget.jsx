@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Check, ChevronDown } from 'lucide-react';
 import { useStore } from '../../stores/useStore';
 import { useT } from '../../lib/i18n';
+import { useZoneHold } from '../../lib/autoHide';
+import { useDismiss } from '../../lib/useDismiss';
 
 // Pastille du profil actif dans l'en-tête : d'un coup d'œil on sait si on est
 // en « Travail » ou « Perso », et on bascule sans passer par la barre latérale.
@@ -9,17 +11,14 @@ export default function ProfileWidget({ placement = 'top', align = 'right-0' }) 
   const t = useT();
   const { profiles, activeProfile, setActiveProfile } = useStore();
   const [open, setOpen] = useState(false);
+  // Mode épuré : garde la barre ouverte tant que ce panneau l'est.
+  useZoneHold(placement, 'panel', open);
   const ref = useRef(null);
   const current = profiles.find((p) => p.id === activeProfile);
 
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e) => {
-      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
-    };
-    document.addEventListener('mousedown', onDown);
-    return () => document.removeEventListener('mousedown', onDown);
-  }, [open]);
+  // Clic ailleurs, Échap, clic DANS une app… : règle commune (lib/useDismiss).
+  const closePanel = useCallback(() => setOpen(false), []);
+  useDismiss(ref, open, closePanel);
 
   if (!current) return null;
 

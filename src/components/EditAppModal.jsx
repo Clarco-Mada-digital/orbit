@@ -31,6 +31,10 @@ export default function EditAppModal({ app, onClose }) {
   const effectiveIconEmoji = !iconImage && !useSiteFavicon && (emojiTouched || app.iconEmoji);
   const [color, setColor] = useState(app.color || '#6366f1');
   const [proxy, setProxy] = useState(app.proxy || '');
+  // '' = suit le réglage global, 'on' = toujours bloquer, 'off' = jamais
+  const [adblock, setAdblock] = useState(app.adblock || '');
+  // 'profile' (défaut) = visible dans son profil ; 'all' = dans tous
+  const [scope, setScope] = useState(app.scope === 'all' ? 'all' : 'profile');
   const fileRef = useRef(null);
 
   const isCustom = !app.recipeId; // URL modifiable uniquement pour les apps personnalisées
@@ -59,6 +63,11 @@ export default function EditAppModal({ app, onClose }) {
       iconEmoji: effectiveIconEmoji || undefined,
       // Proxy/VPN spécifique à cette app (vide = suit le profil / le global)
       proxy: proxy.trim() || undefined,
+      // Bloqueur de pub propre à cette app (absent = suit le réglage global)
+      adblock: adblock || undefined,
+      // Portée : une app « tous profils » reste UNE app avec UNE session —
+      // c'est ce qui la distingue d'une seconde installation.
+      scope: scope === 'all' ? 'all' : undefined,
     };
     if (isCustom) {
       const u = normalizeUrl(url);
@@ -207,6 +216,34 @@ export default function EditAppModal({ app, onClose }) {
                 />
               ))}
             </div>
+          </div>
+
+          {/* Portée : profil d'origine seulement, ou tous les profils */}
+          <div>
+            <label className="text-xs text-text-muted block mb-1.5">{t('edit.scopeLabel')}</label>
+            <select value={scope} onChange={(e) => setScope(e.target.value)} className="input">
+              <option value="profile">{t('edit.scopeProfile')}</option>
+              <option value="all">{t('edit.scopeAll')}</option>
+            </select>
+            <p className="text-xs text-text-muted mt-1.5">{t('edit.scopeHint')}</p>
+            {scope === 'all' && (
+              <p className="text-xs text-warning mt-1.5">{t('edit.scopeLockWarning')}</p>
+            )}
+          </div>
+
+          {/* Bloqueur de pub spécifique à cette app */}
+          <div>
+            <label className="text-xs text-text-muted block mb-1.5">{t('edit.adblockLabel')}</label>
+            <select
+              value={adblock}
+              onChange={(e) => setAdblock(e.target.value)}
+              className="input"
+            >
+              <option value="">{t('edit.adblockInherit')}</option>
+              <option value="on">{t('edit.adblockOn')}</option>
+              <option value="off">{t('edit.adblockOff')}</option>
+            </select>
+            <p className="text-xs text-text-muted mt-1.5">{t('edit.adblockHint')}</p>
           </div>
 
           {/* Proxy / VPN spécifique à cette app */}

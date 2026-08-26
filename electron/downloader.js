@@ -64,6 +64,11 @@ export function downloadMedia({ id, url, mode }, onEvent) {
     '--no-playlist',
     '--newline',
     '--no-mtime',
+    // `--` ferme la liste d'options : même si une URL commençait par « - »,
+    // yt-dlp ne pourrait plus la lire comme un drapeau (--exec=… exécuterait
+    // une commande). L'appelant valide déjà le schéma http(s) ; ceci est la
+    // seconde barrière.
+    '--',
     url,
   ];
 

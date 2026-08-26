@@ -16,6 +16,9 @@ import {
   Eraser,
   MoreHorizontal,
   AppWindow,
+  Pin,
+  PinOff,
+  ShieldBan,
   Check as CheckIcon,
 } from 'lucide-react';
 import { useStore } from '../stores/useStore';
@@ -24,6 +27,7 @@ import { reloadUrlFor } from '../lib/urls';
 import { appPartition } from '../lib/session';
 import { useT } from '../lib/i18n';
 import EditAppModal from './EditAppModal';
+import { useGuestDismiss } from '../lib/useDismiss';
 
 // Menu contextuel (clic droit) sur une app de la sidebar :
 // ouvrir / mettre en veille / réveiller / renommer / désinstaller.
@@ -42,6 +46,7 @@ export default function AppContextMenu({ appId, x, y, onClose }) {
     containers,
     setAppContainer,
     createContainerForApp,
+    settings,
   } = useStore();
   const [renaming, setRenaming] = useState(false);
   const [editing, setEditing] = useState(false);
@@ -86,19 +91,23 @@ export default function AppContextMenu({ appId, x, y, onClose }) {
     const onScroll = () => {
       if (!editing) onClose();
     };
-    window.addEventListener('mousedown', close);
+    window.addEventListener('mousedown', close, true);
     window.addEventListener('keydown', onKey);
     window.addEventListener('blur', close);
     window.addEventListener('resize', close);
     document.addEventListener('scroll', onScroll, true);
     return () => {
-      window.removeEventListener('mousedown', close);
+      window.removeEventListener('mousedown', close, true);
       window.removeEventListener('keydown', onKey);
       window.removeEventListener('blur', close);
       window.removeEventListener('resize', close);
       document.removeEventListener('scroll', onScroll, true);
     };
   }, [onClose, renaming, editing, moving, containing, app?.name]);
+
+  // Clic DANS une app embarquée : invisible depuis l'interface sans ce relais.
+  // Le menu restait donc ouvert alors qu'on avait cliqué ailleurs.
+  useGuestDismiss(!editing, onClose);
 
   if (!app) return null;
 
@@ -108,6 +117,10 @@ export default function AppContextMenu({ appId, x, y, onClose }) {
   }
 
   const isActive = activeApp === appId;
+  // Le bloqueur est-il ACTIF sur cette app ? Réglage propre à l'app s'il
+  // existe, sinon le réglage global.
+  const adblockActive =
+    app.adblock === 'on' ? true : app.adblock === 'off' ? false : settings.adblock !== false;
 
   // Profils de destination possibles (tous sauf celui de l'app)
   const otherProfiles = profiles.filter((p) => p.id !== app.profileId);
@@ -367,6 +380,16 @@ export default function AppContextMenu({ appId, x, y, onClose }) {
             {app.muted ? t('ctx.unmute') : t('ctx.mute')}
           </button>
           <button
+            onClick={() => {
+              updateApp(appId, { isFavorite: !app.isFavorite });
+              onClose();
+            }}
+            className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-bg-hover transition-colors"
+          >
+            {app.isFavorite ? <PinOff size={15} /> : <Pin size={15} />}
+            {app.isFavorite ? t('ctx.unpin') : t('ctx.pin')}
+          </button>
+          <button
             onClick={() => setEditing(true)}
             className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-bg-hover transition-colors"
           >
@@ -415,6 +438,21 @@ export default function AppContextMenu({ appId, x, y, onClose }) {
               >
                 <Layers size={15} /> {t('ctx.container')}
                 <ChevronRight size={14} className="ml-auto text-text-muted" />
+              </button>
+              {/* Bloqueur de pub sur CE site : bascule immédiate (un clic pose
+                  une exception explicite pour l'app, dans un sens ou dans
+                  l'autre). Les trois états — dont « suivre le réglage global »
+                  — sont dans Modifier l'app. */}
+              <button
+                onClick={() => {
+                  updateApp(appId, { adblock: adblockActive ? 'off' : 'on' });
+                  onClose();
+                }}
+                className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-bg-hover transition-colors"
+              >
+                <ShieldBan size={15} />
+                <span className="flex-1 text-left">{t('ctx.adblockHere')}</span>
+                {adblockActive && <CheckIcon size={14} className="text-accent-primary" />}
               </button>
               <button
                 onClick={handleClearData}

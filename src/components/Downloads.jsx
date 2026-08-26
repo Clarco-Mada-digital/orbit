@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Download, FolderOpen, X, CheckCircle2, AlertCircle, Trash2, File } from 'lucide-react';
 import { useDownloadsStore } from '../lib/downloadsStore';
 import { useT } from '../lib/i18n';
+import { useZoneHold } from '../lib/autoHide';
+import { useDismiss } from '../lib/useDismiss';
 
 // Octets → format lisible (Ko, Mo…)
 function humanSize(bytes) {
@@ -23,6 +25,8 @@ export default function Downloads({ placement = 'top', align = 'right-0' }) {
   const { downloads, upsert, remove, clearFinished } = useDownloadsStore();
   const t = useT();
   const [open, setOpen] = useState(false);
+  // Mode épuré : garde la barre ouverte tant que ce panneau l'est.
+  useZoneHold(placement, 'panel', open);
   const ref = useRef(null);
 
   // Abonnement aux événements de téléchargement du main process
@@ -37,14 +41,14 @@ export default function Downloads({ placement = 'top', align = 'right-0' }) {
     };
   }, [upsert]);
 
-  // Fermer en cliquant à l'extérieur
-  useEffect(() => {
-    const onClick = (e) => {
-      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
-    };
-    window.addEventListener('click', onClick);
-    return () => window.removeEventListener('click', onClick);
-  }, []);
+  // Fermeture : clic ailleurs, clic dans une app, Échap (voir lib/useDismiss).
+  // C'est ici que se jouait le comportement le plus déroutant : l'ancien
+  // écouteur 'click' se déclenchait APRÈS que React ait retiré la ligne
+  // supprimée du DOM, donc `contains(e.target)` répondait « non » et le panneau
+  // se fermait. Supprimer plusieurs téléchargements obligeait à le rouvrir à
+  // chaque fois.
+  const closePanel = useCallback(() => setOpen(false), []);
+  useDismiss(ref, open, closePanel);
 
   const active = downloads.filter((d) => d.state === 'progressing');
   // Rien à montrer et aucun historique → pas de bouton (évite l'encombrement)

@@ -1,15 +1,28 @@
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useStore } from '../stores/useStore';
-import { ChevronLeft, ChevronRight, Plus, Settings, Grid, User, Moon, BellOff, Lock, Volume2, VolumeX, LogIn } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Settings, Grid, User, Moon, BellOff, Lock, Volume2, VolumeX, LogIn, Globe } from 'lucide-react';
 import AppContextMenu from './AppContextMenu';
 import AppIcon from './AppIcon';
 import { useSecurityStore } from '../lib/securityStore';
 import { useMediaStore } from '../lib/mediaStore';
 import { getWebview } from '../lib/webviewRegistry';
 import { useT } from '../lib/i18n';
+import { useZoneHold, REVEALED_BAR_Z } from '../lib/autoHide';
 
-export default function Sidebar({ collapsed, onToggle, onOpenSettings, onOpenStore, onOpenProfileManager, onSelectApp, bottomOffset = 0 }) {
+export default function Sidebar({
+  collapsed,
+  onToggle,
+  onOpenSettings,
+  onOpenStore,
+  onOpenProfileManager,
+  onSelectApp,
+  bottomOffset = 0,
+  topOffset = '3rem',
+  autoHidden = false,
+  revealed = true,
+  revealHandlers = {},
+}) {
   const { profiles, activeProfile, setActiveProfile, getProfileApps, activeApp, settings, reorderApps, containers } = useStore();
   const { lockedProfileIds, unlockedProfileIds } = useSecurityStore();
   const t = useT();
@@ -31,10 +44,26 @@ export default function Sidebar({ collapsed, onToggle, onOpenSettings, onOpenSto
   const profileShowsLock = (id) =>
     lockedProfileIds.includes(id) && !unlockedProfileIds.includes(id);
   const currentProfile = profiles.find((p) => p.id === activeProfile);
-  const apps = getProfileApps(activeProfile);
+  // Les apps « tous profils » venues d'un profil VERROUILLÉ sont écartées :
+  // la portée globale ne doit pas contourner le verrou de profil.
+  const apps = getProfileApps(activeProfile).filter(
+    (a) => a.profileId === activeProfile || !profileShowsLock(a.profileId)
+  );
+  // Les apps épinglées remontent dans leur propre groupe et SORTENT de la
+  // liste principale : elles y figuraient en double auparavant (une pastille
+  // en haut + la ligne complète en bas), ce qui donnait l'impression que le
+  // favori ne servait à rien. Une app visible dans tous les profils y remonte
+  // aussi — enterrée dans la liste, on ne comprendrait pas ce qu'elle fait là.
+  const isPinned = (a) => a.isFavorite || a.scope === 'all';
+  const pinned = apps.filter(isPinned);
+  const unpinned = apps.filter((a) => !isPinned(a));
 
   // Menu contextuel (clic droit) : { appId, x, y } | null
   const [menu, setMenu] = useState(null);
+  // Ce menu est rendu dans un PORTAIL : il n'est pas descendant de la barre,
+  // donc la souris qui y entre déclencherait la fermeture en mode épuré. On
+  // maintient explicitement la zone ouverte tant qu'il est affiché.
+  useZoneHold('left', 'app-menu', Boolean(menu));
 
   // Glisser-déposer : id de l'app déplacée + id survolé (cible de dépôt)
   const [dragId, setDragId] = useState(null);
@@ -103,15 +132,153 @@ export default function Sidebar({ collapsed, onToggle, onOpenSettings, onOpenSto
     }
   });
 
+
+  // Une ligne d'app. Extraite en fonction parce qu'elle est rendue DEUX fois :
+  // une fois pour les apps épinglées, une fois pour les autres. `list` sert au
+  // repère de dépôt « tout en bas » du groupe.
+  const renderApp = (app, list) => (
+    <button
+      key={app.id}
+      onClick={() => onSelectApp(app.id)}
+      onContextMenu={(e) => openContextMenu(e, app.id)}
+      draggable
+      onDragStart={(e) => handleDragStart(e, app.id)}
+      onDragOver={(e) => handleDragOver(e, app.id)}
+      onDrop={(e) => handleDrop(e, app.id)}
+      onDragEnd={handleDragEnd}
+      className={`w-full flex items-center ${collapsed ? 'justify-center' : 'gap-3'} ${
+        settings.compactMode ? 'px-2 py-1.5' : 'px-3 py-2'
+      } rounded-lg transition-all group relative cursor-pointer active:cursor-grabbing ${
+        app.id === activeApp
+          ? 'bg-accent-primary/10 text-accent-primary'
+          : 'hover:bg-bg-hover text-text-secondary'
+      } ${app.sleeping ? 'opacity-50' : ''} ${
+        dragId === app.id ? 'opacity-50' : ''
+      } ${overId === app.id ? 'ring-2 ring-accent-primary ring-inset' : ''} ${
+        overId === '__end__' && app.id === list[list.length - 1]?.id
+          ? 'ring-2 ring-accent-primary ring-inset'
+          : ''
+      }`}
+      title={collapsed ? app.name : undefined}
+    >
+      {/* Icône : image téléversée → favicon (repli auto) → emoji. Grisée si en veille */}
+      <div
+        className={`${collapsed ? 'w-9 h-9' : 'w-8 h-8'} rounded-lg flex items-center justify-center text-xl flex-shrink-0 relative ${
+          app.sleeping ? 'grayscale opacity-60' : ''
+        }`}
+        style={{ backgroundColor: settings.showAppIcons ? `${app.color}20` : 'transparent' }}
+      >
+        <AppIcon app={app} className="w-5 h-5 rounded" />
+        {/* Comptes multiples (Gmail 1, Gmail 2…) : petit numéro sur
+            l'icône quand la sidebar est réduite pour les distinguer */}
+        {collapsed && app.recipeId && counters[app.recipeId] > 1 && (
+          <span
+            className="absolute -top-1 -left-1 min-w-4 h-4 px-0.5 rounded-full text-[9px] font-bold text-white flex items-center justify-center border border-bg-secondary"
+            style={{ backgroundColor: app.color }}
+            title={`Compte ${instanceIndex[app.id]} / ${counters[app.recipeId]}`}
+          >
+            {instanceIndex[app.id]}
+          </span>
+        )}
+        {app.sleeping && (
+          <span
+            className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-bg-elevated border border-border flex items-center justify-center"
+            title={t('sb.sleeping')}
+          >
+            <Moon size={9} className="text-text-muted" />
+          </span>
+        )}
+        {/* Pastille du conteneur (multi-comptes) */}
+        {app.containerId && (
+          <span
+            className="absolute -bottom-1 -left-1 w-3 h-3 rounded-full border-2 border-bg-secondary"
+            style={{
+              backgroundColor:
+                containers.find((c) => c.id === app.containerId)?.color || '#f59e0b',
+            }}
+            title={`Conteneur : ${containers.find((c) => c.id === app.containerId)?.name || ''}`}
+          />
+        )}
+      </div>
+      {!collapsed && (
+        <>
+          <span className="font-medium text-sm flex-1 text-left truncate">{app.name}</span>
+          {/* Son : apparaît quand l'app joue un média ou qu'elle est
+              coupée → clic pour couper/réactiver (comme un onglet). */}
+          {(media[app.id]?.playing || media[app.id]?.audioMuted) && (
+            <span
+              role="button"
+              tabIndex={0}
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleAppAudio(app.id);
+              }}
+              className={`flex-shrink-0 transition-colors ${
+                media[app.id]?.audioMuted
+                  ? 'text-error hover:text-error'
+                  : 'text-accent-primary hover:text-accent-hover'
+              }`}
+              title={media[app.id]?.audioMuted ? t('sb.unmute') : t('sb.mute')}
+            >
+              {media[app.id]?.audioMuted ? <VolumeX size={13} /> : <Volume2 size={13} />}
+            </span>
+          )}
+          {app.scope === 'all' && (
+            <Globe size={13} className="text-text-muted flex-shrink-0" title={t('sb.allProfiles')} />
+          )}
+          {app.muted && (
+            <BellOff size={13} className="text-text-muted flex-shrink-0" title={t('sb.notifMuted')} />
+          )}
+          {/* Session perdue : l'app est retombée sur sa page de
+              connexion. Signalé ici pour ne pas le découvrir en
+              cliquant dessus (voir WebView → 'session-lost'). */}
+          {app.signedOut && !app.sleeping && (
+            <LogIn
+              size={13}
+              className="text-warning flex-shrink-0"
+              title={t('sb.signedOut')}
+            />
+          )}
+          {app.unread > 0 && !app.sleeping && (
+            <span className="badge flex-shrink-0">{app.unread > 99 ? '99+' : app.unread}</span>
+          )}
+        </>
+      )}
+      {collapsed && app.unread > 0 && !app.sleeping && (
+        <div className="absolute -right-0.5 -top-0.5 w-2.5 h-2.5 rounded-full bg-accent-primary border-2 border-bg-secondary"></div>
+      )}
+      {collapsed && app.signedOut && !app.sleeping && (
+        <div
+          className="absolute -right-0.5 -bottom-0.5 w-2.5 h-2.5 rounded-full bg-warning border-2 border-bg-secondary"
+          title={t('sb.signedOut')}
+        ></div>
+      )}
+    </button>
+  );
+
   return (
     <aside
-      className={`fixed left-0 top-12 bg-bg-secondary border-r border-border transition-all duration-300 flex flex-col z-10 ${
+      className={`fixed left-0 bg-bg-secondary border-r border-border flex flex-col ${
         collapsed ? 'w-16' : 'w-[17.5rem]'
+      } ${
+        // En mode épuré, seule la translation s'anime : animer `width` en même
+        // temps rendrait le glissement saccadé.
+        autoHidden
+          ? 'transition-transform duration-200 ease-out shadow-2xl'
+          : 'transition-all duration-300'
       }`}
       // La barre du bas court sur TOUTE la largeur : la sidebar s'arrête
       // au-dessus, sinon elle recouvrait la zone gauche de cette barre et les
       // modules qu'on y place restaient invisibles.
-      style={{ bottom: bottomOffset }}
+      style={{
+        top: topOffset,
+        bottom: bottomOffset,
+        // Masquable → elle passe au-dessus du contenu (qui ne lui réserve plus
+        // de place) et glisse hors de l'écran quand rien ne la retient.
+        zIndex: autoHidden ? REVEALED_BAR_Z : 10,
+        transform: autoHidden && !revealed ? 'translateX(-100%)' : 'translateX(0)',
+      }}
+      {...revealHandlers}
     >
       {/* Header avec toggle */}
       <div className={`h-14 flex items-center ${collapsed ? 'px-2' : 'px-4'} border-b border-border gap-1`}>
@@ -196,33 +363,24 @@ export default function Sidebar({ collapsed, onToggle, onOpenSettings, onOpenSto
 
       {/* Applications */}
       <div className={`flex-1 overflow-y-auto ${padding}`}>
-        {/* Favoris : accès rapide aux apps marquées d'une ⭐ (via la Topbar) */}
-        {apps.some((a) => a.isFavorite) && (
+        {/* Épinglés : mêmes lignes que les autres apps (nom, badges, pastille
+            de non-lus), simplement remontées en haut et retirées de la liste
+            ci-dessous. Un séparateur marque la frontière plutôt qu'un second
+            titre quand la barre est réduite. */}
+        {pinned.length > 0 && (
           <div className="mb-3">
             {!collapsed && (
-              <div className="text-xs font-semibold text-text-muted uppercase mb-2 px-2">{t('sb.favorites')}</div>
+              <div className="text-xs font-semibold text-text-muted uppercase mb-2 px-2">
+                {t('sb.pinned')}
+              </div>
             )}
-            <div className={`flex flex-wrap ${collapsed ? 'justify-center' : ''} gap-1`}>
-              {apps
-                .filter((a) => a.isFavorite)
-                .map((fav) => (
-                  <button
-                    key={fav.id}
-                    onClick={() => onSelectApp(fav.id)}
-                    onContextMenu={(e) => openContextMenu(e, fav.id)}
-                    title={fav.name}
-                    className={`w-9 h-9 rounded-lg flex items-center justify-center flex-shrink-0 transition-all ${
-                      fav.id === activeApp ? 'ring-2 ring-accent-primary' : 'hover:bg-bg-hover'
-                    } ${fav.sleeping ? 'grayscale opacity-60' : ''}`}
-                    style={{ backgroundColor: settings.showAppIcons ? `${fav.color}20` : 'transparent' }}
-                  >
-                    <AppIcon app={fav} className="w-5 h-5 rounded" />
-                  </button>
-                ))}
+            <div className={`space-y-1 ${spacing}`}>
+              {pinned.map((app) => renderApp(app, pinned))}
             </div>
+            {collapsed && <div className="mt-3 mx-2 border-t border-border"></div>}
           </div>
         )}
-        {!collapsed && (
+        {!collapsed && unpinned.length > 0 && (
           <div className="text-xs font-semibold text-text-muted uppercase mb-2 px-2">{t('sb.applications')}</div>
         )}
         {apps.length === 0 ? (
@@ -249,122 +407,7 @@ export default function Sidebar({ collapsed, onToggle, onOpenSettings, onOpenSto
               if (e.target === e.currentTarget) handleDrop(e, '__end__');
             }}
           >
-            {apps.map((app) => (
-              <button
-                key={app.id}
-                onClick={() => onSelectApp(app.id)}
-                onContextMenu={(e) => openContextMenu(e, app.id)}
-                draggable
-                onDragStart={(e) => handleDragStart(e, app.id)}
-                onDragOver={(e) => handleDragOver(e, app.id)}
-                onDrop={(e) => handleDrop(e, app.id)}
-                onDragEnd={handleDragEnd}
-                className={`w-full flex items-center ${collapsed ? 'justify-center' : 'gap-3'} ${
-                  settings.compactMode ? 'px-2 py-1.5' : 'px-3 py-2'
-                } rounded-lg transition-all group relative cursor-pointer active:cursor-grabbing ${
-                  app.id === activeApp
-                    ? 'bg-accent-primary/10 text-accent-primary'
-                    : 'hover:bg-bg-hover text-text-secondary'
-                } ${app.sleeping ? 'opacity-50' : ''} ${
-                  dragId === app.id ? 'opacity-50' : ''
-                } ${overId === app.id ? 'ring-2 ring-accent-primary ring-inset' : ''} ${
-                  overId === '__end__' && app.id === apps[apps.length - 1]?.id
-                    ? 'ring-2 ring-accent-primary ring-inset'
-                    : ''
-                }`}
-                title={collapsed ? app.name : undefined}
-              >
-                {/* Icône : image téléversée → favicon (repli auto) → emoji. Grisée si en veille */}
-                <div
-                  className={`${collapsed ? 'w-9 h-9' : 'w-8 h-8'} rounded-lg flex items-center justify-center text-xl flex-shrink-0 relative ${
-                    app.sleeping ? 'grayscale opacity-60' : ''
-                  }`}
-                  style={{ backgroundColor: settings.showAppIcons ? `${app.color}20` : 'transparent' }}
-                >
-                  <AppIcon app={app} className="w-5 h-5 rounded" />
-                  {/* Comptes multiples (Gmail 1, Gmail 2…) : petit numéro sur
-                      l'icône quand la sidebar est réduite pour les distinguer */}
-                  {collapsed && app.recipeId && counters[app.recipeId] > 1 && (
-                    <span
-                      className="absolute -top-1 -left-1 min-w-4 h-4 px-0.5 rounded-full text-[9px] font-bold text-white flex items-center justify-center border border-bg-secondary"
-                      style={{ backgroundColor: app.color }}
-                      title={`Compte ${instanceIndex[app.id]} / ${counters[app.recipeId]}`}
-                    >
-                      {instanceIndex[app.id]}
-                    </span>
-                  )}
-                  {app.sleeping && (
-                    <span
-                      className="absolute -bottom-1 -right-1 w-4 h-4 rounded-full bg-bg-elevated border border-border flex items-center justify-center"
-                      title={t('sb.sleeping')}
-                    >
-                      <Moon size={9} className="text-text-muted" />
-                    </span>
-                  )}
-                  {/* Pastille du conteneur (multi-comptes) */}
-                  {app.containerId && (
-                    <span
-                      className="absolute -bottom-1 -left-1 w-3 h-3 rounded-full border-2 border-bg-secondary"
-                      style={{
-                        backgroundColor:
-                          containers.find((c) => c.id === app.containerId)?.color || '#f59e0b',
-                      }}
-                      title={`Conteneur : ${containers.find((c) => c.id === app.containerId)?.name || ''}`}
-                    />
-                  )}
-                </div>
-                {!collapsed && (
-                  <>
-                    <span className="font-medium text-sm flex-1 text-left truncate">{app.name}</span>
-                    {/* Son : apparaît quand l'app joue un média ou qu'elle est
-                        coupée → clic pour couper/réactiver (comme un onglet). */}
-                    {(media[app.id]?.playing || media[app.id]?.audioMuted) && (
-                      <span
-                        role="button"
-                        tabIndex={0}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          toggleAppAudio(app.id);
-                        }}
-                        className={`flex-shrink-0 transition-colors ${
-                          media[app.id]?.audioMuted
-                            ? 'text-error hover:text-error'
-                            : 'text-accent-primary hover:text-accent-hover'
-                        }`}
-                        title={media[app.id]?.audioMuted ? t('sb.unmute') : t('sb.mute')}
-                      >
-                        {media[app.id]?.audioMuted ? <VolumeX size={13} /> : <Volume2 size={13} />}
-                      </span>
-                    )}
-                    {app.muted && (
-                      <BellOff size={13} className="text-text-muted flex-shrink-0" title={t('sb.notifMuted')} />
-                    )}
-                    {/* Session perdue : l'app est retombée sur sa page de
-                        connexion. Signalé ici pour ne pas le découvrir en
-                        cliquant dessus (voir WebView → 'session-lost'). */}
-                    {app.signedOut && !app.sleeping && (
-                      <LogIn
-                        size={13}
-                        className="text-warning flex-shrink-0"
-                        title={t('sb.signedOut')}
-                      />
-                    )}
-                    {app.unread > 0 && !app.sleeping && (
-                      <span className="badge flex-shrink-0">{app.unread > 99 ? '99+' : app.unread}</span>
-                    )}
-                  </>
-                )}
-                {collapsed && app.unread > 0 && !app.sleeping && (
-                  <div className="absolute -right-0.5 -top-0.5 w-2.5 h-2.5 rounded-full bg-accent-primary border-2 border-bg-secondary"></div>
-                )}
-                {collapsed && app.signedOut && !app.sleeping && (
-                  <div
-                    className="absolute -right-0.5 -bottom-0.5 w-2.5 h-2.5 rounded-full bg-warning border-2 border-bg-secondary"
-                    title={t('sb.signedOut')}
-                  ></div>
-                )}
-              </button>
-            ))}
+            {unpinned.map((app) => renderApp(app, unpinned))}
           </div>
         )}
       </div>

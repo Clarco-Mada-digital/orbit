@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { CalendarDays, ChevronLeft, ChevronRight, Clock } from 'lucide-react';
 import { useStore } from '../../stores/useStore';
 import { resolveLang, useT } from '../../lib/i18n';
+import { useZoneHold } from '../../lib/autoHide';
+import { useDismiss } from '../../lib/useDismiss';
 
 // Horloge de l'en-tête. Affiche l'heure (et la date), et déplie un panneau
 // avec la date complète, le numéro de semaine et jusqu'à trois fuseaux
@@ -16,6 +18,8 @@ export default function ClockWidget({ placement = 'top', align = 'right-0' }) {
   const cfg = settings?.clock || {};
   const [now, setNow] = useState(() => new Date());
   const [open, setOpen] = useState(false);
+  // Mode épuré : garde la barre ouverte tant que ce panneau l'est.
+  useZoneHold(placement, 'panel', open);
   // Mois affiché dans la vue calendrier (null = mois courant)
   const [calMonth, setCalMonth] = useState(null);
   const ref = useRef(null);
@@ -28,14 +32,9 @@ export default function ClockWidget({ placement = 'top', align = 'right-0' }) {
     return () => clearInterval(id);
   }, [cfg.seconds]);
 
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e) => {
-      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
-    };
-    document.addEventListener('mousedown', onDown);
-    return () => document.removeEventListener('mousedown', onDown);
-  }, [open]);
+  // Clic ailleurs, Échap, clic DANS une app… : règle commune (lib/useDismiss).
+  const closePanel = useCallback(() => setOpen(false), []);
+  useDismiss(ref, open, closePanel);
 
   const hour12 = cfg.format === '12';
   const timeOpts = {

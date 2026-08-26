@@ -1,4 +1,4 @@
-import { app, BrowserWindow, session, ipcMain, shell, Notification, dialog, net, screen, Menu, clipboard, globalShortcut, Tray, nativeImage, powerMonitor } from 'electron';
+import { app, BrowserWindow, session, ipcMain, shell, Notification, dialog, net, screen, Menu, clipboard, globalShortcut, Tray, nativeImage, powerMonitor, powerSaveBlocker, webContents } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import os from 'node:os';
@@ -7,6 +7,8 @@ import { unpackCrx } from './crx.js';
 import { init as initKeepass, setEnabled as keepassSetEnabled, getLogins as keepassGetLogins, associate as keepassAssociate, checkStatus as keepassCheckStatus } from './keepass.js';
 import * as security from './security.js';
 import * as adblock from './adblock.js';
+import * as vault from './vault.js';
+import * as tts from './tts.js';
 import * as downloader from './downloader.js';
 import electronUpdater from 'electron-updater';
 import { matchShortcutInput } from '../src/lib/shortcuts.js';
@@ -34,6 +36,8 @@ function resourcePath(rel) {
 let tray = null;
 let isQuitting = false;
 let closeToTray = false; // synchronisé depuis les réglages du renderer (opt-in)
+// L'utilisateur a confirmé vouloir quitter malgré des téléchargements en cours
+let downloadQuitConfirmed = false;
 let trayInfoShown = false;
 let summonAccel = null;
 
@@ -322,12 +326,46 @@ function stripFramingHeaders(headers) {
 // Écouteur UNIQUE par session pour onHeadersReceived ET onBeforeRequest.
 // Electron n'autorise qu'un écouteur par événement : on compose donc nous-mêmes
 // le bloqueur de pub (adblock.js) AVEC notre contournement d'encadrement.
+// Réglage du bloqueur PAR APP : 'on' (toujours), 'off' (jamais) ou absent
+// (suit le réglage global). Clé = id du webContents du <webview>, poussé par le
+// renderer à chaque chargement — c'est le seul identifiant fiable : plusieurs
+// apps peuvent partager une session (profil en mode partagé, conteneurs), donc
+// la session ne suffit pas à savoir de quelle app vient une requête.
+const adblockOverrides = new Map();
+
+function adblockActiveFor(webContentsId) {
+  const mode = webContentsId != null ? adblockOverrides.get(webContentsId) : undefined;
+  if (mode === 'off') return false;
+  if (mode === 'on') return true;
+  return adblock.getState().enabled;
+}
+
+ipcMain.handle('adblock:setForContents', (_event, { webContentsId, mode } = {}) => {
+  const id = Number(webContentsId);
+  if (!Number.isInteger(id)) return { success: false };
+  if (mode === 'on' || mode === 'off') {
+    adblockOverrides.set(id, mode);
+    // Le moteur n'est chargé que si le réglage global est actif : une app qui
+    // force le blocage doit pouvoir le déclencher elle-même.
+    if (mode === 'on') adblock.ensureEngine();
+  } else {
+    adblockOverrides.delete(id);
+  }
+  // Nettoyage : sans ça la Map grossirait à chaque rechargement d'app.
+  try {
+    webContents.fromId(id)?.once('destroyed', () => adblockOverrides.delete(id));
+  } catch {
+    /* le webContents peut déjà être parti */
+  }
+  return { success: true };
+});
+
 function setupHeaderBypass(ses) {
   if (!ses || !ses.webRequest) return;
   try {
     // Blocage réseau des pubs/traceurs (no-op si l'adblock est désactivé)
     ses.webRequest.onBeforeRequest((details, callback) => {
-      adblock.beforeRequest(ses, details, callback);
+      adblock.beforeRequest(ses, details, callback, adblockActiveFor(details.webContentsId));
     });
 
     ses.webRequest.onHeadersReceived((details, callback) => {
@@ -343,7 +381,7 @@ function setupHeaderBypass(ses) {
         // 3) Puis on lève X-Frame-Options / frame-ancestors pour l'embarquement
         stripFramingHeaders(headers);
         callback({ ...adResp, responseHeaders: headers });
-      });
+      }, adblockActiveFor(details.webContentsId));
     });
   } catch (err) {
     console.error('[orbit] header bypass failed:', err);
@@ -416,6 +454,50 @@ function uniquePath(p) {
   return candidate;
 }
 
+// Un téléchargement se poursuit quand Orbit passe en arrière-plan : il est
+// piloté par le processus PRINCIPAL (DownloadItem), pas par la page, et
+// `backgroundThrottling` est déjà désactivé pour les webviews. Deux choses
+// pouvaient tout de même l'interrompre, et sont traitées ici :
+//   • la MISE EN VEILLE de la machine (rien ne l'empêchait) → powerSaveBlocker
+//     tant qu'au moins un transfert est en cours ;
+//   • la FERMETURE d'Orbit (le X quitte l'app quand « réduire dans la barre
+//     système » est désactivé) → confirmation avant de quitter (voir before-quit).
+let downloadBlockerId = null;
+
+function activeDownloadCount() {
+  let n = 0;
+  for (const rec of downloads.values()) {
+    if (!rec.item) continue;
+    // Deux sortes de transferts partagent ce registre : les DownloadItem
+    // d'Electron (qui exposent getState) et les téléchargements yt-dlp, dont
+    // l'entrée n'est qu'un objet { cancel }. Appeler getState() sur le second
+    // levait une TypeError — ce qui, dans `before-quit`, empêchait purement et
+    // simplement de quitter l'application.
+    if (typeof rec.item.getState === 'function') {
+      if (rec.item.getState() === 'progressing') n += 1;
+    } else if (rec.active) {
+      n += 1;
+    }
+  }
+  return n;
+}
+
+function refreshDownloadPowerBlocker() {
+  const busy = activeDownloadCount() > 0;
+  try {
+    if (busy && downloadBlockerId === null) {
+      // 'prevent-app-suspension' : l'écran peut s'éteindre, la machine ne se
+      // met pas en veille. C'est exactement le cas « je laisse télécharger ».
+      downloadBlockerId = powerSaveBlocker.start('prevent-app-suspension');
+    } else if (!busy && downloadBlockerId !== null) {
+      powerSaveBlocker.stop(downloadBlockerId);
+      downloadBlockerId = null;
+    }
+  } catch {
+    downloadBlockerId = null;
+  }
+}
+
 function setupDownloads(ses) {
   if (!ses || downloadSessions.has(ses)) return;
   downloadSessions.add(ses);
@@ -436,9 +518,11 @@ function setupDownloads(ses) {
     });
 
     broadcastDownload({ ...snapshot('progressing'), event: 'started' });
+    refreshDownloadPowerBlocker();
     item.on('updated', (_e, state) => broadcastDownload({ ...snapshot(state), event: 'updated' }));
     item.once('done', (_e, state) => {
       broadcastDownload({ ...snapshot(state), event: 'done' });
+      refreshDownloadPowerBlocker();
       // On garde le chemin un moment (ouvrir / afficher) puis on nettoie.
       const rec = downloads.get(id);
       if (rec) rec.item = null;
@@ -455,27 +539,94 @@ function setupDownloads(ses) {
 //   url/apiKey : serveur LibreTranslate (ex. http://localhost:5000) + clé éventuelle
 let translateConfig = { target: 'fr', engine: 'google', url: '', apiKey: '' };
 
-// Lecture à voix haute via la Web Speech API DANS la page (voix de l'OS, hors
-// ligne). On exécute le JS dans le webContents invité.
-function speakText(wc, text) {
-  const t = String(text || '').slice(0, 32000);
-  if (!t) return;
-  wc.executeJavaScript(
-    `(() => { try { speechSynthesis.cancel(); const u = new SpeechSynthesisUtterance(${JSON.stringify(
-      t
-    )}); speechSynthesis.speak(u); } catch (e) {} })();`
-  ).catch(() => {});
+// Lecture à voix haute. Deux moteurs possibles :
+//   • « système » (tts.js) — spd-say / say / SAPI : instantané, robotique ;
+//   • « piper » — voix neuronales hors ligne, nettement plus naturelles.
+//
+// Piper n'est chargé QUE si l'utilisateur l'a choisi : `import()` dynamique, à
+// l'usage. Tant qu'on ne s'en sert pas, son code n'est pas lu, aucun processus
+// n'est lancé et rien n'est téléchargé.
+let ttsPrefs = { engine: 'system', voiceId: '' };
+let piperMod = null; // module chargé paresseusement
+
+async function loadPiper() {
+  if (!piperMod) piperMod = await import('./piper.js');
+  return piperMod;
 }
 
-function stopSpeaking(wc) {
-  wc.executeJavaScript('try { speechSynthesis.cancel(); } catch (e) {}').catch(() => {});
+// Le PCM produit par Piper est rejoué par l'interface (Web Audio) : c'est le
+// seul chemin identique sur les trois systèmes, et il respecte le volume réglé
+// dans Orbit sans dépendre d'un lecteur externe (aplay, afplay…).
+function pipeAudioToUi(channel, payload) {
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send(channel, payload);
+  }
 }
 
-// Lit tout le texte visible de la page à voix haute.
-function speakPage(wc) {
-  wc.executeJavaScript(
-    `(() => { try { speechSynthesis.cancel(); const t = (document.body ? document.body.innerText : '').slice(0, 32000); if (t) speechSynthesis.speak(new SpeechSynthesisUtterance(t)); } catch (e) {} })();`
-  ).catch(() => {});
+async function speakWithPiper(text) {
+  const piper = await loadPiper();
+  return piper.speak(text, {
+    voiceId: ttsPrefs.voiceId,
+    onStart: ({ sampleRate }) => pipeAudioToUi('orbit:tts-start', { sampleRate }),
+    onAudio: (chunk) => pipeAudioToUi('orbit:tts-audio', chunk),
+    onEnd: () => pipeAudioToUi('orbit:tts-end', {}),
+  });
+}
+
+async function speakText(wc, text) {
+  stopSpeaking();
+  if (ttsPrefs.engine === 'piper' && ttsPrefs.voiceId) {
+    try {
+      const res = await speakWithPiper(text);
+      if (res.success) return res;
+      // Moteur ou voix absents : on le dit, et on retombe sur la voix système
+      // plutôt que de ne rien faire.
+      showPageToast(
+        wc,
+        res.error === 'voice-missing'
+          ? 'Voix Piper introuvable — réinstallez-la dans Réglages → Lecture vocale.'
+          : 'Moteur Piper non installé — Réglages → Lecture vocale.'
+      );
+    } catch (err) {
+      console.error('[orbit] piper indisponible:', err.message);
+    }
+  }
+  const res = tts.speak(text, { lang: (translateConfig.target || 'fr').slice(0, 2) });
+  if (!res.success && res.error === 'no-engine') {
+    showPageToast(wc, res.hint || tts.missingEngineHint());
+  }
+  return res;
+}
+
+function stopSpeaking() {
+  tts.stop();
+  // `piperMod` n'est renseigné que si Piper a déjà servi : aucun chargement
+  // provoqué par un simple « arrêter ».
+  if (piperMod) {
+    piperMod.stop();
+    pipeAudioToUi('orbit:tts-end', {});
+  }
+}
+
+function speakingNow() {
+  return tts.isSpeaking() || Boolean(piperMod && piperMod.isSpeaking());
+}
+
+// Lit tout le texte visible de la page. Le texte est extrait dans la page, la
+// lecture se fait dans le processus principal.
+async function speakPage(wc) {
+  try {
+    const text = await wc.executeJavaScript(
+      '(() => { try { return document.body ? document.body.innerText : ""; } catch (e) { return ""; } })()'
+    );
+    if (!text || !text.trim()) {
+      showPageToast(wc, 'Rien à lire sur cette page.');
+      return;
+    }
+    speakText(wc, text);
+  } catch {
+    showPageToast(wc, 'Lecture impossible sur cette page.');
+  }
 }
 
 // Traduction via l'endpoint public Google (gtx) — pas de clé requise.
@@ -523,6 +674,29 @@ async function translateText(text) {
   return translateGoogle(q, target);
 }
 
+// Petit bandeau d'information DANS la page invitée. Sert aux actions du menu
+// contextuel qui peuvent échouer pour une raison que l'utilisateur ne peut pas
+// deviner (aucune voix installée, page sans texte) : sans lui, un clic sur
+// « Lire la page » ne produit rien du tout et rien ne l'explique.
+function showPageToast(wc, message) {
+  const payload = JSON.stringify(String(message || ''));
+  wc
+    .executeJavaScript(
+      `(() => {
+        try {
+          document.getElementById('__orbit_toast__')?.remove();
+          const box = document.createElement('div');
+          box.id = '__orbit_toast__';
+          box.textContent = ${payload};
+          box.style.cssText = 'position:fixed;z-index:2147483647;left:50%;transform:translateX(-50%);bottom:24px;max-width:min(560px,90vw);background:#111827;color:#f3f4f6;border:1px solid #374151;border-radius:10px;padding:10px 14px;font-family:system-ui,sans-serif;font-size:13px;line-height:1.45;box-shadow:0 10px 30px rgba(0,0,0,.5)';
+          document.body.appendChild(box);
+          setTimeout(() => box.remove(), 6000);
+        } catch (e) {}
+      })();`
+    )
+    .catch(() => {});
+}
+
 // Affiche le résultat de traduction en surimpression DANS la page (petit encart
 // flottant, fermable), à la manière d'une extension de traduction.
 function showTranslationOverlay(wc, original, translated, detected, target) {
@@ -537,7 +711,14 @@ function showTranslationOverlay(wc, original, translated, detected, target) {
         box.style.cssText = 'position:fixed;z-index:2147483647;right:16px;bottom:16px;max-width:380px;background:#111827;color:#f3f4f6;border:1px solid #374151;border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.5);font-family:system-ui,sans-serif;font-size:13px;line-height:1.5;overflow:hidden';
         const head = document.createElement('div');
         head.style.cssText = 'display:flex;align-items:center;justify-content:space-between;padding:8px 12px;background:#0b1220;border-bottom:1px solid #1f2937';
-        head.innerHTML = '<span style="font-weight:600;color:#9ca3af">🌐 Traduction (' + (d.detected||'auto') + ' → ' + d.target + ')</span>';
+        // textContent et non innerHTML : « detected » vient de la réponse du
+        // service de traduction. Concaténé dans du HTML, un service compromis
+        // (ou un serveur LibreTranslate hostile) injectait du script dans la
+        // page de l'app.
+        const label = document.createElement('span');
+        label.style.cssText = 'font-weight:600;color:#9ca3af';
+        label.textContent = '🌐 Traduction (' + (d.detected||'auto') + ' → ' + d.target + ')';
+        head.appendChild(label);
         const close = document.createElement('button');
         close.textContent = '✕';
         close.style.cssText = 'background:none;border:none;color:#9ca3af;cursor:pointer;font-size:14px';
@@ -773,14 +954,35 @@ async function captureGuestPage(wc, mode) {
 // enregistrer), lien (ouvrir / copier / télécharger), sélection (copier /
 // rechercher), champ éditable (couper/copier/coller + suggestions du
 // correcteur), et navigation (précédent / suivant / recharger).
+// Une URL venue de la PAGE EMBARQUÉE (params.linkURL, params.srcURL) n'est pas
+// digne de confiance : la page choisit ce qu'elle met dans un href. La confier
+// telle quelle à shell.openExternal revient à laisser un site déclencher le
+// gestionnaire de protocole de l'OS — `file://` pour ouvrir un exécutable
+// local, ou n'importe quel schéma applicatif enregistré sur la machine. Les
+// autres points d'entrée (openExternalHandler, popup:openExternal) filtraient
+// déjà ; le menu contextuel avait été oublié.
+const isWebUrl = (u) => typeof u === 'string' && /^https?:\/\//i.test(u);
+// Le téléchargement accepte en plus blob:/data:, que les pages utilisent pour
+// proposer un fichier généré côté client — mais jamais file:// ni un schéma
+// arbitraire.
+const isDownloadableUrl = (u) =>
+  typeof u === 'string' && /^(https?|blob|data):/i.test(u);
+
 function buildGuestContextMenu(wc, params) {
   const t = [];
   const can = (flag) => Boolean(params.editFlags && params.editFlags[flag]);
 
   if (params.linkURL) {
-    t.push({ label: 'Ouvrir le lien dans le navigateur', click: () => shell.openExternal(params.linkURL) });
+    if (isWebUrl(params.linkURL)) {
+      t.push({
+        label: 'Ouvrir le lien dans le navigateur',
+        click: () => shell.openExternal(params.linkURL),
+      });
+    }
     t.push({ label: "Copier l'adresse du lien", click: () => clipboard.writeText(params.linkURL) });
-    t.push({ label: 'Télécharger le lien…', click: () => wc.downloadURL(params.linkURL) });
+    if (isDownloadableUrl(params.linkURL)) {
+      t.push({ label: 'Télécharger le lien…', click: () => wc.downloadURL(params.linkURL) });
+    }
     t.push({ type: 'separator' });
   }
 
@@ -801,8 +1003,15 @@ function buildGuestContextMenu(wc, params) {
   if (params.hasImageContents) {
     t.push({ label: "Copier l'image", click: () => wc.copyImageAt(params.x, params.y) });
     t.push({ label: "Copier l'adresse de l'image", click: () => clipboard.writeText(params.srcURL) });
-    t.push({ label: "Enregistrer l'image…", click: () => wc.downloadURL(params.srcURL) });
-    t.push({ label: "Ouvrir l'image dans le navigateur", click: () => shell.openExternal(params.srcURL) });
+    if (isDownloadableUrl(params.srcURL)) {
+      t.push({ label: "Enregistrer l'image…", click: () => wc.downloadURL(params.srcURL) });
+    }
+    if (isWebUrl(params.srcURL)) {
+      t.push({
+        label: "Ouvrir l'image dans le navigateur",
+        click: () => shell.openExternal(params.srcURL),
+      });
+    }
     t.push({ type: 'separator' });
   }
 
@@ -829,7 +1038,10 @@ function buildGuestContextMenu(wc, params) {
       click: () => translateSelection(wc, sel),
     });
     t.push({ label: 'Lire à voix haute', click: () => speakText(wc, sel) });
-    t.push({ label: 'Arrêter la lecture', click: () => stopSpeaking(wc) });
+    // Proposé uniquement s'il y a effectivement quelque chose à arrêter.
+    if (speakingNow()) {
+      t.push({ label: 'Arrêter la lecture', click: () => stopSpeaking() });
+    }
     t.push({
       label: `Rechercher « ${sel.length > 40 ? sel.slice(0, 40) + '…' : sel} »`,
       click: () => shell.openExternal('https://www.google.com/search?q=' + encodeURIComponent(sel)),
@@ -853,7 +1065,9 @@ function buildGuestContextMenu(wc, params) {
     t.push({ type: 'separator' });
     // Lecture vocale / traduction de la page entière (utile sans sélection)
     t.push({ label: 'Lire la page à voix haute', click: () => speakPage(wc) });
-    t.push({ label: 'Arrêter la lecture', click: () => stopSpeaking(wc) });
+    if (speakingNow()) {
+      t.push({ label: 'Arrêter la lecture', click: () => stopSpeaking() });
+    }
     t.push({ type: 'separator' });
   }
   // Capture d'écran : toujours proposée (même dans un champ de saisie)
@@ -1165,7 +1379,7 @@ function hardenWebviewAttach(event, webPreferences, params) {
     // Preload de détection/remplissage des identifiants (KeePassXC).
     // Injecté ici (le main process connaît __dirname ; les preloads
     // sandboxés, eux, n'y ont pas accès).
-    webPreferences.preload = path.join(__dirname, 'keepass-preload.cjs');
+    webPreferences.preload = path.join(__dirname, 'credentials-preload.cjs');
 
     // Appliquer le contournement X-Frame-Options à la partition du webview
     // (chaque profil utilise sa propre partition → cookies séparés)
@@ -1287,12 +1501,9 @@ function createOrbitPopup(url, partition) {
     rememberGuestPartition(guestContents);
     // Menu contextuel natif dans la pop-up aussi (copier un lien, coller un
     // mot de passe…) — absent par défaut dans un <webview>.
+    // Les pop-ups n'hébergent pas l'interface d'Orbit : menu natif.
     guestContents.on('context-menu', (_e, params) => {
-      try {
-        buildGuestContextMenu(guestContents, params).popup({ window: win });
-      } catch (err) {
-        console.error('[orbit] menu contextuel (pop-up) échoué:', err);
-      }
+      showGuestContextMenu(guestContents, params, win);
     });
   });
 
@@ -1355,7 +1566,7 @@ function openInAppPopup(guestContents, url) {
         // Le même preload KeePassXC que les webviews : la popup de connexion
         // (ex. « Se connecter avec Google » dans Drive) est AUSSI une page de
         // formulaire — l'auto-remplissage des identifiants y fonctionne.
-        preload: path.join(__dirname, 'keepass-preload.cjs'),
+        preload: path.join(__dirname, 'credentials-preload.cjs'),
       },
     },
   };
@@ -1583,7 +1794,10 @@ function createWindow() {
     // chargement de page (insertCSS — compatible Electron 33).
     const injectCosmetics = () => {
       try {
-        const styles = adblock.getCosmeticStyles(guestContents.getURL());
+        const styles = adblock.getCosmeticStyles(
+          guestContents.getURL(),
+          adblockActiveFor(guestContents.id)
+        );
         if (styles) guestContents.insertCSS(styles, { cssOrigin: 'user' });
       } catch {
         /* jamais bloquant */
@@ -1597,14 +1811,266 @@ function createWindow() {
     // coller dans un champ, précédent/suivant/recharger. Absent par défaut
     // dans un <webview> → on le construit et on l'affiche nous-mêmes.
     guestContents.on('context-menu', (_e, params) => {
-      try {
-        buildGuestContextMenu(guestContents, params).popup({ window: mainWindow });
-      } catch (err) {
-        console.error('[orbit] menu contextuel échoué:', err);
-      }
+      showGuestContextMenu(guestContents, params, mainWindow);
     });
+    guestContents.once('destroyed', () => lastContextParams.delete(guestContents.id));
   });
 }
+
+// ---------------------------------------------------------------------------
+// IPC — Lecture vocale (moteur système / Piper)
+// ---------------------------------------------------------------------------
+// Réservé à l'interface : installer Piper télécharge et rend exécutable un
+// binaire, ce n'est pas une action qu'une page embarquée doit pouvoir demander.
+handleFromUi('tts:setPrefs', (_e, { engine, voiceId } = {}) => {
+  ttsPrefs = {
+    engine: engine === 'piper' ? 'piper' : 'system',
+    voiceId: String(voiceId || ''),
+  };
+  return { success: true };
+});
+
+// État affiché dans les réglages. Ne déclenche AUCUN téléchargement et ne
+// charge le module Piper que si l'utilisateur ouvre cette section.
+handleFromUi('tts:state', async () => {
+  const system = { engine: tts.detectEngine(), hint: tts.missingEngineHint() };
+  let piper = { installed: false, voices: [], catalog: [] };
+  try {
+    piper = (await loadPiper()).getState();
+  } catch (err) {
+    console.error('[orbit] état piper indisponible:', err.message);
+  }
+  return { success: true, system, piper, prefs: ttsPrefs };
+});
+
+// Progression envoyée à l'interface pendant les téléchargements (26 Mo pour le
+// moteur, 28 à 120 Mo par voix : sans jauge, l'utilisateur croit à un blocage).
+const ttsProgress = (payload) => pipeAudioToUi('orbit:tts-progress', payload);
+
+handleFromUi('tts:installEngine', async () => {
+  try {
+    const piper = await loadPiper();
+    await piper.install(ttsProgress);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: String(err.message || err) };
+  }
+});
+
+handleFromUi('tts:installVoice', async (_e, { id } = {}) => {
+  try {
+    const piper = await loadPiper();
+    await piper.installVoice(id, ttsProgress);
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: String(err.message || err) };
+  }
+});
+
+handleFromUi('tts:removeVoice', async (_e, { id } = {}) => (await loadPiper()).removeVoice(id));
+handleFromUi('tts:uninstall', async () => (await loadPiper()).uninstall());
+
+// Essai de voix depuis les réglages, sans passer par une page.
+handleFromUi('tts:preview', async (_e, { text } = {}) => {
+  const sample = String(text || 'Bonjour, voici un aperçu de cette voix.');
+  stopSpeaking();
+  if (ttsPrefs.engine === 'piper' && ttsPrefs.voiceId) return speakWithPiper(sample);
+  return tts.speak(sample, { lang: (translateConfig.target || 'fr').slice(0, 2) });
+});
+
+handleFromUi('tts:stop', () => {
+  stopSpeaking();
+  return { success: true };
+});
+
+// ---------------------------------------------------------------------------
+// Menu contextuel dessiné par l'interface (au lieu du menu natif)
+// ---------------------------------------------------------------------------
+// Un Menu natif Electron ne se met pas en forme : impossible d'y placer une
+// rangée d'icônes, des sections, ou le style d'Orbit. On envoie donc la
+// description du clic à l'interface, qui dessine le menu en HTML — et on garde
+// le menu natif en repli (réglage, ou fenêtre sans interface Orbit, ou erreur).
+//
+// SÉCURITÉ : les URL ne font PAS l'aller-retour. L'interface ne renvoie que le
+// nom d'une action ; le processus principal relit les paramètres qu'il a lui-
+// même mémorisés. Une interface compromise ne peut donc pas faire ouvrir une
+// adresse de son choix — c'est le même raisonnement que pour `credentials:*`.
+const lastContextParams = new Map(); // webContentsId -> params
+
+let useCustomContextMenu = true;
+ipcMain.handle('ctx:setMode', (_e, { custom } = {}) => {
+  useCustomContextMenu = custom !== false;
+  return { success: true };
+});
+
+// Texte affichable : une sélection peut peser plusieurs mégaoctets, l'interface
+// n'a besoin que d'un aperçu pour composer ses libellés.
+const preview = (text, max = 60) => {
+  const t = String(text || '').trim().replace(/\s+/g, ' ');
+  return t.length > max ? t.slice(0, max) + '…' : t;
+};
+
+function contextMenuState(wc, params) {
+  const nav = wc.navigationHistory;
+  const selection = String(params.selectionText || '').trim();
+  return {
+    wcId: wc.id,
+    x: params.x,
+    y: params.y,
+    zoom: (() => {
+      try {
+        return wc.getZoomFactor();
+      } catch {
+        return 1;
+      }
+    })(),
+    isEditable: Boolean(params.isEditable),
+    canCopy: Boolean(params.editFlags?.canCopy),
+    canCut: Boolean(params.editFlags?.canCut),
+    canPaste: Boolean(params.editFlags?.canPaste),
+    hasSelection: selection.length > 0,
+    selectionPreview: preview(selection, 40),
+    hasLink: Boolean(params.linkURL),
+    linkPreview: preview(params.linkURL, 50),
+    hasImage: Boolean(params.hasImageContents),
+    isVideo: params.mediaType === 'video',
+    misspelled: params.misspelledWord || '',
+    suggestions: (params.dictionarySuggestions || []).slice(0, 5),
+    canBack: nav?.canGoBack ? nav.canGoBack() : wc.canGoBack?.() || false,
+    canFwd: nav?.canGoForward ? nav.canGoForward() : wc.canGoForward?.() || false,
+    translateTarget: translateConfig.target || 'fr',
+    speaking: speakingNow(),
+    isDev,
+  };
+}
+
+// Affiche le menu : interface si possible, natif sinon. Renvoie true si
+// l'interface a été sollicitée.
+function showGuestContextMenu(guestContents, params, ownerWindow) {
+  const custom =
+    useCustomContextMenu &&
+    ownerWindow === mainWindow &&
+    mainWindow &&
+    !mainWindow.isDestroyed();
+  if (custom) {
+    try {
+      lastContextParams.set(guestContents.id, params);
+      mainWindow.webContents.send('orbit:context-menu', contextMenuState(guestContents, params));
+      return true;
+    } catch (err) {
+      console.error('[orbit] menu contextuel (interface) échoué:', err);
+    }
+  }
+  try {
+    buildGuestContextMenu(guestContents, params).popup({ window: ownerWindow });
+  } catch (err) {
+    console.error('[orbit] menu contextuel natif échoué:', err);
+  }
+  return false;
+}
+
+handleFromUi('ctx:action', (_event, { wcId, action, value } = {}) => {
+  const wc = webContents.fromId(Number(wcId));
+  const params = lastContextParams.get(Number(wcId));
+  if (!wc || wc.isDestroyed() || !params) return { success: false, error: 'stale' };
+
+  const nav = wc.navigationHistory;
+  const pageUrl = params.pageURL || wc.getURL();
+
+  switch (action) {
+    case 'back':
+      nav?.goBack ? nav.goBack() : wc.goBack?.();
+      break;
+    case 'forward':
+      nav?.goForward ? nav.goForward() : wc.goForward?.();
+      break;
+    case 'reload':
+      wc.reload();
+      break;
+    case 'copyPageUrl':
+      clipboard.writeText(pageUrl);
+      break;
+    case 'copy':
+      wc.copy();
+      break;
+    case 'cut':
+      wc.cut();
+      break;
+    case 'paste':
+      wc.paste();
+      break;
+    case 'selectAll':
+      wc.selectAll();
+      break;
+    case 'replaceMisspelling':
+      // On n'accepte que les suggestions que le correcteur a lui-même fournies.
+      if ((params.dictionarySuggestions || []).includes(value)) wc.replaceMisspelling(value);
+      break;
+    case 'openLink':
+      if (isWebUrl(params.linkURL)) shell.openExternal(params.linkURL);
+      break;
+    case 'copyLink':
+      if (params.linkURL) clipboard.writeText(params.linkURL);
+      break;
+    case 'downloadLink':
+      if (isDownloadableUrl(params.linkURL)) wc.downloadURL(params.linkURL);
+      break;
+    case 'copyImage':
+      wc.copyImageAt(params.x, params.y);
+      break;
+    case 'copyImageUrl':
+      if (params.srcURL) clipboard.writeText(params.srcURL);
+      break;
+    case 'saveImage':
+      if (isDownloadableUrl(params.srcURL)) wc.downloadURL(params.srcURL);
+      break;
+    case 'openImage':
+      if (isWebUrl(params.srcURL)) shell.openExternal(params.srcURL);
+      break;
+    case 'translate':
+      if (params.selectionText) translateSelection(wc, params.selectionText.trim());
+      break;
+    case 'speakSelection':
+      if (params.selectionText) speakText(wc, params.selectionText.trim());
+      break;
+    case 'speakPage':
+      speakPage(wc);
+      break;
+    case 'stopSpeak':
+      stopSpeaking();
+      break;
+    case 'search':
+      if (params.selectionText) {
+        shell.openExternal(
+          'https://www.google.com/search?q=' + encodeURIComponent(params.selectionText.trim())
+        );
+      }
+      break;
+    case 'downloadVideo':
+      startMediaDownload(pageUrl, 'video');
+      break;
+    case 'downloadAudio':
+      startMediaDownload(pageUrl, 'audio');
+      break;
+    case 'screenshot':
+      captureGuestPage(wc, value === 'full' || value === 'selection' ? value : 'visible');
+      break;
+    case 'pip':
+      wc
+        .executeJavaScript(
+          `(() => { try { const v=document.querySelector('video'); if(v && v.requestPictureInPicture && !document.pictureInPictureElement) v.requestPictureInPicture().catch(()=>{}); } catch(e){} })()`,
+          true
+        )
+        .catch(() => {});
+      break;
+    case 'inspect':
+      if (isDev) wc.inspectElement(params.x, params.y);
+      break;
+    default:
+      return { success: false, error: 'unknown-action' };
+  }
+  return { success: true };
+});
 
 // ---------------------------------------------------------------------------
 // IPC — contrôles de fenêtre uniquement (le reste passe par les <webview>)
@@ -1912,7 +2378,12 @@ ipcMain.handle('security:getState', () => security.getState());
 ipcMain.handle('security:setAppLock', (_e, pin) => security.setAppLock(pin));
 ipcMain.handle('security:removeAppLock', (_e, pin) => security.removeAppLock(pin));
 ipcMain.handle('security:unlockApp', (_e, pin) => security.unlockApp(pin));
-ipcMain.handle('security:lockApp', () => security.lockApp());
+ipcMain.handle('security:lockApp', () => {
+  // Verrouiller Orbit ferme aussi les trousseaux : laisser un coffre ouvert
+  // derrière un écran de verrouillage viderait celui-ci de son sens.
+  vault.lockAll();
+  return security.lockApp();
+});
 ipcMain.handle('security:setProfileLock', (_e, { id, pin } = {}) => security.setProfileLock(id, pin));
 ipcMain.handle('security:removeProfileLock', (_e, { id, pin } = {}) =>
   security.removeProfileLock(id, pin)
@@ -1937,6 +2408,7 @@ function setupAutoLock(minutes) {
       if (idleSec < autoLockMinutes * 60) return;
       const st = security.getState();
       if (st.appLockEnabled && st.appUnlocked) {
+        vault.lockAll();
         security.lockApp();
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.webContents.send('orbit:relock');
@@ -2151,10 +2623,14 @@ function startMediaDownload(url, mode) {
   downloader.downloadMedia({ id, url, mode }, (ev) => {
     const rec = downloads.get(id) || {};
     if (ev.proc) rec.item = { cancel: () => { try { ev.proc.kill('SIGTERM'); } catch { /* ignore */ } } };
+    // yt-dlp n'a pas de DownloadItem : on suit nous-mêmes l'état pour que le
+    // blocage de mise en veille et la confirmation de sortie en tiennent compte.
+    rec.active = ev.state === 'progressing';
     if (ev.savePath) rec.savePath = ev.savePath;
     rec.url = url;
     rec.filename = ev.filename;
     downloads.set(id, rec);
+    refreshDownloadPowerBlocker();
     const first = !mediaStarted.has(id);
     if (first) mediaStarted.add(id);
     broadcastDownload({
@@ -2499,10 +2975,242 @@ ipcMain.handle('keepass:getLogins', async (_event, { url } = {}) => {
   }
 });
 
-// Diagnostic : logs du preload KeePassXC → terminal de l'app
-ipcMain.on('keepass:dbg', (_event, message) => {
-  console.log('[keepass-preload]', message);
+// Clic DANS une app embarquée : relayé à l'interface pour qu'elle referme ses
+// menus et panneaux. Les événements souris d'un <webview> ne traversent pas la
+// frontière de processus ; c'est le seul moyen de les connaître.
+ipcMain.on('guest:interact', (event) => {
+  if (event.sender.getType() !== 'webview') return;
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('orbit:guest-interact');
+  }
 });
+
+// Diagnostic : logs du preload d'identifiants → terminal de l'app
+ipcMain.on('keepass:dbg', (_event, message) => {
+  console.log('[credentials-preload]', message);
+});
+
+// ---------------------------------------------------------------------------
+// IPC — Coffre-fort intégré (trousseaux chiffrés)
+// ---------------------------------------------------------------------------
+// Aucun de ces handlers ne renvoie un mot de passe « en passant » : la liste
+// des entrées part sans les mots de passe, qui ne sortent que par reveal/copy,
+// sur une action explicite de l'utilisateur.
+const vaultWindow = (event) => BrowserWindow.fromWebContents(event.sender) || mainWindow;
+
+// `ipcMain.handle` écoute TOUS les webContents du processus, y compris les
+// <webview> qui affichent des sites tiers. Leur preload est isolé, donc une
+// page ne peut pas appeler ipcRenderer aujourd'hui — mais faire reposer la
+// sécurité du coffre entier sur cette seule barrière est un mauvais pari : un
+// défaut d'isolation, ou un preload modifié, exposerait TOUS les mots de passe
+// de tous les sites d'un coup.
+//
+// On exige donc que l'appelant soit l'interface d'Orbit elle-même. Une page
+// embarquée n'a aucune raison légitime de lire le coffre : elle passe par
+// `credentials:*`, qui ne lui rend que les identifiants de SON propre domaine.
+function fromOrbitUi(event) {
+  try {
+    return (
+      event.sender.getType() !== 'webview' &&
+      mainWindow &&
+      !mainWindow.isDestroyed() &&
+      event.sender.id === mainWindow.webContents.id
+    );
+  } catch {
+    return false;
+  }
+}
+
+// Enregistre un handler réservé à l'interface d'Orbit.
+function handleFromUi(channel, fn) {
+  ipcMain.handle(channel, (event, ...args) => {
+    if (!fromOrbitUi(event)) {
+      console.warn('[orbit] appel refusé sur', channel, '— émetteur non autorisé');
+      return { success: false, error: 'forbidden' };
+    }
+    return fn(event, ...args);
+  });
+}
+
+handleFromUi('vault:state', () => vault.getState());
+handleFromUi('vault:create', (_e, payload) => vault.create(payload));
+handleFromUi('vault:unlock', (_e, { id, password } = {}) => vault.unlock(id, password));
+handleFromUi('vault:lock', (_e, { id } = {}) => (id ? vault.lock(id) : vault.lockAll()));
+handleFromUi('vault:update', (_e, { id, ...patch } = {}) => vault.updateVault(id, patch));
+handleFromUi('vault:changeMaster', (_e, { id, current, next } = {}) =>
+  vault.changeMasterPassword(id, current, next)
+);
+handleFromUi('vault:remove', (_e, { id, password } = {}) => vault.remove(id, password));
+
+handleFromUi('vault:entries', (_e, { id } = {}) => vault.listEntries(id));
+handleFromUi('vault:saveEntry', (_e, { id, entry } = {}) => vault.saveEntry(id, entry));
+handleFromUi('vault:deleteEntry', (_e, { id, entryId } = {}) => vault.deleteEntry(id, entryId));
+handleFromUi('vault:setCategories', (_e, { id, categories } = {}) =>
+  vault.setCategories(id, categories)
+);
+handleFromUi('vault:reveal', (_e, { id, entryId, field } = {}) =>
+  vault.revealSecret(id, entryId, field)
+);
+handleFromUi('vault:copy', (_e, { id, entryId, field } = {}) =>
+  vault.copySecret(id, entryId, field)
+);
+handleFromUi('vault:totp', (_e, { id, entryId } = {}) => vault.entryTotp(id, entryId));
+handleFromUi('vault:audit', (_e, { id } = {}) => vault.audit(id));
+handleFromUi('vault:strength', (_e, { password } = {}) => vault.strength(password));
+handleFromUi('vault:generate', (_e, opts = {}) =>
+  opts.passphrase ? vault.generatePassphrase(opts.words) : vault.generatePassword(opts)
+);
+handleFromUi('vault:import', (e, { id } = {}) =>
+  vault.importFromFile(id, { window: vaultWindow(e) })
+);
+handleFromUi('vault:export', (e, { id, password, format } = {}) =>
+  vault.exportToFile(id, { password, format, window: vaultWindow(e) })
+);
+handleFromUi('vault:ignored', () => ({ success: true, domains: vault.ignoredDomains() }));
+handleFromUi('vault:unignore', (_e, { domain } = {}) => vault.unignoreDomain(domain));
+
+// ---------------------------------------------------------------------------
+// IPC — Identifiants UNIFIÉS (KeePassXC + coffre-fort intégré)
+// ---------------------------------------------------------------------------
+// Le preload des pages ne connaît qu'une seule source : ici. Les deux systèmes
+// peuvent coexister (KeePassXC pour l'historique, le coffre pour le reste) et
+// l'utilisateur voit une seule liste de comptes dans la page.
+// L'URL est prise sur le webContents ÉMETTEUR, pas dans le message. Une page
+// ne doit jamais pouvoir demander « les identifiants de banque.fr » : elle
+// n'obtient que ceux du site qu'elle affiche réellement.
+function senderUrl(event, fallback) {
+  try {
+    const real = event.sender.getURL();
+    if (/^https?:\/\//i.test(real)) return real;
+  } catch {
+    /* webContents parti */
+  }
+  return /^https?:\/\//i.test(String(fallback || '')) ? fallback : '';
+}
+
+ipcMain.handle('credentials:getLogins', async (event, { url: claimed } = {}) => {
+  const url = senderUrl(event, claimed);
+  if (!url) return { success: true, count: 0, entries: [] };
+  const entries = [];
+  let keepassError = null;
+
+  try {
+    const kp = await keepassGetLogins(url);
+    if (kp && kp.success) {
+      for (const e of kp.entries || []) entries.push({ ...e, source: 'keepass' });
+    } else if (kp && kp.error && kp.error !== 'disabled' && kp.error !== 'not-associated') {
+      keepassError = kp.error;
+    }
+  } catch (err) {
+    keepassError = String(err.message || err);
+  }
+
+  const local = vault.findLogins(url);
+  entries.push(...local.entries);
+
+  // Un même compte peut exister des deux côtés (import depuis KeePassXC) :
+  // on ne le montre qu'une fois, en gardant la version du coffre intégré.
+  const seen = new Set();
+  const merged = [];
+  for (const e of entries) {
+    const key = `${e.login}|${e.password}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(e);
+  }
+
+  return {
+    success: true,
+    count: merged.length,
+    entries: merged,
+    lockedVaults: local.lockedVaults,
+    openVaults: local.openVaults,
+    keepassError,
+  };
+});
+
+// La page vient de soumettre un formulaire : faut-il proposer d'enregistrer ?
+// Repose entièrement sur la soumission mise de côté ici même : la page n'a rien
+// à fournir, donc rien à falsifier.
+ipcMain.handle('credentials:shouldOffer', (event) => {
+  const rec = pendingCredentials.get(event.sender.id);
+  if (!rec) return { offer: false, reason: 'no-pending' };
+  const { url, login, password } = rec;
+  if (vault.isIgnored(url)) return { offer: false, reason: 'ignored' };
+  const vaults = vault.list().filter((v) => v.unlocked);
+  if (vaults.length === 0) {
+    // Aucun trousseau ouvert → on ne peut ni vérifier ni enregistrer. Proposer
+    // « déverrouillez » serait du bruit à chaque connexion : on se tait.
+    return { offer: false, reason: 'no-open-vault' };
+  }
+  const state = vault.lookupSaveState(url, login, password);
+  if (state.known && !state.changed) return { offer: false, reason: 'known' };
+  return {
+    offer: true,
+    update: state.known && state.changed,
+    vaults: vaults.map((v) => ({ id: v.id, name: v.name, icon: v.icon })),
+    entryId: state.entryId || null,
+    vaultId: state.vaultId || null,
+  };
+});
+
+// La page ne transmet PAS le mot de passe : il n'a jamais quitté le processus
+// principal (voir stashPending / takePending). Elle indique seulement dans quel
+// trousseau ranger la soumission mise de côté.
+ipcMain.handle('credentials:save', (event, { vaultId, entryId, title } = {}) => {
+  const rec = pendingCredentials.get(event.sender.id);
+  if (!rec) return { success: false, error: 'no-pending' };
+  pendingCredentials.delete(event.sender.id);
+  return vault.saveEntry(vaultId, {
+    id: entryId || undefined,
+    title: title || '',
+    url: rec.url,
+    username: rec.login,
+    password: rec.password,
+  });
+});
+
+ipcMain.handle('credentials:ignore', (event, { url: claimed } = {}) =>
+  vault.ignoreDomain(senderUrl(event, claimed))
+);
+
+// Formulaire soumis : on met les identifiants DE CÔTÉ le temps que la page
+// navigue, puis la nouvelle page vient les reprendre pour proposer de les
+// enregistrer. Ce relais vit dans le processus principal — le passer par
+// sessionStorage exposerait le mot de passe aux scripts de la page.
+const pendingCredentials = new Map(); // webContentsId -> { url, login, password, at }
+
+ipcMain.handle('credentials:stashPending', (event, { login, password } = {}) => {
+  const id = event.sender.id;
+  const url = senderUrl(event, '');
+  if (!password || !url) return { success: false };
+  pendingCredentials.set(id, { url, login: String(login || ''), password: String(password), at: Date.now() });
+  try {
+    event.sender.once('destroyed', () => pendingCredentials.delete(id));
+  } catch {
+    /* ignore */
+  }
+  return { success: true };
+});
+
+// Ne renvoie JAMAIS le mot de passe : la page a seulement besoin de savoir
+// qu'il y a une soumission en attente et pour quel compte, afin d'afficher la
+// proposition. Le secret reste ici jusqu'à `credentials:save`.
+ipcMain.handle('credentials:takePending', (event) => {
+  const rec = pendingCredentials.get(event.sender.id);
+  // Passé 90 s, la soumission n'a plus de rapport avec la page affichée.
+  // `taken` : on ne propose qu'UNE fois. Le mot de passe reste ici jusqu'à
+  // l'enregistrement, mais chaque navigation ne doit pas rouvrir la proposition
+  // que l'utilisateur vient de fermer.
+  if (!rec || rec.taken || Date.now() - rec.at > 90000) {
+    if (rec && Date.now() - rec.at > 90000) pendingCredentials.delete(event.sender.id);
+    return { success: false };
+  }
+  rec.taken = true;
+  return { success: true, url: rec.url, login: rec.login };
+});
+
+ipcMain.handle('credentials:generate', (_event, opts = {}) => vault.generatePassword(opts));
 
 // Purge les cookies/session d'un compte désinstallé (session unique par app).
 // La clé de session est STABLE (sessionKey) : elle ne change pas quand l'app
@@ -2603,6 +3311,10 @@ app.whenReady().then(() => {
   // Verrouillage (codes globaux / par profil) — chiffré au repos via safeStorage
   security.init(app.getPath('userData'));
 
+  // Coffre-fort intégré : prépare le dossier des trousseaux (rien n'est
+  // déverrouillé au démarrage — il faut toujours saisir le mot de passe maître)
+  vault.init(app.getPath('userData'));
+
   // Bloqueur de pub natif — l'état réel (on/off) est synchronisé par le
   // renderer depuis les réglages ; ici on prépare juste le chemin du cache.
   adblock.initAdblock(app.getPath('userData'), false);
@@ -2667,9 +3379,41 @@ app.on('web-contents-created', (_event, contents) => {
   });
 });
 
-app.on('before-quit', () => {
+app.on('before-quit', (event) => {
+  // Quitter annule les téléchargements en cours (le processus qui les écrit
+  // s'arrête). On demande confirmation plutôt que de perdre le fichier — comme
+  // le fait un navigateur.
+  const pending = activeDownloadCount();
+  if (pending > 0 && !downloadQuitConfirmed) {
+    event.preventDefault();
+    const choice = dialog.showMessageBoxSync(mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined, {
+      type: 'warning',
+      buttons: ['Continuer les téléchargements', 'Quitter quand même'],
+      defaultId: 0,
+      cancelId: 0,
+      title: 'Téléchargements en cours',
+      message:
+        pending === 1
+          ? 'Un téléchargement est en cours.'
+          : `${pending} téléchargements sont en cours.`,
+      detail: "Quitter Orbit les interrompt définitivement. Les fichiers incomplets seront perdus.",
+    });
+    if (choice === 0) return;
+    downloadQuitConfirmed = true;
+    app.quit();
+    return;
+  }
   isQuitting = true;
 });
+
+// Mise en veille / verrouillage de session de l'OS : on ferme les trousseaux.
+// C'est le moment où l'utilisateur s'éloigne physiquement de la machine.
+try {
+  powerMonitor.on('suspend', () => vault.lockAll());
+  powerMonitor.on('lock-screen', () => vault.lockAll());
+} catch {
+  /* powerMonitor n'émet pas ces événements partout */
+}
 
 app.on('will-quit', () => {
   try {

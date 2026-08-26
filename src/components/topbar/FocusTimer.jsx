@@ -1,8 +1,10 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { Timer, Play, Pause, RotateCcw, Coffee, Brain } from 'lucide-react';
 import { useStore } from '../../stores/useStore';
 import { useT } from '../../lib/i18n';
 import { resolveSoundUrl, playSound } from '../../lib/sounds';
+import { useZoneHold } from '../../lib/autoHide';
+import { useDismiss } from '../../lib/useDismiss';
 
 // Minuteur de concentration (Pomodoro) dans l'en-tête : 25 min de travail,
 // 5 min de pause, pause longue toutes les 4 sessions. Une notification système
@@ -22,19 +24,16 @@ export default function FocusTimer({ placement = 'top', align = 'right-0' }) {
   const [running, setRunning] = useState(false);
   const [rounds, setRounds] = useState(0);
   const [open, setOpen] = useState(false);
+  // Mode épuré : garde la barre ouverte tant que ce panneau l'est.
+  useZoneHold(placement, 'panel', open);
   const ref = useRef(null);
   // Fin visée en horloge murale : un simple décompte dérive quand l'onglet
   // est ralenti, ici l'affichage reste juste à la seconde près.
   const endAt = useRef(null);
 
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e) => {
-      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
-    };
-    document.addEventListener('mousedown', onDown);
-    return () => document.removeEventListener('mousedown', onDown);
-  }, [open]);
+  // Clic ailleurs, Échap, clic DANS une app… : règle commune (lib/useDismiss).
+  const closePanel = useCallback(() => setOpen(false), []);
+  useDismiss(ref, open, closePanel);
 
   // Changer les durées dans les paramètres remet le minuteur à l'heure
   useEffect(() => {

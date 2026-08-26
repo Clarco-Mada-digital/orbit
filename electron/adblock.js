@@ -69,8 +69,11 @@ function contextFor(ses) {
 }
 
 // Appelé par l'écouteur onBeforeRequest unique de main.js.
-export function beforeRequest(ses, details, callback) {
-  if (enabled && blocker) {
+// `active` permet à main.js d'imposer sa décision requête par requête : une app
+// peut bloquer alors que le réglage global est éteint, ou l'inverse (voir
+// « Bloqueur de pub » dans les réglages d'une app).
+export function beforeRequest(ses, details, callback, active = enabled) {
+  if (active && blocker) {
     const ctx = contextFor(ses);
     if (ctx) return ctx.onBeforeRequest(details, callback);
   }
@@ -80,12 +83,23 @@ export function beforeRequest(ses, details, callback) {
 // Appelé par l'écouteur onHeadersReceived unique de main.js. On renvoie au
 // callback la réponse (éventuellement modifiée) de l'adblocker ; main.js y
 // applique ensuite sa suppression de frame-ancestors / X-Frame-Options.
-export function headersReceived(ses, details, callback) {
-  if (enabled && blocker) {
+export function headersReceived(ses, details, callback, active = enabled) {
+  if (active && blocker) {
     const ctx = contextFor(ses);
     if (ctx) return ctx.onHeadersReceived(details, callback);
   }
   callback({}); // aucune modification côté adblock
+}
+
+// Charge le moteur si besoin — appelé quand une app force le blocage alors que
+// le réglage global est éteint (sans ça, le moteur ne serait jamais téléchargé).
+export async function ensureEngine() {
+  try {
+    await getBlocker();
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export async function setEnabled(on) {
@@ -108,8 +122,8 @@ export async function setEnabled(on) {
 // Injecté par main.js via webContents.insertCSS à chaque chargement de page.
 // Compatible Electron 33 (n'utilise pas registerPreloadScript, réservé aux
 // versions récentes).
-export function getCosmeticStyles(url) {
-  if (!enabled || !blocker) return '';
+export function getCosmeticStyles(url, active = enabled) {
+  if (!active || !blocker) return '';
   try {
     const hostname = getHostname(url) || '';
     const domain = getDomain(url) || '';

@@ -433,6 +433,37 @@ export default function WebView({ app, active, visible, flexLayout }) {
     }
   }, [active]);
 
+  // Bloqueur de pub PAR APP : on transmet au processus principal l'id du
+  // webContents de cette page et le mode choisi ('on' / 'off' / hériter). Le
+  // processus principal ne peut pas le deviner — plusieurs apps partagent
+  // parfois la même session (profil partagé, conteneurs). Rejoué à chaque
+  // navigation : un webview qui recharge garde le même webContents, mais une
+  // app remise en veille puis réveillée en obtient un nouveau.
+  useEffect(() => {
+    const wv = ref.current;
+    if (!wv || app.sleeping) return;
+    const push = () => {
+      try {
+        window.electronAPI?.adblock?.setForContents?.(
+          wv.getWebContentsId(),
+          app.adblock === 'on' || app.adblock === 'off' ? app.adblock : null
+        );
+      } catch {
+        /* webview pas encore attaché — le prochain dom-ready s'en chargera */
+      }
+    };
+    push();
+    // 'did-start-loading' arrive AVANT que la page ne demande ses ressources :
+    // c'est le seul moment où l'exception vaut aussi pour les scripts et les
+    // images du premier chargement. 'dom-ready' sert de filet.
+    wv.addEventListener('did-start-loading', push);
+    wv.addEventListener('dom-ready', push);
+    return () => {
+      wv.removeEventListener('did-start-loading', push);
+      wv.removeEventListener('dom-ready', push);
+    };
+  }, [app.adblock, app.sleeping]);
+
   // Zoom en temps réel : re-appliqué dès que le réglage change (boutons − / % / +)
   useEffect(() => {
     const wv = ref.current;

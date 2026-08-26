@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { CloudSun, MapPin, RefreshCw, Wind, Droplets } from 'lucide-react';
 import { useStore } from '../../stores/useStore';
 import { useT } from '../../lib/i18n';
+import { useZoneHold } from '../../lib/autoHide';
+import { useDismiss } from '../../lib/useDismiss';
 
 // Météo via Open-Meteo : API publique, sans clé ni compte. La position vient
 // de la ville saisie dans les paramètres (géocodage Open-Meteo) — jamais de
@@ -50,16 +52,13 @@ export default function WeatherWidget({ placement = 'top', align = 'right-0' }) 
   const [state, setState] = useState('idle'); // idle | loading | error
   const [reload, setReload] = useState(0); // incrémenté par le bouton « Actualiser »
   const [open, setOpen] = useState(false);
+  // Mode épuré : garde la barre ouverte tant que ce panneau l'est.
+  useZoneHold(placement, 'panel', open);
   const ref = useRef(null);
 
-  useEffect(() => {
-    if (!open) return;
-    const onDown = (e) => {
-      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
-    };
-    document.addEventListener('mousedown', onDown);
-    return () => document.removeEventListener('mousedown', onDown);
-  }, [open]);
+  // Clic ailleurs, Échap, clic DANS une app… : règle commune (lib/useDismiss).
+  const closePanel = useCallback(() => setOpen(false), []);
+  useDismiss(ref, open, closePanel);
 
   useEffect(() => {
     if (!city) {

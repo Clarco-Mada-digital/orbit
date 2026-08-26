@@ -1,9 +1,10 @@
-import { Fragment, useState, useEffect, useRef } from 'react';
+import { Fragment, useCallback, useState, useEffect, useRef } from 'react';
 import {
   ArrowLeft,
   ArrowRight,
   RotateCw,
-  Star,
+  Pin,
+  PinOff,
   Bell,
   Search,
   CheckCheck,
@@ -22,6 +23,8 @@ import {
 } from 'lucide-react';
 import { useStore } from '../../stores/useStore';
 import { useT } from '../../lib/i18n';
+import { useZoneHold } from '../../lib/autoHide';
+import { useGuestDismiss } from '../../lib/useDismiss';
 import { useLoadingStore } from '../../lib/loadingStore';
 import { getWebview, reloadApp } from '../../lib/webviewRegistry';
 import OrbitLogo from '../OrbitLogo';
@@ -117,6 +120,14 @@ export function useTopbarModules({ onOpenQuickSwitcher, placement = 'top' }) {
   const wsMenuRef = useRef(null);
   const [wsSaving, setWsSaving] = useState(false);
   const [wsName, setWsName] = useState('');
+  // Mode épuré : chacun de ces panneaux garde sa barre ouverte tant qu'il est
+  // déplié. Sans ça, écarter la souris pour lire une notification refermerait
+  // la barre — et le panneau avec elle.
+  useZoneHold(placement, 'notifications', showNotifPanel);
+  useZoneHold(placement, 'extensions', Boolean(extMenu));
+  useZoneHold(placement, 'split', showSplitMenu);
+  useZoneHold(placement, 'workspaces', showWsMenu);
+
   const app = apps.find((a) => a.id === activeApp);
 
   // Position verticale des menus déroulants selon que la barre est en haut ou en bas
@@ -181,9 +192,24 @@ export function useTopbarModules({ onOpenQuickSwitcher, placement = 'top' }) {
         setWsName('');
       }
     };
-    window.addEventListener('click', onClick);
-    return () => window.removeEventListener('click', onClick);
+    // 'mousedown' en capture, comme partout ailleurs : un 'click' se déclenche
+    // après que React ait pu retirer la cible du DOM, et fermait le menu à tort.
+    window.addEventListener('mousedown', onClick, true);
+    return () => window.removeEventListener('mousedown', onClick, true);
   }, []);
+
+  // Un clic dans une app embarquée ne traverse pas la frontière de processus :
+  // ces menus ne pouvaient pas savoir qu'on avait cliqué ailleurs.
+  const closeMenus = useCallback(() => {
+    setExtMenu(null);
+    setShowSplitMenu(false);
+    setShowWsMenu(false);
+    setShowNotifPanel(false);
+  }, []);
+  useGuestDismiss(
+    Boolean(extMenu) || showSplitMenu || showWsMenu || showNotifPanel,
+    closeMenus
+  );
 
   // Apps avec des messages non lus (tous profils confondus)
   const unreadApps = apps
@@ -198,8 +224,8 @@ export function useTopbarModules({ onOpenQuickSwitcher, placement = 'top' }) {
         setShowNotifPanel(false);
       }
     };
-    window.addEventListener('click', onClick);
-    return () => window.removeEventListener('click', onClick);
+    window.addEventListener('mousedown', onClick, true);
+    return () => window.removeEventListener('mousedown', onClick, true);
   }, []);
 
   // L'app active est-elle en train de charger ? (bouton Actualiser qui tourne)
@@ -615,10 +641,13 @@ export function useTopbarModules({ onOpenQuickSwitcher, placement = 'top' }) {
             {activeApp && (
               <button
                 onClick={toggleFavorite}
-                className={`btn-icon ${app?.isFavorite ? 'text-yellow-500' : ''}`}
+                className={`btn-icon ${app?.isFavorite ? 'text-accent-primary' : ''}`}
                 title={app?.isFavorite ? t('tb.favRemove') : t('tb.favAdd')}
               >
-                <Star size={18} fill={app?.isFavorite ? 'currentColor' : 'none'} />
+                {/* Épingle plutôt qu'étoile : le geste remonte l'app en haut de
+                    la barre latérale — une étoile laissait attendre une simple
+                    marque décorative. */}
+                {app?.isFavorite ? <PinOff size={18} /> : <Pin size={18} />}
               </button>
             )}
           </Fragment>

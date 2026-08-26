@@ -1,18 +1,25 @@
-import { Fragment, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Fragment, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Moon, Play, X, Columns2, Rows2, Plus, Wifi } from 'lucide-react';
 import Sidebar from './components/Sidebar';
 import Topbar from './components/Topbar';
 import Bottombar from './components/Bottombar';
+import { useAutoHide, RevealStrip, REVEALED_BAR_Z, useAutoHideStore } from './lib/autoHide';
 import QuickSwitcher from './components/QuickSwitcher';
-import Settings from './components/Settings';
-import ProfileManager from './components/ProfileManager';
-import AppStore from './components/AppStore';
+// Surimpressions chargées À LA DEMANDE. Ce sont les écrans les plus lourds
+// (réglages et leurs sept onglets, coffre-fort, boutique et son catalogue de
+// recettes) et les seuls qu'on n'ouvre jamais au démarrage : les inclure dans
+// le paquet principal faisait analyser leur code à chaque lancement, avant même
+// d'afficher la première app.
+const Settings = lazy(() => import('./components/Settings'));
+const ProfileManager = lazy(() => import('./components/ProfileManager'));
+const AppStore = lazy(() => import('./components/AppStore'));
 import WebView from './components/WebView';
+import GuestContextMenu from './components/GuestContextMenu';
 import LockScreen from './components/LockScreen';
 import FindBar from './components/FindBar';
 import UpdateBanner from './components/UpdateBanner';
 import Welcome from './components/Welcome';
-import { useStore } from './stores/useStore';
+import { useStore, appVisibleIn } from './stores/useStore';
 import { useSecurityStore } from './lib/securityStore';
 import { useMediaStore } from './lib/mediaStore';
 import { mediaToggle, mediaPrev, mediaNext, mediaSeek, pickNowPlaying } from './lib/mediaControls';
@@ -20,6 +27,7 @@ import { appViewKey, appPartition, resolveProxy } from './lib/session';
 import { matchShortcut } from './lib/shortcuts';
 import { reloadApp } from './lib/webviewRegistry';
 import { logDiagnostic } from './lib/diagnosticsStore';
+import { attachTtsPlayer, setVolume as setTtsVolume } from './lib/ttsPlayer';
 
 // Construit l'état à afficher dans le mini-lecteur flottant (ou null)
 function buildMiniPlayerState() {
@@ -271,9 +279,19 @@ export default function App() {
   };
 
   // Apps du profil actif, triées
+  // Une app « tous profils » venue d'un profil VERROUILLÉ est exclue : sans
+  // ça, la portée globale ouvrirait une porte dérobée dans le verrou de profil.
   const profileApps = useMemo(
-    () => apps.filter((a) => a.profileId === activeProfile).sort((a, b) => a.order - b.order),
-    [apps, activeProfile]
+    () =>
+      apps
+        .filter(
+          (a) =>
+            appVisibleIn(a, activeProfile) &&
+            (a.profileId === activeProfile || profileAccessible(a.profileId))
+        )
+        .sort((a, b) => a.order - b.order),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [apps, activeProfile, security.lockedProfileIds, security.unlockedProfileIds]
   );
   const activeAppData = apps.find((a) => a.id === activeApp);
 
@@ -304,7 +322,7 @@ export default function App() {
           // Verrou de profil : les apps d'un profil verrouillé (non déverrouillé)
           // ne sont pas montées → page fermée, non peinte, aucun accès.
           profileAccessible(a.profileId) &&
-          (a.profileId === activeProfile || mountedIds.has(a.id))
+          (a.profileId === activeProfile || a.scope === 'all' || mountedIds.has(a.id))
       ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
@@ -409,6 +427,24 @@ export default function App() {
   useEffect(() => {
     window.electronAPI?.adblock?.setEnabled?.(settings.adblock !== false);
   }, [settings.adblock]);
+
+  // Menu contextuel : dessiné par Orbit, ou natif si l'utilisateur préfère.
+  useEffect(() => {
+    window.electronAPI?.contextMenu?.setMode?.(settings.nativeContextMenu !== true);
+  }, [settings.nativeContextMenu]);
+
+  // Lecture vocale Piper : l'audio est synthétisé dans le processus principal
+  // et rejoué ici. L'abonnement ne crée rien tant qu'aucun son n'arrive.
+  useEffect(() => attachTtsPlayer(), []);
+  useEffect(() => {
+    setTtsVolume((settings.soundVolume ?? 80) / 100);
+  }, [settings.soundVolume]);
+
+  // Moteur vocal choisi, poussé au processus principal.
+  useEffect(() => {
+    const cfg = settings.tts || {};
+    window.electronAPI?.tts?.setPrefs?.(cfg.engine || 'system', cfg.voiceId || '');
+  }, [settings.tts]);
 
   // Proxy/VPN : applique à chaque partition (app/profil) son proxy effectif.
   // Une seule application par partition. On ne (ré)applique QUE les partitions
@@ -541,6 +577,12 @@ export default function App() {
       if (a) reloadApp(a, all.find((x) => x.id === a)?.url, action === 'reload-hard');
       return;
     }
+    // Mode épuré : appelle (ou renvoie) toutes les barres masquées. Sans ce
+    // raccourci, elles seraient inatteignables sans souris.
+    if (action === 'toggle-bars') {
+      useAutoHideStore.getState().toggleSummon();
+      return;
+    }
     if (action === 'toggle-sidebar') {
       const { sidebarCollapsed: c, setSidebarCollapsed: set } = useStore.getState();
       return set(!c);
@@ -548,6 +590,18 @@ export default function App() {
     if (action === 'toggle-sleep') {
       const { activeApp: a, toggleAppSleep: t } = useStore.getState();
       if (a) t(a);
+      return;
+    }
+    // Profil suivant / précédent, en boucle. Un profil verrouillé reste
+    // atteignable : on y arrive sur son écran de déverrouillage, exactement
+    // comme en cliquant dessus dans la barre latérale.
+    if (action === 'next-profile' || action === 'prev-profile') {
+      const { profiles: list, activeProfile: cur, setActiveProfile: setP } = useStore.getState();
+      if (list.length < 2) return;
+      const i = list.findIndex((p) => p.id === cur);
+      const step = action === 'next-profile' ? 1 : -1;
+      const next = list[(((i < 0 ? 0 : i) + step) % list.length + list.length) % list.length];
+      if (next) setP(next.id);
       return;
     }
     if (action === 'mark-all-read') return useStore.getState().markAllRead();
@@ -597,6 +651,8 @@ export default function App() {
         setShowProfileManager(false);
         setShowAppStore(false);
         setShowFind(false);
+        // Échap renvoie aussi les barres appelées au clavier.
+        useAutoHideStore.getState().clearSummon();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -629,11 +685,31 @@ export default function App() {
     };
   }, []);
 
+  // Mode épuré : quelles zones se masquent. Le plein écran a déjà son propre
+  // masquage (tout disparaît) — les deux ne se cumulent pas.
+  const autoHide = settings.autoHide || {};
+  const hideTop = Boolean(autoHide.top) && !isFullscreen;
+  const hideLeft = Boolean(autoHide.left) && !isFullscreen;
+  const hideBottom = Boolean(autoHide.bottom) && !isFullscreen && settings.bottombarEnabled;
+
+  const topZone = useAutoHide('top', hideTop);
+  const leftZone = useAutoHide('left', hideLeft);
+  const bottomZone = useAutoHide('bottom', hideBottom);
+
   // Largeurs en rem → elles suivent la taille de police réglée
   const sidebarWidth = sidebarCollapsed ? '4rem' : '17.5rem';
-  // Hauteur de la barre du bas (h-10) quand elle est affichée : la sidebar
+  // Une barre masquable passe en SURIMPRESSION : elle ne doit plus réserver de
+  // place. Sinon chaque passage de souris réagencerait toute la fenêtre — et
+  // forcerait les <webview> à se remettre en page, ce qui est coûteux et fait
+  // perdre leur position de défilement à certaines apps.
+  const sidebarOffset = isFullscreen || hideLeft ? 0 : sidebarWidth;
+  // Hauteur de la barre du bas (h-10) quand elle occupe le flux : la sidebar
   // s'arrête juste au-dessus pour ne pas masquer sa zone gauche.
-  const bottombarHeight = !isFullscreen && settings.bottombarEnabled ? '2.5rem' : 0;
+  const bottombarHeight =
+    !isFullscreen && settings.bottombarEnabled && !hideBottom ? '2.5rem' : 0;
+  // Haut de la barre latérale : collée à 0 quand l'en-tête ne réserve plus de
+  // place, sous l'en-tête sinon.
+  const sidebarTop = hideTop ? 0 : '3rem';
   const hasApps = profileApps.length > 0;
 
   // Un overlay (Réglages, Boutique…) est ouvert : on masque les webviews.
@@ -651,7 +727,25 @@ export default function App() {
       {/* Barre unifiée : logo, navigation, URL, notifications + contrôles fenêtre.
           En plein écran elle disparaît ; elle réapparaît en surimpression quand
           la souris touche le bord supérieur. */}
-      {!isFullscreen && <Topbar onOpenQuickSwitcher={() => setShowQuickSwitcher(true)} />}
+      {!isFullscreen && !hideTop && (
+        <Topbar onOpenQuickSwitcher={() => setShowQuickSwitcher(true)} />
+      )}
+      {/* Mode épuré : l'en-tête sort du flux et glisse depuis le bord haut. */}
+      {hideTop && (
+        <>
+          <RevealStrip zone="top" enabled />
+          <div
+            className="fixed top-0 left-0 right-0 transition-transform duration-200 ease-out shadow-xl"
+            style={{
+              zIndex: REVEALED_BAR_Z,
+              transform: topZone.visible ? 'translateY(0)' : 'translateY(-100%)',
+            }}
+            {...topZone.handlers}
+          >
+            <Topbar onOpenQuickSwitcher={() => setShowQuickSwitcher(true)} />
+          </div>
+        </>
+      )}
       {isFullscreen && !revealTopbar && (
         <div
           className="fixed top-0 left-0 right-0 h-2 z-[500]"
@@ -694,21 +788,28 @@ export default function App() {
       <div className="flex flex-1 overflow-hidden">
         {/* Sidebar (fixed) — masquée en plein écran */}
         {!isFullscreen && (
-        <Sidebar
-          collapsed={sidebarCollapsed}
-          onToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
-          onOpenSettings={() => setShowSettings(true)}
-          onOpenStore={() => setShowAppStore(true)}
-          onOpenProfileManager={() => setShowProfileManager(true)}
-          onSelectApp={handleSetActiveApp}
-          bottomOffset={bottombarHeight}
-        />
+          <>
+            <RevealStrip zone="left" enabled={hideLeft} offset={hideTop ? 0 : 48} />
+            <Sidebar
+              collapsed={sidebarCollapsed}
+              onToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
+              onOpenSettings={() => setShowSettings(true)}
+              onOpenStore={() => setShowAppStore(true)}
+              onOpenProfileManager={() => setShowProfileManager(true)}
+              onSelectApp={handleSetActiveApp}
+              bottomOffset={bottombarHeight}
+              topOffset={sidebarTop}
+              autoHidden={hideLeft}
+              revealed={leftZone.visible}
+              revealHandlers={leftZone.handlers}
+            />
+          </>
         )}
 
         {/* Zone principale — marge = largeur sidebar (rem) */}
         <div
           className="flex-1 flex flex-col min-w-0 transition-[margin-left] duration-300"
-          style={{ marginLeft: isFullscreen ? 0 : sidebarWidth }}
+          style={{ marginLeft: sidebarOffset }}
         >
           {/* Apps embarquées : un <webview> par app, reste vivant en arrière-plan.
               Écran partagé :
@@ -935,8 +1036,23 @@ export default function App() {
       </div>
 
       {/* Barre du bas (optionnelle) — masquée en plein écran */}
-      {!isFullscreen && settings.bottombarEnabled && (
+      {!isFullscreen && settings.bottombarEnabled && !hideBottom && (
         <Bottombar onOpenQuickSwitcher={() => setShowQuickSwitcher(true)} />
+      )}
+      {hideBottom && (
+        <>
+          <RevealStrip zone="bottom" enabled />
+          <div
+            className="fixed bottom-0 left-0 right-0 transition-transform duration-200 ease-out shadow-xl"
+            style={{
+              zIndex: REVEALED_BAR_Z,
+              transform: bottomZone.visible ? 'translateY(0)' : 'translateY(100%)',
+            }}
+            {...bottomZone.handlers}
+          >
+            <Bottombar onOpenQuickSwitcher={() => setShowQuickSwitcher(true)} />
+          </div>
+        </>
       )}
 
       {/* Overlays — au-dessus des webviews car ils sont dans le DOM */}
@@ -957,9 +1073,17 @@ export default function App() {
           }}
         />
       )}
-      {showSettings && <Settings onClose={() => setShowSettings(false)} />}
-      {showProfileManager && <ProfileManager onClose={() => setShowProfileManager(false)} />}
-      {showAppStore && <AppStore onClose={() => setShowAppStore(false)} />}
+      {/* Menu contextuel des apps embarquées (remplace le menu natif) */}
+      <GuestContextMenu />
+
+      {/* Repli `null` : ces écrans s'ouvrent déjà avec une animation d'entrée,
+          et le chargement est local (quelques millisecondes) — afficher un
+          indicateur ferait clignoter l'interface plus qu'il n'informerait. */}
+      <Suspense fallback={null}>
+        {showSettings && <Settings onClose={() => setShowSettings(false)} />}
+        {showProfileManager && <ProfileManager onClose={() => setShowProfileManager(false)} />}
+        {showAppStore && <AppStore onClose={() => setShowAppStore(false)} />}
+      </Suspense>
 
       {/* Verrou global : plein écran au lancement, par-dessus TOUT (topbar,
           sidebar, webviews). Aucune app n'est montée tant que non déverrouillé. */}

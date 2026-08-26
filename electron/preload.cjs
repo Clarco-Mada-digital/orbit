@@ -83,6 +83,81 @@ contextBridge.exposeInMainWorld('electronAPI', {
   adblock: {
     setEnabled: (on) => ipcRenderer.invoke('adblock:setEnabled', on),
     getState: () => ipcRenderer.invoke('adblock:getState'),
+    // Réglage par app : 'on' | 'off' | null (suit le réglage global)
+    setForContents: (webContentsId, mode) =>
+      ipcRenderer.invoke('adblock:setForContents', { webContentsId, mode }),
+  },
+  // Lecture vocale (moteur système / Piper hors ligne)
+  tts: {
+    state: () => ipcRenderer.invoke('tts:state'),
+    setPrefs: (engine, voiceId) => ipcRenderer.invoke('tts:setPrefs', { engine, voiceId }),
+    installEngine: () => ipcRenderer.invoke('tts:installEngine'),
+    installVoice: (id) => ipcRenderer.invoke('tts:installVoice', { id }),
+    removeVoice: (id) => ipcRenderer.invoke('tts:removeVoice', { id }),
+    uninstall: () => ipcRenderer.invoke('tts:uninstall'),
+    preview: (text) => ipcRenderer.invoke('tts:preview', { text }),
+    stop: () => ipcRenderer.invoke('tts:stop'),
+    onProgress: (callback) => {
+      const listener = (_e, payload) => callback(payload);
+      ipcRenderer.on('orbit:tts-progress', listener);
+      return () => ipcRenderer.removeListener('orbit:tts-progress', listener);
+    },
+    // Flux audio brut de Piper, rejoué par l'interface (voir lib/ttsPlayer.js)
+    onAudio: (handlers) => {
+      const onStart = (_e, p) => handlers.start?.(p);
+      const onChunk = (_e, chunk) => handlers.chunk?.(chunk);
+      const onEnd = () => handlers.end?.();
+      ipcRenderer.on('orbit:tts-start', onStart);
+      ipcRenderer.on('orbit:tts-audio', onChunk);
+      ipcRenderer.on('orbit:tts-end', onEnd);
+      return () => {
+        ipcRenderer.removeListener('orbit:tts-start', onStart);
+        ipcRenderer.removeListener('orbit:tts-audio', onChunk);
+        ipcRenderer.removeListener('orbit:tts-end', onEnd);
+      };
+    },
+  },
+  // Un clic a eu lieu dans une app embarquée (pour refermer menus et panneaux)
+  onGuestInteract: (callback) => {
+    const listener = () => callback();
+    ipcRenderer.on('orbit:guest-interact', listener);
+    return () => ipcRenderer.removeListener('orbit:guest-interact', listener);
+  },
+  // Menu contextuel des apps, dessiné par l'interface
+  contextMenu: {
+    setMode: (custom) => ipcRenderer.invoke('ctx:setMode', { custom }),
+    run: (wcId, action, value) => ipcRenderer.invoke('ctx:action', { wcId, action, value }),
+    onShow: (callback) => {
+      const listener = (_event, state) => callback(state);
+      ipcRenderer.on('orbit:context-menu', listener);
+      return () => ipcRenderer.removeListener('orbit:context-menu', listener);
+    },
+  },
+  // Coffre-fort de mots de passe intégré (trousseaux chiffrés)
+  vault: {
+    state: () => ipcRenderer.invoke('vault:state'),
+    create: (payload) => ipcRenderer.invoke('vault:create', payload),
+    unlock: (id, password) => ipcRenderer.invoke('vault:unlock', { id, password }),
+    lock: (id) => ipcRenderer.invoke('vault:lock', { id }),
+    update: (id, patch) => ipcRenderer.invoke('vault:update', { id, ...patch }),
+    changeMaster: (id, current, next) =>
+      ipcRenderer.invoke('vault:changeMaster', { id, current, next }),
+    remove: (id, password) => ipcRenderer.invoke('vault:remove', { id, password }),
+    entries: (id) => ipcRenderer.invoke('vault:entries', { id }),
+    saveEntry: (id, entry) => ipcRenderer.invoke('vault:saveEntry', { id, entry }),
+    deleteEntry: (id, entryId) => ipcRenderer.invoke('vault:deleteEntry', { id, entryId }),
+    setCategories: (id, categories) => ipcRenderer.invoke('vault:setCategories', { id, categories }),
+    reveal: (id, entryId, field) => ipcRenderer.invoke('vault:reveal', { id, entryId, field }),
+    copy: (id, entryId, field) => ipcRenderer.invoke('vault:copy', { id, entryId, field }),
+    totp: (id, entryId) => ipcRenderer.invoke('vault:totp', { id, entryId }),
+    audit: (id) => ipcRenderer.invoke('vault:audit', { id }),
+    strength: (password) => ipcRenderer.invoke('vault:strength', { password }),
+    generate: (opts) => ipcRenderer.invoke('vault:generate', opts),
+    importFile: (id) => ipcRenderer.invoke('vault:import', { id }),
+    exportFile: (id, password, format) =>
+      ipcRenderer.invoke('vault:export', { id, password, format }),
+    ignored: () => ipcRenderer.invoke('vault:ignored'),
+    unignore: (domain) => ipcRenderer.invoke('vault:unignore', { domain }),
   },
   // Traduction : configuration (langue cible + moteur Google/LibreTranslate)
   setTranslateConfig: (cfg) => ipcRenderer.invoke('translate:setConfig', cfg),

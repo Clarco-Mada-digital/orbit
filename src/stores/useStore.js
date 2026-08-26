@@ -12,13 +12,24 @@ function hostnameOf(url) {
   }
 }
 
+// Portée d'une app : par défaut elle n'existe que dans son profil. Avec
+// `scope: 'all'`, elle est visible depuis TOUS les profils — une seule app, une
+// seule session, pas une copie par profil (c'est toute la différence avec le
+// fait de l'installer deux fois : on garderait deux comptes séparés).
+export function appVisibleIn(app, profileId) {
+  return app.profileId === profileId || app.scope === 'all';
+}
+
 // Paramètres par défaut — utilisés pour la migration des anciennes données
 export const defaultSettings = {
   theme: 'dark', // dark | light | auto
   language: 'auto', // auto | fr | en
   accentColor: '#6366f1',
   sidebarPosition: 'left',
-  autoHideTopbar: false,
+  // Mode épuré : quelles barres se masquent et réapparaissent au survol du
+  // bord de l'écran. Remplace l'ancien `autoHideTopbar`, qui n'était branché
+  // à rien.
+  autoHide: { top: false, left: false, bottom: false },
   notifications: true,
   // Son de notification personnalisé (data URL ; vide = son système)
   notificationSound: '',
@@ -63,6 +74,12 @@ export const defaultSettings = {
   globalProxy: '',
   // Bloqueur de pub / traceurs natif (activé par défaut)
   adblock: true,
+  // Menu contextuel des apps : celui d'Orbit par défaut, celui du système en
+  // repli pour qui le préfère (ou si le nôtre pose problème).
+  nativeContextMenu: false,
+  // Lecture vocale : moteur du système par défaut (immédiat, aucun
+  // téléchargement). 'piper' n'est utilisé que si l'utilisateur l'installe.
+  tts: { engine: 'system', voiceId: '' },
   // Traduction (menu contextuel « Traduire la sélection »)
   translateTarget: 'fr',
   translateEngine: 'google', // 'google' | 'libretranslate'
@@ -459,7 +476,7 @@ export const useStore = create(
       // Helpers
       getProfileApps: (profileId) => {
         return get()
-          .apps.filter((a) => a.profileId === profileId)
+          .apps.filter((a) => appVisibleIn(a, profileId))
           .sort((a, b) => a.order - b.order);
       },
 
@@ -477,7 +494,7 @@ export const useStore = create(
       // v10 : sons du minuteur + volume global. Le bump de version suffit :
       // la fusion avec `defaultSettings` en tête de `migrate` les ajoute aux
       // installations existantes.
-      version: 10,
+      version: 11,
       migrate: (persistedState, version) => {
         // Fusionne les anciennes données avec les paramètres par défaut
         // (évite les champs manquants → bug "input non contrôlé")
@@ -562,6 +579,17 @@ export const useStore = create(
               bottombarEnabled: false,
               bottombar: { ...DEFAULT_BOTTOMBAR },
             },
+          };
+        }
+        // v11 : masquage automatique par zone. L'ancien interrupteur
+        // `autoHideTopbar` existait dans les réglages mais n'était lu nulle
+        // part — s'il était activé, on honore enfin l'intention.
+        if (version < 11) {
+          const legacy = Boolean(next.settings?.autoHideTopbar);
+          const { autoHideTopbar: _drop, ...rest } = next.settings || {};
+          next = {
+            ...next,
+            settings: { ...rest, autoHide: { top: legacy, left: false, bottom: false } },
           };
         }
         return next;
