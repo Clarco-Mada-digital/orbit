@@ -123,15 +123,17 @@ let pickerOpenedAt = 0; // anti-course : clic qui a ouvert le sélecteur
 // ---------------------------------------------------------------------------
 // Détection des champs
 // ---------------------------------------------------------------------------
-// Un champ RÉELLEMENT visible. `offsetParent !== null` ne suffit pas : un champ
-// de 1 px, ou repoussé hors de l'écran, le satisfait. C'est exactement ce
-// qu'utilise un piège à remplissage automatique — une page (ou un script
-// injecté via une faille XSS du site) pose un champ mot de passe invisible, lui
-// donne le focus, et relit sa valeur une fois rempli.
+// Un champ RÉELLEMENT visible. On utilise getBoundingClientRect() (plus fiable
+// que offsetParent, qui est null pour position:fixed, <body>, <html>, et les
+// éléments inside Shadow DOM). Un champ de 1 px, ou repoussé hors de l'écran,
+// est rejeté. C'est exactement ce qu'utilise un piège à remplissage automatique.
 function reallyVisible(el) {
   if (!el || el.disabled || el.readOnly || el.type === 'hidden') return false;
-  if (el.offsetParent === null) return false;
   const r = el.getBoundingClientRect();
+  // offsetParent est null pour les elements position:fixed, <body>, <html>,
+  // et les elements à l'interieur de Shadow DOM. On ne l'utilise plus comme
+  // test bloquant : getBoundingClientRect() est plus fiable.
+  if (r.width === 0 && r.height === 0) return false;
   if (r.width < 40 || r.height < 10) return false;
   // Hors de la fenêtre (marges larges : un champ peut être légitimement
   // au-dessus de la zone visible si la page est défilée).
@@ -142,9 +144,25 @@ function reallyVisible(el) {
   return true;
 }
 
+// ---------------------------------------------------------------------------
+// Recherche d'elements dans les Shadow DOM.
+// Google, Microsoft, et d'autres utilisent des composants custom avec
+// Shadow DOM pour leurs formulaires de connexion. document.querySelectorAll
+// ne penetre pas les frontières shadow → les inputs ne sont jamais trouvés.
+function deepQueryAll(root, selector) {
+  const results = Array.from(root.querySelectorAll(selector));
+  const all = root.querySelectorAll('*');
+  for (const el of all) {
+    if (el.shadowRoot) {
+      results.push(...deepQueryAll(el.shadowRoot, selector));
+    }
+  }
+  return results;
+}
+
 function findFields() {
-  const pass = Array.from(document.querySelectorAll(PASSWORD_SELECTOR)).find(reallyVisible) || null;
-  const inputs = Array.from(document.querySelectorAll('input'));
+  const pass = deepQueryAll(document, PASSWORD_SELECTOR).find(reallyVisible) || null;
+  const inputs = deepQueryAll(document, 'input');
   const visible = reallyVisible;
 
   const hints = (el) =>
@@ -556,9 +574,33 @@ function maybeFill(event) {
   const target = event.target;
   if (!target || typeof target.matches !== 'function') return;
 
-  const fields = findFields();
-  if (!fields) return;
-  if (target !== fields.pass && target !== fields.user) return;
+  let fields = findFields();
+
+  // Si findFields() ne trouve rien (Shadow DOM fermé — ex. Google, Microsoft),
+  // on cherche le vrai <input> dans composedPath(). Les événements traversent
+  // les frontières Shadow DOM et composedPath() préserve le chemin complet,
+  // même quand event.target est re-targeté vers l'hôte shadow.
+  if (!fields) {
+    const path = typeof event.composedPath === 'function' ? event.composedPath() : [];
+    const realInput = path.find((el) => el && el.matches && el.matches('input'));
+    if (realInput && reallyVisible(realInput)) {
+      const isPassword = realInput.matches(PASSWORD_SELECTOR);
+      if (isPassword) {
+        fields = { user: null, pass: realInput };
+      } else {
+        fields = { user: realInput, pass: null };
+      }
+      dbg('champ trouvé via composedPath (Shadow DOM) : ' + realInput.type + '/' + (realInput.name || realInput.id || realInput.autocomplete || '?'));
+    } else {
+      return;
+    }
+  }
+  // Pour le Shadow DOM : la cible peut être re-targetée, on vérifie si le
+  // champ trouvé EST dans composedPath (c'est lui qui a reçu le focus).
+  if (target !== fields.pass && target !== fields.user) {
+    const path = typeof event.composedPath === 'function' ? event.composedPath() : [];
+    if (!path.includes(fields.pass || fields.user)) return;
+  }
 
   currentFields = fields;
   // Bouton 🔑 visible à côté du champ (action explicite)
@@ -574,9 +616,17 @@ function maybeFill(event) {
 
 function onBlur() {
   setTimeout(() => {
-    // Cache le bouton si aucun champ du formulaire n'est plus focalisé
+    // Cache le bouton si aucun champ du formulaire n'est plus focalisé.
+    // En Shadow DOM fermé, document.activeElement est re-targeté vers l'hôte
+    // shadow, pas vers le vrai <input>. On vérifie aussi currentFields pour
+    // gérer ce cas.
     const active = document.activeElement;
-    if (!active || (active !== currentFields?.pass && active !== currentFields?.user)) {
+    const stillOnField =
+      active === currentFields?.pass ||
+      active === currentFields?.user ||
+      (currentFields?.pass && currentFields.pass.getRootNode()?.activeElement === currentFields.pass) ||
+      (currentFields?.user && currentFields.user.getRootNode()?.activeElement === currentFields.user);
+    if (!stillOnField) {
       removeKeyBtn();
     }
   }, 150);
@@ -602,13 +652,27 @@ document.addEventListener(
   (event) => {
     if (!event.isTrusted || pickerEl) return;
     const target = event.target;
-    if (!target || target.nodeType !== 1 || target !== document.activeElement) return;
-    const fields = findFields();
-    if (!fields) return;
-    if (target !== fields.pass && target !== fields.user) return;
+    if (!target || target.nodeType !== 1) return;
+    let fields = findFields();
+    // Shadow DOM fermé : composedPath() pour trouver le vrai <input>
+    if (!fields) {
+      const path = typeof event.composedPath === 'function' ? event.composedPath() : [];
+      const realInput = path.find((el) => el && el.matches && el.matches('input'));
+      if (realInput && reallyVisible(realInput)) {
+        const isPassword = realInput.matches(PASSWORD_SELECTOR);
+        fields = isPassword ? { user: null, pass: realInput } : { user: realInput, pass: null };
+      } else {
+        return;
+      }
+    }
+    const anchor = fields.pass || fields.user;
+    if (target !== fields.pass && target !== fields.user) {
+      const path = typeof event.composedPath === 'function' ? event.composedPath() : [];
+      if (!path.includes(anchor)) return;
+    }
     dbg('clic sur un champ déjà focalisé → nouvelle tentative');
     currentFields = fields;
-    showKeyBtn(fields.pass || fields.user);
+    showKeyBtn(anchor);
     doFill(fields, false);
   },
   true
