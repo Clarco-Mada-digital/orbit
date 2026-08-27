@@ -499,6 +499,10 @@ async function doFill(fields, manual) {
           showPicker(entries, fields, fields.pass || fields.user);
         }
       }
+    } else if (res && res.disabled) {
+      // L'utilisateur a coupé les propositions d'identifiants : on s'efface
+      // complètement plutôt que d'annoncer une absence d'entrée.
+      removeKeyBtn();
     } else if (res && res.success) {
       // Rien trouvé : la raison la plus fréquente est un trousseau encore
       // fermé — on le dit, plutôt que de laisser croire à une absence d'entrée.
@@ -553,6 +557,34 @@ function onBlur() {
 
 document.addEventListener('focusin', maybeFill, true);
 document.addEventListener('focusout', onBlur, true);
+
+// Rattrapage du champ DÉJÀ focalisé.
+//
+// Beaucoup de pages de connexion donnent elles-mêmes le focus au champ
+// identifiant au chargement (autofocus, ou focus posé par leur script). Ce
+// `focusin`-là arrive avant que l'utilisateur ait touché à quoi que ce soit :
+// le remplissage automatique le refuse, à raison (un champ focalisé tout seul
+// puis relu est le piège classique à récolte d'identifiants).
+//
+// Mais `focusin` ne se redéclenche pas sur un champ qui a déjà le focus. Le
+// clic de l'utilisateur ne relançait donc plus rien : ni proposition
+// KeePassXC, ni sélecteur de comptes. On rejoue la tentative sur ce clic —
+// qui est, lui, une interaction réelle.
+document.addEventListener(
+  'pointerdown',
+  (event) => {
+    if (!event.isTrusted || pickerEl) return;
+    const target = event.target;
+    if (!target || target.nodeType !== 1 || target !== document.activeElement) return;
+    const fields = findFields();
+    if (!fields) return;
+    if (target !== fields.pass && target !== fields.user) return;
+    currentFields = fields;
+    showKeyBtn(fields.pass || fields.user);
+    doFill(fields, false);
+  },
+  true
+);
 
 // ---------------------------------------------------------------------------
 // Panneau flottant réutilisable (proposition d'enregistrement, générateur)

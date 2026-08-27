@@ -402,10 +402,14 @@ export default function App() {
     window.electronAPI?.syncExtensions?.(extensions);
   }, [extensions]);
 
-  // Synchroniser l'état KeePassXC (activer/désactiver l'auto-remplissage)
+  // Synchroniser les sources d'identifiants proposées dans les pages. Le
+  // processus principal repart de « les deux » à chaque lancement : sans cet
+  // envoi, un utilisateur ayant écarté KeePassXC le reverrait interrogé.
   useEffect(() => {
-    window.electronAPI?.keepassSetEnabled?.(settings.keepass?.enabled !== false);
-  }, [settings.keepass?.enabled]);
+    const source = settings.credentials?.source || 'both';
+    window.electronAPI?.credentialsSetSource?.(source);
+    window.electronAPI?.keepassSetEnabled?.(source === 'both' || source === 'keepass');
+  }, [settings.credentials?.source]);
 
   // Fenêtres secondaires : style choisi + thème courant, pour que les pop-ups
   // (connexion Google, liens externes…) soient habillées comme la fenêtre.

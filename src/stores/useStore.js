@@ -92,6 +92,13 @@ export const defaultSettings = {
   autoLockMinutes: 0,
   // KeePassXC : auto-remplissage des identifiants (activé par défaut)
   keepass: { enabled: true },
+  // Quelle source d'identifiants Orbit interroge dans les pages :
+  //   'both'    → KeePassXC + trousseaux intégrés (défaut)
+  //   'keepass' → KeePassXC seul
+  //   'vault'   → trousseaux intégrés seuls
+  //   'none'    → aucune proposition dans les pages
+  // `keepass.enabled` en découle : il n'est plus réglé séparément.
+  credentials: { source: 'both' },
 
   // Composition de l'en-tête : quels modules, dans quelle zone, dans quel
   // ordre (voir src/lib/topbarLayout.js)
@@ -494,7 +501,7 @@ export const useStore = create(
       // v10 : sons du minuteur + volume global. Le bump de version suffit :
       // la fusion avec `defaultSettings` en tête de `migrate` les ajoute aux
       // installations existantes.
-      version: 11,
+      version: 12,
       migrate: (persistedState, version) => {
         // Fusionne les anciennes données avec les paramètres par défaut
         // (évite les champs manquants → bug "input non contrôlé")
@@ -590,6 +597,20 @@ export const useStore = create(
           next = {
             ...next,
             settings: { ...rest, autoHide: { top: legacy, left: false, bottom: false } },
+          };
+        }
+        // v12 : source des identifiants unifiée. Avant, seul KeePassXC avait
+        // un interrupteur (`keepass.enabled`) et le coffre intégré était
+        // toujours interrogé. On traduit l'ancien état sans rien perdre :
+        // KeePassXC coupé → coffre seul, sinon les deux.
+        if (version < 12) {
+          const kpOff = next.settings?.keepass?.enabled === false;
+          next = {
+            ...next,
+            settings: {
+              ...next.settings,
+              credentials: { source: kpOff ? 'vault' : 'both' },
+            },
           };
         }
         return next;

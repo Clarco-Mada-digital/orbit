@@ -466,6 +466,18 @@ export const fr = {
   'sc.escape': 'Fermer / annuler',
   'sc.escKey': 'Échap',
 
+  // Source des identifiants (KeePassXC / coffre intégré)
+  'cred.title': 'Identifiants proposés dans les pages',
+  'cred.desc':
+    "Orbit sait puiser dans deux gestionnaires : KeePassXC et ses trousseaux intégrés. Choisissez ce qu'il interroge quand vous cliquez un champ de connexion.",
+  'cred.both': 'Les deux',
+  'cred.bothDesc': "KeePassXC et les trousseaux intégrés, réunis dans une seule liste.",
+  'cred.keepass': 'KeePassXC seul',
+  'cred.keepassDesc': "Vos mots de passe restent dans KeePassXC. Orbit n'en propose aucun d'autre et ne propose pas d'enregistrer.",
+  'cred.vault': 'Trousseaux intégrés seuls',
+  'cred.vaultDesc': "Aucune requête vers KeePassXC, même s'il tourne.",
+  'cred.none': 'Aucune proposition',
+  'cred.noneDesc': "Rien ne s'affiche dans les pages. Les trousseaux restent consultables ici.",
   // KeePassXC
   'kp.autofillTitle': 'Remplissage automatique des identifiants',
   'kp.autofillDesc':
@@ -1339,6 +1351,18 @@ export const en = {
   'sc.escape': 'Close / cancel',
   'sc.escKey': 'Esc',
 
+  // Credential source (KeePassXC / built-in vaults)
+  'cred.title': 'Credentials offered in pages',
+  'cred.desc':
+    'Orbit can draw from two managers: KeePassXC and its built-in vaults. Choose which ones it queries when you click a sign-in field.',
+  'cred.both': 'Both',
+  'cred.bothDesc': 'KeePassXC and the built-in vaults, merged into a single list.',
+  'cred.keepass': 'KeePassXC only',
+  'cred.keepassDesc': 'Your passwords stay in KeePassXC. Orbit offers no others and does not offer to save.',
+  'cred.vault': 'Built-in vaults only',
+  'cred.vaultDesc': 'No request to KeePassXC, even when it is running.',
+  'cred.none': 'No suggestions',
+  'cred.noneDesc': 'Nothing appears in pages. Vaults remain readable here.',
   // KeePassXC
   'kp.autofillTitle': 'Automatic credential filling',
   'kp.autofillDesc':

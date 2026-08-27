@@ -21,6 +21,7 @@ import {
   Settings2,
 } from 'lucide-react';
 import { useT } from '../lib/i18n';
+import CredentialSource from './CredentialSource';
 
 // ---------------------------------------------------------------------------
 // Coffre-fort de mots de passe (Réglages → Mots de passe)
@@ -707,6 +708,7 @@ export default function PasswordVault() {
             <Plus size={16} /> {t('pv.newVault')}
           </button>
         </div>
+        <CredentialSource />
       </div>
     );
   }
@@ -866,6 +868,10 @@ export default function PasswordVault() {
           onCancel={() => setEditing(null)}
         />
       )}
+
+      {/* Le même choix qu'à l'onglet KeePassXC : on ne décide pas à deux
+          endroits différents ce qu'Orbit propose dans les pages. */}
+      <CredentialSource />
 
       {toast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[10002] px-4 py-2 rounded-lg bg-bg-elevated border border-border shadow-lg text-sm">

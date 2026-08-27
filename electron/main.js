@@ -3088,14 +3088,31 @@ function senderUrl(event, fallback) {
   return /^https?:\/\//i.test(String(fallback || '')) ? fallback : '';
 }
 
+// Quelles sources d'identifiants Orbit interroge dans les pages. Réglé depuis
+// l'interface (Paramètres → Mots de passe / KeePassXC), jamais depuis une page.
+//   'both' | 'keepass' | 'vault' | 'none'
+let credentialSource = 'both';
+const useKeepass = () => credentialSource === 'both' || credentialSource === 'keepass';
+const useVault = () => credentialSource === 'both' || credentialSource === 'vault';
+
+handleFromUi('credentials:setSource', (_event, source) => {
+  const allowed = ['both', 'keepass', 'vault', 'none'];
+  credentialSource = allowed.includes(source) ? source : 'both';
+  // KeePassXC garde son propre interrupteur interne : on le tient aligné pour
+  // qu'aucune requête ne parte vers le socket quand l'utilisateur l'a écarté.
+  keepassSetEnabled(useKeepass());
+  return { success: true, source: credentialSource };
+});
+
 ipcMain.handle('credentials:getLogins', async (event, { url: claimed } = {}) => {
   const url = senderUrl(event, claimed);
+  if (credentialSource === 'none') return { success: true, count: 0, entries: [], disabled: true };
   if (!url) return { success: true, count: 0, entries: [] };
   const entries = [];
   let keepassError = null;
 
   try {
-    const kp = await keepassGetLogins(url);
+    const kp = useKeepass() ? await keepassGetLogins(url) : null;
     if (kp && kp.success) {
       for (const e of kp.entries || []) entries.push({ ...e, source: 'keepass' });
     } else if (kp && kp.error && kp.error !== 'disabled' && kp.error !== 'not-associated') {
@@ -3105,7 +3122,9 @@ ipcMain.handle('credentials:getLogins', async (event, { url: claimed } = {}) => 
     keepassError = String(err.message || err);
   }
 
-  const local = vault.findLogins(url);
+  const local = useVault()
+    ? vault.findLogins(url)
+    : { entries: [], lockedVaults: 0, openVaults: 0 };
   entries.push(...local.entries);
 
   // Un même compte peut exister des deux côtés (import depuis KeePassXC) :
@@ -3133,6 +3152,9 @@ ipcMain.handle('credentials:getLogins', async (event, { url: claimed } = {}) => 
 // Repose entièrement sur la soumission mise de côté ici même : la page n'a rien
 // à fournir, donc rien à falsifier.
 ipcMain.handle('credentials:shouldOffer', (event) => {
+  // Enregistrer va forcément dans un trousseau intégré : sans lui, rien à
+  // proposer (KeePassXC gère ses propres ajouts depuis son interface).
+  if (!useVault()) return { offer: false, reason: 'vault-disabled' };
   const rec = pendingCredentials.get(event.sender.id);
   if (!rec) return { offer: false, reason: 'no-pending' };
   const { url, login, password } = rec;

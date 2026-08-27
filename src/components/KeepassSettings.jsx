@@ -1,17 +1,14 @@
 import { useEffect, useState } from 'react';
 import { KeyRound, RefreshCw, ShieldCheck, ShieldAlert, Loader2, Link } from 'lucide-react';
-import { useStore } from '../stores/useStore';
 import { useT } from '../lib/i18n';
+import CredentialSource from './CredentialSource';
 
 // Onglet KeePassXC des Paramètres : état du pont, association, activer/désactiver
 export default function KeepassSettings() {
-  const { settings, updateSettings } = useStore();
   const t = useT();
   const [status, setStatus] = useState(null); // { enabled, associated, kpRunning, error, associationIds }
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState(null); // { type: 'ok' | 'err', text }
-
-  const enabled = settings.keepass?.enabled !== false;
 
   const refresh = async (silent = false) => {
     if (!silent) setBusy(true);
@@ -29,11 +26,6 @@ export default function KeepassSettings() {
     refresh();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const toggleEnabled = (value) => {
-    updateSettings({ keepass: { ...(settings.keepass || {}), enabled: value } });
-    window.electronAPI?.keepassSetEnabled?.(value);
-  };
 
   const doAssociate = async () => {
     setBusy(true);
@@ -60,25 +52,8 @@ export default function KeepassSettings() {
 
   return (
     <div className="space-y-6">
-      {/* Activer / désactiver */}
-      <div className="card">
-        <h4 className="font-semibold mb-2 flex items-center gap-2">
-          <KeyRound size={18} className="text-accent-primary" />
-          {t('kp.autofillTitle')}
-        </h4>
-        <p className="text-sm text-text-muted mb-4">
-          {t('kp.autofillDesc')}
-        </p>
-        <label className="flex items-center justify-between">
-          <span className="font-medium">{t('kp.enableAutofill')}</span>
-          <input
-            type="checkbox"
-            checked={enabled}
-            onChange={(e) => toggleEnabled(e.target.checked)}
-            className="w-12 h-6 bg-bg-hover rounded-full relative cursor-pointer appearance-none checked:bg-accent-primary transition-colors after:content-[''] after:absolute after:top-1 after:left-1 after:w-4 after:h-4 after:bg-white after:rounded-full after:transition-transform checked:after:translate-x-6"
-          />
-        </label>
-      </div>
+      {/* Quelles sources d'identifiants Orbit interroge */}
+      <CredentialSource />
 
       {/* État de la connexion */}
       <div className="card">

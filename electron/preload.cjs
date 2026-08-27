@@ -40,6 +40,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   keepassStatus: () => ipcRenderer.invoke('keepass:status'),
   keepassAssociate: () => ipcRenderer.invoke('keepass:associate'),
   keepassSetEnabled: (enabled) => ipcRenderer.invoke('keepass:setEnabled', enabled),
+  // Source des identifiants proposés dans les pages : 'both' | 'keepass' | 'vault' | 'none'
+  credentialsSetSource: (source) => ipcRenderer.invoke('credentials:setSource', source),
   // Raccourcis globaux interceptés par le main process (même dans les apps)
   onShortcut: (callback) => {
     const listener = (_event, action) => callback(action);
