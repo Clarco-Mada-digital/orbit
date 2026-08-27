@@ -58,8 +58,27 @@ let autoFilled = false; // remplissage automatique déjà fait sur cette page ?
 // rien fait. Le clic sur 🔑 reste possible à tout moment : c'est un geste
 // explicite, il n'a pas besoin de cette garantie.
 let userInteracted = false;
+let interactionLogged = false;
 const markInteraction = (e) => {
-  if (e && e.isTrusted) userInteracted = true;
+  if (!e || !e.isTrusted) return;
+  userInteracted = true;
+  // Une seule trace par page : de quoi savoir si la détection de champs voit
+  // le formulaire, sans inonder le journal à chaque frappe.
+  if (!interactionLogged) {
+    interactionLogged = true;
+    try {
+      const f = findFields();
+      dbg(
+        'première interaction — champs détectés : ' +
+          (f
+            ? `identifiant=${f.user ? f.user.type + '/' + (f.user.name || f.user.id || '?') : 'aucun'} ` +
+              `motdepasse=${f.pass ? 'oui' : 'aucun'}`
+            : 'AUCUN')
+      );
+    } catch (err) {
+      dbg('détection de champs en erreur : ' + String((err && err.message) || err));
+    }
+  }
 };
 document.addEventListener('pointerdown', markInteraction, true);
 document.addEventListener('keydown', markInteraction, true);
@@ -410,6 +429,7 @@ function showPicker(entries, fields, anchor) {
   });
 
   document.body.appendChild(pickerEl);
+  dbg('sélecteur affiché — ' + entries.length + ' comptes');
 
   const rect = anchor.getBoundingClientRect();
   const maxH = Math.min(320, window.innerHeight - rect.bottom - 16);
@@ -466,6 +486,11 @@ async function doFill(fields, manual) {
   //     focus ne le re-remplit plus tout seul.
   // Le clic sur 🔑 (manual = true) passe outre : c'est une action explicite.
   if (!manual && (autoFilled || hasUserInput(fields) || !userInteracted)) {
+    dbg(
+      'remplissage auto refusé — ' +
+        (autoFilled ? 'déjà rempli' : hasUserInput(fields) ? 'champ déjà saisi' : 'aucune interaction') +
+        ' (bouton 🔑 proposé)'
+    );
     showKeyBtn(fields.pass || fields.user);
     return;
   }
@@ -516,8 +541,10 @@ async function doFill(fields, manual) {
     } else if (res && res.error) {
       showHint('Identifiants : ' + res.error, anchor);
     }
-  } catch {
-    // silencieux : ne jamais perturber la page de l'app
+  } catch (err) {
+    // Ne jamais perturber la page de l'app — mais ne plus disparaître en
+    // silence non plus : une erreur avalée ici, c'est une panne invisible.
+    dbg('getLogins a échoué : ' + String((err && err.message) || err));
   } finally {
     setTimeout(() => {
       busy = false;
@@ -579,6 +606,7 @@ document.addEventListener(
     const fields = findFields();
     if (!fields) return;
     if (target !== fields.pass && target !== fields.user) return;
+    dbg('clic sur un champ déjà focalisé → nouvelle tentative');
     currentFields = fields;
     showKeyBtn(fields.pass || fields.user);
     doFill(fields, false);

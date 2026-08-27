@@ -2985,9 +2985,54 @@ ipcMain.on('guest:interact', (event) => {
   }
 });
 
-// Diagnostic : logs du preload d'identifiants → terminal de l'app
-ipcMain.on('keepass:dbg', (_event, message) => {
-  console.log('[credentials-preload]', message);
+// Diagnostic : logs du preload d'identifiants.
+//
+// Ils partaient uniquement dans la console du processus principal — invisible
+// dans l'application installée, dont la sortie standard n'est branchée nulle
+// part. Une panne de proposition d'identifiants était donc indiagnosticable
+// autrement qu'en relançant tout en mode développement.
+// On les écrit aussi dans <userData>/credentials.log, tronqué quand il
+// dépasse 256 Ko. Ce journal ne contient JAMAIS de mot de passe ni
+// d'identifiant : uniquement des noms de domaine, des compteurs et des
+// libellés d'erreur.
+const credLogFile = () => path.join(app.getPath('userData'), 'credentials.log');
+let credLogSize = -1;
+
+function credLog(message) {
+  const line = `${new Date().toISOString()} ${message}\n`;
+  console.log('[credentials]', message);
+  try {
+    const file = credLogFile();
+    if (credLogSize < 0) {
+      try {
+        credLogSize = fs.statSync(file).size;
+      } catch {
+        credLogSize = 0;
+      }
+    }
+    if (credLogSize > 256 * 1024) {
+      fs.writeFileSync(file, '');
+      credLogSize = 0;
+    }
+    fs.appendFileSync(file, line);
+    credLogSize += Buffer.byteLength(line);
+  } catch {
+    /* un journal ne doit jamais faire échouer ce qu'il observe */
+  }
+}
+
+// Hôte d'une URL, pour le journal : on n'y écrit jamais l'URL complète, qui
+// peut porter des jetons de connexion dans sa requête.
+const hostOf = (u) => {
+  try {
+    return new URL(u).host;
+  } catch {
+    return '?';
+  }
+};
+
+ipcMain.on('keepass:dbg', (event, message) => {
+  credLog(`[page ${hostOf(event.sender.getURL())}] ${message}`);
 });
 
 // ---------------------------------------------------------------------------
@@ -3110,10 +3155,12 @@ ipcMain.handle('credentials:getLogins', async (event, { url: claimed } = {}) => 
   if (!url) return { success: true, count: 0, entries: [] };
   const entries = [];
   let keepassError = null;
+  let kpCount = null;
 
   try {
     const kp = useKeepass() ? await keepassGetLogins(url) : null;
     if (kp && kp.success) {
+      kpCount = (kp.entries || []).length;
       for (const e of kp.entries || []) entries.push({ ...e, source: 'keepass' });
     } else if (kp && kp.error && kp.error !== 'disabled' && kp.error !== 'not-associated') {
       keepassError = kp.error;
@@ -3137,6 +3184,13 @@ ipcMain.handle('credentials:getLogins', async (event, { url: claimed } = {}) => 
     seen.add(key);
     merged.push(e);
   }
+
+  credLog(
+    `getLogins ${hostOf(url)} — source=${credentialSource} keepass=${
+      kpCount === null ? 'ignoré' : kpCount
+    }${keepassError ? ' err=' + keepassError : ''} coffre=${local.entries.length} ` +
+      `(ouverts=${local.openVaults} verrouillés=${local.lockedVaults}) → ${merged.length}`
+  );
 
   return {
     success: true,
