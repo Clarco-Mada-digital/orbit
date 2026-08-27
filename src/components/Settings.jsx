@@ -25,6 +25,7 @@ import SecuritySettings from './SecuritySettings';
 import BackupSettings from './BackupSettings';
 import Diagnostics from './Diagnostics';
 import PasswordVault from './PasswordVault';
+import ReleaseNotes from './ReleaseNotes';
 import VoiceSettings from './VoiceSettings';
 import TopbarSettings from './TopbarSettings';
 import { shortcutKeys } from '../lib/shortcuts';
@@ -212,22 +213,6 @@ export default function Settings({ onClose }) {
                         );
                       })}
                     </select>
-                  </div>
-
-                  <div className="card">
-                    <h4 className="font-semibold mb-2">{t('st.updates')}</h4>
-                    <p className="text-sm text-text-muted mb-3">
-                      {t('st.installedVersion')}{' '}
-                      <span className="font-medium">{appVersion || '—'}</span>
-                    </p>
-                    <button
-                      onClick={checkUpdate}
-                      disabled={checking}
-                      className="btn btn-secondary btn-sm"
-                    >
-                      {checking ? t('about.checking') : t('st.upd.check')}
-                    </button>
-                    {updateMsg && <p className="text-sm mt-2 text-text-muted">{updateMsg}</p>}
                   </div>
 
                   <div className="card">
@@ -1020,6 +1005,10 @@ export default function Settings({ onClose }) {
                     </div>
                     {updateMsg && <p className="text-xs text-text-muted mt-3">{updateMsg}</p>}
                   </div>
+
+                  {/* Ce qui a changé, à côté du numéro de version et du bouton
+                      de mise à jour : les trois répondent à la même question. */}
+                  <ReleaseNotes version={appVersion} />
 
                   <div className="card">
                     <h4 className="font-semibold mb-3">{t('about.features')}</h4>

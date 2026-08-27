@@ -42,21 +42,37 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npm run release:ci
 
-  # Génère les notes de version (depuis les commits) une fois les builds terminés.
+  # Publie les notes de version une fois les builds terminés.
   release-notes:
     needs: build
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     steps:
-      - name: Generate & set release notes
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Set release notes
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           TAG="${GITHUB_REF_NAME}"
+          # Les notes viennent de CHANGELOG.md — le même texte que celui
+          # affiché dans l'application (onglet « À propos »). npm run release
+          # refuse de taguer sans elles, donc ce cas est normalement acquis.
+          # Repli sur la liste des commits si le fichier manque (tag ancien).
+          if node scripts/changelog.js "$TAG" > notes.md; then
+            echo "Notes lues depuis CHANGELOG.md"
+          else
+            echo "Pas de section CHANGELOG pour $TAG — repli sur les commits"
+            gh api "repos/${{ github.repository }}/releases/generate-notes" \
+              -f tag_name="$TAG" --jq .body > notes.md || echo "Release $TAG" > notes.md
+          fi
           # La release existe déjà (créée en brouillon par electron-builder) :
-          # on génère les notes sans tenter de la créer, puis on met à jour
-          # la release existante ET on la publie si elle était en brouillon.
-          gh api "repos/${{ github.repository }}/releases/generate-notes" \
-            -f tag_name="$TAG" --jq .body > notes.md || echo "Release $TAG" > notes.md
+          # on met à jour l'existante ET on la publie si elle était en brouillon.
           gh release edit "$TAG" --repo "${{ github.repository }}" \
             --notes-file notes.md --draft=false

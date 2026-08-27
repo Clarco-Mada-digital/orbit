@@ -36,6 +36,8 @@ export const fr = {
 
   // À propos
   'about.tagline': 'Toutes vos apps web réunies dans une seule fenêtre — Windows, macOS et Linux.',
+  'about.notes': 'Notes de version',
+  'about.noNotes': "Aucune note rédigée pour la version {version}.",
   'about.version': 'Version {version}',
   'about.github': 'GitHub',
   'about.releaseNotes': 'Notes de version',
@@ -921,6 +923,8 @@ export const en = {
 
   // About
   'about.tagline': 'All your web apps in one window — Windows, macOS and Linux.',
+  'about.notes': 'Release notes',
+  'about.noNotes': 'No notes written for version {version}.',
   'about.version': 'Version {version}',
   'about.github': 'GitHub',
   'about.releaseNotes': 'Release notes',

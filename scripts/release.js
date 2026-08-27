@@ -4,7 +4,8 @@
 //   npm run release 1.6.0
 //
 // Ce que ça fait :
-//   1. Vérifie que le dépôt est propre et que la version n'existe pas déjà
+//   1. Vérifie que le dépôt est propre, que la version n'existe pas déjà et
+//      qu'elle a bien ses notes dans CHANGELOG.md
 //   2. Bump « version » dans package.json
 //   3. Génère les icônes + build le front (vérification que tout compile)
 //   4. Commit « chore(release): vX.Y.Z », crée le tag vXYZ et pousse
@@ -16,6 +17,7 @@
 
 import { readFileSync, writeFileSync } from 'node:fs';
 import { execSync } from 'node:child_process';
+import { sectionFor } from './changelog.js';
 
 const run = (cmd) => {
   try {
@@ -59,6 +61,38 @@ if (existingTags.split('\n').includes(tag)) {
   console.error(`✗ Le tag ${tag} existe déjà. Choisis une autre version.`);
   process.exit(1);
 }
+
+// --- Notes de version --------------------------------------------------------
+// Avant tout le reste : une release sans notes est une release qu'on ne peut
+// plus documenter après coup sans réécrire l'historique. Le même texte servira
+// à l'onglet « À propos » et au corps de la release GitHub.
+const changelogPath = new URL('../CHANGELOG.md', import.meta.url);
+let notes = null;
+try {
+  notes = sectionFor(readFileSync(changelogPath, 'utf8'), version);
+} catch {
+  console.error('✗ CHANGELOG.md introuvable à la racine du dépôt.');
+  process.exit(1);
+}
+if (!notes) {
+  const today = new Date().toISOString().slice(0, 10);
+  console.error(
+    `✗ Aucune note de version pour ${version} dans CHANGELOG.md.\n\n` +
+      `  Ajoute la section suivante en haut du fichier, puis relance :\n\n` +
+      `    ## [${version}] — ${today}\n\n` +
+      `    ### Ajouté\n    - …\n\n` +
+      `    ### Corrigé\n    - …\n`
+  );
+  process.exit(1);
+}
+console.log(`✓ Notes de version trouvées pour ${version} :\n`);
+console.log(
+  notes
+    .split('\n')
+    .map((l) => '  │ ' + l)
+    .join('\n')
+);
+console.log('');
 
 // --- Bump de version --------------------------------------------------------
 const pkgPath = new URL('../package.json', import.meta.url).pathname;
