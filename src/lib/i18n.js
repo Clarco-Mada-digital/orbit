@@ -862,6 +862,7 @@ export const fr = {
   'cm.pip': 'Image dans l’image',
   'cm.downloadVideo': 'Télécharger la vidéo',
   'cm.downloadAudio': 'Télécharger l’audio',
+  'cm.generatePassword': 'Générer un mot de passe',
   'cm.screenshot': "Capture d'écran",
   'cm.shotVisible': 'Zone visible',
   'cm.shotFull': 'Page entière',
@@ -884,6 +885,13 @@ export const fr = {
   'vs.piperNotInstalled':
     "Le moteur (~26 Mo) et au moins une voix doivent être téléchargés. Rien n'est installé ni lancé tant que vous ne le demandez pas.",
   'vs.installEngine': 'Installer le moteur (~26 Mo)',
+  'vs.mmsDesc':
+    'Synthèse neuronale malgache hors-ligne. Modèle VITS de Meta (MMS-TTS), ~250 Mo. Idéal pour les textes en malgache.',
+  'vs.mmsNotInstalled':
+    'Le modèle (~250 Mo) doit être téléchargé une première fois. Rien n\'est installé ni lancé tant que vous ne le demandez pas.',
+  'vs.installMms': 'Installer le modèle Malagasy (~250 Mo)',
+  'vs.mmsReady': 'Modèle Malagasy prêt.',
+  'vs.uninstallMms': 'Désinstaller le modèle Malagasy',
   'vs.installing': 'Installation…',
   'vs.voices': 'Voix',
   'vs.download': 'Télécharger',
@@ -1746,6 +1754,7 @@ export const en = {
   'cm.pip': 'Picture in picture',
   'cm.downloadVideo': 'Download video',
   'cm.downloadAudio': 'Download audio',
+  'cm.generatePassword': 'Generate a strong password',
   'cm.screenshot': 'Screenshot',
   'cm.shotVisible': 'Visible area',
   'cm.shotFull': 'Full page',
@@ -1768,6 +1777,13 @@ export const en = {
   'vs.piperNotInstalled':
     'The engine (~26 MB) and at least one voice need downloading. Nothing is installed or started until you ask.',
   'vs.installEngine': 'Install the engine (~26 MB)',
+  'vs.mmsDesc':
+    'Offline Malagasy neural synthesis. Meta VITS model (MMS-TTS), ~250 MB. Ideal for Malagasy text.',
+  'vs.mmsNotInstalled':
+    'The model (~250 MB) needs to be downloaded once. Nothing is installed or started until you ask.',
+  'vs.installMms': 'Install Malagasy model (~250 MB)',
+  'vs.mmsReady': 'Malagasy model ready.',
+  'vs.uninstallMms': 'Uninstall Malagasy model',
   'vs.installing': 'Installing…',
   'vs.voices': 'Voices',
   'vs.download': 'Download',

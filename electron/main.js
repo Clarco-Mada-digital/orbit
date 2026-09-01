@@ -407,16 +407,49 @@ const ALLOWED_PERMISSIONS = new Set([
   'pointerLock',
   'background-sync',
   'openExternal',
+  'display-capture', // partage d'écran (WebRTC / appels vidéo)
+  'desktop-capture', // idem, ancien nom
 ]);
 
 function setupPermissions(ses) {
   if (!ses) return;
   try {
-    ses.setPermissionRequestHandler((_wc, permission, callback) => {
-      callback(ALLOWED_PERMISSIONS.has(permission));
+    // Electron 12+ : (webContents, permission, requestingOrigin, details, callback)
+    // Electron <12 : (webContents, permission, callback)
+    // On détecte la version en vérifiant le type du 3ème argument.
+    ses.setPermissionRequestHandler((_wc, permission, a, b, c) => {
+      const cb = typeof a === 'function' ? a : typeof c === 'function' ? c : null;
+      if (cb) cb(ALLOWED_PERMISSIONS.has(permission));
     });
     // Même politique pour les vérifications synchrones (ex. navigator.permissions)
     ses.setPermissionCheckHandler((_wc, permission) => ALLOWED_PERMISSIONS.has(permission));
+
+    // Périphériques (caméra / micro) : sans handler, Electron refuse
+    // l'accès même quand la permission 'media' est accordée.  WhatsApp,
+    // Messenger… appellent getUserMedia() → besoin de ce handler pour
+    // que la caméra et le micro soient réellement accessibles.
+    try {
+      ses.setDevicePermissionHandler((_details, callback) => {
+        callback(true);
+      });
+    } catch (_) { /* Electron < 15 */ }
+
+    // Partage d'écran (« Partager l'écran » dans un appel) :
+    // setDisplayMediaRequestHandler remplace getDisplayMedia() consent.
+    try {
+      ses.setDisplayMediaRequestHandler((_request, callback) => {
+        // Autorise le partage — l'utilisateur choisit le Bureau dans la
+        // boîte de dialogue système native (pas bloquant côté app).
+        callback(true);
+      });
+    } catch (_) { /* Electron < 30 */ }
+
+    // WebRTC : autoriser les connexions directes (appels vocaux/vidéo).
+    // Par défaut, Electron restreint les flux UDP non-proxifiés — les appels
+    // WhatsApp/Messenger/Telegram échouent silencieusement sans ça.
+    try {
+      ses.setWebRTCIPHandlingPolicy('disable_non_proxied_udp');
+    } catch (_) { /* Electron < 15 */ }
   } catch (err) {
     console.error('[orbit] permission handler failed:', err);
   }
@@ -548,10 +581,16 @@ let translateConfig = { target: 'fr', engine: 'google', url: '', apiKey: '' };
 // n'est lancé et rien n'est téléchargé.
 let ttsPrefs = { engine: 'system', voiceId: '' };
 let piperMod = null; // module chargé paresseusement
+let mmsMod = null; // module MMS-TTS chargé paresseusement
 
 async function loadPiper() {
   if (!piperMod) piperMod = await import('./piper.js');
   return piperMod;
+}
+
+async function loadMms() {
+  if (!mmsMod) mmsMod = await import('./mms-tts.js');
+  return mmsMod;
 }
 
 // Le PCM produit par Piper est rejoué par l'interface (Web Audio) : c'est le
@@ -573,14 +612,22 @@ async function speakWithPiper(text) {
   });
 }
 
+async function speakWithMms(text) {
+  const mms = await loadMms();
+  return mms.speak(text, {
+    onStart: ({ sampleRate }) => pipeAudioToUi('orbit:tts-start', { sampleRate }),
+    onAudio: (chunk) => pipeAudioToUi('orbit:tts-audio', chunk),
+    onEnd: () => pipeAudioToUi('orbit:tts-end', {}),
+    onProgress: (p) => mainWindow?.webContents?.send('orbit:tts-progress', p),
+  });
+}
+
 async function speakText(wc, text) {
   stopSpeaking();
   if (ttsPrefs.engine === 'piper' && ttsPrefs.voiceId) {
     try {
       const res = await speakWithPiper(text);
       if (res.success) return res;
-      // Moteur ou voix absents : on le dit, et on retombe sur la voix système
-      // plutôt que de ne rien faire.
       showPageToast(
         wc,
         res.error === 'voice-missing'
@@ -589,6 +636,15 @@ async function speakText(wc, text) {
       );
     } catch (err) {
       console.error('[orbit] piper indisponible:', err.message);
+    }
+  }
+  if (ttsPrefs.engine === 'mms-tts') {
+    try {
+      const res = await speakWithMms(text);
+      if (res.success) return res;
+      showPageToast(wc, 'Modèle MMS-TTS non installé — Réglages → Lecture vocale.');
+    } catch (err) {
+      console.error('[orbit] mms-tts indisponible:', err.message);
     }
   }
   const res = tts.speak(text, { lang: (translateConfig.target || 'fr').slice(0, 2) });
@@ -600,16 +656,18 @@ async function speakText(wc, text) {
 
 function stopSpeaking() {
   tts.stop();
-  // `piperMod` n'est renseigné que si Piper a déjà servi : aucun chargement
-  // provoqué par un simple « arrêter ».
   if (piperMod) {
     piperMod.stop();
+    pipeAudioToUi('orbit:tts-end', {});
+  }
+  if (mmsMod) {
+    mmsMod.stop();
     pipeAudioToUi('orbit:tts-end', {});
   }
 }
 
 function speakingNow() {
-  return tts.isSpeaking() || Boolean(piperMod && piperMod.isSpeaking());
+  return tts.isSpeaking() || Boolean(piperMod && piperMod.isSpeaking()) || Boolean(mmsMod && mmsMod.isSpeaking());
 }
 
 // Lit tout le texte visible de la page. Le texte est extrait dans la page, la
@@ -1030,6 +1088,47 @@ function buildGuestContextMenu(wc, params) {
     t.push({ label: 'Copier', enabled: can('canCopy'), click: () => wc.copy() });
     t.push({ label: 'Coller', enabled: can('canPaste'), click: () => wc.paste() });
     t.push({ label: 'Tout sélectionner', click: () => wc.selectAll() });
+    if (params.inputFieldType === 'password') {
+      t.push({ type: 'separator' });
+      t.push({ label: 'Générer un mot de passe', click: () => {
+        const res = vault.generatePassword({ length: 20, symbols: true });
+        if (res && res.password) {
+          const escaped = JSON.stringify(res.password);
+          wc.executeJavaScript(
+            `(() => {
+              const el = document.elementFromPoint(${params.x}, ${params.y});
+              let input = null;
+              if (el) {
+                if (el.matches('input[type=password]')) input = el;
+                else if (el.closest) input = el.closest('input[type=password]');
+                if (!input) {
+                  let node = el;
+                  for (let i = 0; i < 10 && node && !input; i++) {
+                    const root = node.getRootNode ? node.getRootNode() : null;
+                    if (root && root !== document && root.host) {
+                      const h = root.host;
+                      if (h.matches && h.matches('input[type=password]')) input = h;
+                      else if (h.shadowRoot) input = h.shadowRoot.querySelector('input[type=password]');
+                      node = root.host;
+                    } else break;
+                  }
+                }
+              }
+              if (!input) return;
+              const proto = input instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+              Object.getOwnPropertyDescriptor(proto, 'value').set.call(input, ${escaped});
+              input.dispatchEvent(new Event('input', { bubbles: true }));
+              input.dispatchEvent(new Event('change', { bubbles: true }));
+              input.focus();
+              input.style.outline = '2px solid #10b981';
+              input.style.outlineOffset = '1px';
+              setTimeout(() => { input.style.outline = ''; }, 1800);
+            })()`,
+            true
+          ).catch(() => {});
+        }
+      }});
+    }
   } else if (params.selectionText && params.selectionText.trim()) {
     const sel = params.selectionText.trim();
     t.push({ label: 'Copier', click: () => wc.copy() });
@@ -1811,7 +1910,24 @@ function createWindow() {
     // coller dans un champ, précédent/suivant/recharger. Absent par défaut
     // dans un <webview> → on le construit et on l'affiche nous-mêmes.
     guestContents.on('context-menu', (_e, params) => {
-      showGuestContextMenu(guestContents, params, mainWindow);
+      // Electron ne détecte pas toujours le type 'password' (Shadow DOM,
+      // composants custom). On fait un probe JS rapide quand le champ est
+      // éditable mais que inputFieldType n'est pas 'password'.
+      if (params.isEditable && params.inputFieldType !== 'password') {
+        const cx = params.x, cy = params.y;
+        guestContents
+          .executeJavaScript(
+            `(() => {\n              try {\n                const el = document.elementFromPoint(${cx}, ${cy});\n                if (!el) return null;\n                // Light DOM direct\n                if (el.matches && el.matches('input[type="password"]')) return 'p';\n                // Shadow DOM ouvert : chercher dans le shadowRoot\n                if (el.shadowRoot) {\n                  if (el.shadowRoot.querySelector('input[type="password"]')) return 'p';\n                }\n                // Remonter les hosts Shadow DOM\n                let node = el;\n                for (let i = 0; i < 10 && node; i++) {\n                  const root = node.getRootNode ? node.getRootNode() : null;\n                  if (root && root !== document && root.host) {\n                    const h = root.host;\n                    if (h.matches && h.matches('input[type="password"]')) return 'p';\n                    if (h.shadowRoot && h.shadowRoot.querySelector('input[type="password"]')) return 'p';\n                    node = root.host;\n                  } else break;\n                }\n              } catch(e) {}\n              return null;\n            })()`,
+            true
+          )
+          .then((r) => {
+            if (r === 'p') params.inputFieldType = 'password';
+            showGuestContextMenu(guestContents, params, mainWindow);
+          })
+          .catch(() => showGuestContextMenu(guestContents, params, mainWindow));
+      } else {
+        showGuestContextMenu(guestContents, params, mainWindow);
+      }
     });
     guestContents.once('destroyed', () => lastContextParams.delete(guestContents.id));
   });
@@ -1823,8 +1939,9 @@ function createWindow() {
 // Réservé à l'interface : installer Piper télécharge et rend exécutable un
 // binaire, ce n'est pas une action qu'une page embarquée doit pouvoir demander.
 handleFromUi('tts:setPrefs', (_e, { engine, voiceId } = {}) => {
+  const validEngines = ['system', 'piper', 'mms-tts'];
   ttsPrefs = {
-    engine: engine === 'piper' ? 'piper' : 'system',
+    engine: validEngines.includes(engine) ? engine : 'system',
     voiceId: String(voiceId || ''),
   };
   return { success: true };
@@ -1835,12 +1952,18 @@ handleFromUi('tts:setPrefs', (_e, { engine, voiceId } = {}) => {
 handleFromUi('tts:state', async () => {
   const system = { engine: tts.detectEngine(), hint: tts.missingEngineHint() };
   let piper = { installed: false, voices: [], catalog: [] };
+  let mms = { installed: false };
   try {
     piper = (await loadPiper()).getState();
   } catch (err) {
     console.error('[orbit] état piper indisponible:', err.message);
   }
-  return { success: true, system, piper, prefs: ttsPrefs };
+  try {
+    mms = (await loadMms()).getState();
+  } catch (err) {
+    console.error('[orbit] état mms-tts indisponible:', err.message);
+  }
+  return { success: true, system, piper, mms, prefs: ttsPrefs };
 });
 
 // Progression envoyée à l'interface pendant les téléchargements (26 Mo pour le
@@ -1870,11 +1993,36 @@ handleFromUi('tts:installVoice', async (_e, { id } = {}) => {
 handleFromUi('tts:removeVoice', async (_e, { id } = {}) => (await loadPiper()).removeVoice(id));
 handleFromUi('tts:uninstall', async () => (await loadPiper()).uninstall());
 
+// MMS-TTS Malagasy : téléchargement du modèle (~250 Mo).
+handleFromUi('tts:installMms', async () => {
+  try {
+    const mms = await loadMms();
+    // Le modèle est téléchargé au premier appel de synthesize().
+    // On force un téléchargement préventif ici.
+    await mms.synthesize('Manao aho', {
+      onProgress: (p) => mainWindow?.webContents?.send('orbit:tts-progress', p),
+    });
+    return { success: true };
+  } catch (err) {
+    return { success: false, error: String(err.message || err) };
+  }
+});
+
+handleFromUi('tts:uninstallMms', async () => {
+  try {
+    const mms = await loadMms();
+    return mms.uninstall();
+  } catch (err) {
+    return { success: false, error: String(err.message || err) };
+  }
+});
+
 // Essai de voix depuis les réglages, sans passer par une page.
 handleFromUi('tts:preview', async (_e, { text } = {}) => {
   const sample = String(text || 'Bonjour, voici un aperçu de cette voix.');
   stopSpeaking();
   if (ttsPrefs.engine === 'piper' && ttsPrefs.voiceId) return speakWithPiper(sample);
+  if (ttsPrefs.engine === 'mms-tts') return speakWithMms(sample);
   return tts.speak(sample, { lang: (translateConfig.target || 'fr').slice(0, 2) });
 });
 
@@ -1941,6 +2089,7 @@ function contextMenuState(wc, params) {
     translateTarget: translateConfig.target || 'fr',
     speaking: speakingNow(),
     isDev,
+    isPasswordField: params.inputFieldType === 'password',
   };
 }
 
@@ -2066,6 +2215,49 @@ handleFromUi('ctx:action', (_event, { wcId, action, value } = {}) => {
     case 'inspect':
       if (isDev) wc.inspectElement(params.x, params.y);
       break;
+    case 'generatePassword': {
+      // Génère un mot de passe fort et l'injecte dans le champ
+      const res = vault.generatePassword({ length: 20, symbols: true });
+      if (res && res.password) {
+        const escaped = JSON.stringify(res.password);
+        wc.executeJavaScript(
+          `(() => {
+            // Cherche l'input password au clic, y compris dans le Shadow DOM
+            const el = document.elementFromPoint(${params.x}, ${params.y});
+            let input = null;
+            if (el) {
+              // Light DOM direct
+              if (el.matches('input[type=password]')) input = el;
+              else if (el.closest) input = el.closest('input[type=password]');
+              // Shadow DOM : chercher dans le root du clic puis remonter
+              if (!input) {
+                let node = el;
+                for (let i = 0; i < 10 && node && !input; i++) {
+                  const root = node.getRootNode ? node.getRootNode() : null;
+                  if (root && root !== document && root.host) {
+                    const h = root.host;
+                    if (h.matches && h.matches('input[type=password]')) input = h;
+                    else if (h.shadowRoot) input = h.shadowRoot.querySelector('input[type=password]');
+                    node = root.host;
+                  } else break;
+                }
+              }
+            }
+            if (!input) return;
+            const proto = input instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+            Object.getOwnPropertyDescriptor(proto, 'value').set.call(input, ${escaped});
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            input.dispatchEvent(new Event('change', { bubbles: true }));
+            input.focus();
+            input.style.outline = '2px solid #10b981';
+            input.style.outlineOffset = '1px';
+            setTimeout(() => { input.style.outline = ''; }, 1800);
+          })()`,
+          true
+        ).catch(() => {});
+      }
+      break;
+    }
     default:
       return { success: false, error: 'unknown-action' };
   }
@@ -3215,9 +3407,15 @@ ipcMain.handle('credentials:shouldOffer', (event) => {
   if (vault.isIgnored(url)) return { offer: false, reason: 'ignored' };
   const vaults = vault.list().filter((v) => v.unlocked);
   if (vaults.length === 0) {
-    // Aucun trousseau ouvert → on ne peut ni vérifier ni enregistrer. Proposer
-    // « déverrouillez » serait du bruit à chaque connexion : on se tait.
-    return { offer: false, reason: 'no-open-vault' };
+    // Aucun trousseau ouvert → on propose d'en créer un pour sauvegarder
+    // les identifiants. Le mot de passe reste en mémoire temporaire (stashPending)
+    // jusqu'à ce que l'utilisateur crée le trousseau et valide.
+    const allVaults = vault.list();
+    return {
+      offer: true,
+      createVault: true,
+      vaults: allVaults.map((v) => ({ id: v.id, name: v.name, icon: v.icon, unlocked: v.unlocked })),
+    };
   }
   const state = vault.lookupSaveState(url, login, password);
   if (state.known && !state.changed) return { offer: false, reason: 'known' };
@@ -3249,6 +3447,25 @@ ipcMain.handle('credentials:save', (event, { vaultId, entryId, title } = {}) => 
 ipcMain.handle('credentials:ignore', (event, { url: claimed } = {}) =>
   vault.ignoreDomain(senderUrl(event, claimed))
 );
+
+// Crée un trousseau ET sauvegarde les identifiants en une seule étape.
+// Utilisé quand aucun trousseau n'est ouvert : l'utilisateur crée un trousseau
+// depuis le panneau de proposition d'enregistrement.
+ipcMain.handle('credentials:createAndSave', (event, { name, password: master, entry } = {}) => {
+  const rec = pendingCredentials.get(event.sender.id);
+  if (!rec) return { success: false, error: 'no-pending' };
+  const createResult = vault.create({ name, password: master });
+  if (!createResult.success) return createResult;
+  // Le trousseau est créé ET déverrouillé : on sauvegarde l'entrée
+  const saveResult = vault.saveEntry(createResult.id, {
+    title: entry?.title || '',
+    url: rec.url,
+    username: rec.login,
+    password: rec.password,
+  });
+  if (saveResult.success) pendingCredentials.delete(event.sender.id);
+  return saveResult;
+});
 
 // Formulaire soumis : on met les identifiants DE CÔTÉ le temps que la page
 // navigue, puis la nouvelle page vient les reprendre pour proposer de les

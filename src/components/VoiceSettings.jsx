@@ -57,6 +57,7 @@ export default function VoiceSettings() {
   const installed = state?.piper?.voices || [];
   const catalog = state?.piper?.catalog || [];
   const systemEngine = state?.system?.engine;
+  const mmsInstalled = state?.mms?.installed || false;
 
   return (
     <div className="space-y-4">
@@ -84,6 +85,52 @@ export default function VoiceSettings() {
           </div>
         </div>
       </label>
+
+      {/* MMS-TTS Malagasy */}
+      <div className="card space-y-3">
+        <label className="flex items-start gap-3 cursor-pointer">
+          <input
+            type="radio"
+            checked={cfg.engine === 'mms-tts'}
+            onChange={() => setEngine('mms-tts')}
+            className="mt-1"
+          />
+          <div className="flex-1">
+            <div className="font-medium">MMS-TTS — Malagasy 🇲🇬</div>
+            <div className="text-sm text-text-muted mt-0.5">
+              {t('vs.mmsDesc')}
+            </div>
+          </div>
+        </label>
+
+        {!mmsInstalled ? (
+          <div className="pl-7 space-y-2">
+            <p className="text-xs text-text-muted">{t('vs.mmsNotInstalled')}</p>
+            <button
+              onClick={() => withBusy('mms', () => api().installMms())}
+              disabled={busy === 'mms'}
+              className="btn btn-primary btn-sm"
+            >
+              <Download size={14} />
+              {busy === 'mms'
+                ? pct !== null
+                  ? `${pct} %`
+                  : t('vs.installing')
+                : t('vs.installMms')}
+            </button>
+          </div>
+        ) : (
+          <div className="pl-7 space-y-2">
+            <p className="text-xs text-green-500">✓ {t('vs.mmsReady')}</p>
+            <button
+              onClick={() => api().uninstallMms().then(refresh)}
+              className="text-xs text-error hover:underline"
+            >
+              {t('vs.uninstallMms')}
+            </button>
+          </div>
+        )}
+      </div>
 
       {/* Piper */}
       <div className="card space-y-3">

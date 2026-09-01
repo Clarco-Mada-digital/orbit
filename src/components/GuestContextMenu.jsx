@@ -21,6 +21,7 @@ import {
   Bug,
   SpellCheck,
   ChevronRight,
+  KeyRound,
 } from 'lucide-react';
 import { useT } from '../lib/i18n';
 import { getWebview } from '../lib/webviewRegistry';
@@ -142,6 +143,9 @@ export default function GuestContextMenu() {
       push({ key: 'copy', icon: Copy, label: t('cm.copy'), action: 'copy', disabled: !menu.canCopy });
       push({ key: 'paste', icon: ClipboardPaste, label: t('cm.paste'), action: 'paste', disabled: !menu.canPaste });
       push({ key: 'all', icon: TextSelect, label: t('cm.selectAll'), action: 'selectAll' });
+      if (menu.isPasswordField) {
+        push({ key: 'genpw', icon: KeyRound, label: t('cm.generatePassword'), action: 'generatePassword' });
+      }
       sep();
     } else if (menu.hasSelection) {
       push({ key: 'copy', icon: Copy, label: t('cm.copy'), action: 'copy' });

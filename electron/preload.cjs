@@ -97,6 +97,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     installVoice: (id) => ipcRenderer.invoke('tts:installVoice', { id }),
     removeVoice: (id) => ipcRenderer.invoke('tts:removeVoice', { id }),
     uninstall: () => ipcRenderer.invoke('tts:uninstall'),
+    installMms: () => ipcRenderer.invoke('tts:installMms'),
+    uninstallMms: () => ipcRenderer.invoke('tts:uninstallMms'),
     preview: (text) => ipcRenderer.invoke('tts:preview', { text }),
     stop: () => ipcRenderer.invoke('tts:stop'),
     onProgress: (callback) => {

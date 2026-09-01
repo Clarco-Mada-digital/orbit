@@ -752,9 +752,114 @@ function makeButton(label, kind) {
 }
 
 // ---------------------------------------------------------------------------
+// Création d'un trousseau depuis le panneau d'enregistrement
+// ---------------------------------------------------------------------------
+// Quand aucun trousseau n'est ouvert, on propose d'en créer un directement
+// depuis la page de connexion, sans forcer l'utilisateur à quitter l'app.
+function showCreateVaultPanel(pending, offer) {
+  const panel = createPanel({
+    title: 'Créer un trousseau pour enregistrer',
+    subtitle: `${pending.login || 'sans identifiant'} — ${location.hostname}`,
+  });
+
+  // Champ nom du trousseau
+  const nameInput = document.createElement('input');
+  nameInput.type = 'text';
+  nameInput.placeholder = 'Nom du trousseau (ex: Personnel)';
+  nameInput.value = 'Personnel';
+  Object.assign(nameInput.style, {
+    width: '100%',
+    padding: '7px 8px',
+    marginBottom: '8px',
+    borderRadius: '8px',
+    background: '#1f2937',
+    border: '1px solid #374151',
+    color: '#f3f4f6',
+    fontSize: '12px',
+    fontFamily: 'inherit',
+    boxSizing: 'border-box',
+  });
+  panel.appendChild(nameInput);
+
+  // Champ mot de passe maître
+  const passInput = document.createElement('input');
+  passInput.type = 'password';
+  passInput.placeholder = 'Mot de passe maître (8+ caractères)';
+  Object.assign(passInput.style, {
+    width: '100%',
+    padding: '7px 8px',
+    marginBottom: '10px',
+    borderRadius: '8px',
+    background: '#1f2937',
+    border: '1px solid #374151',
+    color: '#f3f4f6',
+    fontSize: '12px',
+    fontFamily: 'inherit',
+    boxSizing: 'border-box',
+  });
+  panel.appendChild(passInput);
+
+  // Lien vers les réglages pour les trousseaux existants
+  if (offer.vaults && offer.vaults.length > 0) {
+    const hint = document.createElement('div');
+    hint.textContent = `Vous avez ${offer.vaults.length} trousseau(x) existant(s) — déverrouillez-le dans Réglages → Mots de passe pour l'utiliser.`;
+    Object.assign(hint.style, {
+      fontSize: '11px',
+      color: '#9ca3af',
+      marginBottom: '10px',
+      lineHeight: '1.4',
+    });
+    panel.appendChild(hint);
+  }
+
+  const row = document.createElement('div');
+  Object.assign(row.style, { display: 'flex', gap: '6px' });
+
+  const createBtn = makeButton('Créer et enregistrer', 'primary');
+  createBtn.addEventListener('click', async () => {
+    const name = nameInput.value.trim();
+    const master = passInput.value;
+    if (!name) { nameInput.focus(); return; }
+    if (master.length < 8) { passInput.focus(); return; }
+    createBtn.disabled = true;
+    createBtn.textContent = '…';
+    const res = await ipcRenderer.invoke('credentials:createAndSave', {
+      name,
+      password: master,
+      entry: { title: document.title || location.hostname },
+    });
+    removePanel();
+    if (!res || res.success === false) {
+      const msg = res?.error === 'weak-master' ? 'Mot de passe maître trop court (8+ caractères)' : 'Erreur lors de la création';
+      showHint(msg, document.body);
+    }
+  });
+
+  const close = makeButton('✕', 'ghost');
+  close.title = 'Pas maintenant';
+  close.addEventListener('click', removePanel);
+
+  row.appendChild(createBtn);
+  row.appendChild(close);
+  panel.appendChild(row);
+
+  // Focus automatique sur le champ mot de passe
+  setTimeout(() => passInput.focus(), 100);
+
+  setTimeout(() => {
+    if (panelEl === panel) removePanel();
+  }, 60000);
+}
+
+// ---------------------------------------------------------------------------
 // Proposition d'enregistrement après une connexion / inscription
 // ---------------------------------------------------------------------------
 function showSavePanel(pending, offer) {
+  // --- Cas : aucun trousseau ouvert → proposer d'en créer un ---
+  if (offer.createVault) {
+    return showCreateVaultPanel(pending, offer);
+  }
+
   const panel = createPanel({
     title: offer.update ? 'Mettre à jour ce mot de passe ?' : 'Enregistrer ce mot de passe ?',
     subtitle: `${pending.login || 'sans identifiant'} — ${location.hostname}`,
@@ -848,7 +953,7 @@ async function maybeOfferSave(pending) {
 // (formulaires pilotés en JavaScript, qui n'émettent pas `submit`), et la
 // touche Entrée dans le champ mot de passe.
 function snapshotCredentials() {
-  const pass = Array.from(document.querySelectorAll(PASSWORD_SELECTOR)).find(reallyVisible);
+  const pass = deepQueryAll(document, PASSWORD_SELECTOR).find(reallyVisible);
   if (!pass || !pass.value) return null;
   const fields = findFields();
   // L'identifiant peut avoir été saisi à l'étape précédente (Gmail) : on
@@ -908,7 +1013,7 @@ async function checkPendingOnLoad() {
     if (!pending || !pending.success) return;
     // Toujours un formulaire de connexion visible = la connexion a échoué
     // (mauvais mot de passe, 2FA refusée) : on n'enregistre surtout pas.
-    const pass = Array.from(document.querySelectorAll(PASSWORD_SELECTOR)).find(reallyVisible);
+    const pass = deepQueryAll(document, PASSWORD_SELECTOR).find(reallyVisible);
     if (pass) return;
     maybeOfferSave(pending);
   } catch {
@@ -930,7 +1035,7 @@ if (document.readyState === 'complete' || document.readyState === 'interactive')
 // un mot de passe fort a du sens ; le proposer sur une page de connexion
 // n'aurait aucun intérêt.
 function isSignupForm() {
-  const passes = Array.from(document.querySelectorAll(PASSWORD_SELECTOR)).filter(reallyVisible);
+  const passes = deepQueryAll(document, PASSWORD_SELECTOR).filter(reallyVisible);
   if (passes.length >= 2) return passes;
   const only = passes[0];
   if (only && /new-password/.test(only.autocomplete || '')) return passes;
