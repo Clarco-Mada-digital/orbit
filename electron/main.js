@@ -411,6 +411,10 @@ const ALLOWED_PERMISSIONS = new Set([
   'openExternal',
   'display-capture', // partage d'écran (WebRTC / appels vidéo)
   'desktop-capture', // idem, ancien nom
+  // Sélecteur de fichiers/dossiers (showDirectoryPicker, showOpenFilePicker).
+  // Son absence ici refusait la demande en silence : la promesse était rejetée
+  // et les pages qui analysent un dossier ne démarraient jamais.
+  'fileSystem',
 ]);
 
 // Permissions pour lesquelles Orbit DEMANDE (comportement d'un navigateur) :
@@ -426,10 +430,15 @@ const ASKABLE_PERMISSIONS = new Set([
   'clipboard-read',
   'idle-detection',
   'window-management',
+  'fileSystem', // dossier ou fichier choisi par l'utilisateur
 ]);
 
 // Sessions passant par un proxy : le WebRTC doit alors rester dans le tunnel.
 const proxiedSessions = new WeakSet();
+// `setupPermissions` est rejoué à chaque attachement de webview : les
+// `setXHandler` se remplacent, mais un `on(...)` s'empilerait et rappellerait
+// le callback plusieurs fois.
+const fsRestrictedSessions = new WeakSet();
 
 function applyWebRtcPolicy(ses, viaProxy) {
   try {
@@ -477,7 +486,13 @@ function setupPermissions(ses) {
       }
 
       permLog(`${permission} demandé par ${origin} — question posée`);
-      askPermission(wc, permission, origin).then((answer) => {
+      askPermission(wc, permission, origin, {
+        // Pour un dossier ou un fichier, la question n'a de sens qu'avec son
+        // nom : « lire le dossier argus », pas « accéder à vos fichiers ».
+        target: details.filePath ? path.basename(details.filePath) : '',
+        isDirectory: !!details.isDirectory,
+        writable: details.fileAccessType === 'writable',
+      }).then((answer) => {
         // `null` = aucune interface pour poser la question (pop-up) : on
         // applique la politique par défaut plutôt que de bloquer l'app.
         if (answer === null) {
@@ -525,6 +540,22 @@ function setupPermissions(ses) {
         { useSystemPicker: true }
       );
     } catch (_) { /* Electron < 30 */ }
+
+    // Chromium refuse certains chemins sensibles (racine, dossiers système).
+    // Sans écoute, la page échoue sans un mot : on journalise et on renvoie
+    // l'utilisateur au sélecteur pour qu'il choisisse ailleurs.
+    try {
+      if (!fsRestrictedSessions.has(ses)) {
+        fsRestrictedSessions.add(ses);
+        ses.on('file-system-access-restricted', (_e, details, callback) => {
+          permLog(
+            `chemin protégé refusé à ${hostOf(details.origin || '')} ` +
+              `(${details.isDirectory ? 'dossier' : 'fichier'}) — nouveau choix proposé`
+          );
+          callback('tryAgain');
+        });
+      }
+    } catch (_) { /* Electron < 35 */ }
 
     // WebRTC : laisser passer l'UDP direct, sans quoi les appels n'aboutissent
     // pas. `disable_non_proxied_udp` fait exactement l'INVERSE de ce que
@@ -2532,7 +2563,7 @@ ipcMain.on('orbit-dialog:drop', (event, id) => {
 // Demande à l'utilisateur. Résout `true`/`false`, ou `null` quand aucune
 // interface ne peut poser la question (pop-up) — l'appelant applique alors sa
 // politique par défaut.
-function askPermission(wc, permission, origin) {
+function askPermission(wc, permission, origin, extra = {}) {
   const ui = orbitUiFor(wc);
   if (!ui) return Promise.resolve(null);
   return new Promise((resolve) => {
@@ -2552,6 +2583,7 @@ function askPermission(wc, permission, origin) {
       wcId: wc ? wc.id : 0,
       permission,
       origin,
+      ...extra,
     });
     // Modale jamais affichée : on rend la main à la politique par défaut
     // (`null`) au lieu de laisser l'appel se figer.

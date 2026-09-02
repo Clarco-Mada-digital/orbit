@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useT } from '../lib/i18n';
 import {
+  FolderOpen,
   Info,
   HelpCircle,
   PenLine,
@@ -47,6 +48,7 @@ const PERMISSION_ICONS = {
   midiSysex: Piano,
   'idle-detection': Timer,
   'window-management': AppWindow,
+  fileSystem: FolderOpen,
 };
 
 const JS_KINDS = {
@@ -75,13 +77,23 @@ export default function WebDialog({ dialog, onAnswer }) {
   const known = isPermission && PERMISSION_ICONS[dialog.permission] ? dialog.permission : 'unknown';
   const permIcon = isPermission ? PERMISSION_ICONS[dialog.permission] || ShieldQuestion : null;
   const js = !isPermission ? JS_KINDS[dialog?.type] || JS_KINDS.alert : null;
+  // Un accès fichier ne se raconte pas comme une caméra : ce qui compte, c'est
+  // QUOI (dossier ou fichier), sous quel nom, et en lecture ou en écriture.
+  const permVerbKey =
+    known === 'fileSystem' && dialog.target
+      ? `perm.verb.fileSystem.${dialog.writable ? 'write' : 'read'}${
+          dialog.isDirectory ? 'Dir' : 'File'
+        }`
+      : `perm.verb.${known}`;
 
   // Chaque nouvelle demande repart de zéro : ni texte de la précédente, ni
   // case cochée par mégarde.
   useEffect(() => {
     if (!dialog) return;
     setValue(dialog.defaultText || '');
-    setRemember(true);
+    // Un accès fichier vise un dossier précis ; mémoriser accorderait aussi
+    // les suivants. On ne le propose donc pas coché d'avance.
+    setRemember(dialog.permission !== 'fileSystem');
     setSilence(false);
     const timer = setTimeout(() => {
       if (dialog.type === 'prompt') {
@@ -181,7 +193,7 @@ export default function WebDialog({ dialog, onAnswer }) {
             <p className="text-sm text-text-secondary leading-relaxed">
               {t('perm.request', {
                 site: site || t('perm.thisSite'),
-                verb: t(`perm.verb.${known}`),
+                verb: t(permVerbKey, { target: dialog.target || '' }),
               })}
             </p>
           ) : (
