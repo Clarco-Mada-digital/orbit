@@ -137,6 +137,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
       return () => ipcRenderer.removeListener('orbit:context-menu', listener);
     },
   },
+  // Dialogues JS (alert/confirm/prompt) émis par le contenu des webviews
+  webDialog: {
+    onShow: (callback) => {
+      const listener = (_event, info) => callback(info);
+      ipcRenderer.on('orbit:web-dialog', listener);
+      return () => ipcRenderer.removeListener('orbit:web-dialog', listener);
+    },
+    resolve: (id, value) => ipcRenderer.invoke('dialog:resolve', { id, value }),
+    cancel: (id) => ipcRenderer.invoke('dialog:cancel', { id }),
+  },
   // Coffre-fort de mots de passe intégré (trousseaux chiffrés)
   vault: {
     state: () => ipcRenderer.invoke('vault:state'),

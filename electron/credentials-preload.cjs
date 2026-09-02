@@ -29,6 +29,30 @@
 // ---------------------------------------------------------------------------
 const { ipcRenderer } = require('electron');
 
+// ---------------------------------------------------------------------------
+// JS Dialog bridge (alert / confirm / prompt)
+// ---------------------------------------------------------------------------
+// Le main process injecte un script dans la PAGE (executeJavaScript) qui
+// override window.alert/confirm/prompt pour dispatcher un CustomEvent sur
+// document.  Le preload (contextIsolation) écoute ce CustomEvent et le
+// transmet au renderer via IPC pour afficher un joli modal.
+// Les événements DOM traversent les frontières contextIsolation.
+try {
+  document.addEventListener('orbit-dialog', (e) => {
+    const { id, type, message, defaultText } = e.detail || {};
+    if (!id) return;
+    ipcRenderer.invoke('dialog:show', { id, type, message, defaultText });
+  });
+
+  // Quand le renderer répond, re-dispatch dans le contexte page
+  ipcRenderer.on('orbit:dialog-result', (_ev, { id, value } = {}) => {
+    if (!id) return;
+    document.dispatchEvent(new CustomEvent('orbit-dialog-result', {
+      detail: { id, value }
+    }));
+  });
+} catch { /* contextIsolation peut empêcher l'écoute DOM */ }
+
 // NB : ce preload ne touche plus à l'identité du navigateur. Elle est fixée
 // une fois pour toutes dans main.js (CHROME_UA), et toute retouche
 // supplémentaire — navigator.userAgent, navigator.userAgentData, en-têtes

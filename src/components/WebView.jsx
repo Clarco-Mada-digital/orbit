@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, useCallback } from 'react';
 import { AlertTriangle, RotateCw } from 'lucide-react';
 import { useStore } from '../stores/useStore';
 import { useLoadingStore } from '../lib/loadingStore';
 import { useMediaStore } from '../lib/mediaStore';
 import { registerWebview, unregisterWebview } from '../lib/webviewRegistry';
+import WebDialog from './WebDialog';
 
 // Lu DANS la page (via executeJavaScript) : métadonnées de lecture (Media
 // Session en priorité, sinon le titre de la page) + état lecture/pause.
@@ -110,6 +111,8 @@ export default function WebView({ app, active, visible, flexLayout }) {
   // pour ne pas clignoter sur les recharges rapides (ex. redirections).
   const [loading, setLoading] = useState(false);
   const [crashed, setCrashed] = useState(false);
+  // Dialogues JS (alert/confirm/prompt) émis par le contenu des webviews
+  const [webDialog, setWebDialog] = useState(null);
   const loadingTimer = useRef(null);
 
   // URL de démarrage fixée AU MONTAGE de l'app : jamais une page de connexion
@@ -342,6 +345,33 @@ export default function WebView({ app, active, visible, flexLayout }) {
     };
   }, [app.id, app.name, app.zoom, app.sleeping, app.muted, active, notificationsEnabled, notifSound, soundVolume, dnd, quietHoursEnabled, quietStart, quietEnd, updateApp, setAppLoading]);
 
+  // --- Dialogues JS (alert/confirm/prompt) via IPC ---
+  // L'événement 'dialog' est émis sur webContents (main process), pas sur
+  // le <webview> DOM.  On le reçoit via IPC et on affiche le modal.
+  useEffect(() => {
+    if (!window.electronAPI?.webDialog?.onShow) return;
+    let stopped = false;
+    const unsubscribe = window.electronAPI.webDialog.onShow((info) => {
+      if (stopped) return;
+      // Ne traiter que les dialogs provenant de CE webview
+      const wv = ref.current;
+      if (!wv) return;
+      let wcId = 0;
+      try { wcId = wv.getWebContentsId(); } catch { return; }
+      if (info.wcId !== wcId) return;
+      setWebDialog({
+        id: info.id,
+        type: info.type || 'alert',
+        message: info.message || '',
+        defaultText: info.defaultText || '',
+      });
+    });
+    return () => {
+      stopped = true;
+      unsubscribe?.();
+    };
+  }, [app.id]);
+
   // « Lecture en cours » — effet DÉDIÉ, volontairement séparé de l'effet
   // principal ci-dessus : celui-ci se ré-exécute à chaque changement de réglage
   // (app active, zoom, notifications…). Y loger la détection média coupait le
@@ -568,6 +598,30 @@ export default function WebView({ app, active, visible, flexLayout }) {
         </div>
       )}
 
+      {/* Dialogues JS (alert/confirm/prompt) du contenu webview */}
+      <WebDialog
+        dialog={webDialog}
+        onResolve={(value) => {
+          const dialogId = webDialog?.id;
+          if (dialogId && window.electronAPI?.webDialog) {
+            const isCancel = value === false || (value === null && webDialog.type === 'prompt');
+            if (isCancel) {
+              window.electronAPI.webDialog.cancel(dialogId);
+            } else {
+              // Pour alert : value est undefined → on envoie null (callback ne prend pas d'arg)
+              // Pour confirm : true/false
+              // Pour prompt : la chaîne saisie (ou '' si vide)
+              const resolved = webDialog.type === 'prompt'
+                ? (value ?? '')
+                : webDialog.type === 'confirm'
+                  ? !!value
+                  : null;
+              window.electronAPI.webDialog.resolve(dialogId, resolved);
+            }
+          }
+          setWebDialog(null);
+        }}
+      />
       {/* Récupération de crash : le processus de rendu de l'app a planté */}
       {crashed && visible && (
         <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-4 bg-bg-base/95 backdrop-blur-sm text-center p-6">

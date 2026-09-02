@@ -401,6 +401,7 @@ const ALLOWED_PERMISSIONS = new Set([
   'notifications',
   'media', // micro + caméra (appels/visio)
   'mediaKeySystem', // DRM (lecture vidéo protégée)
+  'geolocation', // géolocalisation (cartes, météo…)
   'fullscreen',
   'clipboard-read',
   'clipboard-sanitized-write',
@@ -1930,6 +1931,46 @@ function createWindow() {
       }
     });
     guestContents.once('destroyed', () => lastContextParams.delete(guestContents.id));
+
+    // --- JS Dialogs (alert/confirm/prompt) ---
+    // On injecte un override dans le CONTEXTE PAGE (via executeJavaScript)
+    // pour remplacer window.alert/confirm/prompt par des versions IPC.
+    // Le preload tourne dans un monde isolé (contextIsolation) et ne peut
+    // PAS overrider les globals de la page — il faut donc injecter ici.
+    const DIALOG_OVERRIDE_SCRIPT = `(() => {
+      if (window.__orbitDialogPatched) return;
+      window.__orbitDialogPatched = true;
+      const origAlert = window.alert;
+      const origConfirm = window.confirm;
+      const origPrompt = window.prompt;
+      function showDialog(type, msg, def) {
+        return new Promise((resolve) => {
+          const id = Date.now() + '_' + Math.random().toString(36).slice(2);
+          document.dispatchEvent(new CustomEvent('orbit-dialog', {
+            detail: { id, type, message: String(msg || ''), defaultText: String(def || '') }
+          }));
+          function onResult(e) {
+            if (e.detail && e.detail.id === id) {
+              document.removeEventListener('orbit-dialog-result', onResult);
+              resolve(e.detail.value);
+            }
+          }
+          document.addEventListener('orbit-dialog-result', onResult);
+        });
+      }
+      window.alert = (msg) => { showDialog('alert', msg); };
+      window.confirm = (msg) => showDialog('confirm', msg);
+      window.prompt = (msg, def) => showDialog('prompt', msg, def);
+    })();`;
+
+    const injectDialogOverride = () => {
+      try {
+        guestContents.executeJavaScript(DIALOG_OVERRIDE_SCRIPT, false);
+      } catch { /* webview pas encore prêt */ }
+    };
+    guestContents.on('dom-ready', injectDialogOverride);
+    guestContents.on('did-navigate', injectDialogOverride);
+    guestContents.on('did-navigate-in-page', injectDialogOverride);
   });
 }
 
@@ -2265,6 +2306,59 @@ handleFromUi('ctx:action', (_event, { wcId, action, value } = {}) => {
 });
 
 // ---------------------------------------------------------------------------
+// --- Dialogues JS (alert/confirm/prompt) ---
+// Le preload des webviews remplace window.alert/confirm/prompt et envoie
+// 'dialog:show' ici.  On transfère au renderer (WebDialog) et on attend
+// la réponse via 'dialog:resolve'.
+// Map des dialogs en attente : id → { wcId } (pour renvoyer le résultat)
+const pendingDialogs = new Map();
+
+ipcMain.handle('dialog:show', (_e, { id, wcId, type, message, defaultText }) => {
+  if (!mainWindow) return { success: false };
+  console.log('[orbit] 🔔 dialog:show id=' + id + ' type=' + type + ' wcId=' + wcId + ' msg=' + (message || '').slice(0, 60));
+  pendingDialogs.set(id, { wcId: wcId || 0 });
+  mainWindow.webContents.send('orbit:web-dialog', {
+    id,
+    type: type || 'alert',
+    message: message || '',
+    defaultText: defaultText || '',
+  });
+  return { success: true };
+});
+
+function resolveDialog(id, value) {
+  const pending = pendingDialogs.get(id);
+  if (!pending) return;
+  pendingDialogs.delete(id);
+  console.log('[orbit] 🔔 dialog resolve id=' + id + ' wcId=' + pending.wcId + ' value=' + JSON.stringify(value)?.slice(0, 60));
+  // Renvoyer le résultat dans le contexte PAGE du webview via executeJavaScript.
+  // Si on a le wcId, on cible ce webview ; sinon on cherche dans tous les webviews.
+  const resolveScript = `document.dispatchEvent(new CustomEvent('orbit-dialog-result', { detail: { id: ${JSON.stringify(id)}, value: ${JSON.stringify(value)} } }));`;
+  if (pending.wcId) {
+    const gc = webContents.fromId(pending.wcId);
+    if (gc && !gc.isDestroyed()) {
+      gc.executeJavaScript(resolveScript, false).catch(() => {});
+      return;
+    }
+  }
+  // Fallback : injecter dans tous les webviews (le bon silently matchera l'id)
+  webContents.getAllWebContents().forEach((wc) => {
+    if (wc.getType() === 'webview' && !wc.isDestroyed()) {
+      wc.executeJavaScript(resolveScript, false).catch(() => {});
+    }
+  });
+}
+
+ipcMain.handle('dialog:resolve', (_e, { id, value }) => {
+  resolveDialog(id, value);
+  return { success: true };
+});
+
+ipcMain.handle('dialog:cancel', (_e, { id }) => {
+  resolveDialog(id, null);
+  return { success: true };
+});
+
 // IPC — contrôles de fenêtre uniquement (le reste passe par les <webview>)
 // ---------------------------------------------------------------------------
 ipcMain.handle('window:minimize', () => {
