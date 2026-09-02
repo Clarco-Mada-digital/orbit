@@ -137,15 +137,27 @@ contextBridge.exposeInMainWorld('electronAPI', {
       return () => ipcRenderer.removeListener('orbit:context-menu', listener);
     },
   },
-  // Dialogues JS (alert/confirm/prompt) émis par le contenu des webviews
+  // Questions posées par le contenu des apps : dialogues JS
+  // (alert/confirm/prompt) et demandes d'autorisation (caméra, micro…)
   webDialog: {
     onShow: (callback) => {
       const listener = (_event, info) => callback(info);
       ipcRenderer.on('orbit:web-dialog', listener);
       return () => ipcRenderer.removeListener('orbit:web-dialog', listener);
     },
-    resolve: (id, value) => ipcRenderer.invoke('dialog:resolve', { id, value }),
-    cancel: (id) => ipcRenderer.invoke('dialog:cancel', { id }),
+    // Une demande expire ou disparaît : l'interface doit refermer sa modale.
+    onClose: (callback) => {
+      const listener = (_event, info) => callback(info);
+      ipcRenderer.on('orbit:web-dialog-close', listener);
+      return () => ipcRenderer.removeListener('orbit:web-dialog-close', listener);
+    },
+    answer: (payload) => ipcRenderer.invoke('orbit-dialog:answer', payload),
+  },
+  // Autorisations mémorisées par site (Paramètres → Confidentialité)
+  sitePermissions: {
+    list: () => ipcRenderer.invoke('permissions:list'),
+    setMode: (mode) => ipcRenderer.invoke('permissions:setMode', mode),
+    forget: (origin, permission) => ipcRenderer.invoke('permissions:forget', { origin, permission }),
   },
   // Coffre-fort de mots de passe intégré (trousseaux chiffrés)
   vault: {

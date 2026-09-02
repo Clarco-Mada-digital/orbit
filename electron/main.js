@@ -8,6 +8,7 @@ import { init as initKeepass, setEnabled as keepassSetEnabled, getLogins as keep
 import * as security from './security.js';
 import * as adblock from './adblock.js';
 import * as vault from './vault.js';
+import * as sitePermissions from './site-permissions.js';
 import * as tts from './tts.js';
 import * as downloader from './downloader.js';
 import electronUpdater from 'electron-updater';
@@ -412,18 +413,71 @@ const ALLOWED_PERMISSIONS = new Set([
   'desktop-capture', // idem, ancien nom
 ]);
 
+// Permissions pour lesquelles Orbit DEMANDE (comportement d'un navigateur) :
+// tout ce qui touche au matériel, à la position ou à l'écran. Les autres
+// gardent la politique globale ci-dessus, accordée ou refusée en silence.
+const ASKABLE_PERMISSIONS = new Set([
+  'media', // caméra / micro
+  'geolocation',
+  'notifications',
+  'display-capture',
+  'desktop-capture',
+  'midiSysex',
+  'clipboard-read',
+  'idle-detection',
+  'window-management',
+]);
+
 function setupPermissions(ses) {
   if (!ses) return;
   try {
-    // Electron 12+ : (webContents, permission, requestingOrigin, details, callback)
-    // Electron <12 : (webContents, permission, callback)
-    // On détecte la version en vérifiant le type du 3ème argument.
-    ses.setPermissionRequestHandler((_wc, permission, a, b, c) => {
+    // Signature Electron 12+ : (webContents, permission, callback, details).
+    // Les versions anciennes plaçaient le callback en dernier — on accepte les
+    // deux plutôt que de dépendre du numéro de version.
+    ses.setPermissionRequestHandler((wc, permission, a, b, c) => {
       const cb = typeof a === 'function' ? a : typeof c === 'function' ? c : null;
-      if (cb) cb(ALLOWED_PERMISSIONS.has(permission));
+      if (!cb) return;
+      const details = b || {};
+      const byDefault = () => cb(ALLOWED_PERMISSIONS.has(permission));
+
+      if (!ASKABLE_PERMISSIONS.has(permission)) return byDefault();
+
+      // De quel site vient la demande ? On préfère l'URL portée par la demande
+      // (une iframe peut demander pour son propre compte) et on retombe sur
+      // l'adresse de la page.
+      let pageUrl = '';
+      try {
+        pageUrl = wc && !wc.isDestroyed() ? wc.getURL() : '';
+      } catch { /* contents déjà parti */ }
+      const origin = sitePermissions.originOf(
+        details.requestingUrl || details.securityOrigin || pageUrl
+      );
+
+      // Décision déjà prise pour ce site → on la rejoue sans rien demander.
+      const known = sitePermissions.decisionFor(origin, permission);
+      if (known) return cb(known === 'allow');
+
+      const mode = sitePermissions.getMode();
+      if (mode === 'allow') return byDefault();
+      if (mode === 'deny') return cb(false);
+      if (!origin) return byDefault(); // origine illisible (about:, blob:…)
+
+      askPermission(wc, permission, origin).then((answer) => {
+        // `null` = aucune interface pour poser la question (pop-up) : on
+        // applique la politique par défaut plutôt que de bloquer l'app.
+        if (answer === null) return byDefault();
+        cb(answer);
+      });
     });
-    // Même politique pour les vérifications synchrones (ex. navigator.permissions)
-    ses.setPermissionCheckHandler((_wc, permission) => ALLOWED_PERMISSIONS.has(permission));
+
+    // Vérifications synchrones (navigator.permissions.query, Notification.permission…)
+    ses.setPermissionCheckHandler((_wc, permission, requestingOrigin) => {
+      const origin = sitePermissions.originOf(requestingOrigin || '');
+      const known = sitePermissions.decisionFor(origin, permission);
+      if (known) return known === 'allow';
+      if (sitePermissions.getMode() === 'deny' && ASKABLE_PERMISSIONS.has(permission)) return false;
+      return ALLOWED_PERMISSIONS.has(permission);
+    });
 
     // Périphériques (caméra / micro) : sans handler, Electron refuse
     // l'accès même quand la permission 'media' est accordée.  WhatsApp,
@@ -1930,47 +1984,14 @@ function createWindow() {
         showGuestContextMenu(guestContents, params, mainWindow);
       }
     });
-    guestContents.once('destroyed', () => lastContextParams.delete(guestContents.id));
+    guestContents.once('destroyed', () => {
+      lastContextParams.delete(guestContents.id);
+      forgetDialogState(guestContents.id);
+    });
+    // « Ne plus afficher de dialogues » ne vaut que pour la page en cours :
+    // une nouvelle navigation repart d'une ardoise vierge, comme dans Chrome.
+    guestContents.on('did-navigate', () => forgetDialogState(guestContents.id));
 
-    // --- JS Dialogs (alert/confirm/prompt) ---
-    // On injecte un override dans le CONTEXTE PAGE (via executeJavaScript)
-    // pour remplacer window.alert/confirm/prompt par des versions IPC.
-    // Le preload tourne dans un monde isolé (contextIsolation) et ne peut
-    // PAS overrider les globals de la page — il faut donc injecter ici.
-    const DIALOG_OVERRIDE_SCRIPT = `(() => {
-      if (window.__orbitDialogPatched) return;
-      window.__orbitDialogPatched = true;
-      const origAlert = window.alert;
-      const origConfirm = window.confirm;
-      const origPrompt = window.prompt;
-      function showDialog(type, msg, def) {
-        return new Promise((resolve) => {
-          const id = Date.now() + '_' + Math.random().toString(36).slice(2);
-          document.dispatchEvent(new CustomEvent('orbit-dialog', {
-            detail: { id, type, message: String(msg || ''), defaultText: String(def || '') }
-          }));
-          function onResult(e) {
-            if (e.detail && e.detail.id === id) {
-              document.removeEventListener('orbit-dialog-result', onResult);
-              resolve(e.detail.value);
-            }
-          }
-          document.addEventListener('orbit-dialog-result', onResult);
-        });
-      }
-      window.alert = (msg) => { showDialog('alert', msg); };
-      window.confirm = (msg) => showDialog('confirm', msg);
-      window.prompt = (msg, def) => showDialog('prompt', msg, def);
-    })();`;
-
-    const injectDialogOverride = () => {
-      try {
-        guestContents.executeJavaScript(DIALOG_OVERRIDE_SCRIPT, false);
-      } catch { /* webview pas encore prêt */ }
-    };
-    guestContents.on('dom-ready', injectDialogOverride);
-    guestContents.on('did-navigate', injectDialogOverride);
-    guestContents.on('did-navigate-in-page', injectDialogOverride);
   });
 }
 
@@ -2306,58 +2327,221 @@ handleFromUi('ctx:action', (_event, { wcId, action, value } = {}) => {
 });
 
 // ---------------------------------------------------------------------------
-// --- Dialogues JS (alert/confirm/prompt) ---
-// Le preload des webviews remplace window.alert/confirm/prompt et envoie
-// 'dialog:show' ici.  On transfère au renderer (WebDialog) et on attend
-// la réponse via 'dialog:resolve'.
-// Map des dialogs en attente : id → { wcId } (pour renvoyer le résultat)
-const pendingDialogs = new Map();
+// Dialogues des pages (alert / confirm / prompt) et demandes d'autorisation
+// ---------------------------------------------------------------------------
+// Deux choses très différentes arrivent ici, mais elles se ressemblent à
+// l'écran : la page veut poser une question, et Orbit doit y répondre avec sa
+// propre fenêtre modale plutôt qu'avec la boîte grise d'Electron.
+//
+// Le point délicat, c'est `confirm()` et `prompt()` : la page attend une
+// réponse *tout de suite*, sur la même ligne de code. Une modale dessinée par
+// React arrive, elle, plusieurs millisecondes plus tard. Un pont asynchrone
+// renverrait donc une promesse — toujours vraie — et `if (confirm(...))`
+// serait systématiquement pris. C'est exactement ce qui rendait la première
+// version inutilisable.
+//
+// La page est donc réellement bloquée : son preload interroge le processus
+// principal en IPC *synchrone* (`sendSync`), qui répond « pas encore » par
+// tranches de quelques dizaines de millisecondes jusqu'au clic de
+// l'utilisateur. Le rendu de la page est figé pendant ce temps — comme dans un
+// vrai navigateur — sans que le reste d'Orbit soit gelé.
+// ---------------------------------------------------------------------------
 
-ipcMain.handle('dialog:show', (_e, { id, wcId, type, message, defaultText }) => {
-  if (!mainWindow) return { success: false };
-  console.log('[orbit] 🔔 dialog:show id=' + id + ' type=' + type + ' wcId=' + wcId + ' msg=' + (message || '').slice(0, 60));
-  pendingDialogs.set(id, { wcId: wcId || 0 });
-  mainWindow.webContents.send('orbit:web-dialog', {
+// Attente courte qui ne consomme pas de CPU. `Atomics.wait` est autorisé sur le
+// fil principal de Node (contrairement au navigateur).
+const dialogWaitBuffer = new Int32Array(new SharedArrayBuffer(4));
+function idleSlice(ms) {
+  try {
+    Atomics.wait(dialogWaitBuffer, 0, 0, ms);
+  } catch {
+    /* SharedArrayBuffer indisponible : la boucle tournera un peu plus vite */
+  }
+}
+
+const POLL_SLICE_MS = 30;
+const DIALOG_TIMEOUT_MS = 3 * 60 * 1000; // garde-fou : une page ne gèle pas pour toujours
+
+// Demandes en cours : id → { kind, wcId, done, value, resolve }
+const pendingPrompts = new Map();
+let promptSeq = 0;
+
+// Pages ayant reçu « ne plus afficher de dialogues » (remis à zéro à chaque
+// navigation, comme le fait Chrome).
+const silencedContents = new Set();
+const dialogBursts = new Map(); // wcId → { count, since }
+
+function forgetDialogState(wcId) {
+  silencedContents.delete(wcId);
+  dialogBursts.delete(wcId);
+}
+
+// Où afficher la modale ? Uniquement dans la fenêtre qui héberge l'interface
+// d'Orbit. Une pop-up (fenêtre de connexion Google…) n'a pas cette interface :
+// on renvoie null, et l'appelant retombe sur la boîte native d'Electron.
+function orbitUiFor(wc) {
+  try {
+    if (!mainWindow || mainWindow.isDestroyed()) return null;
+    const ui = mainWindow.webContents;
+    if (!wc || wc.isDestroyed()) return null;
+    if (wc.id === ui.id) return ui;
+    const host = wc.hostWebContents;
+    if (host && !host.isDestroyed() && host.id === ui.id) return ui;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+function finishPrompt(id, value) {
+  const entry = pendingPrompts.get(id);
+  if (!entry) return;
+  entry.done = true;
+  entry.value = value;
+  if (entry.resolve) {
+    pendingPrompts.delete(id);
+    entry.resolve(value);
+  }
+  // Pour les dialogues JS, l'entrée reste jusqu'à ce que la page vienne
+  // chercher sa réponse (`orbit-dialog:poll`).
+}
+
+// --- Dialogues JS -----------------------------------------------------------
+
+// Ouverture : la page (via son preload) demande l'affichage et reçoit soit un
+// identifiant à interroger, soit une réponse immédiate, soit « non pris en
+// charge » (→ boîte native).
+ipcMain.on('orbit-dialog:open', (event, payload = {}) => {
+  const wc = event.sender;
+  const ui = orbitUiFor(wc);
+  const type = ['alert', 'confirm', 'prompt'].includes(payload.type) ? payload.type : 'alert';
+  const cancelled = type === 'confirm' ? false : type === 'prompt' ? null : null;
+
+  if (!ui) {
+    event.returnValue = { supported: false };
+    return;
+  }
+
+  // « Ne plus afficher » coché, ou avalanche de dialogues : on répond
+  // « annuler » sans rien montrer.
+  if (silencedContents.has(wc.id)) {
+    event.returnValue = { supported: true, done: true, value: cancelled };
+    return;
+  }
+
+  const now = Date.now();
+  const burst = dialogBursts.get(wc.id);
+  if (!burst || now - burst.since > 20000) dialogBursts.set(wc.id, { count: 1, since: now });
+  else burst.count += 1;
+  const repeated = (dialogBursts.get(wc.id) || {}).count > 2;
+
+  const id = `d${++promptSeq}`;
+  pendingPrompts.set(id, { kind: 'js', wcId: wc.id, done: false, value: cancelled });
+  ui.send('orbit:web-dialog', {
     id,
-    type: type || 'alert',
-    message: message || '',
-    defaultText: defaultText || '',
+    kind: 'js',
+    type,
+    wcId: wc.id,
+    origin: hostOf(wc.getURL()),
+    message: String(payload.message || '').slice(0, 4000),
+    defaultText: String(payload.defaultText || '').slice(0, 4000),
+    // Au 3e dialogue d'affilée, on propose la case « ne plus afficher »,
+    // comme un navigateur face à une page qui s'emballe.
+    offerSilence: repeated,
   });
-  return { success: true };
+  event.returnValue = { supported: true, id };
 });
 
-function resolveDialog(id, value) {
-  const pending = pendingDialogs.get(id);
-  if (!pending) return;
-  pendingDialogs.delete(id);
-  console.log('[orbit] 🔔 dialog resolve id=' + id + ' wcId=' + pending.wcId + ' value=' + JSON.stringify(value)?.slice(0, 60));
-  // Renvoyer le résultat dans le contexte PAGE du webview via executeJavaScript.
-  // Si on a le wcId, on cible ce webview ; sinon on cherche dans tous les webviews.
-  const resolveScript = `document.dispatchEvent(new CustomEvent('orbit-dialog-result', { detail: { id: ${JSON.stringify(id)}, value: ${JSON.stringify(value)} } }));`;
-  if (pending.wcId) {
-    const gc = webContents.fromId(pending.wcId);
-    if (gc && !gc.isDestroyed()) {
-      gc.executeJavaScript(resolveScript, false).catch(() => {});
-      return;
-    }
+// Attente : réponse « pas encore » par tranches courtes, jusqu'au clic.
+ipcMain.on('orbit-dialog:poll', (event, id) => {
+  const entry = pendingPrompts.get(id);
+  if (!entry || entry.wcId !== event.sender.id) {
+    event.returnValue = null;
+    return;
   }
-  // Fallback : injecter dans tous les webviews (le bon silently matchera l'id)
-  webContents.getAllWebContents().forEach((wc) => {
-    if (wc.getType() === 'webview' && !wc.isDestroyed()) {
-      wc.executeJavaScript(resolveScript, false).catch(() => {});
-    }
+  if (!entry.done) idleSlice(POLL_SLICE_MS);
+  if (entry.done) {
+    pendingPrompts.delete(id);
+    event.returnValue = { done: true, value: entry.value };
+    return;
+  }
+  event.returnValue = { done: false };
+});
+
+// La page renonce (garde-fou de 3 minutes atteint).
+ipcMain.on('orbit-dialog:drop', (event, id) => {
+  const entry = pendingPrompts.get(id);
+  if (entry && entry.wcId === event.sender.id) {
+    pendingPrompts.delete(id);
+    const ui = orbitUiFor(event.sender);
+    if (ui) ui.send('orbit:web-dialog-close', { id });
+  }
+  event.returnValue = true;
+});
+
+// --- Autorisations ----------------------------------------------------------
+
+// Demande à l'utilisateur. Résout `true`/`false`, ou `null` quand aucune
+// interface ne peut poser la question (pop-up) — l'appelant applique alors sa
+// politique par défaut.
+function askPermission(wc, permission, origin) {
+  const ui = orbitUiFor(wc);
+  if (!ui) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    const id = `p${++promptSeq}`;
+    pendingPrompts.set(id, {
+      kind: 'permission',
+      wcId: wc ? wc.id : 0,
+      done: false,
+      resolve,
+      origin,
+      permission,
+    });
+    ui.send('orbit:web-dialog', {
+      id,
+      kind: 'permission',
+      type: 'permission',
+      wcId: wc ? wc.id : 0,
+      permission,
+      origin,
+    });
+    // Sans réponse au bout de 2 minutes, on refuse (choix le plus sûr) et on
+    // ne mémorise rien.
+    setTimeout(() => {
+      if (pendingPrompts.has(id)) {
+        pendingPrompts.delete(id);
+        if (ui && !ui.isDestroyed()) ui.send('orbit:web-dialog-close', { id });
+        resolve(false);
+      }
+    }, 2 * 60 * 1000).unref?.();
   });
 }
 
-ipcMain.handle('dialog:resolve', (_e, { id, value }) => {
-  resolveDialog(id, value);
+// --- Réponse de l'interface -------------------------------------------------
+
+handleFromUi('orbit-dialog:answer', (_event, { id, value, allowed, remember, silence } = {}) => {
+  const entry = pendingPrompts.get(id);
+  if (!entry) return { success: false, error: 'inconnu' };
+  if (entry.kind === 'permission') {
+    // « Retenir mon choix » : la décision vaudra pour tout ce site, jusqu'à ce
+    // qu'elle soit oubliée depuis Paramètres → Autorisations des sites.
+    if (remember) sitePermissions.remember(entry.origin, entry.permission, !!allowed);
+    finishPrompt(id, !!allowed);
+    return { success: true };
+  }
+  if (silence) silencedContents.add(entry.wcId);
+  finishPrompt(id, value === undefined ? null : value);
   return { success: true };
 });
 
-ipcMain.handle('dialog:cancel', (_e, { id }) => {
-  resolveDialog(id, null);
+handleFromUi('permissions:remember', (_event, { origin, permission, allowed } = {}) => {
+  sitePermissions.remember(origin, permission, allowed);
   return { success: true };
 });
+handleFromUi('permissions:list', () => ({ success: true, mode: sitePermissions.getMode(), sites: sitePermissions.list() }));
+handleFromUi('permissions:setMode', (_event, mode) => sitePermissions.setMode(mode));
+handleFromUi('permissions:forget', (_event, { origin, permission } = {}) =>
+  origin ? sitePermissions.forget(origin, permission) : sitePermissions.forgetAll()
+);
 
 // IPC — contrôles de fenêtre uniquement (le reste passe par les <webview>)
 // ---------------------------------------------------------------------------
@@ -3701,6 +3885,9 @@ app.whenReady().then(() => {
   // Coffre-fort intégré : prépare le dossier des trousseaux (rien n'est
   // déverrouillé au démarrage — il faut toujours saisir le mot de passe maître)
   vault.init(app.getPath('userData'));
+
+  // Autorisations par site (caméra, micro, position…) : décisions mémorisées
+  sitePermissions.init(app.getPath('userData'));
 
   // Bloqueur de pub natif — l'état réel (on/off) est synchronisé par le
   // renderer depuis les réglages ; ici on prépare juste le chemin du cache.

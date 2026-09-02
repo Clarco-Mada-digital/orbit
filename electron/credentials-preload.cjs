@@ -27,31 +27,97 @@
 // passe transitent uniquement du principal vers le champ à remplir ; rien
 // n'est conservé dans la page au-delà du remplissage.
 // ---------------------------------------------------------------------------
-const { ipcRenderer } = require('electron');
+const { ipcRenderer, contextBridge } = require('electron');
 
 // ---------------------------------------------------------------------------
-// JS Dialog bridge (alert / confirm / prompt)
+// Dialogues de la page : alert / confirm / prompt
 // ---------------------------------------------------------------------------
-// Le main process injecte un script dans la PAGE (executeJavaScript) qui
-// override window.alert/confirm/prompt pour dispatcher un CustomEvent sur
-// document.  Le preload (contextIsolation) écoute ce CustomEvent et le
-// transmet au renderer via IPC pour afficher un joli modal.
-// Les événements DOM traversent les frontières contextIsolation.
+// Sans intervention, Electron affiche sa propre boîte grise, hors du style
+// d'Orbit. On remplace donc les trois fonctions par un pont vers l'interface.
+//
+// La contrainte, c'est que `confirm()` doit RENDRE un booléen sur-le-champ :
+// la page écrit `if (confirm('Supprimer ?'))`. Un pont asynchrone renverrait
+// une promesse — toujours vraie — et tout serait accepté. On bloque donc
+// réellement la page avec de l'IPC synchrone, le temps que l'utilisateur
+// réponde. C'est ce que fait un vrai navigateur.
+//
+// Le preload vit dans un monde isolé et ne peut pas écrire dans les globales
+// de la page : `contextBridge.executeInMainWorld` sert de passerelle, et les
+// fonctions passées en argument gardent leur retour synchrone.
+function orbitAskDialog(type, message, defaultText) {
+  let opened;
+  try {
+    opened = ipcRenderer.sendSync('orbit-dialog:open', { type, message, defaultText });
+  } catch {
+    return { ok: false };
+  }
+  // Pas d'interface pour afficher la modale (fenêtre secondaire) : l'appelant
+  // retombe sur la boîte native d'Electron plutôt que d'ignorer la question.
+  if (!opened || !opened.supported) return { ok: false };
+  if (opened.done) return { ok: true, value: opened.value };
+
+  const giveUpAt = Date.now() + 3 * 60 * 1000;
+  for (;;) {
+    let res;
+    try {
+      res = ipcRenderer.sendSync('orbit-dialog:poll', opened.id);
+    } catch {
+      return { ok: true, value: type === 'confirm' ? false : null };
+    }
+    // Dialogue disparu (fenêtre fermée…) : on répond comme une annulation.
+    if (!res) return { ok: true, value: type === 'confirm' ? false : null };
+    if (res.done) return { ok: true, value: res.value };
+    if (Date.now() > giveUpAt) {
+      try { ipcRenderer.sendSync('orbit-dialog:drop', opened.id); } catch { /* tant pis */ }
+      return { ok: true, value: type === 'confirm' ? false : null };
+    }
+  }
+}
+
 try {
-  document.addEventListener('orbit-dialog', (e) => {
-    const { id, type, message, defaultText } = e.detail || {};
-    if (!id) return;
-    ipcRenderer.invoke('dialog:show', { id, type, message, defaultText });
+  contextBridge.executeInMainWorld({
+    func: (bridge) => {
+      if (window.__orbitDialogs) return;
+      window.__orbitDialogs = true;
+      // On garde les fonctions d'origine : elles servent de repli quand Orbit
+      // ne peut pas afficher sa modale.
+      const native = {
+        alert: window.alert,
+        confirm: window.confirm,
+        prompt: window.prompt,
+      };
+      const run = (type, message, defaultText, fallback) => {
+        let res = null;
+        try {
+          res = bridge.ask(
+            type,
+            message === undefined || message === null ? '' : String(message),
+            defaultText === undefined || defaultText === null ? '' : String(defaultText)
+          );
+        } catch {
+          res = null;
+        }
+        if (!res || !res.ok) return fallback();
+        return res.value;
+      };
+      window.alert = function alert(message) {
+        run('alert', message, '', () => native.alert.call(window, message));
+      };
+      window.confirm = function confirm(message) {
+        return run('confirm', message, '', () => native.confirm.call(window, message)) === true;
+      };
+      window.prompt = function prompt(message, defaultText) {
+        const value = run('prompt', message, defaultText, () =>
+          native.prompt.call(window, message, defaultText)
+        );
+        return typeof value === 'string' ? value : null;
+      };
+    },
+    args: [{ ask: orbitAskDialog }],
   });
-
-  // Quand le renderer répond, re-dispatch dans le contexte page
-  ipcRenderer.on('orbit:dialog-result', (_ev, { id, value } = {}) => {
-    if (!id) return;
-    document.dispatchEvent(new CustomEvent('orbit-dialog-result', {
-      detail: { id, value }
-    }));
-  });
-} catch { /* contextIsolation peut empêcher l'écoute DOM */ }
+} catch {
+  /* executeInMainWorld absent (Electron ancien) : les boîtes natives restent */
+}
 
 // NB : ce preload ne touche plus à l'identité du navigateur. Elle est fixée
 // une fois pour toutes dans main.js (CHROME_UA), et toute retouche

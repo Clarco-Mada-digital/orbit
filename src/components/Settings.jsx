@@ -30,6 +30,7 @@ import VoiceSettings from './VoiceSettings';
 import TopbarSettings from './TopbarSettings';
 import { shortcutKeys } from '../lib/shortcuts';
 import { useT } from '../lib/i18n';
+import SitePermissions from './SitePermissions';
 import { getBuiltinSound, resolveSoundUrl, playSound } from '../lib/sounds';
 import SoundPicker from './SoundPicker';
 
@@ -684,6 +685,8 @@ export default function Settings({ onClose }) {
 
               {activeTab === 'privacy' && (
                 <div className="space-y-6">
+                  <SitePermissions />
+
                   <div className="card">
                     <div className="flex items-center gap-2 mb-2">
                       <Ban size={18} className="text-accent-primary" />

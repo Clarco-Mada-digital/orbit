@@ -15,6 +15,7 @@ const ProfileManager = lazy(() => import('./components/ProfileManager'));
 const AppStore = lazy(() => import('./components/AppStore'));
 import WebView from './components/WebView';
 import GuestContextMenu from './components/GuestContextMenu';
+import WebDialogHost from './components/WebDialogHost';
 import LockScreen from './components/LockScreen';
 import FindBar from './components/FindBar';
 import UpdateBanner from './components/UpdateBanner';
@@ -1088,6 +1089,10 @@ export default function App() {
       )}
       {/* Menu contextuel des apps embarquées (remplace le menu natif) */}
       <GuestContextMenu />
+
+      {/* Questions posées par les apps : alert/confirm/prompt et demandes
+          d'autorisation (caméra, micro, position…) */}
+      <WebDialogHost />
 
       {/* Repli `null` : ces écrans s'ouvrent déjà avec une animation d'entrée,
           et le chargement est local (quelques millisecondes) — afficher un
