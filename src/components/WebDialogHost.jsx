@@ -45,6 +45,10 @@ export default function WebDialogHost() {
       if (!info?.id) return;
       const appId = appForContents(info.wcId);
       const app = appId ? apps.find((a) => a.id === appId) : null;
+      // On confirme tout de suite la prise en charge : sans cet accusé, le
+      // processus principal considère au bout de 3 s que la modale ne s'est
+      // pas affichée et débloque la page sans nous.
+      window.electronAPI?.webDialog?.ack?.(info.id);
       setQueue((q) => (q.some((d) => d.id === info.id) ? q : [...q, { ...info, appId, appName: app?.name }]));
     });
 

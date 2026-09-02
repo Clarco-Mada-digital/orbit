@@ -1,4 +1,4 @@
-import { app, BrowserWindow, session, ipcMain, shell, Notification, dialog, net, screen, Menu, clipboard, globalShortcut, Tray, nativeImage, powerMonitor, powerSaveBlocker, webContents } from 'electron';
+import { app, BrowserWindow, session, ipcMain, shell, Notification, dialog, net, screen, Menu, clipboard, globalShortcut, Tray, nativeImage, powerMonitor, powerSaveBlocker, webContents, desktopCapturer } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import os from 'node:os';
@@ -428,6 +428,15 @@ const ASKABLE_PERMISSIONS = new Set([
   'window-management',
 ]);
 
+// Sessions passant par un proxy : le WebRTC doit alors rester dans le tunnel.
+const proxiedSessions = new WeakSet();
+
+function applyWebRtcPolicy(ses, viaProxy) {
+  try {
+    ses.setWebRTCIPHandlingPolicy(viaProxy ? 'disable_non_proxied_udp' : 'default');
+  } catch (_) { /* Electron < 15 */ }
+}
+
 function setupPermissions(ses) {
   if (!ses) return;
   try {
@@ -489,22 +498,33 @@ function setupPermissions(ses) {
       });
     } catch (_) { /* Electron < 15 */ }
 
-    // Partage d'écran (« Partager l'écran » dans un appel) :
-    // setDisplayMediaRequestHandler remplace getDisplayMedia() consent.
+    // Partage d'écran (« Partager l'écran » dans un appel).
+    // Le callback attend un FLUX, pas un booléen : `callback(true)` ne
+    // partageait rien du tout. On passe la main au sélecteur du système
+    // quand il existe, et on retombe sur l'écran principal sinon.
     try {
-      ses.setDisplayMediaRequestHandler((_request, callback) => {
-        // Autorise le partage — l'utilisateur choisit le Bureau dans la
-        // boîte de dialogue système native (pas bloquant côté app).
-        callback(true);
-      });
+      ses.setDisplayMediaRequestHandler(
+        async (_request, callback) => {
+          try {
+            const sources = await desktopCapturer.getSources({ types: ['screen'] });
+            const screenSource = sources[0];
+            callback(screenSource ? { video: screenSource } : {});
+          } catch {
+            callback({}); // un objet vide = refus, jamais un plantage
+          }
+        },
+        { useSystemPicker: true }
+      );
     } catch (_) { /* Electron < 30 */ }
 
-    // WebRTC : autoriser les connexions directes (appels vocaux/vidéo).
-    // Par défaut, Electron restreint les flux UDP non-proxifiés — les appels
-    // WhatsApp/Messenger/Telegram échouent silencieusement sans ça.
-    try {
-      ses.setWebRTCIPHandlingPolicy('disable_non_proxied_udp');
-    } catch (_) { /* Electron < 15 */ }
+    // WebRTC : laisser passer l'UDP direct, sans quoi les appels n'aboutissent
+    // pas. `disable_non_proxied_udp` fait exactement l'INVERSE de ce que
+    // l'ancien commentaire annonçait : c'est le réglage le plus restrictif de
+    // Chromium (« UDP uniquement à travers le proxy »). Sans proxy configuré,
+    // il ne restait plus aucun candidat ICE direct — Messenger, WhatsApp et
+    // Telegram sonnaient dans le vide. On ne le remet que si un proxy est
+    // réellement en place, pour ne pas contourner le tunnel de l'utilisateur.
+    applyWebRtcPolicy(ses, proxiedSessions.has(ses));
   } catch (err) {
     console.error('[orbit] permission handler failed:', err);
   }
@@ -2392,6 +2412,22 @@ function orbitUiFor(wc) {
   }
 }
 
+// L'interface accuse réception dès qu'elle affiche la modale. Sans cet accusé,
+// on ne saurait pas distinguer « l'utilisateur réfléchit » de « la modale ne
+// s'est jamais affichée » — et une demande de caméra restée sans réponse fait
+// échouer un appel en silence, ce qui est le pire des deux mondes.
+const ACK_TIMEOUT_MS = 3000;
+
+function armAckTimeout(id, onLost) {
+  const timer = setTimeout(() => {
+    const entry = pendingPrompts.get(id);
+    if (!entry || entry.acked || entry.done) return;
+    console.warn('[orbit] modale non affichée pour', id, '— repli automatique');
+    onLost(entry);
+  }, ACK_TIMEOUT_MS);
+  timer.unref?.();
+}
+
 function finishPrompt(id, value) {
   const entry = pendingPrompts.get(id);
   if (!entry) return;
@@ -2448,6 +2484,7 @@ ipcMain.on('orbit-dialog:open', (event, payload = {}) => {
     // comme un navigateur face à une page qui s'emballe.
     offerSilence: repeated,
   });
+  armAckTimeout(id, () => finishPrompt(id, cancelled));
   event.returnValue = { supported: true, id };
 });
 
@@ -2504,8 +2541,14 @@ function askPermission(wc, permission, origin) {
       permission,
       origin,
     });
-    // Sans réponse au bout de 2 minutes, on refuse (choix le plus sûr) et on
-    // ne mémorise rien.
+    // Modale jamais affichée : on rend la main à la politique par défaut
+    // (`null`) au lieu de laisser l'appel se figer.
+    armAckTimeout(id, () => {
+      pendingPrompts.delete(id);
+      resolve(null);
+    });
+    // Affichée mais laissée sans réponse pendant 2 minutes : on refuse — c'est
+    // le choix sûr — et on ne mémorise rien.
     setTimeout(() => {
       if (pendingPrompts.has(id)) {
         pendingPrompts.delete(id);
@@ -2530,6 +2573,12 @@ handleFromUi('orbit-dialog:answer', (_event, { id, value, allowed, remember, sil
   }
   if (silence) silencedContents.add(entry.wcId);
   finishPrompt(id, value === undefined ? null : value);
+  return { success: true };
+});
+
+handleFromUi('orbit-dialog:ack', (_event, { id } = {}) => {
+  const entry = pendingPrompts.get(id);
+  if (entry) entry.acked = true;
   return { success: true };
 });
 
@@ -2923,9 +2972,13 @@ ipcMain.handle('proxy:apply', async (_e, { partition, rules } = {}) => {
       if (username) proxyCreds.set(ses, { username, password: password || '' });
       else proxyCreds.delete(ses);
       await ses.setProxy({ proxyRules: clean });
+      proxiedSessions.add(ses);
+      applyWebRtcPolicy(ses, true);
     } else {
       proxyCreds.delete(ses);
       await ses.setProxy({ mode: 'direct' });
+      proxiedSessions.delete(ses);
+      applyWebRtcPolicy(ses, false);
     }
     return { success: true };
   } catch (err) {

@@ -151,6 +151,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on('orbit:web-dialog-close', listener);
       return () => ipcRenderer.removeListener('orbit:web-dialog-close', listener);
     },
+    // Accusé de réception : l'interface confirme qu'elle affiche bien la
+    // demande (voir ACK_TIMEOUT_MS côté processus principal).
+    ack: (id) => ipcRenderer.invoke('orbit-dialog:ack', { id }),
     answer: (payload) => ipcRenderer.invoke('orbit-dialog:answer', payload),
   },
   // Autorisations mémorisées par site (Paramètres → Confidentialité)
