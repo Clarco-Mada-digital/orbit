@@ -464,17 +464,26 @@ function setupPermissions(ses) {
 
       // Décision déjà prise pour ce site → on la rejoue sans rien demander.
       const known = sitePermissions.decisionFor(origin, permission);
-      if (known) return cb(known === 'allow');
+      if (known) {
+        permLog(`${permission} pour ${origin} — décision mémorisée : ${known}`);
+        return cb(known === 'allow');
+      }
 
       const mode = sitePermissions.getMode();
-      if (mode === 'allow') return byDefault();
-      if (mode === 'deny') return cb(false);
-      if (!origin) return byDefault(); // origine illisible (about:, blob:…)
+      if (mode !== 'ask' || !origin) {
+        permLog(`${permission} pour ${origin || 'origine illisible'} — mode « ${mode} »`);
+        if (mode === 'deny') return cb(false);
+        return byDefault(); // 'allow', ou origine illisible (about:, blob:…)
+      }
 
+      permLog(`${permission} demandé par ${origin} — question posée`);
       askPermission(wc, permission, origin).then((answer) => {
         // `null` = aucune interface pour poser la question (pop-up) : on
         // applique la politique par défaut plutôt que de bloquer l'app.
-        if (answer === null) return byDefault();
+        if (answer === null) {
+          permLog(`${permission} pour ${origin} — sans réponse, politique par défaut`);
+          return byDefault();
+        }
         cb(answer);
       });
     });
@@ -2422,7 +2431,7 @@ function armAckTimeout(id, onLost) {
   const timer = setTimeout(() => {
     const entry = pendingPrompts.get(id);
     if (!entry || entry.acked || entry.done) return;
-    console.warn('[orbit] modale non affichée pour', id, '— repli automatique');
+    permLog(`modale ${id} jamais affichée par l'interface — repli automatique`);
     onLost(entry);
   }, ACK_TIMEOUT_MS);
   timer.unref?.();
@@ -2453,6 +2462,7 @@ ipcMain.on('orbit-dialog:open', (event, payload = {}) => {
   const cancelled = type === 'confirm' ? false : type === 'prompt' ? null : null;
 
   if (!ui) {
+    permLog(`dialogue ${type} depuis ${hostOf(wc.getURL())} — pas d'interface, boîte native`);
     event.returnValue = { supported: false };
     return;
   }
@@ -2460,6 +2470,7 @@ ipcMain.on('orbit-dialog:open', (event, payload = {}) => {
   // « Ne plus afficher » coché, ou avalanche de dialogues : on répond
   // « annuler » sans rien montrer.
   if (silencedContents.has(wc.id)) {
+    permLog(`dialogue ${type} depuis ${hostOf(wc.getURL())} — page mise en sourdine`);
     event.returnValue = { supported: true, done: true, value: cancelled };
     return;
   }
@@ -2484,6 +2495,7 @@ ipcMain.on('orbit-dialog:open', (event, payload = {}) => {
     // comme un navigateur face à une page qui s'emballe.
     offerSilence: repeated,
   });
+  permLog(`dialogue ${type} depuis ${hostOf(wc.getURL())} → modale ${id}`);
   armAckTimeout(id, () => finishPrompt(id, cancelled));
   event.returnValue = { supported: true, id };
 });
@@ -2565,12 +2577,17 @@ handleFromUi('orbit-dialog:answer', (_event, { id, value, allowed, remember, sil
   const entry = pendingPrompts.get(id);
   if (!entry) return { success: false, error: 'inconnu' };
   if (entry.kind === 'permission') {
+    permLog(
+      `réponse ${id} — ${entry.permission} sur ${entry.origin} : ` +
+        `${allowed ? 'autorisé' : 'bloqué'}${remember ? ' (mémorisé)' : ''}`
+    );
     // « Retenir mon choix » : la décision vaudra pour tout ce site, jusqu'à ce
     // qu'elle soit oubliée depuis Paramètres → Autorisations des sites.
     if (remember) sitePermissions.remember(entry.origin, entry.permission, !!allowed);
     finishPrompt(id, !!allowed);
     return { success: true };
   }
+  permLog(`réponse ${id} — dialogue${silence ? ' + mise en sourdine' : ''}`);
   if (silence) silencedContents.add(entry.wcId);
   finishPrompt(id, value === undefined ? null : value);
   return { success: true };
@@ -2579,6 +2596,7 @@ handleFromUi('orbit-dialog:answer', (_event, { id, value, allowed, remember, sil
 handleFromUi('orbit-dialog:ack', (_event, { id } = {}) => {
   const entry = pendingPrompts.get(id);
   if (entry) entry.acked = true;
+  permLog(`modale ${id} affichée${entry ? '' : ' (demande déjà close)'}`);
   return { success: true };
 });
 
@@ -3518,31 +3536,39 @@ ipcMain.on('guest:interact', (event) => {
 // dépasse 256 Ko. Ce journal ne contient JAMAIS de mot de passe ni
 // d'identifiant : uniquement des noms de domaine, des compteurs et des
 // libellés d'erreur.
-const credLogFile = () => path.join(app.getPath('userData'), 'credentials.log');
-let credLogSize = -1;
+// Un journal par sujet, tronqué à 256 Ko. Aucun ne contient de secret :
+// noms de domaine, compteurs, verdicts et libellés d'erreur seulement.
+const logSizes = new Map();
 
-function credLog(message) {
+function fileLog(name, tag, message) {
   const line = `${new Date().toISOString()} ${message}\n`;
-  console.log('[credentials]', message);
+  console.log(tag, message);
   try {
-    const file = credLogFile();
-    if (credLogSize < 0) {
+    const file = path.join(app.getPath('userData'), name);
+    let size = logSizes.get(name);
+    if (size === undefined) {
       try {
-        credLogSize = fs.statSync(file).size;
+        size = fs.statSync(file).size;
       } catch {
-        credLogSize = 0;
+        size = 0;
       }
     }
-    if (credLogSize > 256 * 1024) {
+    if (size > 256 * 1024) {
       fs.writeFileSync(file, '');
-      credLogSize = 0;
+      size = 0;
     }
     fs.appendFileSync(file, line);
-    credLogSize += Buffer.byteLength(line);
+    logSizes.set(name, size + Buffer.byteLength(line));
   } catch {
     /* un journal ne doit jamais faire échouer ce qu'il observe */
   }
 }
+
+const credLog = (message) => fileLog('credentials.log', '[credentials]', message);
+
+// Dialogues et autorisations : sans trace sur disque, une modale qui ne
+// s'affiche pas est indiscernable d'une app silencieuse.
+const permLog = (message) => fileLog('permissions.log', '[permissions]', message);
 
 // Hôte d'une URL, pour le journal : on n'y écrit jamais l'URL complète, qui
 // peut porter des jetons de connexion dans sa requête.
