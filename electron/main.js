@@ -1744,21 +1744,56 @@ function createOrbitPopup(url, partition) {
 // Sans ça, la connexion partait dans le navigateur système et les cookies
 // n'arrivaient jamais dans l'app → impossible de se connecter.
 function openInAppPopup(guestContents, url) {
-  if (!url || !(url.startsWith('http://') || url.startsWith('https://'))) {
+  const from = hostOf(guestContents.getURL());
+  const blank = !url || url === 'about:blank' || url === 'about:blank#blocked';
+
+  // Fenêtre VIDE pilotée ensuite par la page qui l'ouvre — le schéma classique
+  // de `const w = window.open(); w.location = …`. La refuser rendait le bouton
+  // inerte, sans le moindre message. Elle doit rester une vraie fenêtre
+  // Electron : l'ouvrant garde ainsi son `window.opener` et peut la piloter,
+  // ce que notre habillage maison ne permet pas.
+  if (blank) {
+    permLog(`fenêtre vide demandée par ${from} — ouverte, pilotée par la page`);
+    return {
+      action: 'allow',
+      overrideBrowserWindowOptions: {
+        parent: mainWindow,
+        width: 920,
+        height: 720,
+        autoHideMenuBar: true,
+        backgroundColor: '#0a0a0f',
+        webPreferences: {
+          session: guestContents.session,
+          nodeIntegration: false,
+          contextIsolation: true,
+          sandbox: true,
+          spellcheck: true,
+          preload: path.join(__dirname, 'credentials-preload.cjs'),
+        },
+      },
+    };
+  }
+
+  if (!(url.startsWith('http://') || url.startsWith('https://'))) {
+    permLog(`fenêtre refusée pour ${from} — schéma non géré (${String(url).slice(0, 24)}…)`);
     return { action: 'deny' };
   }
 
   if (popupStyle === 'external') {
+    permLog(`fenêtre ${hostOf(url)} demandée par ${from} — navigateur externe`);
     shell.openExternal(url);
     return { action: 'deny' };
   }
 
   if (popupStyle === 'orbit') {
+    permLog(`fenêtre ${hostOf(url)} demandée par ${from} — habillage Orbit`);
     // On refuse la fenêtre par défaut d'Electron pour construire la nôtre,
     // habillée, avec la partition de l'app d'origine.
     createOrbitPopup(url, guestPartitions.get(guestContents.id));
     return { action: 'deny' };
   }
+
+  permLog(`fenêtre ${hostOf(url)} demandée par ${from} — fenêtre système`);
 
   return {
     action: 'allow',
