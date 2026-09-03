@@ -8,6 +8,12 @@ Format : une section `## [X.Y.Z] — AAAA-MM-JJ` par version, puis des
 sous-sections `### Ajouté` / `### Modifié` / `### Corrigé` / `### Sécurité`.
 La plus récente en premier.
 
+## [1.7.4] — 2026-08-25
+
+### Corrigé
+- Erreurs d'affichage d'alert dans orbite.
+- Mise à jour du gestion des micros et confirmation, alerte etc.. et appel par les applicaiton de messagerie.
+
 ## [1.7.3] — 2026-08-27
 
 ### Corrigé
