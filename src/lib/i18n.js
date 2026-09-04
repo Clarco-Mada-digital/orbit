@@ -58,6 +58,20 @@ export const fr = {
   'settings.language': 'Langue',
   'settings.language.auto': 'Automatique (système)',
 
+  // Réglages — données de test (Fake data)
+  'fake.title': 'Données de test (remplissage 🎲)',
+  'fake.desc':
+    'Valeurs utilisées par le bouton 🎲 sur les champs de formulaire des apps. Laissez vide pour des données aléatoires.',
+  'fake.firstName': 'Prénom',
+  'fake.lastName': 'Nom',
+  'fake.email': 'E-mail',
+  'fake.phone': 'Téléphone',
+  'fake.username': 'Identifiant',
+  'fake.city': 'Ville',
+  'fake.zip': 'Code postal',
+  'fake.address': 'Adresse',
+  'fake.company': 'Société',
+
   // Communs
   'common.remove': 'Supprimer',
   'common.settings': 'Paramètres',
@@ -1013,6 +1027,20 @@ export const en = {
   // Settings — language
   'settings.language': 'Language',
   'settings.language.auto': 'Automatic (system)',
+
+  // Settings — test data (Fake data)
+  'fake.title': 'Test data (🎲 autofill)',
+  'fake.desc':
+    'Values used by the 🎲 button on app form fields. Leave empty for random data.',
+  'fake.firstName': 'First name',
+  'fake.lastName': 'Last name',
+  'fake.email': 'Email',
+  'fake.phone': 'Phone',
+  'fake.username': 'Username',
+  'fake.city': 'City',
+  'fake.zip': 'Postal code',
+  'fake.address': 'Address',
+  'fake.company': 'Company',
 
   // Common
   'common.remove': 'Remove',

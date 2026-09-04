@@ -114,6 +114,12 @@ export default function App() {
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Données de test (« Fake data ») : le remplissage 🎲 vit dans le preload des
+  // webviews, qui lit ses valeurs perso depuis le main → on les y pousse ici.
+  useEffect(() => {
+    window.electronAPI?.setFakeData?.(settings.fakeData || {});
+  }, [settings.fakeData]);
+
   // Média : pour synchroniser le mini-lecteur flottant
   const media = useMediaStore((s) => s.media);
 

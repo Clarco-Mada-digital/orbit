@@ -68,6 +68,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   downloadMedia: (url, mode) => ipcRenderer.invoke('media:download', { url, mode }),
   // Ouvrir une app dans une fenêtre détachée (même session)
   openDetached: (payload) => ipcRenderer.invoke('app:openDetached', payload),
+  // Données de test (« Fake data ») : pousse les valeurs perso vers le main
+  setFakeData: (cfg) => ipcRenderer.invoke('fakedata:set', cfg),
   // Mise à jour automatique
   getVersion: () => ipcRenderer.invoke('app:getVersion'),
   checkForUpdate: () => ipcRenderer.invoke('update:check'),

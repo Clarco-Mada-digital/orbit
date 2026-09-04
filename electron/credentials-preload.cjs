@@ -361,16 +361,10 @@ function getStoredLogin() {
 // ---------------------------------------------------------------------------
 // Indicateurs visuels (bouton 🔑 + badge d'info + sélecteur de compte)
 // ---------------------------------------------------------------------------
-let genBtn = null; // bouton 🎲 « générer un mot de passe » (champs mot de passe)
-
 function removeKeyBtn() {
   if (keyBtn) {
     keyBtn.remove();
     keyBtn = null;
-  }
-  if (genBtn) {
-    genBtn.remove();
-    genBtn = null;
   }
   clearTimeout(btnTimer);
 }
@@ -403,37 +397,6 @@ function showKeyBtn(anchor) {
     doFill(currentFields, true);
   });
   document.body.appendChild(keyBtn);
-
-  // Sur un champ MOT DE PASSE : bouton 🎲 pour générer un mot de passe fort
-  // (proposition — l'utilisateur peut le modifier avant de valider le formulaire).
-  if (anchor.matches && anchor.matches(PASSWORD_SELECTOR)) {
-    genBtn = document.createElement('button');
-    genBtn.textContent = '🎲';
-    genBtn.title = 'Générer un mot de passe fort';
-    Object.assign(genBtn.style, {
-      position: 'fixed',
-      zIndex: '2147483647',
-      width: '26px',
-      height: '26px',
-      padding: '0',
-      border: 'none',
-      borderRadius: '7px',
-      background: '#0ea5e9',
-      cursor: 'pointer',
-      fontSize: '14px',
-      lineHeight: '26px',
-      textAlign: 'center',
-      boxShadow: '0 2px 8px rgba(0,0,0,0.35)',
-      display: 'block',
-    });
-    genBtn.addEventListener('click', (e) => {
-      e.preventDefault();
-      e.stopPropagation();
-      offerGenerator(anchor, true);
-    });
-    document.body.appendChild(genBtn);
-  }
-
   positionKeyBtn(anchor);
   // Disparaît au bout d'un moment si l'utilisateur ne fait rien
   btnTimer = setTimeout(removeKeyBtn, 8000);
@@ -449,11 +412,6 @@ function positionKeyBtn(anchor) {
     const top = Math.max(4, rect.top + rect.height / 2 - 13);
     keyBtn.style.left = left + 'px';
     keyBtn.style.top = top + 'px';
-    // 🎲 juste sous le 🔑 (même colonne)
-    if (genBtn) {
-      genBtn.style.left = left + 'px';
-      genBtn.style.top = top + 29 + 'px';
-    }
   } catch {
     /* ignore */
   }
@@ -1218,6 +1176,192 @@ document.addEventListener(
   (e) => {
     const t = e.target;
     if (t && t.matches && t.matches(PASSWORD_SELECTOR)) offerGenerator(t);
+  },
+  true
+);
+
+// ---------------------------------------------------------------------------
+// Données de test (« Fake data ») : bouton 🎲 sur TOUT champ, remplissage
+// selon le type détecté (mot de passe, email, nom, ville, date…). Les valeurs
+// personnalisées (Réglages) priment sur l'aléatoire.
+// ---------------------------------------------------------------------------
+let fakeCustom = {};
+ipcRenderer
+  .invoke('fakedata:get')
+  .then((r) => {
+    if (r && r.custom) fakeCustom = r.custom;
+  })
+  .catch(() => {});
+
+const FAKE_FIRST = ['Camille', 'Alex', 'Marie', 'Lucas', 'Sofia', 'Noah', 'Emma', 'Léo', 'Jade', 'Adam'];
+const FAKE_LAST = ['Martin', 'Bernard', 'Dubois', 'Robert', 'Petit', 'Durand', 'Leroy', 'Moreau', 'Roux', 'Blanc'];
+const FAKE_CITY = ['Paris', 'Lyon', 'Marseille', 'Toulouse', 'Nantes', 'Bordeaux', 'Lille', 'Nice', 'Rennes'];
+const FAKE_STREET = ['12 rue des Lilas', '8 avenue Victor Hugo', '25 boulevard Voltaire', '3 impasse du Moulin'];
+const FAKE_COMPANY = ['Orbit SAS', 'Nova Labs', 'Studio Meridian', 'Atelier Kairos', 'Groupe Lumen'];
+const frand = (arr) => arr[Math.floor(Math.random() * arr.length)];
+const frandInt = (n) => Math.floor(Math.random() * n);
+const fslug = (s) =>
+  String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z]/g, '');
+
+function detectFieldKind(el) {
+  const t = (el.getAttribute('type') || el.type || 'text').toLowerCase();
+  if (t === 'password') return 'password';
+  if (t === 'email') return 'email';
+  if (t === 'tel') return 'phone';
+  if (t === 'url') return 'url';
+  if (t === 'number') return 'number';
+  if (t === 'date') return 'date';
+  const hint = [el.autocomplete, el.name, el.id, el.placeholder, el.getAttribute && el.getAttribute('aria-label')]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+  if (/e-?mail|courriel/.test(hint)) return 'email';
+  if (/phone|t[eé]l|mobile|portable|whatsapp/.test(hint)) return 'phone';
+  if (/first.?name|pr[eé]nom|given/.test(hint)) return 'firstName';
+  if (/(last.?name|surname|family)|(^|[^a-z])nom([^a-z]|$)/.test(hint) && !/pr[eé]nom|user|soci|entreprise/.test(hint))
+    return 'lastName';
+  if (/full.?name|fullname|your.?name|name|nom complet/.test(hint)) return 'fullName';
+  if (/user.?name|pseudo|login|identifiant/.test(hint)) return 'username';
+  if (/city|ville/.test(hint)) return 'city';
+  if (/zip|postal|code.?postal|\bcp\b/.test(hint)) return 'zip';
+  if (/address|adresse|street|rue/.test(hint)) return 'address';
+  if (/company|soci[eé]t[eé]|entreprise|organi[sz]ation/.test(hint)) return 'company';
+  if (/url|site|website/.test(hint)) return 'url';
+  return 'text';
+}
+
+async function fakeValueFor(kind) {
+  if (fakeCustom[kind]) return fakeCustom[kind];
+  const first = fakeCustom.firstName || frand(FAKE_FIRST);
+  const last = fakeCustom.lastName || frand(FAKE_LAST);
+  switch (kind) {
+    case 'password': {
+      const res = await ipcRenderer.invoke('credentials:generate', { length: 16, symbols: true });
+      return (res && res.password) || 'Aa1!' + Math.random().toString(36).slice(2, 10);
+    }
+    case 'email':
+      return fakeCustom.email || `${fslug(first)}.${fslug(last)}@example.com`;
+    case 'firstName':
+      return first;
+    case 'lastName':
+      return last;
+    case 'fullName':
+      return `${first} ${last}`;
+    case 'username':
+      return `${fslug(first)}${frandInt(1000)}`;
+    case 'phone':
+      return fakeCustom.phone || `06${String(frandInt(1e8)).padStart(8, '0')}`;
+    case 'city':
+      return fakeCustom.city || frand(FAKE_CITY);
+    case 'zip':
+      return fakeCustom.zip || String(10000 + frandInt(89999));
+    case 'address':
+      return fakeCustom.address || frand(FAKE_STREET);
+    case 'company':
+      return fakeCustom.company || frand(FAKE_COMPANY);
+    case 'url':
+      return 'https://example.com';
+    case 'number':
+      return String(frandInt(100));
+    case 'date':
+      return new Date(Date.now() - frandInt(3e10)).toISOString().slice(0, 10);
+    default:
+      return frand(['Lorem', 'Ipsum', 'Dolor', 'Exemple', 'Test']);
+  }
+}
+
+const FAKE_TYPES = new Set(['text', 'email', 'tel', 'url', 'number', 'search', 'password', 'date', '']);
+function isFillable(el) {
+  if (!el || !el.tagName) return false;
+  const tag = el.tagName.toLowerCase();
+  if (tag === 'textarea') return reallyVisible(el);
+  if (tag !== 'input') return false;
+  const t = (el.getAttribute('type') || 'text').toLowerCase();
+  if (!FAKE_TYPES.has(t)) return false;
+  if (el.readOnly || el.disabled) return false;
+  return reallyVisible(el);
+}
+
+let fakeBtn = null;
+let fakeTimer = null;
+function removeFakeBtn() {
+  if (fakeBtn) {
+    fakeBtn.remove();
+    fakeBtn = null;
+  }
+  clearTimeout(fakeTimer);
+}
+function positionFakeBtn(anchor) {
+  if (!fakeBtn || !anchor) return;
+  try {
+    const r = anchor.getBoundingClientRect();
+    let left = r.right + 5;
+    if (left + 30 > window.innerWidth) left = Math.max(4, r.left - 31);
+    const baseTop = r.top + r.height / 2 - 13;
+    // Sous le 🔑 si présent (champ de connexion), sinon centré à droite du champ.
+    fakeBtn.style.left = left + 'px';
+    fakeBtn.style.top = Math.max(4, keyBtn ? baseTop + 29 : baseTop) + 'px';
+  } catch {
+    /* ignore */
+  }
+}
+function showFakeBtn(anchor) {
+  removeFakeBtn();
+  fakeBtn = document.createElement('button');
+  fakeBtn.textContent = '🎲';
+  fakeBtn.title = 'Remplir avec des données de test';
+  Object.assign(fakeBtn.style, {
+    position: 'fixed',
+    zIndex: '2147483647',
+    width: '26px',
+    height: '26px',
+    padding: '0',
+    border: 'none',
+    borderRadius: '7px',
+    background: '#0ea5e9',
+    cursor: 'pointer',
+    fontSize: '14px',
+    lineHeight: '26px',
+    textAlign: 'center',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.35)',
+    display: 'block',
+  });
+  // mousedown preventDefault : ne pas voler le focus du champ avant de le remplir.
+  fakeBtn.addEventListener('mousedown', (e) => e.preventDefault());
+  fakeBtn.addEventListener('click', async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const kind = detectFieldKind(anchor);
+    if (kind === 'password') {
+      offerGenerator(anchor, true); // panneau : voir/modifier avant d'utiliser
+      return;
+    }
+    setValue(anchor, await fakeValueFor(kind));
+    highlight(anchor);
+  });
+  document.body.appendChild(fakeBtn);
+  positionFakeBtn(anchor);
+  const onScroll = () => positionFakeBtn(anchor);
+  document.addEventListener('scroll', onScroll, { capture: true, passive: true });
+  fakeTimer = setTimeout(() => {
+    removeFakeBtn();
+    document.removeEventListener('scroll', onScroll, { capture: true });
+  }, 8000);
+}
+
+document.addEventListener(
+  'focusin',
+  (e) => {
+    if (isFillable(e.target)) showFakeBtn(e.target);
+  },
+  true
+);
+document.addEventListener(
+  'focusout',
+  () => {
+    setTimeout(() => {
+      if (!isFillable(document.activeElement)) removeFakeBtn();
+    }, 200);
   },
   true
 );

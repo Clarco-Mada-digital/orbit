@@ -1594,6 +1594,11 @@ function hardenWebviewAttach(event, webPreferences, params) {
     // Injecté ici (le main process connaît __dirname ; les preloads
     // sandboxés, eux, n'y ont pas accès).
     webPreferences.preload = path.join(__dirname, 'credentials-preload.cjs');
+    // Injecter le preload AUSSI dans les iframes : beaucoup de formulaires
+    // (inscription, paiement…) vivent dans un cadre — sans ça, ni le
+    // remplissage identifiants ni le bouton 🎲 n'y apparaissent. Sûr : node
+    // reste désactivé (+ sandbox + isolation), on ne fait qu'exécuter le preload.
+    webPreferences.nodeIntegrationInSubFrames = true;
 
     // Appliquer le contournement X-Frame-Options à la partition du webview
     // (chaque profil utilise sa propre partition → cookies séparés)
@@ -3953,6 +3958,16 @@ ipcMain.handle('credentials:takePending', (event) => {
 });
 
 ipcMain.handle('credentials:generate', (_event, opts = {}) => vault.generatePassword(opts));
+
+// Données de test (« Fake data ») : valeurs personnalisées poussées par le
+// renderer (Réglages) et lues par le preload des webviews. Défaut vide = tout
+// aléatoire.
+let fakeDataConfig = {};
+ipcMain.handle('fakedata:get', () => ({ custom: fakeDataConfig || {} }));
+ipcMain.handle('fakedata:set', (_event, cfg = {}) => {
+  fakeDataConfig = cfg && typeof cfg === 'object' ? cfg : {};
+  return { success: true };
+});
 
 // Purge les cookies/session d'un compte désinstallé (session unique par app).
 // La clé de session est STABLE (sessionKey) : elle ne change pas quand l'app

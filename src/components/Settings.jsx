@@ -187,6 +187,38 @@ export default function Settings({ onClose }) {
                   </div>
 
                   <div className="card">
+                    <h4 className="font-semibold mb-1">{t('fake.title')}</h4>
+                    <p className="text-sm text-text-muted mb-4">{t('fake.desc')}</p>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      {[
+                        'firstName',
+                        'lastName',
+                        'email',
+                        'phone',
+                        'username',
+                        'city',
+                        'zip',
+                        'address',
+                        'company',
+                      ].map((k) => (
+                        <label key={k} className="block">
+                          <span className="text-xs text-text-muted">{t(`fake.${k}`)}</span>
+                          <input
+                            type="text"
+                            value={settings.fakeData?.[k] || ''}
+                            onChange={(e) =>
+                              updateSettings({
+                                fakeData: { ...(settings.fakeData || {}), [k]: e.target.value },
+                              })
+                            }
+                            className="input mt-1"
+                          />
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="card">
                     <h4 className="font-semibold mb-4">{t('st.startup')}</h4>
                     <label className="flex items-center justify-between mb-4">
                       <span>{t('st.startMinimized')}</span>
