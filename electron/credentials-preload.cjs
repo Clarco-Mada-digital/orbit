@@ -846,162 +846,118 @@ function makeButton(label, kind) {
 // ---------------------------------------------------------------------------
 // Quand aucun trousseau n'est ouvert, on propose d'en créer un directement
 // depuis la page de connexion, sans forcer l'utilisateur à quitter l'app.
-function showCreateVaultPanel(pending, offer) {
-  const panel = createPanel({
-    title: 'Créer un trousseau pour enregistrer',
-    subtitle: `${pending.login || 'sans identifiant'} — ${location.hostname}`,
-  });
-
-  // Champ nom du trousseau
-  const nameInput = document.createElement('input');
-  nameInput.type = 'text';
-  nameInput.placeholder = 'Nom du trousseau (ex: Personnel)';
-  nameInput.value = 'Personnel';
-  Object.assign(nameInput.style, {
-    width: '100%',
-    padding: '7px 8px',
-    marginBottom: '8px',
-    borderRadius: '8px',
-    background: '#1f2937',
-    border: '1px solid #374151',
-    color: '#f3f4f6',
-    fontSize: '12px',
-    fontFamily: 'inherit',
-    boxSizing: 'border-box',
-  });
-  panel.appendChild(nameInput);
-
-  // Champ mot de passe maître
-  const passInput = document.createElement('input');
-  passInput.type = 'password';
-  passInput.placeholder = 'Mot de passe maître (8+ caractères)';
-  Object.assign(passInput.style, {
-    width: '100%',
-    padding: '7px 8px',
-    marginBottom: '10px',
-    borderRadius: '8px',
-    background: '#1f2937',
-    border: '1px solid #374151',
-    color: '#f3f4f6',
-    fontSize: '12px',
-    fontFamily: 'inherit',
-    boxSizing: 'border-box',
-  });
-  panel.appendChild(passInput);
-
-  // Lien vers les réglages pour les trousseaux existants
-  if (offer.vaults && offer.vaults.length > 0) {
-    const hint = document.createElement('div');
-    hint.textContent = `Vous avez ${offer.vaults.length} trousseau(x) existant(s) — déverrouillez-le dans Réglages → Mots de passe pour l'utiliser.`;
-    Object.assign(hint.style, {
-      fontSize: '11px',
-      color: '#9ca3af',
-      marginBottom: '10px',
-      lineHeight: '1.4',
-    });
-    panel.appendChild(hint);
-  }
-
-  const row = document.createElement('div');
-  Object.assign(row.style, { display: 'flex', gap: '6px' });
-
-  const createBtn = makeButton('Créer et enregistrer', 'primary');
-  createBtn.addEventListener('click', async () => {
-    const name = nameInput.value.trim();
-    const master = passInput.value;
-    if (!name) { nameInput.focus(); return; }
-    if (master.length < 8) { passInput.focus(); return; }
-    createBtn.disabled = true;
-    createBtn.textContent = '…';
-    const res = await ipcRenderer.invoke('credentials:createAndSave', {
-      name,
-      password: master,
-      entry: { title: document.title || location.hostname },
-    });
-    removePanel();
-    if (!res || res.success === false) {
-      const msg = res?.error === 'weak-master' ? 'Mot de passe maître trop court (8+ caractères)' : 'Erreur lors de la création';
-      showHint(msg, document.body);
-    }
-  });
-
-  const close = makeButton('✕', 'ghost');
-  close.title = 'Pas maintenant';
-  close.addEventListener('click', removePanel);
-
-  row.appendChild(createBtn);
-  row.appendChild(close);
-  panel.appendChild(row);
-
-  // Focus automatique sur le champ mot de passe
-  setTimeout(() => passInput.focus(), 100);
-
-  setTimeout(() => {
-    if (panelEl === panel) removePanel();
-  }, 60000);
-}
-
-// ---------------------------------------------------------------------------
-// Proposition d'enregistrement après une connexion / inscription
-// ---------------------------------------------------------------------------
 function showSavePanel(pending, offer) {
-  // --- Cas : aucun trousseau ouvert → proposer d'en créer un ---
-  if (offer.createVault) {
-    return showCreateVaultPanel(pending, offer);
-  }
-
   const panel = createPanel({
     title: offer.update ? 'Mettre à jour ce mot de passe ?' : 'Enregistrer ce mot de passe ?',
     subtitle: `${pending.login || 'sans identifiant'} — ${location.hostname}`,
   });
 
-  // Choix du trousseau : masqué s'il n'y en a qu'un d'ouvert (pas de question
-  // inutile), affiché dès qu'il y a un arbitrage à faire (Boulot / Perso).
-  let vaultId = offer.vaultId || offer.vaults[0]?.id;
-  if (offer.vaults.length > 1) {
-    const select = document.createElement('select');
-    Object.assign(select.style, {
-      width: '100%',
-      padding: '7px 8px',
-      marginBottom: '10px',
-      borderRadius: '8px',
-      background: '#1f2937',
-      border: '1px solid #374151',
-      color: '#f3f4f6',
-      fontSize: '12px',
-      fontFamily: 'inherit',
-    });
-    offer.vaults.forEach((v) => {
-      const opt = document.createElement('option');
-      opt.value = v.id;
-      opt.textContent = `${v.icon || '🔐'}  ${v.name}`;
-      if (v.id === vaultId) opt.selected = true;
-      select.appendChild(opt);
-    });
-    select.addEventListener('change', () => {
-      vaultId = select.value;
-    });
-    panel.appendChild(select);
+  const vaults = offer.vaults || [];
+  const NEW = '__new__';
+
+  const fieldStyle = {
+    width: '100%', padding: '7px 8px', marginBottom: '8px', borderRadius: '8px',
+    background: '#1f2937', border: '1px solid #374151', color: '#f3f4f6',
+    fontSize: '12px', fontFamily: 'inherit', boxSizing: 'border-box',
+  };
+
+  // Sélecteur unifié : TOUS les trousseaux (🔓 ouvert / 🔒 verrouillé) + « ➕ Nouveau ».
+  const select = document.createElement('select');
+  Object.assign(select.style, fieldStyle);
+  vaults.forEach((v) => {
+    const opt = document.createElement('option');
+    opt.value = v.id;
+    opt.textContent = `${v.unlocked ? '🔓' : '🔒'} ${v.icon || ''} ${v.name}`.replace(/\s+/g, ' ').trim();
+    select.appendChild(opt);
+  });
+  const newOpt = document.createElement('option');
+  newOpt.value = NEW;
+  newOpt.textContent = '➕ Nouveau trousseau…';
+  select.appendChild(newOpt);
+  panel.appendChild(select);
+
+  const firstUnlocked = vaults.find((v) => v.unlocked);
+  let def = offer.vaultId || (firstUnlocked && firstUnlocked.id) || (vaults[0] && vaults[0].id) || NEW;
+  if (offer.createVault || vaults.length === 0) def = NEW;
+  select.value = def;
+
+  // Champs conditionnels : nom (Nouveau) et mot de passe maître (Nouveau ou verrouillé).
+  const nameInput = document.createElement('input');
+  nameInput.type = 'text';
+  nameInput.placeholder = 'Nom du trousseau (ex : Personnel)';
+  nameInput.value = 'Personnel';
+  Object.assign(nameInput.style, fieldStyle);
+  panel.appendChild(nameInput);
+
+  const masterInput = document.createElement('input');
+  masterInput.type = 'password';
+  masterInput.placeholder = 'Mot de passe maître (8+ caractères)';
+  Object.assign(masterInput.style, { ...fieldStyle, marginBottom: '10px' });
+  panel.appendChild(masterInput);
+
+  const selectedVault = () => vaults.find((v) => v.id === select.value) || null;
+
+  function refresh() {
+    const isNew = select.value === NEW;
+    const v = selectedVault();
+    const needMaster = isNew || (v && !v.unlocked);
+    nameInput.style.display = isNew ? 'block' : 'none';
+    masterInput.style.display = needMaster ? 'block' : 'none';
+    save.textContent = isNew
+      ? 'Créer et enregistrer'
+      : v && !v.unlocked
+        ? 'Déverrouiller et enregistrer'
+        : offer.update
+          ? 'Mettre à jour'
+          : 'Enregistrer';
   }
 
   const row = document.createElement('div');
-  Object.assign(row.style, { display: 'flex', gap: '6px', alignItems: 'center' });
+  Object.assign(row.style, { display: 'flex', gap: '6px', alignItems: 'center', marginTop: '2px' });
 
-  const save = makeButton(offer.update ? 'Mettre à jour' : 'Enregistrer', 'primary');
+  const save = makeButton('Enregistrer', 'primary');
   save.addEventListener('click', async () => {
+    const val = select.value;
+    const v = selectedVault();
+    const prev = save.textContent;
+    const fail = (el) => { save.disabled = false; save.textContent = prev; if (el) el.focus(); };
     save.disabled = true;
     save.textContent = '…';
-    const res = await ipcRenderer.invoke('credentials:save', {
-      vaultId,
-      // Mise à jour d'un compte connu : on réécrit l'entrée existante plutôt
-      // que d'en créer une seconde avec le même identifiant.
-      entryId: offer.update ? offer.entryId : null,
-      title: document.title || location.hostname,
-    });
-    removePanel();
-    if (!res || res.success === false) {
-      showHint("Enregistrement impossible (trousseau verrouillé ?)", document.body);
+    let res;
+    if (val === NEW) {
+      const name = nameInput.value.trim();
+      const master = masterInput.value;
+      if (!name) return fail(nameInput);
+      if (master.length < 8) return fail(masterInput);
+      res = await ipcRenderer.invoke('credentials:createAndSave', {
+        name, password: master, entry: { title: document.title || location.hostname },
+      });
+    } else if (v && !v.unlocked) {
+      const master = masterInput.value;
+      if (!master) return fail(masterInput);
+      res = await ipcRenderer.invoke('credentials:unlockAndSave', {
+        vaultId: val, password: master,
+        entryId: offer.update ? offer.entryId : null,
+        title: document.title || location.hostname,
+      });
+    } else {
+      res = await ipcRenderer.invoke('credentials:save', {
+        vaultId: val,
+        entryId: offer.update ? offer.entryId : null,
+        title: document.title || location.hostname,
+      });
     }
+    if (!res || res.success === false) {
+      save.disabled = false;
+      save.textContent = prev;
+      const msg =
+        res?.error === 'bad-password' ? 'Mot de passe maître incorrect'
+        : res?.error === 'weak-master' ? 'Mot de passe maître trop court (8+ caractères)'
+        : 'Enregistrement impossible (trousseau verrouillé ?)';
+      showHint(msg, document.body);
+      return;
+    }
+    removePanel();
   });
 
   const never = makeButton('Jamais ici', 'ghost');
@@ -1020,7 +976,9 @@ function showSavePanel(pending, offer) {
   row.appendChild(close);
   panel.appendChild(row);
 
-  // Disparaît tout seul : un panneau oublié dans un coin finit par gêner.
+  select.addEventListener('change', refresh);
+  refresh();
+
   setTimeout(() => {
     if (panelEl === panel) removePanel();
   }, 45000);

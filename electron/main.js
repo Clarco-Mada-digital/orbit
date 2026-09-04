@@ -3829,26 +3829,21 @@ ipcMain.handle('credentials:shouldOffer', (event) => {
   if (!rec) return { offer: false, reason: 'no-pending' };
   const { url, login, password } = rec;
   if (vault.isIgnored(url)) return { offer: false, reason: 'ignored' };
-  const vaults = vault.list().filter((v) => v.unlocked);
-  if (vaults.length === 0) {
-    // Aucun trousseau ouvert → on propose d'en créer un pour sauvegarder
-    // les identifiants. Le mot de passe reste en mémoire temporaire (stashPending)
-    // jusqu'à ce que l'utilisateur crée le trousseau et valide.
-    const allVaults = vault.list();
-    return {
-      offer: true,
-      createVault: true,
-      vaults: allVaults.map((v) => ({ id: v.id, name: v.name, icon: v.icon, unlocked: v.unlocked })),
-    };
-  }
+  const all = vault.list();
   const state = vault.lookupSaveState(url, login, password);
+  // Déjà connu et inchangé (dans un trousseau ouvert) → rien à proposer.
   if (state.known && !state.changed) return { offer: false, reason: 'known' };
+  // On renvoie TOUS les trousseaux (ouverts ET verrouillés) : la bannière
+  // propose un select unifié + « ➕ Nouveau ». Déverrouiller/créer se fait à
+  // ce moment-là, sans jamais devoir taper un nom exact.
   return {
     offer: true,
     update: state.known && state.changed,
-    vaults: vaults.map((v) => ({ id: v.id, name: v.name, icon: v.icon })),
     entryId: state.entryId || null,
     vaultId: state.vaultId || null,
+    // createVault : plus aucun trousseau du tout → on démarre sur « Nouveau ».
+    createVault: all.length === 0,
+    vaults: all.map((v) => ({ id: v.id, name: v.name, icon: v.icon, unlocked: v.unlocked })),
   };
 });
 
@@ -3871,6 +3866,26 @@ ipcMain.handle('credentials:save', (event, { vaultId, entryId, title } = {}) => 
 ipcMain.handle('credentials:ignore', (event, { url: claimed } = {}) =>
   vault.ignoreDomain(senderUrl(event, claimed))
 );
+
+// Déverrouille un trousseau existant ET sauvegarde les identifiants en attente.
+// Utilisé quand l'utilisateur choisit, dans la bannière, un trousseau verrouillé.
+ipcMain.handle('credentials:unlockAndSave', (event, { vaultId, password: master, entryId, title } = {}) => {
+  const rec = pendingCredentials.get(event.sender.id);
+  if (!rec) return { success: false, error: 'no-pending' };
+  const unlockRes = vault.unlock(vaultId, master);
+  if (!unlockRes || unlockRes.success === false) {
+    return { success: false, error: unlockRes?.error || 'unlock-failed' };
+  }
+  const saveRes = vault.saveEntry(vaultId, {
+    id: entryId || undefined,
+    title: title || '',
+    url: rec.url,
+    username: rec.login,
+    password: rec.password,
+  });
+  if (saveRes.success) pendingCredentials.delete(event.sender.id);
+  return saveRes;
+});
 
 // Crée un trousseau ET sauvegarde les identifiants en une seule étape.
 // Utilisé quand aucun trousseau n'est ouvert : l'utilisateur crée un trousseau
