@@ -1,0 +1,29 @@
+name: Argus
+
+# Analyse qualité / sécurité à chaque push et PR, avec notre propre outil Argus.
+# La baseline (.argus/baseline.json) fige l'état actuel : seuls les NOUVEAUX
+# problèmes de gravité « high » font échouer le job (les faux positifs connus,
+# ex. destructuration React, sont déjà baselinés).
+on:
+  push:
+    branches: [master]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  argus:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Analyse Argus
+        uses: Clarco-Mada-digital/argus@main
+        with:
+          fail-on: high
