@@ -1,9 +1,10 @@
 name: Argus
 
 # Analyse qualité / sécurité à chaque push et PR, avec notre propre outil Argus.
+# NB : on lance le CLI via npx plutôt que l'action `Clarco-Mada-digital/argus@main`,
+# car son action.yml est actuellement invalide (erreur de parsing YAML).
 # La baseline (.argus/baseline.json) fige l'état actuel : seuls les NOUVEAUX
-# problèmes de gravité « high » font échouer le job (les faux positifs connus,
-# ex. destructuration React, sont déjà baselinés).
+# problèmes de gravité « high » font échouer le job.
 on:
   push:
     branches: [master]
@@ -12,7 +13,6 @@ on:
 
 permissions:
   contents: read
-  pull-requests: write
 
 jobs:
   argus:
@@ -23,7 +23,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Analyse Argus
-        uses: Clarco-Mada-digital/argus@main
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          fail-on: high
+          node-version: 22
+
+      - name: Analyse Argus
+        run: npx --yes github:Clarco-Mada-digital/argus scan . --ci --fail-on high
