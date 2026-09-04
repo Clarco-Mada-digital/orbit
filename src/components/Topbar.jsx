@@ -11,10 +11,11 @@ import { useT } from '../lib/i18n';
 // par la barre du bas).
 export default function Topbar({
   onOpenQuickSwitcher,
+  onOpenVault,
   isFullscreen = false,
   onToggleFullscreen,
 }) {
-  const renderModule = useTopbarModules({ onOpenQuickSwitcher, placement: 'top' });
+  const renderModule = useTopbarModules({ onOpenQuickSwitcher, onOpenVault, placement: 'top' });
   const settings = useStore((s) => s.settings);
   const t = useT();
 

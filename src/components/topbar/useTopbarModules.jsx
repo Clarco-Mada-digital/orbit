@@ -20,6 +20,7 @@ import {
   LayoutGrid,
   Plus,
   Trash2,
+  KeyRound,
 } from 'lucide-react';
 import { useStore } from '../../stores/useStore';
 import { useT } from '../../lib/i18n';
@@ -86,7 +87,7 @@ function ExtensionIcon({ ext, onOpenMenu }) {
 // voir src/lib/topbarLayout.js et Paramètres → Apparence.
 //
 // `placement` : 'top' (menus sous la barre) ou 'bottom' (menus au-dessus).
-export function useTopbarModules({ onOpenQuickSwitcher, placement = 'top' }) {
+export function useTopbarModules({ onOpenQuickSwitcher, onOpenVault, placement = 'top' }) {
   const {
     activeApp,
     apps,
@@ -120,6 +121,26 @@ export function useTopbarModules({ onOpenQuickSwitcher, placement = 'top' }) {
   const wsMenuRef = useRef(null);
   const [wsSaving, setWsSaving] = useState(false);
   const [wsName, setWsName] = useState('');
+  // État du coffre : au moins un trousseau ouvert ? (pour la pastille du bouton)
+  const [vaultLocked, setVaultLocked] = useState(true);
+  useEffect(() => {
+    let alive = true;
+    const check = async () => {
+      try {
+        const st = await window.electronAPI?.vault?.state?.();
+        const list = st?.vaults || [];
+        if (alive) setVaultLocked(!list.some((v) => v.unlocked));
+      } catch {
+        /* ignore */
+      }
+    };
+    check();
+    const id = setInterval(check, 15000);
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
+  }, []);
   // Mode épuré : chacun de ces panneaux garde sa barre ouverte tant qu'il est
   // déplié. Sans ça, écarter la souris pour lire une notification refermerait
   // la barre — et le panneau avec elle.
@@ -650,6 +671,24 @@ export function useTopbarModules({ onOpenQuickSwitcher, placement = 'top' }) {
                 {app?.isFavorite ? <PinOff size={18} /> : <Pin size={18} />}
               </button>
             )}
+          </Fragment>
+        );
+      case 'vault':
+        return (
+          <Fragment key={key}>
+            <button
+              onClick={() => onOpenVault?.()}
+              className="btn-icon relative"
+              title={t('tb.vaultTitle')}
+            >
+              <KeyRound size={18} />
+              {/* Pastille : verte = un trousseau est ouvert, grise = tout verrouillé */}
+              <span
+                className={`absolute bottom-1 right-1 w-2 h-2 rounded-full border border-bg-primary ${
+                  vaultLocked ? 'bg-text-muted' : 'bg-emerald-500'
+                }`}
+              />
+            </button>
           </Fragment>
         );
       case 'nowPlaying':

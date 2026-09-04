@@ -1,5 +1,5 @@
 import { Fragment, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Moon, Play, X, Columns2, Rows2, Plus, Wifi } from 'lucide-react';
+import { Moon, Play, X, Columns2, Rows2, Plus, Wifi, KeyRound } from 'lucide-react';
 import Sidebar from './components/Sidebar';
 import Topbar from './components/Topbar';
 import Bottombar from './components/Bottombar';
@@ -20,6 +20,7 @@ import LockScreen from './components/LockScreen';
 import FindBar from './components/FindBar';
 import UpdateBanner from './components/UpdateBanner';
 import Welcome from './components/Welcome';
+import PasswordVault from './components/PasswordVault';
 import { useStore, appVisibleIn } from './stores/useStore';
 import { useSecurityStore } from './lib/securityStore';
 import { useMediaStore } from './lib/mediaStore';
@@ -28,6 +29,7 @@ import { appViewKey, appPartition, resolveProxy } from './lib/session';
 import { matchShortcut } from './lib/shortcuts';
 import { reloadApp } from './lib/webviewRegistry';
 import { logDiagnostic } from './lib/diagnosticsStore';
+import { useT } from './lib/i18n';
 import { attachTtsPlayer, setVolume as setTtsVolume } from './lib/ttsPlayer';
 
 // Construit l'état à afficher dans le mini-lecteur flottant (ou null)
@@ -68,6 +70,8 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showProfileManager, setShowProfileManager] = useState(false);
   const [showAppStore, setShowAppStore] = useState(false);
+  const [showVault, setShowVault] = useState(false);
+  const t = useT();
   const [captive, setCaptive] = useState(null); // { detected, url } | null
   const [showFind, setShowFind] = useState(false);
   const {
@@ -737,7 +741,7 @@ export default function App() {
           En plein écran elle disparaît ; elle réapparaît en surimpression quand
           la souris touche le bord supérieur. */}
       {!isFullscreen && !hideTop && (
-        <Topbar onOpenQuickSwitcher={() => setShowQuickSwitcher(true)} />
+        <Topbar onOpenQuickSwitcher={() => setShowQuickSwitcher(true)} onOpenVault={() => setShowVault(true)} />
       )}
       {/* Mode épuré : l'en-tête sort du flux et glisse depuis le bord haut. */}
       {hideTop && (
@@ -751,7 +755,7 @@ export default function App() {
             }}
             {...topZone.handlers}
           >
-            <Topbar onOpenQuickSwitcher={() => setShowQuickSwitcher(true)} />
+            <Topbar onOpenQuickSwitcher={() => setShowQuickSwitcher(true)} onOpenVault={() => setShowVault(true)} />
           </div>
         </>
       )}
@@ -768,6 +772,7 @@ export default function App() {
         >
           <Topbar
             onOpenQuickSwitcher={() => setShowQuickSwitcher(true)}
+            onOpenVault={() => setShowVault(true)}
             isFullscreen
             onToggleFullscreen={toggleFullscreen}
           />
@@ -1051,7 +1056,7 @@ export default function App() {
 
       {/* Barre du bas (optionnelle) — masquée en plein écran */}
       {!isFullscreen && settings.bottombarEnabled && !hideBottom && (
-        <Bottombar onOpenQuickSwitcher={() => setShowQuickSwitcher(true)} />
+        <Bottombar onOpenQuickSwitcher={() => setShowQuickSwitcher(true)} onOpenVault={() => setShowVault(true)} />
       )}
       {hideBottom && (
         <>
@@ -1064,7 +1069,7 @@ export default function App() {
             }}
             {...bottomZone.handlers}
           >
-            <Bottombar onOpenQuickSwitcher={() => setShowQuickSwitcher(true)} />
+            <Bottombar onOpenQuickSwitcher={() => setShowQuickSwitcher(true)} onOpenVault={() => setShowVault(true)} />
           </div>
         </>
       )}
@@ -1102,6 +1107,31 @@ export default function App() {
         {showProfileManager && <ProfileManager onClose={() => setShowProfileManager(false)} />}
         {showAppStore && <AppStore onClose={() => setShowAppStore(false)} />}
       </Suspense>
+
+      {/* Coffre-fort de mots de passe en overlay (bouton « trousseau » de la barre) */}
+      {showVault && (
+        <div
+          className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center animate-fade-in p-4"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowVault(false);
+          }}
+        >
+          <div className="w-full max-w-3xl h-[85vh] bg-bg-secondary border border-border rounded-2xl shadow-2xl overflow-hidden flex flex-col animate-scale-in">
+            <div className="h-14 border-b border-border flex items-center justify-between px-5 flex-shrink-0">
+              <div className="flex items-center gap-2">
+                <KeyRound size={18} className="text-accent-primary" />
+                <h2 className="font-semibold">{t('tb.vaultTitle')}</h2>
+              </div>
+              <button onClick={() => setShowVault(false)} className="btn-icon" title={t('common.close')}>
+                <X size={18} />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto p-5">
+              <PasswordVault />
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Verrou global : plein écran au lancement, par-dessus TOUT (topbar,
           sidebar, webviews). Aucune app n'est montée tant que non déverrouillé. */}

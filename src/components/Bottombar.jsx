@@ -5,10 +5,10 @@ import { useTopbarModules } from './topbar/useTopbarModules';
 
 // Barre du bas, optionnelle : même principe de composition que l'en-tête
 // (Paramètres → Apparence → Barre du bas). Les menus s'ouvrent vers le haut.
-export default function Bottombar({ onOpenQuickSwitcher }) {
+export default function Bottombar({ onOpenQuickSwitcher, onOpenVault }) {
   const settings = useStore((s) => s.settings);
   const t = useT();
-  const renderModule = useTopbarModules({ onOpenQuickSwitcher, placement: 'bottom' });
+  const renderModule = useTopbarModules({ onOpenQuickSwitcher, onOpenVault, placement: 'bottom' });
 
   const layout = normalizeTopbar(settings?.bottombar, DEFAULT_BOTTOMBAR);
   const renderZone = (zone, className) => (

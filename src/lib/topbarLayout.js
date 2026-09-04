@@ -36,6 +36,7 @@ export const TOPBAR_MODULES = [
   { id: 'split', labelKey: 'tbm.split', descKey: 'tbm.split.desc' },
   { id: 'workspaces', labelKey: 'tbm.workspaces', descKey: 'tbm.workspaces.desc' },
   { id: 'favorite', labelKey: 'tbm.favorite', descKey: 'tbm.favorite.desc' },
+  { id: 'vault', labelKey: 'tbm.vault', descKey: 'tbm.vault.desc' },
   { id: 'nowPlaying', labelKey: 'tbm.nowPlaying', descKey: 'tbm.nowPlaying.desc' },
   { id: 'downloads', labelKey: 'tbm.downloads', descKey: 'tbm.downloads.desc' },
   { id: 'notifications', labelKey: 'tbm.notifications', descKey: 'tbm.notifications.desc' },
