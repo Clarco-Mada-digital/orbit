@@ -349,10 +349,16 @@ function getStoredLogin() {
 // ---------------------------------------------------------------------------
 // Indicateurs visuels (bouton 🔑 + badge d'info + sélecteur de compte)
 // ---------------------------------------------------------------------------
+let genBtn = null; // bouton 🎲 « générer un mot de passe » (champs mot de passe)
+
 function removeKeyBtn() {
   if (keyBtn) {
     keyBtn.remove();
     keyBtn = null;
+  }
+  if (genBtn) {
+    genBtn.remove();
+    genBtn = null;
   }
   clearTimeout(btnTimer);
 }
@@ -385,6 +391,37 @@ function showKeyBtn(anchor) {
     doFill(currentFields, true);
   });
   document.body.appendChild(keyBtn);
+
+  // Sur un champ MOT DE PASSE : bouton 🎲 pour générer un mot de passe fort
+  // (proposition — l'utilisateur peut le modifier avant de valider le formulaire).
+  if (anchor.matches && anchor.matches(PASSWORD_SELECTOR)) {
+    genBtn = document.createElement('button');
+    genBtn.textContent = '🎲';
+    genBtn.title = 'Générer un mot de passe fort';
+    Object.assign(genBtn.style, {
+      position: 'fixed',
+      zIndex: '2147483647',
+      width: '26px',
+      height: '26px',
+      padding: '0',
+      border: 'none',
+      borderRadius: '7px',
+      background: '#0ea5e9',
+      cursor: 'pointer',
+      fontSize: '14px',
+      lineHeight: '26px',
+      textAlign: 'center',
+      boxShadow: '0 2px 8px rgba(0,0,0,0.35)',
+      display: 'block',
+    });
+    genBtn.addEventListener('click', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      offerGenerator(anchor, true);
+    });
+    document.body.appendChild(genBtn);
+  }
+
   positionKeyBtn(anchor);
   // Disparaît au bout d'un moment si l'utilisateur ne fait rien
   btnTimer = setTimeout(removeKeyBtn, 8000);
@@ -400,6 +437,11 @@ function positionKeyBtn(anchor) {
     const top = Math.max(4, rect.top + rect.height / 2 - 13);
     keyBtn.style.left = left + 'px';
     keyBtn.style.top = top + 'px';
+    // 🎲 juste sous le 🔑 (même colonne)
+    if (genBtn) {
+      genBtn.style.left = left + 'px';
+      genBtn.style.top = top + 29 + 'px';
+    }
   } catch {
     /* ignore */
   }
@@ -1092,10 +1134,20 @@ function isSignupForm() {
 
 let generatorShownFor = null;
 
-async function offerGenerator(field) {
-  const passes = isSignupForm();
-  if (!passes || generatorShownFor === location.href) return;
-  generatorShownFor = location.href;
+async function offerGenerator(field, force = false) {
+  // Auto : uniquement sur un formulaire d'inscription détecté, une fois par page.
+  // Manuel (force) : sur n'importe quel champ mot de passe, à la demande.
+  let passes = isSignupForm();
+  if (!passes) {
+    if (!force) return;
+    passes = deepQueryAll(document, PASSWORD_SELECTOR).filter(reallyVisible);
+    if (passes.length === 0 && field) passes = [field];
+    if (passes.length === 0) return;
+  }
+  if (!force) {
+    if (generatorShownFor === location.href) return;
+    generatorShownFor = location.href;
+  }
 
   const res = await ipcRenderer.invoke('credentials:generate', { length: 20, symbols: true });
   if (!res || !res.password) return;
