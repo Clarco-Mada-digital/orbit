@@ -1,0 +1,29 @@
+{
+  "entries": [
+    {
+      "date": "2026-09-04T11:53:16.809Z",
+      "global": 85,
+      "grade": "B",
+      "categories": {
+        "security": 75,
+        "routes": 74,
+        "deadcode": 89,
+        "seo": 100,
+        "design": 95,
+        "performance": 99,
+        "quality": 38,
+        "dependencies": 100
+      },
+      "counts": {
+        "critical": 0,
+        "high": 11,
+        "medium": 50,
+        "low": 194,
+        "info": 79
+      },
+      "total": 334,
+      "files": 106,
+      "commit": "5c9f3ea"
+    }
+  ]
+}

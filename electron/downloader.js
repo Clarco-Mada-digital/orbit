@@ -25,16 +25,8 @@ function releaseUrl() {
   return base + 'yt-dlp_linux'; // standalone, pas besoin de Python
 }
 
-export function hasYtDlp() {
-  try {
-    return fs.existsSync(binPath());
-  } catch {
-    return false;
-  }
-}
-
 // Télécharge le binaire yt-dlp si absent. Renvoie son chemin.
-export async function ensureYtDlp(onStatus) {
+async function ensureYtDlp(onStatus) {
   const p = binPath();
   if (fs.existsSync(p)) return p;
   onStatus && onStatus('Téléchargement de l’outil yt-dlp…');

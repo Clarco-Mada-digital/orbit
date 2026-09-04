@@ -27,11 +27,20 @@ const refreshNav = () => {
 };
 
 const showUrl = (url) => {
+  const host = $('host');
+  host.textContent = ''; // repart à vide (aucune insertion HTML)
   try {
     const u = new URL(url);
-    $('host').innerHTML = `${u.protocol === 'https:' ? '<span class="lock">🔒</span>' : ''}${u.host}`;
+    if (u.protocol === 'https:') {
+      const lock = document.createElement('span');
+      lock.className = 'lock';
+      lock.textContent = '🔒';
+      host.appendChild(lock);
+    }
+    // textContent : le nom d'hôte est inséré comme TEXTE, jamais interprété.
+    host.appendChild(document.createTextNode(u.host));
   } catch {
-    $('host').textContent = '';
+    /* URL invalide : on laisse vide */
   }
 };
 
