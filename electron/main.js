@@ -2300,17 +2300,27 @@ handleFromUi('ctx:action', (_event, { wcId, action, value } = {}) => {
       wc.copy();
       break;
     case 'cut':
+      // Notre menu contextuel est une fenêtre React : afficher/cliquer lui a
+      // retiré le focus. On le rend au webview AVANT toute action d'édition,
+      // sinon cut/paste/remplacement agissent sur un champ « qui n'a plus le
+      // curseur » et ne font rien.
+      wc.focus();
       wc.cut();
       break;
     case 'paste':
+      wc.focus();
       wc.paste();
       break;
     case 'selectAll':
+      wc.focus();
       wc.selectAll();
       break;
     case 'replaceMisspelling':
       // On n'accepte que les suggestions que le correcteur a lui-même fournies.
-      if ((params.dictionarySuggestions || []).includes(value)) wc.replaceMisspelling(value);
+      if ((params.dictionarySuggestions || []).includes(value)) {
+        wc.focus();
+        wc.replaceMisspelling(value);
+      }
       break;
     case 'openLink':
       if (isWebUrl(params.linkURL)) shell.openExternal(params.linkURL);

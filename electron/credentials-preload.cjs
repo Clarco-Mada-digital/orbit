@@ -300,11 +300,23 @@ function findFields() {
 // ---------------------------------------------------------------------------
 function setValue(el, value) {
   if (!el) return;
+  // Le champ doit avoir le focus : certains frameworks (et certains gestionnaires
+  // de formulaire) ignorent une valeur posée sur un champ « non touché ».
+  try {
+    el.focus();
+  } catch {
+    /* ignore */
+  }
   const proto =
     el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
   const setter = Object.getOwnPropertyDescriptor(proto, 'value').set;
   setter.call(el, value);
+  // input + change couvrent React/Vue ; keydown/keyup réveillent les frameworks
+  // qui n'écoutent que le clavier ; beforeinput aide les éditeurs riches.
+  el.dispatchEvent(new InputEvent('beforeinput', { bubbles: true, inputType: 'insertText', data: value }));
   el.dispatchEvent(new Event('input', { bubbles: true }));
+  el.dispatchEvent(new KeyboardEvent('keydown', { bubbles: true }));
+  el.dispatchEvent(new KeyboardEvent('keyup', { bubbles: true }));
   el.dispatchEvent(new Event('change', { bubbles: true }));
 }
 
