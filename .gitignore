@@ -1,6 +1,10 @@
 node_modules
 dist
 dist-electron
+electron/extensions/
+
+# Extensions distribuables (ZIPs) — dossier dédié, suivi en git
+# (pas dans dist/ car dist est ignoré, donc dossier séparé pour les ZIPs)
 *.local
 .DS_Store
 .vscode
@@ -29,3 +33,6 @@ coverage
 !vite.config.mjs
 # …mais les preloads Electron (.cjs) DOIVENT être suivis
 !electron/*.cjs
+# dist/extensions/ est suivi en git pour les ZIPs d'extensions distribuables
+# Ces ZIPs sont partagés avec les utilisateurs pour installation manuelle
+# Mais ils ne sont PAS inclus dans le build de l'application (release)

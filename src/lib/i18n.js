@@ -72,6 +72,28 @@ export const fr = {
   'fake.address': 'Adresse',
   'fake.company': 'Société',
 
+  // Extension Fake Data Filler (native, built into Orbit)
+  'fakeExt.title': 'Fake Data Filler',
+  'fakeExt.desc': 'Remplit les champs de formulaires avec des données réalistes (email, nom, téléphone, ville, etc.). Bouton 🎲 + raccourci Alt+F.',
+  'fakeExt.showSettings': 'Configurer',
+  'fakeExt.hideSettings': 'Masquer',
+  'fakeExt.export': 'Exporter en ZIP',
+  'fakeExt.exportTitle': 'Exporter en ZIP pour partage ou installation manuelle',
+  'fakeExt.exporting': 'Exportation…',
+  'fakeExt.settingsDesc': 'Personnalisez les valeurs utilisées par le bouton 🎲. Laissez un champ vide pour une valeur aléatoire.',
+  'fakeExt.saved': 'Enregistré avec succès',
+  'fakeExt.usageNote': 'Le bouton 🎲 apparaît automatiquement sur les champs de formulaire (sauf connexion). Raccourci Alt+F pour remplir le champ focalisé. Vos valeurs personnalisées ci-dessus sont utilisées en priorité : ex. un email défini ici sera inséré sur CHAQUE champ email (au lieu d\u2019un email aléatoire).',
+  'fakeExt.enable': 'Activer',
+  'fakeExt.disable': 'Désactiver',
+  'fakeExt.remove': 'Supprimer',
+  'fakeExt.confirmRemove': 'Supprimer Fake Data Filler ? Le bouton 🎲 ne sera plus disponible dans les formulaires.',
+
+  // Installable extensions (user-installed from ZIP or folder)
+  'ex.installableTitle': 'Installer une extension',
+  'ex.installableDesc': 'Installez des extensions depuis un fichier ZIP ou un dossier dépaqueté.',
+  'ex.installFromZip': 'Installer depuis ZIP',
+  'ex.srcZip': 'ZIP',
+
   // Communs
   'common.remove': 'Supprimer',
   'common.settings': 'Paramètres',
@@ -104,6 +126,9 @@ export const fr = {
   'tb.dnd': 'Ne pas déranger',
   'tb.dndOn': 'DND activé',
   'tb.readShort': 'Tout lire',
+  'tb.extsTitle': 'Extensions — cliquez pour déplier la liste',
+  'tb.extPin': 'Épingler dans la barre',
+  'tb.extUnpin': 'Détacher de la barre',
   'tb.noNotifications': 'Aucune notification',
   'tb.minimize': 'Réduire',
   'tb.maximize': 'Agrandir / Restaurer',
@@ -1042,6 +1067,28 @@ export const en = {
   'fake.address': 'Address',
   'fake.company': 'Company',
 
+  // Extension Fake Data Filler (native, built into Orbit)
+  'fakeExt.title': 'Fake Data Filler',
+  'fakeExt.desc': 'Fills form fields with realistic data (email, name, phone, city, etc.). 🎲 button + Alt+F shortcut.',
+  'fakeExt.showSettings': 'Configure',
+  'fakeExt.hideSettings': 'Hide',
+  'fakeExt.export': 'Export as ZIP',
+  'fakeExt.exportTitle': 'Export as ZIP for sharing or manual installation',
+  'fakeExt.exporting': 'Exporting…',
+  'fakeExt.settingsDesc': 'Customize values used by the 🎲 button. Leave a field empty for random data.',
+  'fakeExt.saved': 'Saved successfully',
+  'fakeExt.usageNote': 'The 🎲 button appears automatically on form fields (except login). Alt+F shortcut to fill the focused field. Your custom values above take priority: e.g. an email set here is inserted into EVERY email field (instead of a random one).',
+  'fakeExt.enable': 'Enable',
+  'fakeExt.disable': 'Disable',
+  'fakeExt.remove': 'Remove',
+  'fakeExt.confirmRemove': 'Remove Fake Data Filler? The 🎲 button will no longer appear in forms.',
+
+  // Installable extensions (user-installed from ZIP or folder)
+  'ex.installableTitle': 'Install an extension',
+  'ex.installableDesc': 'Install extensions from a ZIP file or unpacked folder.',
+  'ex.installFromZip': 'Install from ZIP',
+  'ex.srcZip': 'ZIP',
+
   // Common
   'common.remove': 'Remove',
   'common.settings': 'Settings',
@@ -1074,6 +1121,9 @@ export const en = {
   'tb.dnd': 'Do not disturb',
   'tb.dndOn': 'DND on',
   'tb.readShort': 'Read all',
+  'tb.extsTitle': 'Extensions — click to unfold the list',
+  'tb.extPin': 'Pin to the bar',
+  'tb.extUnpin': 'Unpin from the bar',
   'tb.noNotifications': 'No notifications',
   'tb.minimize': 'Minimize',
   'tb.maximize': 'Maximize / Restore',

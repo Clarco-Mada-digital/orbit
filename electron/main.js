@@ -226,6 +226,25 @@ app.on('web-contents-created', (event, contents) => {
   } catch (err) {
     console.error('[orbit] guest UA failed:', err);
   }
+  // À chaque chargement de page : republier la config Fake Data personnalisée
+  // (email, nom, ville…) dans le DOM. Le content script de l'extension Fake
+  // Data lit l'attribut data-orbit-fake-data — sans ce push, une page fraîche
+  // ne connaissait que les valeurs aléatoires. did-finish-load = DOM prêt,
+  // le content script a déjà relu l'attribut à son tour d'injection.
+  contents.on('did-finish-load', () => {
+    if (!fakeDataConfig || Object.keys(fakeDataConfig).length === 0) return;
+    try {
+      contents.executeJavaScript(
+        `try{document.documentElement.setAttribute('data-orbit-fake-data',${JSON.stringify(
+          JSON.stringify(fakeDataConfig)
+        )});window.dispatchEvent(new CustomEvent('orbit:fake-data',{detail:${JSON.stringify(
+          fakeDataConfig
+        )}}))}catch(e){}`
+      ).catch(() => {});
+    } catch {
+      /* ignore */
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1536,7 +1555,12 @@ async function syncExtensions(list) {
   for (const partition of knownPartitions) {
     try {
       const ses = getSessionForPartition(partition);
-      for (const ext of ses.getAllExtensions()) {
+      // API moderne (session.extensions) ; getAllExtensions est déprécié
+      const getAll = () =>
+        typeof ses.extensions?.getAllExtensions === 'function'
+          ? ses.extensions.getAllExtensions()
+          : ses.getAllExtensions();
+      for (const ext of getAll()) {
         if (!enabledExtensions.some((e) => e.id === ext.id)) {
           ses.removeExtension(ext.id);
         }
@@ -1552,7 +1576,11 @@ function removeExtensionFromAll(id, managedPath) {
   for (const partition of knownPartitions) {
     try {
       const ses = getSessionForPartition(partition);
-      if (ses.getAllExtensions().some((e) => e.id === id)) {
+      const getAll = () =>
+        typeof ses.extensions?.getAllExtensions === 'function'
+          ? ses.extensions.getAllExtensions()
+          : ses.getAllExtensions();
+      if (getAll().some((e) => e.id === id)) {
         ses.removeExtension(id);
       }
     } catch { /* ignore */ }
@@ -2255,9 +2283,46 @@ function contextMenuState(wc, params) {
   };
 }
 
+// Lecture des items de menu contextuel proposés par les extensions installées
+// (content scripts). Protocole via le DOM — PAS window.__orbitCtx : les content
+// scripts tournent dans un « monde isolé » avec leur propre JS, invisible depuis
+// le main process. Le DOM, lui, est partagé. Le content script enregistre ses
+// items dans data-orbit-ctx (JSON) quand il reçoit 'orbit:ctx-refresh', et
+// exécute l'action demandée quand il reçoit 'orbit:ctx-action'.
+async function readPageCtxItems(wc) {
+  try {
+    // Vider puis demander aux content scripts de se réenregistrer (synchrone :
+    // les listeners DOM tournent pendant le dispatch).
+    await wc.executeJavaScript(
+      `(() => { try {
+        document.documentElement.setAttribute('data-orbit-ctx', '[]');
+        document.documentElement.dispatchEvent(new CustomEvent('orbit:ctx-refresh'));
+      } catch (e) {} })()`
+    );
+    const raw = await wc.executeJavaScript(
+      `(() => { try { return document.documentElement.getAttribute('data-orbit-ctx') || '[]'; } catch (e) { return '[]'; } })()`
+    );
+    const items = JSON.parse(raw);
+    if (!Array.isArray(items)) return [];
+    return items
+      .filter((i) => i && i.id && i.label)
+      .map((i) => ({ id: String(i.id), label: String(i.label) }));
+  } catch {
+    return [];
+  }
+}
+
+// Nettoyage des items d'extensions après fermeture du menu
+function cleanupPageCtx(wc) {
+  if (!wc || wc.isDestroyed()) return;
+  wc.executeJavaScript(
+    `(() => { try { document.documentElement.setAttribute('data-orbit-ctx', '[]'); } catch (e) {} })()`
+  ).catch(() => {});
+}
+
 // Affiche le menu : interface si possible, natif sinon. Renvoie true si
 // l'interface a été sollicitée.
-function showGuestContextMenu(guestContents, params, ownerWindow) {
+async function showGuestContextMenu(guestContents, params, ownerWindow) {
   const custom =
     useCustomContextMenu &&
     ownerWindow === mainWindow &&
@@ -2266,7 +2331,11 @@ function showGuestContextMenu(guestContents, params, ownerWindow) {
   if (custom) {
     try {
       lastContextParams.set(guestContents.id, params);
-      mainWindow.webContents.send('orbit:context-menu', contextMenuState(guestContents, params));
+      const state = contextMenuState(guestContents, params);
+      // Options ajoutées par les extensions installées (color picker, etc.)
+      const extItems = await readPageCtxItems(guestContents);
+      if (extItems.length) state.ctxItems = extItems;
+      mainWindow.webContents.send('orbit:context-menu', state);
       return true;
     } catch (err) {
       console.error('[orbit] menu contextuel (interface) échoué:', err);
@@ -2430,6 +2499,22 @@ handleFromUi('ctx:action', (_event, { wcId, action, value } = {}) => {
       }
       break;
     }
+    case 'extCtx':
+      // Action de menu contextuel proposée par une extension (page to
+      // markdown…). L'action vit dans le content script (monde isolé) : on
+      // relaie via un événement DOM, qui traverse les mondes.
+      if (typeof value === 'string' && value) {
+        wc.executeJavaScript(
+          `(() => { try {
+            document.documentElement.dispatchEvent(new CustomEvent('orbit:ctx-action', { detail: { id: ${JSON.stringify(value)} } }));
+          } catch (e) {} })()`
+        ).catch(() => {});
+        cleanupPageCtx(wc);
+      }
+      break;
+    case 'ctxCleanup':
+      cleanupPageCtx(wc);
+      break;
     default:
       return { success: false, error: 'unknown-action' };
   }
@@ -3349,6 +3434,166 @@ ipcMain.handle('extensions:pickCrx', async () => {
   return res.canceled ? null : res.filePaths[0];
 });
 
+// Sélecteur de fichier ZIP pour installation
+ipcMain.handle('extensions:pickZip', async () => {
+  if (!mainWindow) return null;
+  const res = await dialog.showOpenDialog(mainWindow, {
+    title: 'Choisir un fichier ZIP d\'extension',
+    properties: ['openFile'],
+    filters: [{ name: 'Archive ZIP', extensions: ['zip'] }],
+  });
+  return res.canceled ? null : res.filePaths[0];
+});
+
+// ---------------------------------------------------------------------------
+// IPC — Export extension (packager en ZIP installable)
+// ---------------------------------------------------------------------------
+
+// Crée un ZIP du contenu d'une extension (dossier source) pour l'installer
+// comme une extension Chrome classique (fichier .zip ou .crx).
+async function exportExtensionToZip(extDir, zipPath) {
+  const fs2 = await import('fs');
+  const archiver = await import('archiver');
+  const out = fs2.createWriteStream(zipPath);
+  const archive = archiver.create('zip', { zlib: { level: 9 } });
+  const stream = archive.pipe(out);
+
+  // Parcours récursif du dossier source
+  const walk = (dir) => {
+    const entries = fs2.readdirSync(dir, { withFileTypes: true });
+    for (const entry of entries) {
+      const full = path.join(dir, entry.name);
+      const rel = path.relative(extDir, full);
+      if (entry.isDirectory()) {
+        archive.directory(full, rel);
+        walk(full);
+      } else {
+        archive.append(fs2.createReadStream(full), { name: rel });
+      }
+    }
+  };
+
+  walk(extDir);
+  await archive.finalize();
+  return zipPath;
+}
+
+// Export de l'extension Fake Data Filler bundled avec Orbit
+ipcMain.handle('extensions:exportFakeData', async () => {
+  try {
+    const srcDir = path.join(__dirname, 'extensions', 'fake-data-sources');
+    if (!fs.existsSync(srcDir)) {
+      return { success: false, error: 'Extension Fake Data introuvable sur le disque' };
+    }
+    const destDir = app.getPath('downloads');
+    const zipName = 'fake-data-filler-orbit.zip';
+    const zipPath = path.join(destDir, zipName);
+
+    await exportExtensionToZip(srcDir, zipPath);
+    return { success: true, zipPath };
+  } catch (err) {
+    console.error('[orbit] export fake data échoué :', err.message);
+    return { success: false, error: String(err.message || err) };
+  }
+});
+
+// Installation depuis un fichier ZIP (extrait puis chargé comme extension)
+ipcMain.handle('extensions:installFromZip', async (_event, zipPath) => {
+  try {
+    // Vérifier que le fichier existe
+    if (!fs.existsSync(zipPath)) {
+      return { success: false, error: 'Fichier ZIP introuvable' };
+    }
+
+    // Extraire le ZIP dans un dossier temporaire
+    const tempDir = path.join(app.getPath('userData'), 'extensions', `zip-temp-${Date.now()}`);
+    fs.mkdirSync(tempDir, { recursive: true });
+
+    // Extraire le ZIP (linux: unzip, windows: powershell)
+    let unzipOutput;
+    if (process.platform === 'win32') {
+      const { execSync } = await import('child_process');
+      try {
+        unzipOutput = execSync(
+          `powershell -Command "Expand-Archive -Path '${zipPath.replace(/'/g, "''")}' -DestinationPath '${tempDir.replace(/'/g, "''")}' -Force"`,
+          { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }
+        );
+      } catch (e) {
+        throw new Error(`Échec extraction ZIP (PowerShell): ${e.stderr || e.message}`);
+      }
+    } else {
+      const { execSync } = await import('child_process');
+      try {
+        unzipOutput = execSync(
+          `unzip -o '${zipPath.replace(/'/g, "''")}' -d '${tempDir.replace(/'/g, "''")}' 2>&1`,
+          { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }
+        );
+      } catch (e) {
+        throw new Error(`Échec extraction ZIP (unzip): ${e.stderr || e.stdout || e.message}`);
+      }
+    }
+    console.log('[orbit] ZIP extrait:', zipPath, '→', tempDir);
+
+    // Vérifier que l'extraction a fonctionné
+    const extractList = fs.readdirSync(tempDir);
+    if (extractList.length === 0) {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+      return { success: false, error: 'Le ZIP est vide ou l\'extraction a échoué' };
+    }
+    console.log('[orbit] Contenu extrait:', extractList.join(', '));
+
+    // Vérifier que manifest.json existe
+    const manifestPath = path.join(tempDir, 'manifest.json');
+    if (!fs.existsSync(manifestPath)) {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+      return { success: false, error: 'Le ZIP ne contient pas de manifest.json' };
+    }
+
+    // Lire le manifeste AVANT le chargement : l'ID des extensions non packagées
+    // étant dérivé du DOSSIER (qui contient un horodatage), une réinstallation
+    // du même ZIP obtient un nouvel ID — il faut décharger l'ancienne version
+    // (repérée par son nom) dans chaque session, sinon les DEUX versions du
+    // content script tournent en parallèle (ex : color picker qui remplace le
+    // menu contextuel alors que la nouvelle ne le touche plus).
+    const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
+    const extName = String(manifest.name || '');
+    for (const partition of knownPartitions) {
+      try {
+        const ses = getSessionForPartition(partition);
+        const getAll = () =>
+          typeof ses.extensions?.getAllExtensions === 'function'
+            ? ses.extensions.getAllExtensions()
+            : ses.getAllExtensions();
+        for (const loaded of getAll()) {
+          if (loaded.name === extName) {
+            ses.removeExtension(loaded.id);
+            loadedPerPartition.get(partition)?.delete(loaded.id);
+          }
+        }
+      } catch { /* ignore */ }
+    }
+
+    // Charger l'extension
+    console.log('[orbit] chargement extension depuis:', tempDir);
+    const ext = await session.defaultSession.loadExtension(tempDir);
+    console.log('[orbit] extension chargée:', ext.name, 'id:', ext.id);
+    return {
+      success: true,
+      extension: {
+        id: ext.id,
+        name: ext.name,
+        version: ext.version,
+        path: tempDir,
+        managed: false,
+        source: 'zip',
+      },
+    };
+  } catch (err) {
+    console.error('[orbit] installation depuis ZIP échouée:', err);
+    return { success: false, error: String(err.message || err) };
+  }
+});
+
 ipcMain.handle('extensions:install', async (_event, { kind, path: extPath } = {}) => {
   try {
     let dir = extPath;
@@ -3518,7 +3763,7 @@ ipcMain.handle('extensions:getInfo', (_event, { id, path: extPath } = {}) => {
 // Fiabilisé : on ATTEND le chargement de l'extension avant d'ouvrir la page
 // (sinon la fenêtre s'affiche vide/morte), on force le focus, et les erreurs
 // remontent à l'interface au lieu de laisser une fenêtre inerte.
-ipcMain.handle('extensions:openOptions', async (_event, { id, path: extPath } = {}) => {
+ipcMain.handle('extensions:openOptions', async (_event, { id, path: extPath, partition } = {}) => {
   try {
     const manifest = JSON.parse(fs.readFileSync(path.join(extPath, 'manifest.json'), 'utf8'));
     const optionsPage = manifest.options_ui?.page || manifest.options_page;
@@ -3526,10 +3771,20 @@ ipcMain.handle('extensions:openOptions', async (_event, { id, path: extPath } = 
       return { success: false, error: "Cette extension n'a pas de page d'options" };
     }
 
-    // Session dédiée à la page d'options : garantit que chrome-extension://
-    // résout, même si l'extension est désactivée ou pas encore chargée ailleurs.
-    const ses = session.fromPartition(`persist:ext-options-${id}`);
-    if (!ses.getAllExtensions().some((e) => e.id === id)) {
+    // La page d'options tourne dans la MÊME partition que l'app active : c'est
+    // elle que les content scripts de l'extension utilisent (chaque webview
+    // d'app a sa propre partition → son propre chrome.storage.local).
+    // Si on ouvrait les options dans une partition dédiée, les snippets
+    // enregistrés dans la page d'options n'atteindraient JAMAIS les content
+    // scripts des apps (partitions différentes = storages différentes).
+    // Chute sur la partition par défaut `persist:default` (apps du profil par
+    // défaut) quand aucune app n'est active.
+    const ses = partition ? session.fromPartition(partition) : session.defaultSession;
+    const getAll = () =>
+      typeof ses.extensions?.getAllExtensions === 'function'
+        ? ses.extensions.getAllExtensions()
+        : ses.getAllExtensions();
+    if (!getAll().some((e) => e.id === id)) {
       await ses.loadExtension(extPath);
     }
 
@@ -3963,10 +4218,50 @@ ipcMain.handle('credentials:generate', (_event, opts = {}) => vault.generatePass
 // renderer (Réglages) et lues par le preload des webviews. Défaut vide = tout
 // aléatoire.
 let fakeDataConfig = {};
-ipcMain.handle('fakedata:get', () => ({ custom: fakeDataConfig || {} }));
+let fakeDataEnabled = true;
+ipcMain.handle('fakedata:get', () => ({
+  custom: fakeDataConfig || {},
+  enabled: fakeDataEnabled,
+}));
 ipcMain.handle('fakedata:set', (_event, cfg = {}) => {
   fakeDataConfig = cfg && typeof cfg === 'object' ? cfg : {};
+  // Notifier tous les preload (webviews) : on('fakeData:stateChanged') dans
+  // credentials-preload.cjs reçoit cet événement et rafraîchit la config.
+  for (const wc of webContents.getAllWebContents()) {
+    if (!wc.isDestroyed()) {
+      wc.send('fakeData:stateChanged');
+    }
+    // Publier AUSSI directement dans le DOM de la page (attribut
+    // data-orbit-fake-data) : le content script de l'extension Fake Data
+    // installée via ZIP lit cet attribut. Les webviews n'ont pas toutes le
+    // preload d'identifiants — sans ce push, la config (email, nom…)
+    // n'atteignait jamais certaines pages.
+    try {
+      if (!wc.isDestroyed() && wc.getType() === 'webview') {
+        wc.executeJavaScript(
+          `try{document.documentElement.setAttribute('data-orbit-fake-data',${JSON.stringify(
+            JSON.stringify(fakeDataConfig || {})
+          )});window.dispatchEvent(new CustomEvent('orbit:fake-data',{detail:${JSON.stringify(
+            fakeDataConfig || {}
+          )}}))}catch(e){}`
+        ).catch(() => {});
+      }
+    } catch {
+      /* ignore */
+    }
+  }
   return { success: true };
+});
+ipcMain.handle('fakedata:setEnabled', (_event, enabled) => {
+  fakeDataEnabled = enabled !== false;
+  // Notifier tous les preload (webviews) que l'état a changé
+  // on('fakeData:stateChanged') dans credentials-preload.cjs reçoit cet événement
+  for (const wc of webContents.getAllWebContents()) {
+    if (!wc.isDestroyed()) {
+      wc.send('fakeData:stateChanged');
+    }
+  }
+  return { success: true, enabled: fakeDataEnabled };
 });
 
 // Purge les cookies/session d'un compte désinstallé (session unique par app).

@@ -83,6 +83,77 @@ commits.
 - **Mises à jour** : electron-updater (feed GitHub Releases)
 - **Icons** : Lucide React
 
+### 🧩 Extensions (Fake Data Filler et autres)
+
+Orbit intègre un bouton **🎲 « Remplir avec des données de test »** sur les champs de
+formulaire non de connexion. Il détecte le type du champ (email, nom, téléphone, ville,
+date, etc.) et le remplit avec des données réalistes depuis des listes locales, sans
+dépendance externe — comme les extensions **Fake Filler** (Chrome) ou **Fake Data
+Filler** (Firefox).
+
+#### Architecture des extensions
+
+```
+extensions-dist/            ← ZIPs distribuables (SUIVI EN GIT, partagés avec utilisateurs)
+  └── fake-data-filler-orbit.zip   (24 Ko, Manifest V3)
+  └── color-picker.zip             (28 Ko) — pipette de couleur (bouton 🎨, Alt+C)
+  └── page-to-markdown.zip         (21 Ko) — page → Markdown (clic droit, Alt+M)
+  └── text-snippets.zip            (14 Ko) — abréviations extensibles (;email → texte complet)
+  └── sticky-notes.zip             (14 Ko) — notes par site (bouton 📝, Alt+N)
+  └── qr-code-generator.zip        (17 Ko) — QR codes locaux (bouton ⊞, Alt+Q, clic droit)
+
+userData/extensions/         ← Extensions installées par l'utilisateur (Electron, jamais en git)
+
+# Les sources des extensions (electron/extensions/) NE SONT PAS dans git :
+# uniquement les développeurs qui modifient les extensions ont les sources
+# localement. Pour créer/modifier une extension :
+#   1. Créer electron/extensions/<mon-extension>/ localement
+#   2. Lancer npm run export:extensions
+#   3. Le ZIP est créé dans extensions-dist/ et suivi en git
+```
+
+#### Fake Data Filler — intégré nativement
+
+- Le bouton 🎲 apparaît automatiquement sur les champs de formulaire
+- Raccourci **Alt+F** pour remplir le champ focalisé
+- Personnalisation dans **Réglages → Extensions** → section Fake Data Filler
+- Toggle **Activer/Désactiver** pour masquer le bouton 🎲
+- Export en ZIP pour partage : **Réglages → Extensions → Exporter en ZIP**
+
+#### Installation manuelle d'une extension depuis ZIP
+
+1. Récupérer le ZIP depuis `dist/extensions/` (ex: `fake-data-filler-orbit.zip`)
+2. Dans Orbit : **Réglages → Extensions → Extensions installables → Installer depuis ZIP**
+3. Sélectionner le fichier ZIP
+4. L'extension est extraite et chargée automatiquement
+
+#### Distribution des extensions
+
+- Les ZIPs distribuables sont dans `extensions-dist/` (suivis en git)
+- Pour créer/actualiser tous les ZIPs : `npm run export:extensions`
+- Pour créer un ZIP spécifique : `npm run export:extensions -- <nom-dossier>`
+- Les utilisateurs qui téléchargent une release n'ont **pas** d'extensions pré-installées
+- S'ils veulent une extension, ils téléchargent le ZIP depuis le repo et l'installent manuellement
+
+#### Ajouter une nouvelle extension
+
+1. Créer un dossier dans `electron/extensions/` (ex: `electron/extensions/mon-extension/`)
+2. Ajouter un `manifest.json` + les fichiers de l'extension (content.js, icônes...)
+3. Générer le ZIP : `npm run export:extensions`
+4. Le ZIP est créé dans `extensions-dist/mon-extension.zip`
+
+Point technique : les extensions Chrome installées **par le Chrome Web Store ne
+fonctionnent pas bien dans Orbit** (contenu des webviews, sandboxing, API limitées).
+C'est pourquoi Fake Data Filler est fourni en tant qu'extension **locale** : le
+bouton 🎲 est déjà intégré nativement dans Orbit (via `credentials-preload.cjs`),
+et l'extension exportable est un portage autonome pour les utilisateurs avancés.
+
+## 🧪 Tests
+
+```bash
+npm test   # lance tous les tests unitaires (passgen, raccourcis, sessions, layout…)
+```
+
 ## 📄 Licence
 
 MIT © 2026

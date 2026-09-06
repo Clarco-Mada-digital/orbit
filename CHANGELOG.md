@@ -8,6 +8,37 @@ Format : une section `## [X.Y.Z] — AAAA-MM-JJ` par version, puis des
 sous-sections `### Ajouté` / `### Modifié` / `### Corrigé` / `### Sécurité`.
 La plus récente en premier.
 
+## [1.9.0] — 2026-09-06
+
+### Ajouté
+- Extension **Fake Data Filler** intégrée à Orbit : bouton 🎲 sur les champs
+  de formulaire (sauf connexion), raccourci **Alt+F**, valeurs personnalisables
+  dans **Réglages → Extensions**, export en ZIP pour partage.
+- Installation d'extensions depuis un **ZIP** ou un dossier dépaqueté
+  (Réglages → Extensions) — les ZIP distributables sont partagés dans le dépôt
+  (color picker, page → Markdown, text snippets, notes, QR code…).
+- Le menu contextuel s'enrichit des actions proposées par les extensions
+  installées (extraction de couleur, page → Markdown, etc.).
+- Barre : les extensions **épinglables** en icônes directes ; les autres se
+  replient derrière une pastille unique (liste dépliable au clic).
+
+### Modifié
+- Les réglages « Données de test » quittent « Général » pour rejoindre
+  l'extension Fake Data Filler (Réglages → Extensions).
+- Texte de remplissage des champs plus réaliste (phrases complètes au lieu de
+  « Lorem »).
+
+### Corrigé
+- **Text Snippets** : les abréviations créées dans la page d'options ne se
+  déclenchaient jamais — les options s'ouvrent désormais dans la partition de
+  l'app active, partageant le même stockage (chrome.storage) que les content
+  scripts.
+- Le générateur natif de mot de passe ne se superposait plus au panneau de
+  l'extension Fake Data Filler.
+- Les items d'extension du menu contextuel sont nettoyés quand le menu se
+  ferme sans action, et un clic dans une app embarquée referme les menus de
+  la barre.
+
 ## [1.7.4] — 2026-08-25
 
 ### Corrigé

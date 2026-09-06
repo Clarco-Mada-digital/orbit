@@ -34,8 +34,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getExtensionInfo: (payload) => ipcRenderer.invoke('extensions:getInfo', payload),
   pickExtensionFolder: () => ipcRenderer.invoke('extensions:pickFolder'),
   pickExtensionCrx: () => ipcRenderer.invoke('extensions:pickCrx'),
+  pickZipFile: () => ipcRenderer.invoke('extensions:pickZip'),
   installExtension: (payload) => ipcRenderer.invoke('extensions:install', payload),
   uninstallExtension: (payload) => ipcRenderer.invoke('extensions:uninstall', payload),
+  exportFakeDataExtension: () => ipcRenderer.invoke('extensions:exportFakeData'),
   // KeePassXC (auto-remplissage des identifiants)
   keepassStatus: () => ipcRenderer.invoke('keepass:status'),
   keepassAssociate: () => ipcRenderer.invoke('keepass:associate'),
@@ -70,6 +72,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openDetached: (payload) => ipcRenderer.invoke('app:openDetached', payload),
   // Données de test (« Fake data ») : pousse les valeurs perso vers le main
   setFakeData: (cfg) => ipcRenderer.invoke('fakedata:set', cfg),
+  setFakeDataEnabled: (enabled) => ipcRenderer.invoke('fakedata:setEnabled', enabled),
+  installExtensionFromZip: (fileName) => ipcRenderer.invoke('extensions:installFromZip', fileName),
   // Mise à jour automatique
   getVersion: () => ipcRenderer.invoke('app:getVersion'),
   checkForUpdate: () => ipcRenderer.invoke('update:check'),

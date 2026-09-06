@@ -28,6 +28,7 @@ import { useZoneHold } from '../../lib/autoHide';
 import { useGuestDismiss } from '../../lib/useDismiss';
 import { useLoadingStore } from '../../lib/loadingStore';
 import { getWebview, reloadApp } from '../../lib/webviewRegistry';
+import { appPartition } from '../../lib/session';
 import OrbitLogo from '../OrbitLogo';
 import AppIcon from '../AppIcon';
 import Downloads from '../Downloads';
@@ -81,6 +82,42 @@ function ExtensionIcon({ ext, onOpenMenu }) {
   );
 }
 
+// Icône d'une ligne de la liste repliée des extensions (pastille/options).
+function ExtPopoverIcon({ ext }) {
+  const [info, setInfo] = useState(null);
+
+  useEffect(() => {
+    let mounted = true;
+    const p = window.electronAPI?.getExtensionInfo?.({ id: ext.id, path: ext.path });
+    if (p && typeof p.then === 'function') {
+      p.then((res) => {
+        if (mounted && res?.success) setInfo(res.info);
+      }).catch(() => {});
+    }
+    return () => {
+      mounted = false;
+    };
+  }, [ext.id, ext.path]);
+
+  return (
+    <div className="w-6 h-6 rounded-md bg-bg-elevated border border-border flex items-center justify-center flex-shrink-0 overflow-hidden">
+      {info?.iconUrl ? (
+        <img
+          src={info.iconUrl}
+          alt=""
+          className="w-4 h-4 object-contain"
+          draggable={false}
+          onError={(e) => {
+            e.currentTarget.style.display = 'none';
+          }}
+        />
+      ) : (
+        <Puzzle size={12} className="text-text-muted" />
+      )}
+    </div>
+  );
+}
+
 // Logique partagée des modules de barre (en-tête ET barre du bas) : état des
 // menus, actions de navigation, et rendu d'un module par son id. La disposition
 // (quels modules, dans quelle zone, dans quel ordre) vient des paramètres —
@@ -115,6 +152,7 @@ export function useTopbarModules({ onOpenQuickSwitcher, onOpenVault, placement =
   const notifRef = useRef(null);
   const [extMenu, setExtMenu] = useState(null); // { ext, info } | null
   const extMenuRef = useRef(null);
+  const [showExtsPopover, setShowExtsPopover] = useState(false);
   const [showSplitMenu, setShowSplitMenu] = useState(false);
   const splitMenuRef = useRef(null);
   const [showWsMenu, setShowWsMenu] = useState(false);
@@ -145,11 +183,19 @@ export function useTopbarModules({ onOpenQuickSwitcher, onOpenVault, placement =
   // déplié. Sans ça, écarter la souris pour lire une notification refermerait
   // la barre — et le panneau avec elle.
   useZoneHold(placement, 'notifications', showNotifPanel);
-  useZoneHold(placement, 'extensions', Boolean(extMenu));
+  useZoneHold(placement, 'extensions', Boolean(extMenu) || showExtsPopover);
   useZoneHold(placement, 'split', showSplitMenu);
   useZoneHold(placement, 'workspaces', showWsMenu);
 
   const app = apps.find((a) => a.id === activeApp);
+
+  // Partition de l'app active : la page d'options des extensions doit tourner
+  // dans CETTE partition pour que leur chrome.storage soit partagé avec les
+  // content scripts injectés dans l'app (sinon les réglages ne s'appliquent pas).
+  const profiles = useStore.getState().profiles;
+  const activeAppPartition = app
+    ? appPartition(app, !!profiles.find((p) => p.id === app.profileId)?.sharedSession)
+    : undefined;
 
   // Position verticale des menus déroulants selon que la barre est en haut ou en bas
   const menuPos = placement === 'bottom' ? 'bottom-full mb-2' : 'top-full mt-2';
@@ -198,11 +244,40 @@ export function useTopbarModules({ onOpenQuickSwitcher, onOpenVault, placement =
   // Extensions activées → affichées dans la barre
   const enabledExtensions = extensions.filter((e) => e.enabled);
 
+  // Extensions « épinglées » (gardées en icônes directes dans la barre). Les
+  // autres se replient derrière la pastille 🧩 pour économiser la place.
+  const pinnedExt = new Set(Object.keys(settings.pinnedExtensions || {}));
+  const pinnedExts = enabledExtensions.filter((e) => pinnedExt.has(e.id));
+  const hiddenExts = enabledExtensions.filter((e) => !pinnedExt.has(e.id));
+  const togglePinnedExt = (id) => {
+    const next = { ...(settings.pinnedExtensions || {}) };
+    if (next[id]) delete next[id];
+    else next[id] = true;
+    updateSettings({ pinnedExtensions: next });
+  };
+
+  // Ouvre le menu d'une extension (icône épinglée ou ligne du menu replié),
+  // en récupérant ses infos (icône, page d'options) à la volée pour que le
+  // bouton « Options » soit là où il faut.
+  const openExtMenu = (ext) => {
+    setShowExtsPopover(false);
+    setExtMenu({ ext, info: null });
+    const p = window.electronAPI?.getExtensionInfo?.({ id: ext.id, path: ext.path });
+    if (p && typeof p.then === 'function') {
+      p.then((res) => {
+        if (res?.success && res.info) {
+          setExtMenu((cur) => (cur?.ext.id === ext.id ? { ext, info: res.info } : cur));
+        }
+      }).catch(() => {});
+    }
+  };
+
   // Fermer les menus (extension + partage) en cliquant à l'extérieur
   useEffect(() => {
     const onClick = (e) => {
       if (extMenuRef.current && !extMenuRef.current.contains(e.target)) {
         setExtMenu(null);
+        setShowExtsPopover(false);
       }
       if (splitMenuRef.current && !splitMenuRef.current.contains(e.target)) {
         setShowSplitMenu(false);
@@ -223,6 +298,7 @@ export function useTopbarModules({ onOpenQuickSwitcher, onOpenVault, placement =
   // ces menus ne pouvaient pas savoir qu'on avait cliqué ailleurs.
   const closeMenus = useCallback(() => {
     setExtMenu(null);
+    setShowExtsPopover(false);
     setShowSplitMenu(false);
     setShowWsMenu(false);
     setShowNotifPanel(false);
@@ -376,15 +452,93 @@ export function useTopbarModules({ onOpenQuickSwitcher, onOpenVault, placement =
             {enabledExtensions.length > 0 && (
               <>
                 <div className="relative flex items-center gap-0.5 app-no-drag" ref={extMenuRef}>
-                  {enabledExtensions.map((ext) => (
+                  {/* Extensions épinglées : icônes directes dans la barre */}
+                  {pinnedExts.map((ext) => (
                     <ExtensionIcon
                       key={ext.id}
                       ext={ext}
-                      onOpenMenu={(ext, info) => setExtMenu({ ext, info })}
+                      onOpenMenu={openExtMenu}
                     />
                   ))}
 
-                  {/* Menu de l'extension cliquée */}
+                  {/* Pastille « repli » : une seule icône, au clic elle déplie
+                      la liste des extensions non épinglées (le barre garde ainsi
+                      de la place quand on a beaucoup d'extensions). */}
+                  <button
+                    onClick={() => {
+                      setShowExtsPopover((v) => !v);
+                      setExtMenu(null);
+                    }}
+                    className={`relative w-9 h-9 flex items-center justify-center rounded-lg transition-colors ${
+                      showExtsPopover ? 'bg-bg-hover' : 'hover:bg-bg-hover'
+                    }`}
+                    title={t('tb.extsTitle')}
+                  >
+                    <div className="w-8 h-8 flex items-center justify-center rounded-md border border-border bg-bg-elevated">
+                      <Puzzle size={14} className="text-text-muted" />
+                    </div>
+                    {hiddenExts.length > 0 && (
+                      <span className="absolute -top-0.5 -right-0.5 min-w-4 h-4 px-1 rounded-full bg-accent-primary text-white text-[10px] font-bold flex items-center justify-center border border-bg-primary">
+                        {hiddenExts.length > 9 ? '9+' : hiddenExts.length}
+                      </span>
+                    )}
+                  </button>
+
+                  {/* Popover : toutes les extensions, les épinglées en premier.
+                      Chaque ligne : icône, nom, épingler/détacher + actions. */}
+                  {showExtsPopover && (
+                    <div
+                      className={`absolute ${menuAlign} ${menuPos} w-64 bg-bg-elevated border border-border rounded-xl shadow-2xl overflow-hidden z-50 animate-scale-in`}
+                    >
+                      <div className="px-4 py-3 border-b border-border flex items-center justify-between">
+                        <span className="font-semibold text-sm">{t('tbm.extensions')}</span>
+                        <span className="text-[11px] text-text-muted">
+                          {enabledExtensions.length}
+                        </span>
+                      </div>
+                      <div className="py-1 max-h-72 overflow-y-auto">
+                        {enabledExtensions.length === 0 && (
+                          <div className="px-4 py-3 text-xs text-text-muted">
+                            {t('ex.none')}
+                          </div>
+                        )}
+                        {enabledExtensions.map((ext) => (
+                          <div
+                            key={ext.id}
+                            className="flex items-center gap-2 px-2 py-1.5 hover:bg-bg-hover transition-colors group"
+                          >
+                            <button
+                              onClick={() => openExtMenu(ext)}
+                              className="flex-1 flex items-center gap-3 px-2 py-1 text-sm text-left truncate"
+                            >
+                              <ExtPopoverIcon ext={ext} />
+                              <span className="flex-1 truncate">{ext.name}</span>
+                            </button>
+                            <button
+                              onClick={() =>
+                                togglePinnedExt(ext.id)
+                              }
+                              className={`btn-icon w-7 h-7 ${
+                                pinnedExt.has(ext.id)
+                                  ? 'text-accent-primary'
+                                  : 'opacity-0 group-hover:opacity-100'
+                              }`}
+                              title={
+                                pinnedExt.has(ext.id)
+                                  ? t('tb.extUnpin')
+                                  : t('tb.extPin')
+                              }
+                            >
+                              {pinnedExt.has(ext.id) ? <Pin size={14} /> : <PinOff size={14} />}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Menu de l'extension cliquée (icône épinglée ou ligne du
+                      popover) : ancré au conteneur relatif de la barre. */}
                   {extMenu && (
                     <div className={`absolute ${menuAlign} ${menuPos} w-56 bg-bg-elevated border border-border rounded-xl shadow-2xl overflow-hidden z-50 animate-scale-in`}>
                       <div className="px-4 py-3 border-b border-border flex items-center gap-3">
@@ -414,6 +568,7 @@ export function useTopbarModules({ onOpenQuickSwitcher, onOpenVault, placement =
                               window.electronAPI?.openExtensionOptions?.({
                                 id: extMenu.ext.id,
                                 path: extMenu.ext.path,
+                                partition: activeAppPartition,
                               });
                               setExtMenu(null);
                             }}

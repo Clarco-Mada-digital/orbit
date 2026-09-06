@@ -22,6 +22,7 @@ import {
   SpellCheck,
   ChevronRight,
   KeyRound,
+  Puzzle,
 } from 'lucide-react';
 import { useT } from '../lib/i18n';
 import { getWebview } from '../lib/webviewRegistry';
@@ -90,7 +91,12 @@ export default function GuestContextMenu() {
     };
   }, [anchorFor]);
 
-  const close = useCallback(() => setMenu(null), []);
+  const close = useCallback(() => {
+    // Nettoyer les items de menu proposés par les extensions (color picker…)
+    // si le menu se ferme sans action.
+    if (menu) window.electronAPI?.contextMenu?.run?.(menu.wcId, 'ctxCleanup');
+    setMenu(null);
+  }, [menu]);
 
   const run = useCallback(
     (action, value) => {
@@ -203,6 +209,16 @@ export default function GuestContextMenu() {
     }
 
     push({ key: 'url', icon: Link2, label: t('cm.copyPageUrl'), action: 'copyPageUrl' });
+
+    // Options ajoutées par les extensions installées (color picker, page to
+    // markdown…). Elles sont déclarées par le content script via
+    // window.__orbitCtx et relayées par le processus principal.
+    if (menu.ctxItems && menu.ctxItems.length) {
+      sep();
+      menu.ctxItems.forEach((item) =>
+        push({ key: 'ctx-' + item.id, icon: Puzzle, label: item.label, action: 'extCtx', value: item.id })
+      );
+    }
 
     if (menu.isDev) {
       sep();

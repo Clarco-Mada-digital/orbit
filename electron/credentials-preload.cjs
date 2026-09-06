@@ -195,6 +195,20 @@ document.addEventListener(
   },
   true
 );
+
+// Relay clicks to close context menus and panels in the UI
+// (webview clicks don't propagate to the React layer otherwise)
+document.addEventListener(
+  'mousedown',
+  () => {
+    try {
+      ipcRenderer.send('guest:interact');
+    } catch {
+      /* ignore */
+    }
+  },
+  true
+);
 let currentFields = null; // { user, pass } du formulaire focalisé
 
 // Un champ contient-il déjà une saisie de l'utilisateur ? On ne l'écrase
@@ -1171,11 +1185,30 @@ async function offerGenerator(field, force = false) {
   void field;
 }
 
+// L'extension « Fake Data Filler » (installée via ZIP) signale sa présence
+// dans le DOM (data-orbit-fake-ext). Dans ce cas on la laisse gérer : elle a
+// SA propre modale mot de passe (modifiable) et son propre bouton 🎲 — si le
+// natif ouvrait le sien aussi, les deux panneaux se superposaient (même
+// position) et « Utiliser » remplissait une valeur différente de celle
+// affichée. Un seul acteur = le comportement attendu.
+function fakeExtPresent() {
+  try {
+    return (
+      document.documentElement.getAttribute('data-orbit-fake-ext') === '1' ||
+      !!document.querySelector('script[src*="fake-data"]')
+    );
+  } catch {
+    return false;
+  }
+}
+
 document.addEventListener(
   'focusin',
   (e) => {
     const t = e.target;
-    if (t && t.matches && t.matches(PASSWORD_SELECTOR)) offerGenerator(t);
+    if (!t || !t.matches || !t.matches(PASSWORD_SELECTOR)) return;
+    if (fakeExtPresent()) return; // l'extension s'en charge
+    offerGenerator(t);
   },
   true
 );
@@ -1186,12 +1219,42 @@ document.addEventListener(
 // personnalisées (Réglages) priment sur l'aléatoire.
 // ---------------------------------------------------------------------------
 let fakeCustom = {};
-ipcRenderer
-  .invoke('fakedata:get')
-  .then((r) => {
-    if (r && r.custom) fakeCustom = r.custom;
-  })
-  .catch(() => {});
+let fakeDataEnabled = true;
+
+// Publie la config fake data dans le DOM (attribut + événement) pour que
+// l'extension « Fake Data Filler » installée depuis le ZIP puisse la lire :
+// son content script tourne en monde isolé, sans accès à electronAPI, mais il
+// partage le DOM de la page. L'attribut data-orbit-fake-data est relu à
+// chaque refresh ; l'événement permet une mise à jour sans attendre.
+function publishFakeDataToDom() {
+  try {
+    document.documentElement.setAttribute('data-orbit-fake-data', JSON.stringify(fakeCustom || {}));
+    document.documentElement.setAttribute('data-orbit-fake-enabled', fakeDataEnabled ? '1' : '0');
+    window.dispatchEvent(new CustomEvent('orbit:fake-data', { detail: fakeCustom || {} }));
+  } catch {
+    /* ignore */
+  }
+}
+
+function refreshFakeDataState() {
+  ipcRenderer
+    .invoke('fakedata:get')
+    .then((r) => {
+      if (r) {
+        if (r.custom) fakeCustom = r.custom;
+        if (r.enabled !== undefined) fakeDataEnabled = r.enabled;
+      }
+      publishFakeDataToDom();
+    })
+    .catch(() => {});
+}
+
+refreshFakeDataState();
+
+// Écouter les changements de l'état fakeData (activation/désactivation)
+ipcRenderer.on('fakeData:stateChanged', () => {
+  refreshFakeDataState();
+});
 
 const FAKE_FIRST = ['Camille', 'Alex', 'Marie', 'Lucas', 'Sofia', 'Noah', 'Emma', 'Léo', 'Jade', 'Adam'];
 const FAKE_LAST = ['Martin', 'Bernard', 'Dubois', 'Robert', 'Petit', 'Durand', 'Leroy', 'Moreau', 'Roux', 'Blanc'];
@@ -1266,7 +1329,18 @@ async function fakeValueFor(kind) {
     case 'date':
       return new Date(Date.now() - frandInt(3e10)).toISOString().slice(0, 10);
     default:
-      return frand(['Lorem', 'Ipsum', 'Dolor', 'Exemple', 'Test']);
+      // Données textuelles plus réalistes et variées (phrases complètes, pas juste "Lorem")
+      const sentences = [
+        'Ceci est un exemple de texte rempli automatiquement par Orbit.',
+        'Voici une valeur de test pour ce champ de formulaire.',
+        'Donnée générée aléatoirement pour les tests de saisie.',
+        'Ce champ contient une valeur fictive à titre de démonstration.',
+        'Exemple de contenu textuel utilisé pour le remplissage de formulaire.',
+        'Donnée de test — remplacez par votre propre valeur lors de la saisie réelle.',
+        'Valeur par défaut utilisée lors du remplissage automatique des champs.',
+        'Ce texte est généré par Orbit pour illustrer le remplissage de données test.',
+      ];
+      return frand(sentences);
   }
 }
 
@@ -1333,6 +1407,7 @@ function showFakeBtn(anchor) {
     e.stopPropagation();
     const kind = detectFieldKind(anchor);
     if (kind === 'password') {
+      if (fakeExtPresent()) return; // l'extension (modale modifiable) s'en charge
       offerGenerator(anchor, true); // panneau : voir/modifier avant d'utiliser
       return;
     }
@@ -1352,6 +1427,8 @@ function showFakeBtn(anchor) {
 document.addEventListener(
   'focusin',
   (e) => {
+    if (fakeExtPresent()) return; // l'extension pose son propre 🎲
+    if (!fakeDataEnabled) return;
     if (isFillable(e.target)) showFakeBtn(e.target);
   },
   true

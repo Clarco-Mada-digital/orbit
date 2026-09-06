@@ -14,7 +14,9 @@
     "electron:build": "npm run icons && npm run build && electron-builder",
     "release": "node scripts/release.js",
     "release:local": "sh scripts/release.sh",
-    "release:ci": "npm run icons && npm run build && electron-builder --publish always"
+    "release:ci": "npm run icons && npm run build && electron-builder --publish always",
+    "export:extensions": "node scripts/export-extensions.cjs",
+    "export:fake-data": "node scripts/export-fake-data.cjs"
   },
   "keywords": [
     "electron",

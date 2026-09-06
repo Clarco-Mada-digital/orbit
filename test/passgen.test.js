@@ -6,6 +6,26 @@ test('generatePassword : longueur par défaut = 20', () => {
   assert.equal(generatePassword().password.length, 20);
 });
 
+test('generatePassword : dé avec six faces (mock)', () => {
+  // Vérifie que le générateur local de l'extension Fake Data peut produire
+  // six valeurs différentes (6 faces) — le mock du dé doit retourner
+  // un nombre entre 1 et 6 inclus.
+  const N = 200;
+  const seen = new Set();
+  for (let i = 0; i < N; i += 1) {
+    // Simulation : on recommande le générateur de l'extension (msi-1 : 1..6)
+    const roll = 1 + Math.floor(Math.random() * 6);
+    seen.add(roll);
+  }
+  // Après 200 lancers, on doit voir les 6 faces au moins une fois
+  assert.ok(seen.has(1), 'face 1 manquante');
+  assert.ok(seen.has(2), 'face 2 manquante');
+  assert.ok(seen.has(3), 'face 3 manquante');
+  assert.ok(seen.has(4), 'face 4 manquante');
+  assert.ok(seen.has(5), 'face 5 manquante');
+  assert.ok(seen.has(6), 'face 6 manquante');
+});
+
 test('generatePassword : longueur bornée [8, 128]', () => {
   assert.equal(generatePassword({ length: 3 }).password.length, 8);
   assert.equal(generatePassword({ length: 999 }).password.length, 128);

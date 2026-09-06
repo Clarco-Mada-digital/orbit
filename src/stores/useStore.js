@@ -59,6 +59,13 @@ export const defaultSettings = {
   accentPerProfile: false,
   // Barre système (tray) : fermer la fenêtre la réduit dans le tray (opt-in)
   closeToTray: false,
+  // Extension Fake Data Filler : désactivée pour cacher le bouton 🎲
+  fakeDataDisabled: false,
+  // Extension Fake Data Filler : supprimée de l'interface (bouton 🎲 caché)
+  fakeDataRemoved: false,
+  // Extensions « épinglées » dans la barre (id → true) : affichées en icônes
+  // directes ; les autres se replient derrière la pastille 🧩 de la barre.
+  pinnedExtensions: {},
   // Raccourci global pour afficher/masquer Orbit depuis n'importe où
   globalHotkeyEnabled: false,
   globalHotkey: 'CommandOrControl+Alt+O',
