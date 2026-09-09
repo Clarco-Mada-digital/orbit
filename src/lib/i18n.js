@@ -1776,7 +1776,7 @@ export const en = {
   'clock.hint': 'Extra time zones: Settings → Appearance',
   'clock.calendar': 'Calendar',
   'clock.today': 'Today',
-  'cal.weekdays': 'S,M,T,W,T,F,S',
+  'cal.weekdays': 'M,T,W,T,F,S,S',
   'weather.setCity': 'Pick a city',
   'weather.loading': 'Loading weather…',
   'weather.error': 'Weather unavailable for “{city}”',
