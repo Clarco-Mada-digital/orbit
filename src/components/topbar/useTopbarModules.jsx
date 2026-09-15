@@ -23,6 +23,7 @@ import {
   KeyRound,
 } from 'lucide-react';
 import { useStore, appVisibleIn } from '../../stores/useStore';
+import { layoutsFor, layoutFor, areaLetter } from '../../lib/splitLayouts';
 import { useT } from '../../lib/i18n';
 import { useZoneHold } from '../../lib/autoHide';
 import { useGuestDismiss } from '../../lib/useDismiss';
@@ -261,6 +262,18 @@ export function useTopbarModules({ onOpenQuickSwitcher, onOpenVault, placement =
     }
     setSplitView({ ...splitView, appIds: ids, ...(sizes ? { sizes } : {}) });
   };
+
+  // Gabarit courant (forme) + gabarit « virtuel » pour 2 apps (selon la direction).
+  const nSplit = splitView?.appIds.length || 0;
+  const curLayout =
+    nSplit >= 3
+      ? layoutFor(nSplit, splitView.layout)
+      : nSplit === 2
+        ? splitView.direction === 'col'
+          ? { cols: '1fr', rows: '1fr 1fr', areas: '"a" "b"' }
+          : { cols: '1fr 1fr', rows: '1fr', areas: '"a b"' }
+        : null;
+  const setLayout = (id) => setSplitView({ ...splitView, layout: id });
 
   // Clic sur une zone : 1er clic = sélection, 2e clic = échange avec la 1re.
   const handleZoneClick = (i) => {
@@ -697,32 +710,76 @@ export function useTopbarModules({ onOpenQuickSwitcher, onOpenVault, placement =
                         );
                       })}
                     </div>
-                    {/* Zones cliquables (façon Snap Windows 11) : la grille reflète
-                        la vraie disposition. Clique deux zones → elles s'échangent. */}
+                    {/* Snap Windows 11 : (1) choisir la FORME (gabarit), (2) placer
+                        les apps dans les zones (clic-clic = échange). */}
                     {splitView && splitView.appIds.length >= 2 && (
                       <div className="border-t border-border px-4 py-3">
+                        {splitView.appIds.length >= 3 && (
+                          <>
+                            <div className="pb-2 text-[11px] font-semibold text-text-muted uppercase tracking-wide">
+                              {t('tb.splitShape')}
+                            </div>
+                            <div className="flex flex-wrap gap-1.5 mb-3">
+                              {layoutsFor(splitView.appIds.length).map((l) => {
+                                const active = curLayout && l.id === curLayout.id;
+                                return (
+                                  <button
+                                    key={l.id}
+                                    onClick={() => setLayout(l.id)}
+                                    className={`p-1 rounded-md border transition-all ${
+                                      active
+                                        ? 'border-accent-primary bg-accent-primary/10'
+                                        : 'border-border hover:border-accent-primary/50'
+                                    }`}
+                                    title={t(`tb.layout.${l.id}`)}
+                                  >
+                                    <div
+                                      className="grid gap-[2px]"
+                                      style={{
+                                        width: 34,
+                                        height: 26,
+                                        gridTemplateColumns: l.cols,
+                                        gridTemplateRows: l.rows,
+                                        gridTemplateAreas: l.areas,
+                                      }}
+                                    >
+                                      {splitView.appIds.map((_, i) => (
+                                        <div
+                                          key={i}
+                                          style={{ gridArea: areaLetter(i) }}
+                                          className={`rounded-[2px] ${
+                                            active ? 'bg-accent-primary/60' : 'bg-text-muted/40'
+                                          }`}
+                                        />
+                                      ))}
+                                    </div>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </>
+                        )}
+
                         <div className="pb-2 text-[11px] font-semibold text-text-muted uppercase tracking-wide">
                           {t('tb.splitOrder')}
                         </div>
                         <div
-                          className={`grid gap-1 ${
-                            splitView.appIds.length >= 3
-                              ? 'grid-cols-2 grid-rows-2'
-                              : splitView.direction === 'col'
-                                ? 'grid-cols-1 grid-rows-2'
-                                : 'grid-cols-2 grid-rows-1'
-                          }`}
-                          style={{ height: 96 }}
+                          className="grid gap-1"
+                          style={{
+                            height: 96,
+                            gridTemplateColumns: curLayout?.cols,
+                            gridTemplateRows: curLayout?.rows,
+                            gridTemplateAreas: curLayout?.areas,
+                          }}
                         >
                           {splitView.appIds.map((id, i) => {
                             const a = apps.find((x) => x.id === id);
                             const sel = swapSel === i;
-                            const master = splitView.appIds.length === 3 && i === 0;
                             return (
                               <button
                                 key={id}
                                 onClick={() => handleZoneClick(i)}
-                                style={master ? { gridRow: 'span 2' } : undefined}
+                                style={{ gridArea: areaLetter(i) }}
                                 className={`relative flex flex-col items-center justify-center gap-1 rounded-lg border text-[11px] transition-all overflow-hidden ${
                                   sel
                                     ? 'border-accent-primary bg-accent-primary/15 ring-1 ring-accent-primary'

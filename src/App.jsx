@@ -27,6 +27,7 @@ import { useMediaStore } from './lib/mediaStore';
 import { mediaToggle, mediaPrev, mediaNext, mediaSeek, pickNowPlaying } from './lib/mediaControls';
 import { appViewKey, appPartition, resolveProxy } from './lib/session';
 import { matchShortcut } from './lib/shortcuts';
+import { layoutFor, areaLetter } from './lib/splitLayouts';
 import { reloadApp } from './lib/webviewRegistry';
 import { logDiagnostic } from './lib/diagnosticsStore';
 import { useT } from './lib/i18n';
@@ -363,6 +364,12 @@ export default function App() {
       : activeSplit && activeSplit.appIds.length === 2
         ? [0.5, 0.5]
         : null;
+
+  // Gabarit de disposition (3-4 apps) : forme choisie (maître-gauche, colonnes…).
+  const splitLayout =
+    activeSplit && activeSplit.appIds.length >= 3
+      ? layoutFor(activeSplit.appIds.length, activeSplit.layout)
+      : null;
 
   // Séparateur ajustable : glisser pour agrandir/réduire un panneau
   const splitContainerRef = useRef(null);
@@ -839,12 +846,21 @@ export default function App() {
             ref={splitContainerRef}
             className={`flex-1 relative bg-bg-secondary overflow-hidden ${
               activeSplit && activeSplit.appIds.length >= 3
-                ? 'grid grid-cols-2 grid-rows-2 gap-0.5 bg-border'
+                ? 'grid gap-0.5 bg-border'
                 : activeSplit
                   ? `flex ${activeSplit.direction === 'col' ? 'flex-col' : 'flex-row'}`
                   : ''
             }`}
-            style={{ visibility: overlayOpen ? 'hidden' : 'visible' }}
+            style={{
+              visibility: overlayOpen ? 'hidden' : 'visible',
+              ...(splitLayout
+                ? {
+                    gridTemplateColumns: splitLayout.cols,
+                    gridTemplateRows: splitLayout.rows,
+                    gridTemplateAreas: splitLayout.areas,
+                  }
+                : {}),
+            }}
           >
             {liveApps.map((a) => {
                   // Une app n'est « active/visible » que si elle est ATTEIGNABLE
@@ -879,15 +895,12 @@ export default function App() {
                   const paneStyle = !inSplit
                     ? { display: 'contents' }
                     : gridMode
-                      ? {
-                          order: idx * 2,
-                          // 3 apps → « maître » à gauche (pleine hauteur) + 2
-                          // empilées à droite : remplit toute la grille.
-                          ...(activeSplit.appIds.length === 3 && idx === 0
-                            ? { gridRow: 'span 2' }
-                            : {}),
-                        }
+                      ? // Grille pilotée par le gabarit : chaque panneau occupe sa
+                        // zone (a, b, c, d) selon son index dans le partage.
+                        { gridArea: splitLayout ? areaLetter(idx) : undefined }
                       : {
+                          // 2 apps : flex redimensionnable ; `order` fait suivre
+                          // l'ordre visuel à appIds (échange des côtés possible).
                           order: idx * 2,
                           flexGrow: splitSizes ? splitSizes[idx] : 0.5,
                           flexBasis: 0,
