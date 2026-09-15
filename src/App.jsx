@@ -1,5 +1,5 @@
 import { Fragment, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Moon, Play, X, Columns2, Rows2, Plus, Wifi, KeyRound } from 'lucide-react';
+import { Moon, Play, X, Columns2, Rows2, Wifi, KeyRound } from 'lucide-react';
 import Sidebar from './components/Sidebar';
 import Topbar from './components/Topbar';
 import Bottombar from './components/Bottombar';
@@ -363,6 +363,26 @@ export default function App() {
       : activeSplit && activeSplit.appIds.length === 2
         ? [0.5, 0.5]
         : null;
+
+  // Déplacer un panneau dans l'ordre du partage (choisir sa position :
+  // gauche/droite, ou dans la grille). Réordonne aussi les tailles (2 apps).
+  const moveSplitApp = useCallback(
+    (appId, dir) => {
+      if (!activeSplit) return;
+      const ids = [...activeSplit.appIds];
+      const i = ids.indexOf(appId);
+      const j = i + dir;
+      if (i < 0 || j < 0 || j >= ids.length) return;
+      [ids[i], ids[j]] = [ids[j], ids[i]];
+      let sizes = activeSplit.sizes;
+      if (Array.isArray(sizes) && sizes.length === ids.length) {
+        sizes = [...sizes];
+        [sizes[i], sizes[j]] = [sizes[j], sizes[i]];
+      }
+      setSplitView({ ...activeSplit, appIds: ids, ...(sizes ? { sizes } : {}) });
+    },
+    [activeSplit, setSplitView]
+  );
 
   // Séparateur ajustable : glisser pour agrandir/réduire un panneau
   const splitContainerRef = useRef(null);
@@ -875,7 +895,11 @@ export default function App() {
                   const paneStyle = !inSplit
                     ? { display: 'contents' }
                     : gridMode
-                      ? undefined
+                      ? // 3 apps → « maître » à gauche (pleine hauteur) + 2 empilées
+                        // à droite : remplit toute la grille, sans cellule vide.
+                        activeSplit.appIds.length === 3 && idx === 0
+                        ? { gridRow: 'span 2' }
+                        : undefined
                       : {
                           flexGrow: splitSizes ? splitSizes[idx] : 0.5,
                           flexBasis: 0,
@@ -906,6 +930,28 @@ export default function App() {
                         }
                         style={paneStyle}
                       >
+                        {/* Déplacer ce panneau (choisir sa position) — discret,
+                            se révèle au survol. ‹ vers gauche/haut, › vers droite/bas. */}
+                        {inSplit && (
+                          <div className="absolute top-1 left-1 z-30 flex gap-0.5 opacity-25 hover:opacity-100 transition-opacity app-no-drag">
+                            <button
+                              onClick={() => moveSplitApp(a.id, -1)}
+                              disabled={idx === 0}
+                              className="w-6 h-6 rounded bg-bg-elevated/95 border border-border flex items-center justify-center text-text-muted hover:text-accent-primary disabled:opacity-30"
+                              title="Déplacer avant (gauche / haut)"
+                            >
+                              ‹
+                            </button>
+                            <button
+                              onClick={() => moveSplitApp(a.id, 1)}
+                              disabled={idx === activeSplit.appIds.length - 1}
+                              className="w-6 h-6 rounded bg-bg-elevated/95 border border-border flex items-center justify-center text-text-muted hover:text-accent-primary disabled:opacity-30"
+                              title="Déplacer après (droite / bas)"
+                            >
+                              ›
+                            </button>
+                          </div>
+                        )}
                         <WebView
                           app={a}
                           active={inActive && a.id === activeApp}
@@ -917,21 +963,6 @@ export default function App() {
                   );
                 })}
 
-                {/* Cellule « + » : ajouter une 4e app à la grille 2×2 */}
-                {activeSplit && activeSplit.appIds.length === 3 && (
-                  <button
-                    onClick={() => {
-                      const next = profileApps.find(
-                        (x) => !activeSplit.appIds.includes(x.id) && !x.sleeping
-                      );
-                      if (next) setSplitView({ ...activeSplit, appIds: [...activeSplit.appIds, next.id] });
-                    }}
-                    className="flex items-center justify-center text-text-muted hover:text-accent-primary hover:bg-bg-hover transition-colors border-2 border-dashed border-border rounded-lg m-0.5"
-                    title="Ajouter une 4e application"
-                  >
-                    <Plus size={24} />
-                  </button>
-                )}
 
                 {/* Barre de contrôle du partage (direction + quitter) */}
                 {activeSplit && (

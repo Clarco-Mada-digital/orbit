@@ -22,7 +22,7 @@ import {
   Trash2,
   KeyRound,
 } from 'lucide-react';
-import { useStore } from '../../stores/useStore';
+import { useStore, appVisibleIn } from '../../stores/useStore';
 import { useT } from '../../lib/i18n';
 import { useZoneHold } from '../../lib/autoHide';
 import { useGuestDismiss } from '../../lib/useDismiss';
@@ -127,6 +127,7 @@ function ExtPopoverIcon({ ext }) {
 export function useTopbarModules({ onOpenQuickSwitcher, onOpenVault, placement = 'top' }) {
   const {
     activeApp,
+    activeProfile,
     apps,
     extensions,
     updateExtensions,
@@ -203,9 +204,12 @@ export function useTopbarModules({ onOpenQuickSwitcher, onOpenVault, placement =
   // droite (aligné à gauche), sinon le menu déborderait hors de la fenêtre.
   const alignFor = (zone) => (zone === 'left' ? 'left-0' : 'right-0');
 
-  // Apps du même profil que l'app active (candidats à l'écran partagé)
+  // Candidats à l'écran partagé : toutes les apps ATTEIGNABLES depuis le profil
+  // courant — ce qui inclut les apps de portée « tous les profils ». (Avant, le
+  // filtre strict par profil d'origine les excluait, et une app « tous profils »
+  // n'entraînait que les apps de son profil d'origine.)
   const splitPartners = app
-    ? apps.filter((a) => a.profileId === app.profileId && a.id !== app.id && !a.sleeping)
+    ? apps.filter((a) => a.id !== app.id && !a.sleeping && appVisibleIn(a, activeProfile))
     : [];
   const splitActive = splitView && splitView.appIds.includes(activeApp);
 
