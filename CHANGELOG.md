@@ -8,7 +8,7 @@ Format : une section `## [X.Y.Z] — AAAA-MM-JJ` par version, puis des
 sous-sections `### Ajouté` / `### Modifié` / `### Corrigé` / `### Sécurité`.
 La plus récente en premier.
 
-## [1.10.0] — 2026-09-15
+## [1.11.0] — 2026-09-15
 
 ### Ajouté
 - **Écran partagé — dispositions personnalisables** (façon Snap Windows 11) :
