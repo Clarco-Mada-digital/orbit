@@ -8,6 +8,30 @@ Format : une section `## [X.Y.Z] — AAAA-MM-JJ` par version, puis des
 sous-sections `### Ajouté` / `### Modifié` / `### Corrigé` / `### Sécurité`.
 La plus récente en premier.
 
+## [1.10.0] — 2026-09-15
+
+### Ajouté
+- **Écran partagé — dispositions personnalisables** (façon Snap Windows 11) :
+  choix de la forme via des vignettes dans le menu Écran partagé — maître à
+  gauche / droite / haut / bas, colonnes, lignes, grille 2×2.
+- **Placement libre des apps** : une grille de zones cliquables reflète la
+  disposition ; on clique deux zones pour échanger les apps (gauche/droite
+  **et** haut/bas).
+- Les apps de portée **« tous les profils »** peuvent désormais être mises en
+  écran partagé avec les apps du profil ouvert.
+- Premiers **tests unitaires** (partition de session, disposition de barre,
+  raccourcis, génération de mots de passe) et **analyse Argus** en intégration
+  continue.
+
+### Modifié
+- À 3 apps, la disposition remplit tout l'espace (maître + 2) — fini la
+  cellule vide avec « + ». Le déplacement des panneaux se choisit dans le menu.
+
+### Corrigé
+- **Calendrier** de la barre : en anglais, les en-têtes de jours étaient
+  décalés (dimanche en premier) alors que la grille commence le lundi → la date
+  du jour tombait sous le mauvais jour. En-têtes alignés en lundi-premier.
+
 ## [1.9.0] — 2026-09-06
 
 ### Ajouté
