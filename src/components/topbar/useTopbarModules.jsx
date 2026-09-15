@@ -21,8 +21,6 @@ import {
   Plus,
   Trash2,
   KeyRound,
-  ChevronLeft,
-  ChevronRight,
 } from 'lucide-react';
 import { useStore, appVisibleIn } from '../../stores/useStore';
 import { useT } from '../../lib/i18n';
@@ -157,6 +155,7 @@ export function useTopbarModules({ onOpenQuickSwitcher, onOpenVault, placement =
   const extMenuRef = useRef(null);
   const [showExtsPopover, setShowExtsPopover] = useState(false);
   const [showSplitMenu, setShowSplitMenu] = useState(false);
+  const [swapSel, setSwapSel] = useState(null); // zone sélectionnée pour un échange
   const splitMenuRef = useRef(null);
   const [showWsMenu, setShowWsMenu] = useState(false);
   const wsMenuRef = useRef(null);
@@ -247,14 +246,13 @@ export function useTopbarModules({ onOpenQuickSwitcher, onOpenVault, placement =
     setShowSplitMenu(false);
   };
 
-  // Déplace une app dans l'ordre du partage (choisir sa position : gauche/droite,
-  // haut/bas, ou sa place dans la grille). Réordonne aussi les tailles.
-  const moveSplitApp = (appId, dir) => {
-    if (!splitView) return;
+  // Échange deux zones (positions) du partage → placement 2D libre : chaque
+  // index d'appIds correspond à une case (gauche/droite/haut/bas, ou cellule
+  // de la grille). Réordonne aussi les tailles.
+  const swapZones = (i, j) => {
+    if (!splitView || i === j) return;
     const ids = [...splitView.appIds];
-    const i = ids.indexOf(appId);
-    const j = i + dir;
-    if (i < 0 || j < 0 || j >= ids.length) return;
+    if (i < 0 || j < 0 || i >= ids.length || j >= ids.length) return;
     [ids[i], ids[j]] = [ids[j], ids[i]];
     let sizes = splitView.sizes;
     if (Array.isArray(sizes) && sizes.length === ids.length) {
@@ -262,6 +260,16 @@ export function useTopbarModules({ onOpenQuickSwitcher, onOpenVault, placement =
       [sizes[i], sizes[j]] = [sizes[j], sizes[i]];
     }
     setSplitView({ ...splitView, appIds: ids, ...(sizes ? { sizes } : {}) });
+  };
+
+  // Clic sur une zone : 1er clic = sélection, 2e clic = échange avec la 1re.
+  const handleZoneClick = (i) => {
+    if (swapSel === null) setSwapSel(i);
+    else if (swapSel === i) setSwapSel(null);
+    else {
+      swapZones(swapSel, i);
+      setSwapSel(null);
+    }
   };
 
   // Extensions activées → affichées dans la barre
@@ -304,6 +312,7 @@ export function useTopbarModules({ onOpenQuickSwitcher, onOpenVault, placement =
       }
       if (splitMenuRef.current && !splitMenuRef.current.contains(e.target)) {
         setShowSplitMenu(false);
+        setSwapSel(null);
       }
       if (wsMenuRef.current && !wsMenuRef.current.contains(e.target)) {
         setShowWsMenu(false);
@@ -688,44 +697,55 @@ export function useTopbarModules({ onOpenQuickSwitcher, onOpenVault, placement =
                         );
                       })}
                     </div>
-                    {/* Ordre / position des panneaux (façon Windows 11) */}
+                    {/* Zones cliquables (façon Snap Windows 11) : la grille reflète
+                        la vraie disposition. Clique deux zones → elles s'échangent. */}
                     {splitView && splitView.appIds.length >= 2 && (
-                      <div className="border-t border-border py-1.5">
-                        <div className="px-4 pb-1 text-[11px] font-semibold text-text-muted uppercase tracking-wide">
+                      <div className="border-t border-border px-4 py-3">
+                        <div className="pb-2 text-[11px] font-semibold text-text-muted uppercase tracking-wide">
                           {t('tb.splitOrder')}
                         </div>
-                        {splitView.appIds.map((id, i) => {
-                          const a = apps.find((x) => x.id === id);
-                          if (!a) return null;
-                          return (
-                            <div key={id} className="flex items-center gap-2 px-3 py-1">
-                              <span className="w-3 text-[11px] text-text-muted tabular-nums">{i + 1}</span>
-                              <div
-                                className="w-5 h-5 rounded flex items-center justify-center flex-shrink-0"
-                                style={{ backgroundColor: `${a.color}20` }}
-                              >
-                                <AppIcon app={a} className="w-3.5 h-3.5 rounded" fallbackClassName="text-xs" />
-                              </div>
-                              <span className="flex-1 text-sm truncate">{a.name}</span>
+                        <div
+                          className={`grid gap-1 ${
+                            splitView.appIds.length >= 3
+                              ? 'grid-cols-2 grid-rows-2'
+                              : splitView.direction === 'col'
+                                ? 'grid-cols-1 grid-rows-2'
+                                : 'grid-cols-2 grid-rows-1'
+                          }`}
+                          style={{ height: 96 }}
+                        >
+                          {splitView.appIds.map((id, i) => {
+                            const a = apps.find((x) => x.id === id);
+                            const sel = swapSel === i;
+                            const master = splitView.appIds.length === 3 && i === 0;
+                            return (
                               <button
-                                onClick={() => moveSplitApp(id, -1)}
-                                disabled={i === 0}
-                                className="btn-icon w-6 h-6 disabled:opacity-25"
-                                title={t('tb.moveBefore')}
+                                key={id}
+                                onClick={() => handleZoneClick(i)}
+                                style={master ? { gridRow: 'span 2' } : undefined}
+                                className={`relative flex flex-col items-center justify-center gap-1 rounded-lg border text-[11px] transition-all overflow-hidden ${
+                                  sel
+                                    ? 'border-accent-primary bg-accent-primary/15 ring-1 ring-accent-primary'
+                                    : 'border-border bg-bg-secondary hover:border-accent-primary/50'
+                                }`}
+                                title={a?.name}
                               >
-                                <ChevronLeft size={14} />
+                                {a && (
+                                  <>
+                                    <div
+                                      className="w-6 h-6 rounded flex items-center justify-center"
+                                      style={{ backgroundColor: `${a.color}20` }}
+                                    >
+                                      <AppIcon app={a} className="w-4 h-4 rounded" fallbackClassName="text-xs" />
+                                    </div>
+                                    <span className="max-w-full truncate px-1">{a.name}</span>
+                                  </>
+                                )}
                               </button>
-                              <button
-                                onClick={() => moveSplitApp(id, 1)}
-                                disabled={i === splitView.appIds.length - 1}
-                                className="btn-icon w-6 h-6 disabled:opacity-25"
-                                title={t('tb.moveAfter')}
-                              >
-                                <ChevronRight size={14} />
-                              </button>
-                            </div>
-                          );
-                        })}
+                            );
+                          })}
+                        </div>
+                        <p className="text-[11px] text-text-muted mt-2">{t('tb.splitSwapHint')}</p>
                       </div>
                     )}
                     {splitActive && (
