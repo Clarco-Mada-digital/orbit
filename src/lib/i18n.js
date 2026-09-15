@@ -113,6 +113,9 @@ export const fr = {
   'tb.splitAddRemove': 'Cliquez pour ajouter ou retirer ({n}/4)',
   'tb.splitChoose': 'Choisissez une app à afficher en même temps',
   'tb.splitExit': 'Quitter le partage',
+  'tb.splitOrder': 'Ordre des panneaux',
+  'tb.moveBefore': 'Déplacer avant (gauche / haut)',
+  'tb.moveAfter': 'Déplacer après (droite / bas)',
   'tb.workspaces': 'Espaces de travail',
   'tb.workspacesEmpty': 'Aucun espace. Enregistre la disposition actuelle ci-dessous.',
   'tb.workspacesHelp':
@@ -1108,6 +1111,9 @@ export const en = {
   'tb.splitAddRemove': 'Click to add or remove ({n}/4)',
   'tb.splitChoose': 'Choose an app to show alongside',
   'tb.splitExit': 'Exit split',
+  'tb.splitOrder': 'Pane order',
+  'tb.moveBefore': 'Move before (left / top)',
+  'tb.moveAfter': 'Move after (right / bottom)',
   'tb.workspaces': 'Workspaces',
   'tb.workspacesEmpty': 'No workspace yet. Save the current layout below.',
   'tb.workspacesHelp':

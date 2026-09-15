@@ -364,26 +364,6 @@ export default function App() {
         ? [0.5, 0.5]
         : null;
 
-  // Déplacer un panneau dans l'ordre du partage (choisir sa position :
-  // gauche/droite, ou dans la grille). Réordonne aussi les tailles (2 apps).
-  const moveSplitApp = useCallback(
-    (appId, dir) => {
-      if (!activeSplit) return;
-      const ids = [...activeSplit.appIds];
-      const i = ids.indexOf(appId);
-      const j = i + dir;
-      if (i < 0 || j < 0 || j >= ids.length) return;
-      [ids[i], ids[j]] = [ids[j], ids[i]];
-      let sizes = activeSplit.sizes;
-      if (Array.isArray(sizes) && sizes.length === ids.length) {
-        sizes = [...sizes];
-        [sizes[i], sizes[j]] = [sizes[j], sizes[i]];
-      }
-      setSplitView({ ...activeSplit, appIds: ids, ...(sizes ? { sizes } : {}) });
-    },
-    [activeSplit, setSplitView]
-  );
-
   // Séparateur ajustable : glisser pour agrandir/réduire un panneau
   const splitContainerRef = useRef(null);
   const [splitDragging, setSplitDragging] = useState(false);
@@ -892,15 +872,23 @@ export default function App() {
                   // WebView ; hors partage, le div est neutralisé par
                   // `display: contents` (aucune boîte générée → la mise en page
                   // est exactement celle d'avant).
+                  // Les panneaux sont rendus dans l'ordre du STORE (liveApps), pas
+                  // de appIds : on force donc l'ordre visuel avec CSS `order` (idx
+                  // = position dans le partage) → réordonner appIds déplace bien
+                  // les panneaux. Le séparateur s'intercale à order impair.
                   const paneStyle = !inSplit
                     ? { display: 'contents' }
                     : gridMode
-                      ? // 3 apps → « maître » à gauche (pleine hauteur) + 2 empilées
-                        // à droite : remplit toute la grille, sans cellule vide.
-                        activeSplit.appIds.length === 3 && idx === 0
-                        ? { gridRow: 'span 2' }
-                        : undefined
+                      ? {
+                          order: idx * 2,
+                          // 3 apps → « maître » à gauche (pleine hauteur) + 2
+                          // empilées à droite : remplit toute la grille.
+                          ...(activeSplit.appIds.length === 3 && idx === 0
+                            ? { gridRow: 'span 2' }
+                            : {}),
+                        }
                       : {
+                          order: idx * 2,
                           flexGrow: splitSizes ? splitSizes[idx] : 0.5,
                           flexBasis: 0,
                           minWidth: 0,
@@ -915,11 +903,12 @@ export default function App() {
                           className={`flex-shrink-0 transition-colors ${
                             splitDragging ? 'bg-accent-primary/70' : 'bg-border hover:bg-accent-primary/40'
                           }`}
-                          style={
-                            activeSplit.direction === 'row'
+                          style={{
+                            order: idx * 2 - 1,
+                            ...(activeSplit.direction === 'row'
                               ? { width: 6, cursor: 'col-resize' }
-                              : { height: 6, cursor: 'row-resize' }
-                          }
+                              : { height: 6, cursor: 'row-resize' }),
+                          }}
                         />
                       ) : null}
                       <div
@@ -930,28 +919,6 @@ export default function App() {
                         }
                         style={paneStyle}
                       >
-                        {/* Déplacer ce panneau (choisir sa position) — discret,
-                            se révèle au survol. ‹ vers gauche/haut, › vers droite/bas. */}
-                        {inSplit && (
-                          <div className="absolute top-1 left-1 z-30 flex gap-0.5 opacity-25 hover:opacity-100 transition-opacity app-no-drag">
-                            <button
-                              onClick={() => moveSplitApp(a.id, -1)}
-                              disabled={idx === 0}
-                              className="w-6 h-6 rounded bg-bg-elevated/95 border border-border flex items-center justify-center text-text-muted hover:text-accent-primary disabled:opacity-30"
-                              title="Déplacer avant (gauche / haut)"
-                            >
-                              ‹
-                            </button>
-                            <button
-                              onClick={() => moveSplitApp(a.id, 1)}
-                              disabled={idx === activeSplit.appIds.length - 1}
-                              className="w-6 h-6 rounded bg-bg-elevated/95 border border-border flex items-center justify-center text-text-muted hover:text-accent-primary disabled:opacity-30"
-                              title="Déplacer après (droite / bas)"
-                            >
-                              ›
-                            </button>
-                          </div>
-                        )}
                         <WebView
                           app={a}
                           active={inActive && a.id === activeApp}

@@ -21,6 +21,8 @@ import {
   Plus,
   Trash2,
   KeyRound,
+  ChevronLeft,
+  ChevronRight,
 } from 'lucide-react';
 import { useStore, appVisibleIn } from '../../stores/useStore';
 import { useT } from '../../lib/i18n';
@@ -243,6 +245,23 @@ export function useTopbarModules({ onOpenQuickSwitcher, onOpenVault, placement =
     }
     setSplitView({ ...splitView, appIds });
     setShowSplitMenu(false);
+  };
+
+  // Déplace une app dans l'ordre du partage (choisir sa position : gauche/droite,
+  // haut/bas, ou sa place dans la grille). Réordonne aussi les tailles.
+  const moveSplitApp = (appId, dir) => {
+    if (!splitView) return;
+    const ids = [...splitView.appIds];
+    const i = ids.indexOf(appId);
+    const j = i + dir;
+    if (i < 0 || j < 0 || j >= ids.length) return;
+    [ids[i], ids[j]] = [ids[j], ids[i]];
+    let sizes = splitView.sizes;
+    if (Array.isArray(sizes) && sizes.length === ids.length) {
+      sizes = [...sizes];
+      [sizes[i], sizes[j]] = [sizes[j], sizes[i]];
+    }
+    setSplitView({ ...splitView, appIds: ids, ...(sizes ? { sizes } : {}) });
   };
 
   // Extensions activées → affichées dans la barre
@@ -669,6 +688,46 @@ export function useTopbarModules({ onOpenQuickSwitcher, onOpenVault, placement =
                         );
                       })}
                     </div>
+                    {/* Ordre / position des panneaux (façon Windows 11) */}
+                    {splitView && splitView.appIds.length >= 2 && (
+                      <div className="border-t border-border py-1.5">
+                        <div className="px-4 pb-1 text-[11px] font-semibold text-text-muted uppercase tracking-wide">
+                          {t('tb.splitOrder')}
+                        </div>
+                        {splitView.appIds.map((id, i) => {
+                          const a = apps.find((x) => x.id === id);
+                          if (!a) return null;
+                          return (
+                            <div key={id} className="flex items-center gap-2 px-3 py-1">
+                              <span className="w-3 text-[11px] text-text-muted tabular-nums">{i + 1}</span>
+                              <div
+                                className="w-5 h-5 rounded flex items-center justify-center flex-shrink-0"
+                                style={{ backgroundColor: `${a.color}20` }}
+                              >
+                                <AppIcon app={a} className="w-3.5 h-3.5 rounded" fallbackClassName="text-xs" />
+                              </div>
+                              <span className="flex-1 text-sm truncate">{a.name}</span>
+                              <button
+                                onClick={() => moveSplitApp(id, -1)}
+                                disabled={i === 0}
+                                className="btn-icon w-6 h-6 disabled:opacity-25"
+                                title={t('tb.moveBefore')}
+                              >
+                                <ChevronLeft size={14} />
+                              </button>
+                              <button
+                                onClick={() => moveSplitApp(id, 1)}
+                                disabled={i === splitView.appIds.length - 1}
+                                className="btn-icon w-6 h-6 disabled:opacity-25"
+                                title={t('tb.moveAfter')}
+                              >
+                                <ChevronRight size={14} />
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
                     {splitActive && (
                       <div className="border-t border-border py-1">
                         <button
