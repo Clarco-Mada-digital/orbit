@@ -392,10 +392,14 @@ export default function App() {
       const onUp = () => {
         window.removeEventListener('mousemove', onMove);
         window.removeEventListener('mouseup', onUp);
+        window.removeEventListener('blur', onUp);
         setSplitDragging(false);
       };
       window.addEventListener('mousemove', onMove);
       window.addEventListener('mouseup', onUp);
+      // Filet de sécurité : si la fenêtre perd le focus en plein drag (Alt-Tab,
+      // clic hors fenêtre…), on arrête aussi — jamais de drag « fantôme ».
+      window.addEventListener('blur', onUp);
     },
     [activeSplit, setSplitView]
   );
@@ -1157,6 +1161,18 @@ export default function App() {
       )}
 
       {/* Mise à jour automatique */}
+      {/* Pendant le redimensionnement de l'écran partagé : voile transparent
+          plein écran AU-DESSUS des webviews. Sans lui, dès que le curseur passe
+          sur un webview, celui-ci capte la souris → le mousemove/mouseup ne
+          remontent plus à la fenêtre → le drag « colle » (la taille suit la
+          souris même après avoir lâché). Le voile capte la souris à sa place. */}
+      {splitDragging && (
+        <div
+          className="fixed inset-0 z-[9999]"
+          style={{ cursor: activeSplit?.direction === 'col' ? 'row-resize' : 'col-resize' }}
+        />
+      )}
+
       <UpdateBanner />
 
       {/* Bienvenue au tout premier lancement */}
