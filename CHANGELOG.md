@@ -8,6 +8,19 @@ Format : une section `## [X.Y.Z] — AAAA-MM-JJ` par version, puis des
 sous-sections `### Ajouté` / `### Modifié` / `### Corrigé` / `### Sécurité`.
 La plus récente en premier.
 
+## [1.11.1] — 2026-09-15
+
+### Ajouté
+- **Écran partagé — redimensionnement en grille** (3-4 apps) : glissez les
+  séparateurs entre les panneaux pour ajuster leurs tailles (en plus du mode
+  2 apps déjà ajustable).
+
+### Corrigé
+- **Écran partagé — le redimensionnement « collait »** : en glissant le
+  séparateur, dès que le curseur passait sur une app le drag restait actif (la
+  taille suivait la souris même après avoir lâché). Un voile de capture pendant
+  le glissement corrige le problème.
+
 ## [1.11.0] — 2026-09-15
 
 ### Ajouté
