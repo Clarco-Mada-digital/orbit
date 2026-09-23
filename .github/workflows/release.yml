@@ -18,6 +18,11 @@ jobs:
   build:
     strategy:
       fail-fast: false
+      # Séquentiel (1 à la fois) : sinon les 3 jobs lancent electron-builder
+      # --publish en parallèle et créent CHACUN une release GitHub pour le même
+      # tag → releases dupliquées et assets éparpillés. En série, le 1er crée la
+      # release, les suivants y ajoutent leurs artefacts.
+      max-parallel: 1
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
