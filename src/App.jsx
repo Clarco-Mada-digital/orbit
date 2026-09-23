@@ -27,7 +27,7 @@ import { useMediaStore } from './lib/mediaStore';
 import { mediaToggle, mediaPrev, mediaNext, mediaSeek, pickNowPlaying } from './lib/mediaControls';
 import { appViewKey, appPartition, resolveProxy } from './lib/session';
 import { matchShortcut } from './lib/shortcuts';
-import { layoutFor, areaLetter } from './lib/splitLayouts';
+import { layoutFor, areaLetter, parseTracks } from './lib/splitLayouts';
 import { reloadApp } from './lib/webviewRegistry';
 import { logDiagnostic } from './lib/diagnosticsStore';
 import { useT } from './lib/i18n';
@@ -370,10 +370,14 @@ export default function App() {
     activeSplit && activeSplit.appIds.length >= 3
       ? layoutFor(activeSplit.appIds.length, activeSplit.layout)
       : null;
+  // Tailles effectives des pistes de la grille (override utilisateur ou défaut).
+  const gridCols = splitLayout ? activeSplit.cols || parseTracks(splitLayout.cols) : null;
+  const gridRows = splitLayout ? activeSplit.rows || parseTracks(splitLayout.rows) : null;
 
   // Séparateur ajustable : glisser pour agrandir/réduire un panneau
   const splitContainerRef = useRef(null);
   const [splitDragging, setSplitDragging] = useState(false);
+  const [dragAxis, setDragAxis] = useState(null); // 'col' | 'row' | null (curseur du voile)
   const startSplitDrag = useCallback(
     (e) => {
       e.preventDefault();
@@ -389,11 +393,13 @@ export default function App() {
         const ratio = Math.min(0.85, Math.max(0.15, pos / total));
         setSplitView({ ...activeSplit, sizes: [ratio, 1 - ratio] });
       };
+      setDragAxis(direction === 'col' ? 'row' : 'col');
       const onUp = () => {
         window.removeEventListener('mousemove', onMove);
         window.removeEventListener('mouseup', onUp);
         window.removeEventListener('blur', onUp);
         setSplitDragging(false);
+        setDragAxis(null);
       };
       window.addEventListener('mousemove', onMove);
       window.addEventListener('mouseup', onUp);
@@ -402,6 +408,48 @@ export default function App() {
       window.addEventListener('blur', onUp);
     },
     [activeSplit, setSplitView]
+  );
+
+  // Redimensionnement en mode grille (3-4 apps) : glisser un séparateur entre
+  // deux pistes (colonnes ou lignes). Ne touche que la paire de pistes adjacente
+  // (leur somme reste constante) → les autres panneaux ne bougent pas.
+  const startGridDrag = useCallback(
+    (axis, at) => (e) => {
+      e.preventDefault();
+      const container = splitContainerRef.current;
+      if (!container || !activeSplit || !splitLayout) return;
+      const src = axis === 'col' ? activeSplit.cols : activeSplit.rows;
+      const tracks = src ? [...src] : parseTracks(axis === 'col' ? splitLayout.cols : splitLayout.rows);
+      const sumAll = tracks.reduce((s, v) => s + v, 0);
+      const before = tracks.slice(0, at - 1).reduce((s, v) => s + v, 0);
+      const pairTotal = tracks[at - 1] + tracks[at];
+      setSplitDragging(true);
+      setDragAxis(axis);
+      const onMove = (ev) => {
+        const rect = container.getBoundingClientRect();
+        const total = axis === 'col' ? rect.width : rect.height;
+        if (total <= 0) return;
+        const pos = axis === 'col' ? ev.clientX - rect.left : ev.clientY - rect.top;
+        const frac = Math.min(1, Math.max(0, pos / total));
+        let first = frac * sumAll - before; // nouvelle taille de la piste at-1
+        first = Math.min(pairTotal - 0.15, Math.max(0.15, first));
+        const next = [...tracks];
+        next[at - 1] = first;
+        next[at] = pairTotal - first;
+        setSplitView({ ...activeSplit, [axis === 'col' ? 'cols' : 'rows']: next });
+      };
+      const onUp = () => {
+        window.removeEventListener('mousemove', onMove);
+        window.removeEventListener('mouseup', onUp);
+        window.removeEventListener('blur', onUp);
+        setSplitDragging(false);
+        setDragAxis(null);
+      };
+      window.addEventListener('mousemove', onMove);
+      window.addEventListener('mouseup', onUp);
+      window.addEventListener('blur', onUp);
+    },
+    [activeSplit, splitLayout, setSplitView]
   );
 
   // Marquer comme lue l'app qu'on active (tous les chemins : sidebar, quick switcher…)
@@ -859,8 +907,8 @@ export default function App() {
               visibility: overlayOpen ? 'hidden' : 'visible',
               ...(splitLayout
                 ? {
-                    gridTemplateColumns: splitLayout.cols,
-                    gridTemplateRows: splitLayout.rows,
+                    gridTemplateColumns: gridCols.map((f) => `${f}fr`).join(' '),
+                    gridTemplateRows: gridRows.map((f) => `${f}fr`).join(' '),
                     gridTemplateAreas: splitLayout.areas,
                   }
                 : {}),
@@ -947,6 +995,30 @@ export default function App() {
                   );
                 })}
 
+
+                {/* Séparateurs ajustables de la grille (3-4 apps) : un par
+                    frontière de piste définie dans le gabarit. */}
+                {splitLayout &&
+                  (splitLayout.dividers || []).map((d, k) => {
+                    const tracks = d.axis === 'col' ? gridCols : gridRows;
+                    const sum = tracks.reduce((s, v) => s + v, 0) || 1;
+                    const pct = `${(tracks.slice(0, d.at).reduce((s, v) => s + v, 0) / sum) * 100}%`;
+                    const isCol = d.axis === 'col';
+                    return (
+                      <div
+                        key={`${d.axis}-${d.at}-${k}`}
+                        onMouseDown={startGridDrag(d.axis, d.at)}
+                        className={`absolute z-20 transition-colors ${
+                          splitDragging ? 'bg-accent-primary/70' : 'bg-border hover:bg-accent-primary/40'
+                        }`}
+                        style={
+                          isCol
+                            ? { top: 0, bottom: 0, left: `calc(${pct} - 3px)`, width: 6, cursor: 'col-resize' }
+                            : { left: 0, right: 0, top: `calc(${pct} - 3px)`, height: 6, cursor: 'row-resize' }
+                        }
+                      />
+                    );
+                  })}
 
                 {/* Barre de contrôle du partage (direction + quitter) */}
                 {activeSplit && (
@@ -1169,7 +1241,7 @@ export default function App() {
       {splitDragging && (
         <div
           className="fixed inset-0 z-[9999]"
-          style={{ cursor: activeSplit?.direction === 'col' ? 'row-resize' : 'col-resize' }}
+          style={{ cursor: dragAxis === 'row' ? 'row-resize' : 'col-resize' }}
         />
       )}
 
