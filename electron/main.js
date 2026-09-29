@@ -3692,12 +3692,13 @@ ipcMain.handle('extensions:installFromZip', async (_event, zipPath) => {
     const tempDir = path.join(app.getPath('userData'), 'extensions', `zip-temp-${Date.now()}`);
     fs.mkdirSync(tempDir, { recursive: true });
 
-    // Extraire le ZIP (linux: unzip, windows: powershell)
-    let unzipOutput;
+    // Extraire le ZIP (linux: unzip, windows: powershell). La sortie des deux
+    // commandes ne sert à rien en cas de succès : seul l'échec parle, via
+    // l'exception.
     if (process.platform === 'win32') {
       const { execSync } = await import('child_process');
       try {
-        unzipOutput = execSync(
+        execSync(
           `powershell -Command "Expand-Archive -Path '${zipPath.replace(/'/g, "''")}' -DestinationPath '${tempDir.replace(/'/g, "''")}' -Force"`,
           { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }
         );
@@ -3705,12 +3706,19 @@ ipcMain.handle('extensions:installFromZip', async (_event, zipPath) => {
         throw new Error(`Échec extraction ZIP (PowerShell): ${e.stderr || e.message}`);
       }
     } else {
-      const { execSync } = await import('child_process');
+      // Arguments passés en TABLEAU, sans shell : il n'y a alors plus rien à
+      // échapper. L'ancienne version doublait les apostrophes (`'` → `''`),
+      // ce qui est la règle de PowerShell — en shell POSIX, `''` à l'intérieur
+      // de guillemets simples ne protège rien, il ferme et rouvre la chaîne.
+      // L'apostrophe était donc silencieusement PERDUE : une extension rangée
+      // sous un dossier « O'Brien » ne s'installait pas, avec pour seul
+      // message une erreur d'unzip sur un chemin introuvable.
+      const { execFileSync } = await import('child_process');
       try {
-        unzipOutput = execSync(
-          `unzip -o '${zipPath.replace(/'/g, "''")}' -d '${tempDir.replace(/'/g, "''")}' 2>&1`,
-          { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }
-        );
+        execFileSync('unzip', ['-o', zipPath, '-d', tempDir], {
+          encoding: 'utf8',
+          stdio: ['pipe', 'pipe', 'pipe'],
+        });
       } catch (e) {
         throw new Error(`Échec extraction ZIP (unzip): ${e.stderr || e.stdout || e.message}`);
       }
