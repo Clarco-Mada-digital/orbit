@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useStore } from '../stores/useStore';
-import { ChevronLeft, ChevronRight, Plus, Settings, Grid, User, Moon, BellOff, Lock, Volume2, VolumeX, LogIn, Globe } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Plus, Settings, Grid, User, Moon, BellOff, Lock, Volume2, VolumeX, LogIn, Globe, X } from 'lucide-react';
 import AppContextMenu from './AppContextMenu';
 import AppIcon from './AppIcon';
 import { useSecurityStore } from '../lib/securityStore';
@@ -17,13 +17,14 @@ export default function Sidebar({
   onOpenStore,
   onOpenProfileManager,
   onSelectApp,
+  onFlyPageMenu,
   bottomOffset = 0,
   topOffset = '3rem',
   autoHidden = false,
   revealed = true,
   revealHandlers = {},
 }) {
-  const { profiles, activeProfile, setActiveProfile, getProfileApps, activeApp, settings, reorderApps, containers } = useStore();
+  const { profiles, activeProfile, setActiveProfile, getProfileApps, activeApp, settings, reorderApps, containers, flyPages, closeFlyPage, closeAllFlyPages } = useStore();
   const { lockedProfileIds, unlockedProfileIds } = useSecurityStore();
   const t = useT();
   const media = useMediaStore((s) => s.media);
@@ -410,6 +411,64 @@ export default function Sidebar({
             {unpinned.map((app) => renderApp(app, unpinned))}
           </div>
         )}
+
+        {/* Pages volantes : des URL ouvertes à la volée depuis Alt+K. Section
+            à part, sous un trait pointillé — ce ne sont pas des apps
+            installées, et elles disparaîtront à la fermeture d'Orbit. */}
+        {flyPages.length > 0 && (
+          <div className="mt-3 pt-3 border-t border-dashed border-border">
+            {!collapsed && (
+              <div className="flex items-center justify-between px-3 mb-1.5">
+                <span className="text-[10px] font-semibold uppercase tracking-wider text-text-muted">
+                  {t('fly.section')}
+                </span>
+                <button
+                  onClick={closeAllFlyPages}
+                  className="text-[10px] text-text-muted hover:text-error transition-colors"
+                  title={t('fly.closeAll')}
+                >
+                  {t('fly.closeAll')}
+                </button>
+              </div>
+            )}
+            <div className={collapsed ? 'space-y-1 px-2' : 'space-y-0.5 px-2'}>
+              {flyPages.map((page) => (
+                <div
+                  key={page.id}
+                  onClick={() => onSelectApp?.(page.id)}
+                  onContextMenu={(e) => onFlyPageMenu?.(e, page)}
+                  title={collapsed ? page.name : page.url}
+                  className={`w-full flex items-center gap-2 ${
+                    settings.compactMode ? 'px-2 py-1.5' : 'px-2 py-1.5'
+                  } rounded-lg cursor-pointer transition-all group relative border border-dashed ${
+                    page.id === activeApp
+                      ? 'bg-accent-primary/10 text-accent-primary border-accent-primary/40'
+                      : 'border-border/60 hover:bg-bg-hover text-text-secondary'
+                  } ${collapsed ? 'justify-center' : ''}`}
+                >
+                  <div className="w-6 h-6 rounded flex items-center justify-center flex-shrink-0 bg-bg-elevated">
+                    <AppIcon app={page} className="w-4 h-4 rounded" />
+                  </div>
+                  {!collapsed && (
+                    <>
+                      <span className="flex-1 min-w-0 truncate text-xs">{page.name}</span>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation(); // sans ça, le clic sélectionnerait la page
+                          closeFlyPage(page.id);
+                        }}
+                        className="opacity-0 group-hover:opacity-100 p-0.5 rounded hover:bg-error/20 hover:text-error transition-all flex-shrink-0"
+                        title={t('fly.close')}
+                      >
+                        <X size={12} />
+                      </button>
+                    </>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Footer */}
@@ -422,7 +481,7 @@ export default function Sidebar({
               title={t('sb.store')}
             >
               <Grid size={16} />
-              Boutique
+              {t('sb.storeShort')}
             </button>
             <div className="flex gap-2">
               <button
@@ -431,7 +490,7 @@ export default function Sidebar({
                 title={t('sb.manageProfiles')}
               >
                 <User size={14} />
-                Profils
+                {t('sb.profilesShort')}
               </button>
               <button
                 onClick={onOpenSettings}
@@ -439,7 +498,7 @@ export default function Sidebar({
                 title={t('common.settings')}
               >
                 <Settings size={14} />
-                Réglages
+                {t('sb.settingsShort')}
               </button>
             </div>
           </div>

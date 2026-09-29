@@ -32,19 +32,22 @@ function normalizeUrl(url) {
   return /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
 }
 
-export default function AppStore({ onClose }) {
+// `prefill` : promotion d'une page volante en vraie app. On ouvre directement
+// le formulaire personnalisé, rempli avec ce que la page a donné (son titre,
+// son adresse, son favicon) — il ne reste qu'à valider ou ajuster.
+export default function AppStore({ onClose, prefill = null }) {
   const t = useT();
   const [search, setSearch] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
-  const [showCustomForm, setShowCustomForm] = useState(false);
-  const [useFavicon, setUseFavicon] = useState(false);
+  const [showCustomForm, setShowCustomForm] = useState(Boolean(prefill));
+  const [useFavicon, setUseFavicon] = useState(Boolean(prefill?.favicon));
   // Un emoji a-t-il été choisi EXPLICITEMENT (pas le « 🌐 » par défaut jamais
   // touché) ? → il doit primer sur le favicon automatique du site.
   const [customEmojiChosen, setCustomEmojiChosen] = useState(false);
   const [customImage, setCustomImage] = useState(''); // image téléversée (data URL)
   const [customForm, setCustomForm] = useState({
-    name: '',
-    url: '',
+    name: prefill?.name || '',
+    url: prefill?.url || '',
     icon: '🌐',
     color: '#6366f1',
   });
@@ -64,7 +67,7 @@ export default function AppStore({ onClose }) {
     reader.readAsDataURL(file);
     e.target.value = '';
   };
-  const { apps, activeProfile, activeApp, addApp, deleteApp, trash, restoreApp, purgeTrashApp, emptyTrash } =
+  const { apps, activeProfile, activeApp, addApp, deleteApp, trash, restoreApp, purgeTrashApp, emptyTrash, closeFlyPage } =
     useStore();
 
   // Apps installées dans le profil actif (recette OU personnalisée)
@@ -147,6 +150,15 @@ export default function AppStore({ onClose }) {
       unread: 0,
       sleeping: false,
     });
+
+    // Promotion d'une page volante : elle a rempli son office, on la ferme
+    // (et sa session jetable est purgée) — sinon on se retrouverait avec la
+    // page ET l'app côte à côte sur la même adresse.
+    if (prefill?.flyPageId) {
+      closeFlyPage(prefill.flyPageId);
+      onClose?.();
+      return;
+    }
 
     // Reset et ferme le formulaire
     setCustomForm({ name: '', url: '', icon: '🌐', color: '#6366f1' });

@@ -11,6 +11,11 @@ export function appPartition(app, sharedSession) {
   // Conteneur explicite (type Firefox) : prioritaire, partagé entre les apps
   // du même conteneur (plusieurs comptes d'un même service possibles).
   if (app.containerId) return `persist:ctn:${app.containerId}`;
+  // Page volante : TOUJOURS sa propre partition, même dans un profil partagé.
+  // Consulter un lien de passage ne doit jamais écrire dans le coffre à
+  // cookies d'un compte connecté — c'est tout l'intérêt de la session jetable,
+  // purgée à la fermeture de la page.
+  if (app.ephemeral) return `persist:${app.sessionKey}`;
   if (sharedSession) return `persist:${app.profileId}`;
   return `persist:${app.sessionKey || `${app.profileId}:${app.id}`}`;
 }
@@ -26,5 +31,9 @@ export function resolveProxy(app, profile, globalProxy) {
 // isolée / partagée) pour forcer le remontage du <webview> avec le bon coffre.
 export function appViewKey(app, sharedSession) {
   if (app.containerId) return `${app.id}:ctn:${app.containerId}`;
+  // Une page volante garde la même partition quel que soit le mode du profil :
+  // sa clé ne doit donc pas suivre `sharedSession`, sinon basculer le profil en
+  // partagé remonterait le <webview> et rechargerait la page pour rien.
+  if (app.ephemeral) return app.id;
   return sharedSession ? `${app.id}:shared` : app.id;
 }

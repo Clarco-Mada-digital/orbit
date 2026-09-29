@@ -4,6 +4,12 @@ import { useStore } from '../stores/useStore';
 import { useLoadingStore } from '../lib/loadingStore';
 import { useMediaStore } from '../lib/mediaStore';
 import { registerWebview, unregisterWebview } from '../lib/webviewRegistry';
+import { useHistoryStore } from '../lib/historyStore';
+
+// Accès hors composant au magasin d'historique : ces gestionnaires tournent
+// dans des écouteurs d'événements du <webview>, pas pendant un rendu.
+const recordHistory = (entry) => useHistoryStore.getState().record(entry);
+const setHistoryTitle = (url, title) => useHistoryStore.getState().setTitle(url, title);
 
 // Lu DANS la page (via executeJavaScript) : métadonnées de lecture (Media
 // Session en priorité, sinon le titre de la page) + état lecture/pause.
@@ -137,6 +143,13 @@ export default function WebView({ app, active, visible, flexLayout }) {
       }
       if (url) updateApp(app.id, { url });
 
+      // Historique transverse (palette Alt+K) : le titre n'est pas encore
+      // connu à cet instant, il arrivera par `page-title-updated` et viendra
+      // compléter l'entrée.
+      if (url) {
+        recordHistory({ url, appId: app.id, appName: app.name, title: '' });
+      }
+
       // « Session perdue » : l'app est retombée d'elle-même sur SA page de
       // connexion. Jusqu'ici on ne s'en apercevait qu'en cliquant sur l'app —
       // avec ce marqueur, la barre latérale le signale tout de suite.
@@ -171,6 +184,13 @@ export default function WebView({ app, active, visible, flexLayout }) {
 
     const handleTitle = (e) => {
       updateApp(app.id, { title: e.title });
+      // Complète l'entrée d'historique créée à la navigation (le titre arrive
+      // toujours après l'URL).
+      try {
+        setHistoryTitle(wv.getURL(), e.title);
+      } catch {
+        /* webview détruit entre-temps */
+      }
       // Badge de messages non lus à partir du titre : "(2) Gmail" → 2
       const m = /^\((\d+)\)/.exec(e.title || '');
       const unread = m ? parseInt(m[1], 10) : 0;
