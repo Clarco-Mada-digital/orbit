@@ -5,7 +5,12 @@
     "des méprises d'heuristique sur une application de bureau. Un check rouge",
     "en permanence finit par être ignoré : le jour où Argus trouvera un vrai",
     "problème, personne ne le verra. D'où ces réglages, aussi ciblés que",
-    "possible."
+    "possible.",
+    "",
+    "Ce qui n'est PAS ici : le durcissement contre la pollution de prototype",
+    "dans src/lib/syncMerge.js. Argus ne l'avait pas signalé, mais le fichier",
+    "de synchronisation transite par un dossier partagé et ses identifiants",
+    "d'entité servaient de clefs — c'était un vrai vecteur, corrigé et testé."
   ],
 
   "platforms": ["desktop"],
@@ -17,11 +22,32 @@
     "sites tiers dans des <webview>. L'analyse de routes n'a donc rien de réel",
     "à valider ici, et ne produit que des faux positifs en lisant des attributs",
     "qui n'ont rien de liens :",
-    "  - electron/popup.html : id=\"back\" / \"forward\" / \"reload\" sont des",
-    "    identifiants de boutons, pas des cibles de navigation ;",
+    "  - electron/popup.html : id=\"back\" / \"forward\" / \"reload\" / \"screenshot\"",
+    "    sont des identifiants de boutons, pas des cibles de navigation ;",
     "  - GuestContextMenu.jsx : action=\"copyPageUrl\" est un prop JSX de notre",
-    "    composant IconAction, lu comme un <form action>.",
-    "Les autres catégories (sécurité, dépendances, qualité, code mort) restent",
-    "actives — ce sont elles qui ont de la valeur sur ce projet."
+    "    composant IconAction, lu comme un <form action>."
+  ],
+
+  "ruleSeverity": {
+    "SEC-PROTOTYPE-POLLUTION": "medium"
+  },
+
+  "$comment-ruleSeverity": [
+    "SEC-PROTOTYPE-POLLUTION se déclare `confidence: tentative` et son motif",
+    "attrape la déstructuration de tableau de React. La partie fautive :",
+    "",
+    "  /\\[\\s*(?:req|request|params|body|query|…)\\b[^\\]]*\\]\\s*=[^=]/",
+    "",
+    "Sur `const [query, setQuery] = useState('')` : `[` + `query` + `, setQuery`",
+    "+ `] =` + l'espace. Trois de nos composants écrivent cette ligne — c'est",
+    "l'idiome React le plus banal qui soit, et un quatrième composant",
+    "rouvrirait la brèche. Des exclusions en ligne ne tiendraient donc pas.",
+    "",
+    "Abaissé à `medium` plutôt que désactivé : le constat reste visible dans",
+    "les rapports, il ne bloque simplement plus la CI. Une vraie pollution de",
+    "prototype (`obj[req.body.x] = …`) sera toujours signalée.",
+    "",
+    "Le correctif appartient à Argus : le motif devrait exiger une affectation",
+    "de membre et écarter la déstructuration."
   ]
 }
