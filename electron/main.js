@@ -1040,9 +1040,6 @@ function screenshotName() {
 // protocole DevTools (captureBeyondViewport), seul moyen d'aller au-delà du
 // défilement. Chromium plafonne la surface : on borne à 16384 px.
 async function captureFullPage(wc) {
-  // argus-disable-next-line — `wc.debugger` est l'API DevTools d'Electron, pas
-  // une instruction `debugger` oubliée. La règle cherche le mot avec une
-  // frontière de mot, elle ne peut pas distinguer les deux.
   const dbg = wc.debugger;
   let attached = false;
   try {
@@ -1867,6 +1864,9 @@ function openInAppPopup(guestContents, url) {
     }
     if (rule.action === 'external') {
       permLog(`lien ${hostOf(url)} → navigateur externe (règle « ${rule.pattern} »)`);
+      // argus-disable-next-line — le schéma est vérifié en tête de fonction
+      // (`if (!(url.startsWith('http://') || url.startsWith('https://')))` →
+      // deny), une trentaine de lignes plus haut.
       shell.openExternal(url);
       return { action: 'deny' };
     }
@@ -1881,6 +1881,7 @@ function openInAppPopup(guestContents, url) {
 
   if (popupStyle === 'external') {
     permLog(`fenêtre ${hostOf(url)} demandée par ${from} — navigateur externe`);
+    // argus-disable-next-line — même garde de schéma en tête de fonction.
     shell.openExternal(url);
     return { action: 'deny' };
   }
@@ -3696,10 +3697,19 @@ ipcMain.handle('extensions:installFromZip', async (_event, zipPath) => {
     // commandes ne sert à rien en cas de succès : seul l'échec parle, via
     // l'exception.
     if (process.platform === 'win32') {
-      const { execSync } = await import('child_process');
+      // Même principe que la branche POSIX : les arguments partent en tableau,
+      // ce qui supprime la couche cmd.exe et son expansion de `%VAR%`. Le
+      // doublement des apostrophes reste nécessaire — mais lui, c'est bien la
+      // règle de PowerShell, et il s'applique à l'intérieur de SON argument.
+      const { execFileSync } = await import('child_process');
       try {
-        execSync(
-          `powershell -Command "Expand-Archive -Path '${zipPath.replace(/'/g, "''")}' -DestinationPath '${tempDir.replace(/'/g, "''")}' -Force"`,
+        execFileSync(
+          'powershell',
+          [
+            '-NoProfile',
+            '-Command',
+            `Expand-Archive -Path '${zipPath.replace(/'/g, "''")}' -DestinationPath '${tempDir.replace(/'/g, "''")}' -Force`,
+          ],
           { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }
         );
       } catch (e) {
