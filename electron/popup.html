@@ -93,6 +93,38 @@
         z-index: 5;
       }
       svg { pointer-events: none; }
+
+      /* Poignées de redimensionnement.
+         Une fenêtre `frame: false` + `transparent: true` ne reçoit pas de
+         bordure redimensionnable du système (flagrant sous Linux/X11) : la
+         pop-up restait figée à sa taille d'ouverture. On dessine donc nos
+         propres zones de saisie, invisibles, tout autour de l'habillage.
+         `-webkit-app-region: no-drag` est indispensable : sans lui, l'en-tête
+         (qui est `drag`) déplacerait la fenêtre au lieu de la redimensionner. */
+      .rz {
+        position: fixed;
+        z-index: 20;
+        -webkit-app-region: no-drag;
+      }
+      .rz-n  { top: 0; left: 6px; right: 6px; height: 6px; cursor: ns-resize; }
+      .rz-s  { bottom: 0; left: 6px; right: 6px; height: 6px; cursor: ns-resize; }
+      .rz-w  { left: 0; top: 6px; bottom: 6px; width: 6px; cursor: ew-resize; }
+      .rz-e  { right: 0; top: 6px; bottom: 6px; width: 6px; cursor: ew-resize; }
+      .rz-nw { top: 0; left: 0; width: 12px; height: 12px; cursor: nwse-resize; }
+      .rz-ne { top: 0; right: 0; width: 12px; height: 12px; cursor: nesw-resize; }
+      .rz-sw { bottom: 0; left: 0; width: 12px; height: 12px; cursor: nesw-resize; }
+      .rz-se { bottom: 0; right: 0; width: 12px; height: 12px; cursor: nwse-resize; }
+      /* Agrandie, la fenêtre ne se redimensionne plus au bord : on retire les
+         poignées pour ne pas afficher un curseur trompeur. */
+      body.maximized .rz { display: none; }
+      /* Pendant le glissement, un voile capte la souris : sans lui, le pointeur
+         entre dans le <webview> et les événements cessent d'arriver ici — le
+         redimensionnement « collait » à mi-course. */
+      #rzVeil {
+        position: fixed; inset: 0; z-index: 19; display: none;
+        -webkit-app-region: no-drag;
+      }
+      body.resizing #rzVeil { display: block; }
     </style>
   </head>
   <body>
@@ -138,6 +170,18 @@
         <div class="progress" id="progress"></div>
       </div>
     </div>
+
+    <!-- Voile de capture + poignées de redimensionnement (voir la feuille de
+         style : une pop-up transparente sans cadre n'en a pas nativement). -->
+    <div id="rzVeil"></div>
+    <div class="rz rz-n"  data-rz="n"></div>
+    <div class="rz rz-s"  data-rz="s"></div>
+    <div class="rz rz-w"  data-rz="w"></div>
+    <div class="rz rz-e"  data-rz="e"></div>
+    <div class="rz rz-nw" data-rz="nw"></div>
+    <div class="rz rz-ne" data-rz="ne"></div>
+    <div class="rz rz-sw" data-rz="sw"></div>
+    <div class="rz rz-se" data-rz="se"></div>
 
     <script src="./popup.js"></script>
   </body>

@@ -16,4 +16,8 @@ contextBridge.exposeInMainWorld('orbitPopup', {
   minimize: () => ipcRenderer.invoke('popup:minimize'),
   maximize: () => ipcRenderer.invoke('popup:maximize'),
   openExternal: (url) => ipcRenderer.invoke('popup:openExternal', url),
+  // Redimensionnement : l'habillage dessine ses propres poignées (une fenêtre
+  // transparente sans cadre n'a pas de bords redimensionnables natifs).
+  getBounds: () => ipcRenderer.invoke('popup:getBounds'),
+  setBounds: (bounds) => ipcRenderer.invoke('popup:setBounds', bounds),
 });
