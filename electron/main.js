@@ -1,4 +1,4 @@
-import { app, BrowserWindow, session, ipcMain, shell, Notification, dialog, net, screen, Menu, clipboard, globalShortcut, Tray, nativeImage, powerMonitor, powerSaveBlocker, webContents, desktopCapturer } from 'electron';
+import { app, BrowserWindow, session, ipcMain, shell, Notification, dialog, net, screen, Menu, clipboard, globalShortcut, Tray, nativeImage, powerMonitor, powerSaveBlocker, webContents, desktopCapturer, safeStorage } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import os from 'node:os';
@@ -13,6 +13,7 @@ import * as tts from './tts.js';
 import * as downloader from './downloader.js';
 import electronUpdater from 'electron-updater';
 import { matchShortcutInput } from '../src/lib/shortcuts.js';
+import { matchLinkRule } from '../src/lib/rules.js';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -1699,10 +1700,41 @@ ipcMain.handle('popup:minimize', (e) => {
 ipcMain.handle('popup:maximize', (e) => {
   const win = senderWindow(e);
   if (win) (win.isMaximized() ? win.unmaximize() : win.maximize());
-  return { success: true };
+  // L'habillage masque ses poignées de redimensionnement quand la fenêtre est
+  // agrandie : il a besoin de connaître le nouvel état.
+  return { success: true, maximized: Boolean(win?.isMaximized()) };
 });
 ipcMain.handle('popup:openExternal', (_e, url) => {
   if (typeof url === 'string' && /^https?:\/\//i.test(url)) shell.openExternal(url);
+  return { success: true };
+});
+
+// Redimensionnement manuel des pop-ups.
+//
+// Pourquoi ce détour par l'IPC plutôt que les bords natifs ? Une fenêtre
+// `frame: false` + `transparent: true` ne reçoit pas de bordure de
+// redimensionnement du système (c'est particulièrement net sous Linux/X11) :
+// la fenêtre était donc figée à 920×720. L'habillage dessine ses propres
+// poignées et nous demande les nouvelles dimensions.
+ipcMain.handle('popup:getBounds', (e) => {
+  const win = senderWindow(e);
+  return win ? win.getBounds() : null;
+});
+
+ipcMain.handle('popup:setBounds', (e, bounds) => {
+  const win = senderWindow(e);
+  if (!win || win.isDestroyed() || win.isMaximized() || !bounds) return { success: false };
+  const int = (v, fallback) => (Number.isFinite(v) ? Math.round(v) : fallback);
+  const current = win.getBounds();
+  // On borne aux minimums déclarés à la création : sans ça, un glissement
+  // rapide peut produire une fenêtre de quelques pixels, impossible à rattraper.
+  const [minW, minH] = win.getMinimumSize();
+  win.setBounds({
+    x: int(bounds.x, current.x),
+    y: int(bounds.y, current.y),
+    width: Math.max(minW, int(bounds.width, current.width)),
+    height: Math.max(minH, int(bounds.height, current.height)),
+  });
   return { success: true };
 });
 
@@ -1776,6 +1808,16 @@ function createOrbitPopup(url, partition) {
 // s'ouvre DANS Orbit, dans une fenêtre qui PARTAGE la session du webview.
 // Sans ça, la connexion partait dans le navigateur système et les cookies
 // n'arrivaient jamais dans l'app → impossible de se connecter.
+// Copie des automatisations de liens, poussée par le renderer à chaque
+// changement. Le gestionnaire `setWindowOpenHandler` d'Electron doit répondre
+// de façon SYNCHRONE : impossible d'interroger le renderer au moment du clic,
+// d'où cette copie tenue à jour (même principe que les données de test).
+let linkRules = [];
+ipcMain.handle('rules:set', (_e, rules) => {
+  linkRules = Array.isArray(rules) ? rules : [];
+  return { success: true, count: linkRules.length };
+});
+
 function openInAppPopup(guestContents, url) {
   const from = hostOf(guestContents.getURL());
   const blank = !url || url === 'about:blank' || url === 'about:blank#blocked';
@@ -1810,6 +1852,28 @@ function openInAppPopup(guestContents, url) {
   if (!(url.startsWith('http://') || url.startsWith('https://'))) {
     permLog(`fenêtre refusée pour ${from} — schéma non géré (${String(url).slice(0, 24)}…)`);
     return { action: 'deny' };
+  }
+
+  // Automatisations : une règle peut décider du sort de ce lien avant tout
+  // le reste (voir src/lib/rules.js).
+  const rule = matchLinkRule(linkRules, url);
+  if (rule) {
+    if (rule.action === 'block') {
+      permLog(`lien ${hostOf(url)} BLOQUÉ par la règle « ${rule.pattern} »`);
+      return { action: 'deny' };
+    }
+    if (rule.action === 'external') {
+      permLog(`lien ${hostOf(url)} → navigateur externe (règle « ${rule.pattern} »)`);
+      shell.openExternal(url);
+      return { action: 'deny' };
+    }
+    // `openInApp` et `flyPage` se jouent dans l'interface : on refuse la
+    // fenêtre et on laisse le renderer faire le travail.
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      permLog(`lien ${hostOf(url)} → ${rule.action} (règle « ${rule.pattern} »)`);
+      mainWindow.webContents.send('rules:linkRouted', { url, rule });
+      return { action: 'deny' };
+    }
   }
 
   if (popupStyle === 'external') {
@@ -3287,6 +3351,122 @@ ipcMain.handle('backup:decrypt', (_e, { blob, password } = {}) => {
     return { success: true, data: decryptBackup(blob, password) };
   } catch {
     return { success: false, error: 'Mot de passe incorrect ou fichier corrompu' };
+  }
+});
+
+// ---------------------------------------------------------------------------
+// IPC — Synchronisation entre machines
+// ---------------------------------------------------------------------------
+// Orbit n'héberge aucun serveur : la synchronisation passe par un DOSSIER que
+// l'utilisateur choisit (Drive, Nextcloud, Dropbox, un partage réseau…). C'est
+// le service de stockage qui s'occupe de convoyer le fichier ; nous, on ne
+// gère que le contenu — chiffré, pour que l'hébergeur ne voie rien.
+//
+// On réutilise volontairement le chiffrement des sauvegardes (AES-256-GCM,
+// clé dérivée par scrypt) : un seul format à maintenir et à auditer.
+const SYNC_FILE = 'orbit-sync.json';
+
+// Identifiant stable de cette machine, pour savoir qui a écrit en dernier.
+let cachedDeviceId = null;
+function deviceIdentity() {
+  if (cachedDeviceId) return cachedDeviceId;
+  const file = path.join(app.getPath('userData'), 'device-id.json');
+  try {
+    cachedDeviceId = JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch {
+    cachedDeviceId = { id: crypto.randomUUID(), name: os.hostname() };
+    try {
+      fs.writeFileSync(file, JSON.stringify(cachedDeviceId));
+    } catch {
+      /* dossier en lecture seule : l'id changera au prochain lancement,
+         ce n'est pas bloquant (il ne sert qu'à l'affichage). */
+    }
+  }
+  return cachedDeviceId;
+}
+
+ipcMain.handle('sync:identity', () => deviceIdentity());
+
+// Phrase secrète de synchronisation : elle protège TOUTE la configuration
+// déposée dans le dossier partagé. La garder dans le localStorage du renderer
+// la laisserait en clair sur le disque — on la confie au trousseau de l'OS,
+// comme la clé KeePassXC (voir electron/keepass.js).
+const passFile = () => path.join(app.getPath('userData'), 'sync-pass.bin');
+
+ipcMain.handle('sync:savePassphrase', (_e, passphrase) => {
+  try {
+    const file = passFile();
+    if (!passphrase) {
+      // Phrase vidée : on retire le fichier plutôt que d'y laisser une chaîne
+      // vide chiffrée, qui ressemblerait à une phrase valide.
+      if (fs.existsSync(file)) fs.unlinkSync(file);
+      return { success: true, stored: false };
+    }
+    if (!safeStorage.isEncryptionAvailable()) {
+      return { success: false, error: 'safeStorage indisponible' };
+    }
+    fs.writeFileSync(file, safeStorage.encryptString(String(passphrase)));
+    return { success: true, stored: true };
+  } catch (err) {
+    return { success: false, error: String(err.message || err) };
+  }
+});
+
+ipcMain.handle('sync:loadPassphrase', () => {
+  try {
+    const file = passFile();
+    if (!fs.existsSync(file) || !safeStorage.isEncryptionAvailable()) return { passphrase: '' };
+    return { passphrase: safeStorage.decryptString(fs.readFileSync(file)) };
+  } catch {
+    // Trousseau changé (réinstallation de l'OS, autre session) : on repart de
+    // zéro, l'utilisateur ressaisira sa phrase.
+    return { passphrase: '' };
+  }
+});
+
+ipcMain.handle('sync:chooseFolder', async () => {
+  const res = await dialog.showOpenDialog(mainWindow, {
+    title: 'Dossier de synchronisation Orbit',
+    properties: ['openDirectory', 'createDirectory'],
+  });
+  if (res.canceled || !res.filePaths[0]) return { success: false, canceled: true };
+  return { success: true, folder: res.filePaths[0] };
+});
+
+ipcMain.handle('sync:read', (_e, { folder, password } = {}) => {
+  try {
+    const file = path.join(folder, SYNC_FILE);
+    // Pas encore de fichier = première machine à se synchroniser. Ce n'est pas
+    // une erreur : l'appelant publiera simplement son état.
+    if (!fs.existsSync(file)) return { success: true, snapshot: null, empty: true };
+    const raw = fs.readFileSync(file, 'utf8');
+    const parsed = JSON.parse(raw);
+    if (parsed && parsed.orbit === 'enc1') {
+      if (!password) return { success: false, needsPassword: true };
+      return { success: true, snapshot: decryptBackup(parsed, password) };
+    }
+    return { success: true, snapshot: parsed };
+  } catch (err) {
+    // Un JSON illisible signifie presque toujours un mot de passe erroné ou
+    // une écriture concurrente interrompue par le service cloud.
+    return { success: false, error: String(err.message || err) };
+  }
+});
+
+ipcMain.handle('sync:write', (_e, { folder, password, snapshot } = {}) => {
+  try {
+    const file = path.join(folder, SYNC_FILE);
+    const json = JSON.stringify(snapshot);
+    const payload = password ? encryptBackup(json, password) : json;
+    // Écriture ATOMIQUE : on écrit à côté puis on renomme. Les clients de
+    // synchronisation surveillent le dossier ; sans ça ils téléverseraient un
+    // fichier à moitié écrit, que l'autre machine lirait comme corrompu.
+    const tmp = `${file}.tmp`;
+    fs.writeFileSync(tmp, payload);
+    fs.renameSync(tmp, file);
+    return { success: true, at: Date.now() };
+  } catch (err) {
+    return { success: false, error: String(err.message || err) };
   }
 });
 

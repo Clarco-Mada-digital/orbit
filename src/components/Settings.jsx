@@ -16,6 +16,7 @@ import {
   Stethoscope,
   Volume2,
   Globe,
+  Workflow,
 } from 'lucide-react';
 import { useStore } from '../stores/useStore';
 import ProfileManager from './ProfileManager';
@@ -23,6 +24,7 @@ import Extensions from './Extensions';
 import KeepassSettings from './KeepassSettings';
 import SecuritySettings from './SecuritySettings';
 import BackupSettings from './BackupSettings';
+import RulesSettings from './RulesSettings';
 import Diagnostics from './Diagnostics';
 import PasswordVault from './PasswordVault';
 import ReleaseNotes from './ReleaseNotes';
@@ -116,6 +118,7 @@ export default function Settings({ onClose }) {
     { id: 'keepass', name: 'KeePassXC', icon: KeyRound },
     { id: 'security', name: t('st.tab.security'), icon: ShieldCheck },
     { id: 'privacy', name: t('st.tab.privacy'), icon: Ban },
+    { id: 'rules', name: t('st.tab.rules'), icon: Workflow },
     { id: 'backup', name: t('st.tab.backup'), icon: Archive },
     { id: 'notifications', name: t('st.tab.notifications'), icon: Bell },
     { id: 'voice', name: t('st.tab.voice'), icon: Volume2 },
@@ -681,6 +684,7 @@ export default function Settings({ onClose }) {
 
               {activeTab === 'security' && <SecuritySettings />}
 
+              {activeTab === 'rules' && <RulesSettings />}
               {activeTab === 'backup' && <BackupSettings />}
 
               {activeTab === 'privacy' && (

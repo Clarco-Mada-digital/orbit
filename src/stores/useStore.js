@@ -2,6 +2,8 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { recipes } from '../lib/recipes';
 import { DEFAULT_TOPBAR, DEFAULT_BOTTOMBAR } from '../lib/topbarLayout';
+import { stampSync, NO_STAMP } from '../lib/syncStamp';
+import { reconcileLocal } from '../lib/syncMerge';
 
 // Hostname d'une URL (pour la migration des favicons)
 function hostnameOf(url) {
@@ -141,7 +143,11 @@ export const defaultSettings = {
 // Store principal pour gérer les profils, apps, et l'état global
 export const useStore = create(
   persist(
-    (set, get) => ({
+    // `stampSync` s'intercale ici : il horodate les entités modifiées et pose
+    // les pierres tombales des suppressions, quelle que soit l'action appelée
+    // (voir src/lib/syncStamp.js). Placé SOUS `persist` pour que ses
+    // corrections soient enregistrées comme le reste.
+    stampSync((set, get) => ({
       // Profils
       profiles: [
         { id: 'work', name: 'Travail', emoji: '💼', color: '#6366f1' },
@@ -211,11 +217,38 @@ export const useStore = create(
       // { id, name, profileId, activeApp, splitView }
       workspaces: [],
 
+      // Automatisations : règles « quand X, fais Y » (voir src/lib/rules.js).
+      // Persistées ET synchronisées : une règle de routage de liens a autant
+      // de sens sur le portable que sur le fixe.
+      rules: [],
+
+      // Pages volantes : des URL ouvertes à la volée depuis la palette Alt+K.
+      // Ce ne sont PAS des apps — on veut consulter un lien sans polluer la
+      // liste d'apps installées. D'où trois différences assumées :
+      //   - éphémères : exclues de la persistance (voir `partialize`), donc
+      //     elles disparaissent à la fermeture d'Orbit ;
+      //   - session jetable : partition `fly:<id>`, purgée à la fermeture, rien
+      //     ne traîne dans les cookies d'une vraie app ;
+      //   - promouvables : « Ajouter comme application » les transforme en app
+      //     normale, avec toute la configuration qui va avec.
+      // Leur forme imite celle d'une app pour traverser le MÊME rendu
+      // (<WebView>, recherche dans la page, zoom, écran partagé).
+      flyPages: [],
+
       // Onboarding : écran de bienvenue au tout premier lancement
       onboarded: false,
 
       // Settings
       settings: { ...defaultSettings },
+
+      // --- Synchronisation entre machines ---------------------------------
+      // Quand les réglages ont-ils changé pour la dernière fois ? Ils voyagent
+      // en BLOC (voir syncMerge.js), donc un seul horodatage suffit.
+      settingsUpdatedAt: 0,
+      // Pierres tombales { id: date de suppression }. Sans elles, une
+      // suppression ne se propagerait pas : la machine d'en face conclurait
+      // simplement « il me manque cette app » et la réinstallerait.
+      tombstones: {},
 
       // Actions
       setActiveProfile: (profileId) => set({ activeProfile: profileId }),
@@ -272,10 +305,15 @@ export const useStore = create(
           };
         }),
 
+      // Met à jour une app OU une page volante : <WebView> appelle cette
+      // fonction pour le titre, le favicon, l'URL courante… sans avoir à
+      // savoir sur quel type d'élément il est branché.
       updateApp: (appId, updates) =>
-        set((state) => ({
-          apps: state.apps.map((a) => (a.id === appId ? { ...a, ...updates } : a)),
-        })),
+        set((state) =>
+          state.flyPages.some((p) => p.id === appId)
+            ? { flyPages: state.flyPages.map((p) => (p.id === appId ? { ...p, ...updates } : p)) }
+            : { apps: state.apps.map((a) => (a.id === appId ? { ...a, ...updates } : a)) }
+        ),
 
       // Désinstalle une app → la place dans la CORBEILLE (sa session/cookies
       // sont conservés tant qu'elle y est → restauration possible telle quelle).
@@ -469,6 +507,114 @@ export const useStore = create(
       deleteWorkspace: (id) =>
         set((state) => ({ workspaces: state.workspaces.filter((w) => w.id !== id) })),
 
+      // --- Pages volantes -------------------------------------------------
+      // Ouvre une URL à la volée et l'affiche. Réutilise une page déjà ouverte
+      // sur la même adresse plutôt que d'en empiler une seconde.
+      openFlyPage: (rawUrl) => {
+        const url = String(rawUrl || '').trim();
+        if (!/^https?:\/\//i.test(url)) return null;
+        const existing = get().flyPages.find((p) => p.url === url || p.homeUrl === url);
+        if (existing) {
+          set({ activeApp: existing.id });
+          return existing.id;
+        }
+        const id = `fly-${Date.now()}`;
+        let host = url;
+        try {
+          host = new URL(url).hostname.replace(/^www\./, '');
+        } catch {
+          /* URL déjà validée par la regex : ce cas ne devrait pas arriver */
+        }
+        set((state) => ({
+          flyPages: [
+            ...state.flyPages,
+            {
+              id,
+              // Rattachée au profil courant : elle suit les mêmes règles de
+              // verrouillage et de visibilité que les apps de ce profil.
+              profileId: state.activeProfile,
+              // Partition jetable, distincte de toute app : consulter un lien
+              // ne doit pas toucher aux cookies d'un compte connecté.
+              sessionKey: `fly:${id}`,
+              ephemeral: true,
+              name: host,
+              url,
+              homeUrl: url,
+              icon: '🌐',
+              color: '#64748b',
+              unread: 0,
+              sleeping: false,
+              zoom: 1,
+              order: state.flyPages.length,
+              createdAt: Date.now(),
+            },
+          ],
+          activeApp: id,
+        }));
+        return id;
+      },
+
+      closeFlyPage: (id) =>
+        set((state) => {
+          const page = state.flyPages.find((p) => p.id === id);
+          if (page) {
+            // Session jetable : on la purge à la fermeture, sinon les cookies
+            // des pages consultées s'accumuleraient sur le disque sans que
+            // rien dans l'interface n'en garde trace.
+            window.electronAPI?.clearAppSession?.({
+              sessionKey: page.sessionKey,
+              profileId: page.profileId,
+              appId: page.id,
+            });
+          }
+          const rest = state.flyPages.filter((p) => p.id !== id);
+          return {
+            flyPages: rest,
+            activeApp: state.activeApp === id ? null : state.activeApp,
+            // Une page volante fermée ne doit pas laisser un panneau vide dans
+            // l'écran partagé.
+            splitView: state.splitView?.appIds?.includes(id) ? null : state.splitView,
+          };
+        }),
+
+      closeAllFlyPages: () =>
+        set((state) => {
+          state.flyPages.forEach((p) =>
+            window.electronAPI?.clearAppSession?.({
+              sessionKey: p.sessionKey,
+              profileId: p.profileId,
+              appId: p.id,
+            })
+          );
+          const ids = new Set(state.flyPages.map((p) => p.id));
+          return {
+            flyPages: [],
+            activeApp: ids.has(state.activeApp) ? null : state.activeApp,
+            splitView: state.splitView?.appIds?.some((i) => ids.has(i)) ? null : state.splitView,
+          };
+        }),
+
+      // --- Automatisations -------------------------------------------------
+      addRule: (rule) =>
+        set((state) => ({
+          rules: [...state.rules, { id: `rule-${Date.now()}`, enabled: true, ...rule }],
+        })),
+      updateRule: (id, updates) =>
+        set((state) => ({
+          rules: state.rules.map((r) => (r.id === id ? { ...r, ...updates } : r)),
+        })),
+      deleteRule: (id) => set((state) => ({ rules: state.rules.filter((r) => r.id !== id) })),
+      // L'ordre décide : la PREMIÈRE règle qui correspond l'emporte.
+      moveRule: (id, delta) =>
+        set((state) => {
+          const i = state.rules.findIndex((r) => r.id === id);
+          const j = i + delta;
+          if (i === -1 || j < 0 || j >= state.rules.length) return state;
+          const rules = [...state.rules];
+          [rules[i], rules[j]] = [rules[j], rules[i]];
+          return { rules };
+        }),
+
       setOnboarded: (v) => set({ onboarded: v !== false }),
 
       reorderApps: (profileId, appIds) =>
@@ -500,9 +646,54 @@ export const useStore = create(
           .filter((a) => a.profileId === activeProfile)
           .sort((a, b) => a.order - b.order);
       },
-    }),
+
+      // Applique un instantané fusionné venu de la synchronisation.
+      // On écrit en UN SEUL `set` : deux écritures successives laisseraient
+      // l'interface dans un état intermédiaire incohérent (apps d'une machine,
+      // profils de l'autre) le temps d'un rendu.
+      applySyncSnapshot: (snap) =>
+        set((state) => {
+          const next = {
+            // Les `updatedAt` de cet instantané viennent d'être arbitrés entre
+            // machines : le middleware ne doit surtout pas les réécrire.
+            [NO_STAMP]: true,
+            // `reconcileLocal` superpose les champs synchronisés sur les
+            // entités locales : sans lui, chaque synchronisation effacerait la
+            // page courante, les non-lus, les icônes téléversées et l'état de
+            // veille (l'instantané ne les transporte pas).
+            profiles: reconcileLocal(state.profiles, snap.profiles),
+            apps: reconcileLocal(state.apps, snap.apps),
+            containers: reconcileLocal(state.containers, snap.containers),
+            workspaces: reconcileLocal(state.workspaces, snap.workspaces),
+            rules: reconcileLocal(state.rules, snap.rules),
+            settings: { ...defaultSettings, ...(snap.settings || {}) },
+            settingsUpdatedAt: snap.settingsUpdatedAt,
+            tombstones: snap.tombstones || {},
+          };
+          // Le profil actif a pu disparaître (supprimé sur l'autre machine) :
+          // on se replie sur le premier disponible plutôt que d'afficher le
+          // vide.
+          if (!next.profiles.some((p) => p.id === state.activeProfile)) {
+            next.activeProfile = next.profiles[0]?.id;
+            next.activeApp = null;
+            next.splitView = null;
+          } else if (state.activeApp && !next.apps.some((a) => a.id === state.activeApp)) {
+            // Idem pour l'app affichée, si elle a été désinstallée ailleurs.
+            next.activeApp = null;
+            next.splitView = null;
+          }
+          return next;
+        }),
+    })),
     {
       name: 'orbit-storage',
+      // Les pages volantes ne sont PAS persistées : c'est précisément ce qui
+      // les rend éphémères. Fermer Orbit les efface, comme des onglets de
+      // navigation privée. Tout le reste de l'état est enregistré comme avant.
+      partialize: (state) => {
+        const { flyPages: _flyPages, ...rest } = state;
+        return rest;
+      },
       // v9 : nouveaux réglages (en-tête configurable, horloge, météo,
       // minuteur, style des fenêtres secondaires).
       // v10 : sons du minuteur + volume global. Le bump de version suffit :

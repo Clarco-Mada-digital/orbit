@@ -24,12 +24,17 @@ import {
   Globe,
   Copy,
   Check,
+  PanelsTopLeft,
+  History,
 } from 'lucide-react';
 import { useStore } from '../stores/useStore';
 import AppIcon from './AppIcon';
 import { shortcutKeys } from '../lib/shortcuts';
 import { useT, resolveLang } from '../lib/i18n';
 import { useSmartResults, detectUrl } from '../lib/smartSearch';
+import { useHistoryStore } from '../lib/historyStore';
+import { searchHistory, searchOpenPages, hostLabel } from '../lib/historySearch';
+import { navigateApp } from '../lib/webviewRegistry';
 
 // Icône + couleur de chaque type de résultat instantané (calcul, conversion…)
 const SMART_STYLE = {
@@ -66,7 +71,12 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
     resetAppZoom,
     workspaces,
     applyWorkspace,
+    openFlyPage,
   } = useStore();
+
+  // Historique de navigation (recherche transverse). Local à la machine : il
+  // n'entre pas dans la synchronisation.
+  const history = useHistoryStore((s) => s.entries);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -257,14 +267,24 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
       })
     );
 
-    // Adresse web tapée directement → ouverte dans le navigateur système
+    // Adresse web tapée directement. Par défaut on l'ouvre DANS Orbit, en page
+    // volante : c'est le geste attendu quand on a le hub sous les yeux. Le
+    // navigateur système reste proposé juste en dessous.
     if (url) {
       list.push({
         type: 'url',
-        id: 'smart-url',
+        id: 'smart-url-orbit',
+        name: t('qs.openUrlOrbit'),
+        subtitle: `${url} — ${t('qs.openUrlOrbitDesc')}`,
+        color: '#0ea5e9',
+        action: () => openFlyPage(url),
+      });
+      list.push({
+        type: 'url',
+        id: 'smart-url-external',
         name: t('qs.openUrl'),
         subtitle: url,
-        color: '#0ea5e9',
+        color: '#64748b',
         action: () => window.open(url, '_blank'),
       });
     }
@@ -272,7 +292,10 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
     apps
       .filter(
         (app) =>
-          app.name.toLowerCase().includes(q) || app.url.toLowerCase().includes(q)
+          // `url` peut manquer : une app jamais ouverte n'en a pas encore, et
+          // une page volante fraîchement promue non plus.
+          String(app.name || '').toLowerCase().includes(q) ||
+          String(app.url || app.homeUrl || '').toLowerCase().includes(q)
       )
       .forEach((app) =>
         list.push({
@@ -311,8 +334,52 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
       .forEach((a) =>
         list.push({ type: 'action', id: `action-${a.id}`, ...a, action: a.run })
       );
+
+    // Pages OUVERTES en ce moment : on cherche dans le titre courant de chaque
+    // webview. C'est ce qui permet de retrouver « la facture » ouverte dans un
+    // onglet Drive, alors que l'app s'appelle juste « Drive ».
+    searchOpenPages(apps, trimmed).forEach((app) =>
+      list.push({
+        type: 'openPage',
+        id: `open-${app.id}`,
+        name: app.title,
+        subtitle: `${app.name} — ${t('qs.openPage')}`,
+        color: app.color || '#10b981',
+        action: () => {
+          setActiveProfile(app.profileId);
+          setActiveApp(app.id);
+        },
+      })
+    );
+
+    // Historique : « cette page vue hier », sans se rappeler dans quelle app.
+    // Un clic rouvre la page dans SON app d'origine si elle existe encore,
+    // sinon en page volante — l'app a pu être désinstallée depuis.
+    searchHistory(history, trimmed).forEach((entry) =>
+      list.push({
+        type: 'history',
+        id: `hist-${entry.url}`,
+        name: entry.title || hostLabel(entry.url),
+        subtitle: `${hostLabel(entry.url)}${entry.appName ? ` — ${entry.appName}` : ''}`,
+        color: '#8b5cf6',
+        action: () => {
+          const owner = apps.find((a) => a.id === entry.appId);
+          if (owner) {
+            setActiveProfile(owner.profileId);
+            setActiveApp(owner.id);
+            navigateApp(owner.id, entry.url);
+          } else {
+            openFlyPage(entry.url);
+          }
+        },
+      })
+    );
+
     return list.slice(0, 12);
-  }, [trimmed, isHelpQuery, smart, url, t, apps, profiles, actions, setActiveApp, setActiveProfile]);
+  }, [
+    trimmed, isHelpQuery, smart, url, t, apps, profiles, actions,
+    setActiveApp, setActiveProfile, openFlyPage, history,
+  ]);
 
   // Navigation clavier
   useEffect(() => {
@@ -462,6 +529,10 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
                         )
                       ) : result.type === 'url' ? (
                         <Globe size={22} style={{ color: result.color }} />
+                      ) : result.type === 'openPage' ? (
+                        <PanelsTopLeft size={22} style={{ color: result.color }} />
+                      ) : result.type === 'history' ? (
+                        <History size={22} style={{ color: result.color }} />
                       ) : result.type === 'action' ? (
                         result.icon
                       ) : (

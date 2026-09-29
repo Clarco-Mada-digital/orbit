@@ -1,5 +1,5 @@
 import { Fragment, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Moon, Play, X, Columns2, Rows2, Wifi, KeyRound } from 'lucide-react';
+import { Moon, Play, X, Columns2, Rows2, Wifi, KeyRound, Plus, Copy, ExternalLink } from 'lucide-react';
 import Sidebar from './components/Sidebar';
 import Topbar from './components/Topbar';
 import Bottombar from './components/Bottombar';
@@ -27,8 +27,9 @@ import { useMediaStore } from './lib/mediaStore';
 import { mediaToggle, mediaPrev, mediaNext, mediaSeek, pickNowPlaying } from './lib/mediaControls';
 import { appViewKey, appPartition, resolveProxy } from './lib/session';
 import { matchShortcut } from './lib/shortcuts';
+import { dueTimeRules } from './lib/rules';
 import { layoutFor, areaLetter, parseTracks } from './lib/splitLayouts';
-import { reloadApp } from './lib/webviewRegistry';
+import { reloadApp, navigateApp } from './lib/webviewRegistry';
 import { logDiagnostic } from './lib/diagnosticsStore';
 import { useT } from './lib/i18n';
 import { attachTtsPlayer, setVolume as setTtsVolume } from './lib/ttsPlayer';
@@ -71,6 +72,8 @@ export default function App() {
   const [showSettings, setShowSettings] = useState(false);
   const [showProfileManager, setShowProfileManager] = useState(false);
   const [showAppStore, setShowAppStore] = useState(false);
+  const [storePrefill, setStorePrefill] = useState(null); // app personnalisée pré-remplie depuis une page volante
+  const [flyMenu, setFlyMenu] = useState(null); // { x, y, page } — menu contextuel d'une page volante
   const [showVault, setShowVault] = useState(false);
   const t = useT();
   const [captive, setCaptive] = useState(null); // { detected, url } | null
@@ -78,7 +81,10 @@ export default function App() {
   const {
     activeProfile,
     activeApp,
-    apps,
+    apps: installedApps,
+    flyPages,
+    closeFlyPage,
+    rules,
     profiles,
     extensions,
     settings,
@@ -114,6 +120,62 @@ export default function App() {
       st.setActiveApp(target.id);
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // --- Automatisations ---------------------------------------------------
+  // Le processus principal décide du sort d'un lien AU MOMENT DU CLIC, et son
+  // gestionnaire est synchrone : il a donc besoin de sa propre copie des
+  // règles, qu'on lui pousse à chaque changement.
+  useEffect(() => {
+    window.electronAPI?.setRules?.(rules);
+  }, [rules]);
+
+  // Liens routés par une règle « ouvrir dans telle app » / « page volante ».
+  useEffect(() => {
+    const off = window.electronAPI?.onLinkRouted?.(({ url: target, rule }) => {
+      const st = useStore.getState();
+      if (rule.action === 'flyPage') {
+        st.openFlyPage(target);
+        return;
+      }
+      const app = st.apps.find((a) => a.id === rule.targetAppId);
+      if (!app) {
+        // L'app cible a été désinstallée depuis : plutôt que de ne rien faire
+        // (l'utilisateur croirait à un lien mort), on ouvre en page volante.
+        st.openFlyPage(target);
+        return;
+      }
+      st.setActiveProfile(app.profileId);
+      st.setActiveApp(app.id);
+      // L'app peut ne pas être encore montée : on laisse un instant au
+      // <webview> pour s'enregistrer avant de le piloter.
+      setTimeout(() => {
+        if (!navigateApp(app.id, target)) st.openFlyPage(target);
+      }, 250);
+    });
+    return () => {
+      if (typeof off === 'function') off();
+    };
+  }, []);
+
+  // Déclencheur horaire : on regarde chaque minute si une règle tombe.
+  // `lastRunRef` empêche de rejouer la même règle en boucle — sans lui, une
+  // règle de 9 h reverrouillerait le profil à chaque tick pendant une minute.
+  const lastRunRef = useRef({});
+  useEffect(() => {
+    const tick = () => {
+      const st = useStore.getState();
+      const due = dueTimeRules(st.rules, { now: new Date(), lastRun: lastRunRef.current });
+      for (const rule of due) {
+        lastRunRef.current[rule.id] = Date.now();
+        if (rule.targetProfileId && st.profiles.some((p) => p.id === rule.targetProfileId)) {
+          st.setActiveProfile(rule.targetProfileId);
+        }
+      }
+    };
+    const id = setInterval(tick, 30 * 1000);
+    tick();
+    return () => clearInterval(id);
+  }, []);
 
   // Données de test (« Fake data ») : le remplissage 🎲 vit dans le preload des
   // webviews, qui lit ses valeurs perso depuis le main → on les y pousse ici.
@@ -289,6 +351,11 @@ export default function App() {
     if (res?.success) await security.refresh();
     return res;
   };
+
+  // Apps installées + pages volantes. Une page volante a la même forme qu'une
+  // app, donc tout le rendu en aval (webview, écran partagé, recherche dans la
+  // page, zoom, veille) fonctionne sans distinction de cas.
+  const apps = useMemo(() => [...installedApps, ...flyPages], [installedApps, flyPages]);
 
   // Apps du profil actif, triées
   // Une app « tous profils » venue d'un profil VERROUILLÉ est exclue : sans
@@ -876,6 +943,10 @@ export default function App() {
               onOpenStore={() => setShowAppStore(true)}
               onOpenProfileManager={() => setShowProfileManager(true)}
               onSelectApp={handleSetActiveApp}
+              onFlyPageMenu={(e, page) => {
+                e.preventDefault();
+                setFlyMenu({ x: e.clientX, y: e.clientY, page });
+              }}
               bottomOffset={bottombarHeight}
               topOffset={sidebarTop}
               autoHidden={hideLeft}
@@ -1198,8 +1269,86 @@ export default function App() {
       <Suspense fallback={null}>
         {showSettings && <Settings onClose={() => setShowSettings(false)} />}
         {showProfileManager && <ProfileManager onClose={() => setShowProfileManager(false)} />}
-        {showAppStore && <AppStore onClose={() => setShowAppStore(false)} />}
+        {showAppStore && (
+          <AppStore
+            onClose={() => {
+              setShowAppStore(false);
+              setStorePrefill(null);
+            }}
+            prefill={storePrefill}
+          />
+        )}
       </Suspense>
+
+      {/* Menu contextuel d'une page volante */}
+      {flyMenu && (
+        <>
+          {/* Voile : un clic n'importe où referme le menu */}
+          <div
+            className="fixed inset-0 z-[70]"
+            onClick={() => setFlyMenu(null)}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setFlyMenu(null);
+            }}
+          />
+          <div
+            className="fixed z-[71] min-w-52 bg-bg-elevated border border-border rounded-xl shadow-2xl py-1 text-sm"
+            style={{
+              left: Math.min(flyMenu.x, window.innerWidth - 220),
+              top: Math.min(flyMenu.y, window.innerHeight - 160),
+            }}
+          >
+            <button
+              className="w-full text-left px-3 py-2 hover:bg-bg-hover flex items-center gap-2"
+              onClick={() => {
+                // Promotion en vraie app : on ouvre le formulaire d'app
+                // personnalisée pré-rempli (nom, URL, favicon récupérés de la
+                // page) plutôt que de créer l'app en aveugle — l'utilisateur
+                // garde la main sur le profil, l'icône et la couleur.
+                setStorePrefill({
+                  url: flyMenu.page.url,
+                  name: flyMenu.page.title || flyMenu.page.name,
+                  favicon: flyMenu.page.favicon,
+                  flyPageId: flyMenu.page.id,
+                });
+                setShowAppStore(true);
+                setFlyMenu(null);
+              }}
+            >
+              <Plus size={14} /> {t('fly.addAsApp')}
+            </button>
+            <button
+              className="w-full text-left px-3 py-2 hover:bg-bg-hover flex items-center gap-2"
+              onClick={() => {
+                navigator.clipboard?.writeText(flyMenu.page.url);
+                setFlyMenu(null);
+              }}
+            >
+              <Copy size={14} /> {t('fly.copyUrl')}
+            </button>
+            <button
+              className="w-full text-left px-3 py-2 hover:bg-bg-hover flex items-center gap-2"
+              onClick={() => {
+                window.open(flyMenu.page.url, '_blank');
+                setFlyMenu(null);
+              }}
+            >
+              <ExternalLink size={14} /> {t('fly.openExternal')}
+            </button>
+            <div className="my-1 border-t border-border" />
+            <button
+              className="w-full text-left px-3 py-2 hover:bg-error/10 text-error flex items-center gap-2"
+              onClick={() => {
+                closeFlyPage(flyMenu.page.id);
+                setFlyMenu(null);
+              }}
+            >
+              <X size={14} /> {t('fly.close')}
+            </button>
+          </div>
+        </>
+      )}
 
       {/* Coffre-fort de mots de passe en overlay (bouton « trousseau » de la barre) */}
       {showVault && (

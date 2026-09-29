@@ -11,6 +11,8 @@
     "icons": "node scripts/generate-icons.js",
     "electron:dev": "concurrently \"npm run dev\" \"wait-on http://localhost:5173 && electron .\"",
     "test": "node --test test/*.test.js",
+    "lint": "eslint . --max-warnings 45",
+    "lint:fix": "eslint . --fix",
     "electron:build": "npm run icons && npm run build && electron-builder",
     "release": "node scripts/release.js",
     "release:local": "sh scripts/release.sh",
@@ -31,11 +33,16 @@
   "homepage": "https://orbit.app",
   "license": "MIT",
   "devDependencies": {
+    "@eslint/js": "^9.39.5",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
     "concurrently": "^9.1.2",
     "electron": "43.2.0",
     "electron-builder": "^26.15.3",
+    "eslint": "^9.39.5",
+    "eslint-plugin-react": "^7.37.5",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^17.12.0",
     "postcss": "^8.4.49",
     "tailwindcss": "^3.4.17",
     "vite": "^6.0.7",
@@ -73,6 +80,7 @@
       "dist/**/*",
       "electron/**/*",
       "src/lib/shortcuts.js",
+      "src/lib/rules.js",
       "build/icon.png",
       "package.json"
     ],
@@ -119,5 +127,8 @@
       "category": "public.app-category.productivity",
       "icon": "build/icon.png"
     }
+  },
+  "allowScripts": {
+    "electron@43.2.0": true
   }
 }

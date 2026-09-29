@@ -8,6 +8,57 @@ Format : une section `## [X.Y.Z] — AAAA-MM-JJ` par version, puis des
 sous-sections `### Ajouté` / `### Modifié` / `### Corrigé` / `### Sécurité`.
 La plus récente en premier.
 
+## [1.12.0] — 2026-09-29
+
+### Ajouté
+- **Synchronisation entre machines** (Réglages → Sauvegarde) : profils, apps,
+  conteneurs, espaces de travail, automatisations et réglages restent
+  identiques sur tous vos postes. Orbit n'héberge rien — il dépose un fichier
+  **chiffré** dans un dossier que vous choisissez (Drive, Nextcloud, Dropbox,
+  partage réseau…), et c'est ce service qui le convoie. La fusion se fait
+  entité par entité : ajouter une app sur le portable pendant qu'on en renomme
+  une sur le fixe ne perd aucune des deux modifications.
+- **Pages volantes** : tapez une adresse dans `Alt/⌘ + K` et elle s'ouvre
+  *dans* Orbit, dans une section dédiée en bas de la barre latérale. Éphémères
+  (elles disparaissent à la fermeture), avec leur propre session jetable — et
+  promouvables en vraie application d'un clic droit.
+- **Recherche transverse** dans `Alt/⌘ + K` : retrouvez « cette page vue hier »
+  sans vous rappeler dans quelle app. La palette cherche désormais dans le
+  titre des pages ouvertes et dans votre historique de navigation, puis rouvre
+  la page dans son application d'origine. L'historique reste **local** : il
+  n'entre jamais dans la synchronisation, et les pages de connexion n'y sont
+  pas consignées.
+- **Automatisations** (Réglages → Automatisations) : des règles « quand ceci,
+  fais cela ». Router un lien vers une app précise (`github.com` → votre app
+  GitHub), l'ouvrir en page volante, dans le navigateur, ou le bloquer. Et
+  basculer de profil à heure fixe, certains jours seulement.
+
+### Corrigé
+- **Fenêtres secondaires non redimensionnables** : les pop-ups (connexion
+  Google, liens externes) restaient figées à leur taille d'ouverture. Sans
+  cadre système, elles ne recevaient aucune bordure de redimensionnement —
+  elles ont désormais leurs propres poignées sur les quatre bords et les quatre
+  coins, et le double-clic sur l'en-tête les agrandit.
+- **Restauration d'une sauvegarde invalide** : le message d'erreur affichait un
+  texte technique au lieu de « Fichier de sauvegarde invalide ».
+- **Calendrier de l'en-tête** : les info-bulles des flèches de mois
+  affichaient leur clé de traduction brute.
+- **Interface en anglais** : trois libellés de la barre latérale (Boutique,
+  Profils, Réglages) restaient en français.
+
+### Sécurité
+- La **phrase secrète de synchronisation** est confiée au trousseau de votre
+  système d'exploitation (comme la clé KeePassXC), jamais écrite en clair sur
+  le disque.
+- Une **page volante n'écrit jamais dans les cookies d'une app connectée** :
+  elle garde sa propre session jetable, purgée à sa fermeture, même dans un
+  profil configuré en session partagée.
+
+### Interne
+- Suite de tests portée de 24 à **177 tests**, toujours sans aucune dépendance
+  à installer. ESLint (avec les règles React Hooks) ajouté au projet et branché
+  sur l'intégration continue.
+
 ## [1.11.1] — 2026-09-15
 
 ### Ajouté

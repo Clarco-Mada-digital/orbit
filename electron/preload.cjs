@@ -210,6 +210,25 @@ contextBridge.exposeInMainWorld('electronAPI', {
   backupExport: (payload) => ipcRenderer.invoke('backup:export', payload),
   backupImport: () => ipcRenderer.invoke('backup:import'),
   backupDecrypt: (payload) => ipcRenderer.invoke('backup:decrypt', payload),
+
+  // Automatisations : le main garde une copie des règles de liens pour pouvoir
+  // décider au clic (son gestionnaire de fenêtre est synchrone).
+  setRules: (rules) => ipcRenderer.invoke('rules:set', rules),
+  onLinkRouted: (cb) => {
+    const handler = (_e, payload) => cb(payload);
+    ipcRenderer.on('rules:linkRouted', handler);
+    return () => ipcRenderer.removeListener('rules:linkRouted', handler);
+  },
+
+  // Synchronisation entre machines par dossier partagé (voir main.js)
+  sync: {
+    identity: () => ipcRenderer.invoke('sync:identity'),
+    chooseFolder: () => ipcRenderer.invoke('sync:chooseFolder'),
+    savePassphrase: (p) => ipcRenderer.invoke('sync:savePassphrase', p),
+    loadPassphrase: () => ipcRenderer.invoke('sync:loadPassphrase'),
+    read: (payload) => ipcRenderer.invoke('sync:read', payload),
+    write: (payload) => ipcRenderer.invoke('sync:write', payload),
+  },
   // Touches média globales du clavier (⏯ ⏭ ⏮)
   setMediaKeysEnabled: (on) => ipcRenderer.invoke('mediakeys:setEnabled', on),
   onMediaKey: (callback) => {
