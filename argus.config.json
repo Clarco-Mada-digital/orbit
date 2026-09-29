@@ -1,0 +1,27 @@
+{
+  "$comment": [
+    "Configuration Argus pour Orbit. Le job CI (.github/workflows/argus.yml)",
+    "échouait sur CHAQUE push depuis son ajout — dix constats « high », tous",
+    "des méprises d'heuristique sur une application de bureau. Un check rouge",
+    "en permanence finit par être ignoré : le jour où Argus trouvera un vrai",
+    "problème, personne ne le verra. D'où ces réglages, aussi ciblés que",
+    "possible."
+  ],
+
+  "platforms": ["desktop"],
+
+  "disabledRules": ["ROUTE-BROKEN-LINK", "ROUTE-MISSING-ASSET"],
+
+  "$comment-disabledRules": [
+    "Orbit n'a aucun routage web : c'est une coquille Electron qui affiche des",
+    "sites tiers dans des <webview>. L'analyse de routes n'a donc rien de réel",
+    "à valider ici, et ne produit que des faux positifs en lisant des attributs",
+    "qui n'ont rien de liens :",
+    "  - electron/popup.html : id=\"back\" / \"forward\" / \"reload\" sont des",
+    "    identifiants de boutons, pas des cibles de navigation ;",
+    "  - GuestContextMenu.jsx : action=\"copyPageUrl\" est un prop JSX de notre",
+    "    composant IconAction, lu comme un <form action>.",
+    "Les autres catégories (sécurité, dépendances, qualité, code mort) restent",
+    "actives — ce sont elles qui ont de la valeur sur ce projet."
+  ]
+}

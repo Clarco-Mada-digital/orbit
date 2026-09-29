@@ -1040,6 +1040,9 @@ function screenshotName() {
 // protocole DevTools (captureBeyondViewport), seul moyen d'aller au-delà du
 // défilement. Chromium plafonne la surface : on borne à 16384 px.
 async function captureFullPage(wc) {
+  // argus-disable-next-line — `wc.debugger` est l'API DevTools d'Electron, pas
+  // une instruction `debugger` oubliée. La règle cherche le mot avec une
+  // frontière de mot, elle ne peut pas distinguer les deux.
   const dbg = wc.debugger;
   let attached = false;
   try {
