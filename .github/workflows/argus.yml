@@ -3,8 +3,13 @@ name: Argus
 # Analyse qualité / sécurité à chaque push et PR, avec notre propre outil Argus.
 # NB : on lance le CLI via npx plutôt que l'action `Clarco-Mada-digital/argus@main`,
 # car son action.yml est actuellement invalide (erreur de parsing YAML).
-# La baseline (.argus/baseline.json) fige l'état actuel : seuls les NOUVEAUX
-# problèmes de gravité « high » font échouer le job.
+#
+# Les exclusions vivent dans `argus.config.json` à la racine, pas dans une
+# baseline. Ce commentaire annonçait auparavant un fichier `.argus/baseline.json`
+# qui n'a jamais existé : le job échouait donc sur CHAQUE push depuis son ajout
+# (six exécutions rouges d'affilée, deux releases publiées avec un check au
+# rouge). Une baseline aurait masqué les dix constats d'un bloc, vrais comme
+# faux ; la configuration, elle, dit lesquels sont écartés et pourquoi.
 on:
   push:
     branches: [master]
