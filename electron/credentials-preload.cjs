@@ -1328,7 +1328,7 @@ async function fakeValueFor(kind) {
       return String(frandInt(100));
     case 'date':
       return new Date(Date.now() - frandInt(3e10)).toISOString().slice(0, 10);
-    default:
+    default: {
       // Données textuelles plus réalistes et variées (phrases complètes, pas juste "Lorem")
       const sentences = [
         'Ceci est un exemple de texte rempli automatiquement par Orbit.',
@@ -1341,6 +1341,7 @@ async function fakeValueFor(kind) {
         'Ce texte est généré par Orbit pour illustrer le remplissage de données test.',
       ];
       return frand(sentences);
+    }
   }
 }
 

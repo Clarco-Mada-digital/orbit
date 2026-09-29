@@ -1,4 +1,4 @@
-import { reloadUrlFor } from './urls';
+import { reloadUrlFor } from './urls.js';
 
 // Registre des <webview> par appId — permet à la Topbar de piloter
 // l'app active (retour, avant, recharger, navigation) sans IPC.
@@ -29,6 +29,22 @@ export function getRegisteredWebviews() {
   return Array.from(registry.entries());
 }
 
+
+// Envoie une app montée sur une URL précise. Utilisé par la recherche
+// transverse : rouvrir une page de l'historique DANS son app d'origine, pour
+// profiter de sa session (une page volante demanderait de se reconnecter).
+// Renvoie false si l'app n'est pas montée — l'appelant se replie alors sur une
+// page volante.
+export function navigateApp(appId, url) {
+  const wv = getWebview(appId);
+  if (!wv || !url) return false;
+  try {
+    wv.loadURL(url);
+    return true;
+  } catch {
+    return false;
+  }
+}
 
 // Recharge la page d'une app montée. Logique unique partagée par le bouton
 // « Actualiser » de la Topbar, le menu contextuel et le raccourci Ctrl+R :

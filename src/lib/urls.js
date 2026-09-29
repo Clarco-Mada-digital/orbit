@@ -8,6 +8,19 @@
 //    RESTAURE telles quelles, sinon il faut se reconnecter à chaque retour
 //    dans l'app alors que la session est encore valide.
 
+// L'entrée ressemble-t-elle à une adresse web ? (« github.com », « https://… »)
+// Utilisée par la palette Alt+K pour proposer « ouvrir cette adresse ».
+export function detectUrl(input) {
+  const s = String(input || '').trim();
+  if (!s || /\s/.test(s)) return null;
+  if (/^https?:\/\/\S+$/i.test(s)) return s;
+  // domaine.tld[/chemin] — on exige un TLD alphabétique de 2 caractères ou plus
+  if (/^[\w-]+(\.[\w-]+)+(\/\S*)?$/.test(s) && /\.[a-z]{2,}(\/|$)/i.test(s)) {
+    return `https://${s}`;
+  }
+  return null;
+}
+
 // Chemins caractéristiques des pages de connexion / flux d'authentification
 // (challenges, 2FA, formulaires…) — jamais restaurées.
 export function isLoginPageUrl(url) {

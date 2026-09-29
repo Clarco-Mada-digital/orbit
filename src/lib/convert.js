@@ -6,7 +6,7 @@
 // Chaque fonction renvoie `null` quand l'entrée ne la concerne pas — la
 // palette essaie les analyseurs l'un après l'autre.
 // ---------------------------------------------------------------------------
-import { formatNumber } from './calc';
+import { formatNumber } from './calc.js';
 
 // Facteurs vers l'unité de référence de chaque famille (mètre, gramme, litre…)
 const UNITS = {

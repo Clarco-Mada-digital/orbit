@@ -7,7 +7,7 @@
 // rendu — la palette reste donc instantanée.
 // ---------------------------------------------------------------------------
 import { useEffect, useMemo, useState } from 'react';
-import { evaluate, formatNumber } from './calc';
+import { evaluate, formatNumber } from './calc.js';
 import {
   convertUnits,
   convertBase,
@@ -18,17 +18,9 @@ import {
   convertCurrency,
 } from './convert';
 
-// L'entrée ressemble-t-elle à une adresse web ? (« github.com », « https://… »)
-export function detectUrl(input) {
-  const s = String(input || '').trim();
-  if (!s || /\s/.test(s)) return null;
-  if (/^https?:\/\/\S+$/i.test(s)) return s;
-  // domaine.tld[/chemin] — on exige un TLD alphabétique de 2 caractères ou plus
-  if (/^[\w-]+(\.[\w-]+)+(\/\S*)?$/.test(s) && /\.[a-z]{2,}(\/|$)/i.test(s)) {
-    return `https://${s}`;
-  }
-  return null;
-}
+// `detectUrl` vit dans urls.js (module sans dépendance, donc testable) ; on le
+// ré-exporte ici pour que la palette garde un point d'entrée unique.
+export { detectUrl } from './urls.js';
 
 export function useSmartResults(query, locale = 'fr-FR') {
   const trimmed = String(query || '').trim();

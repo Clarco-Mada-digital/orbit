@@ -26,6 +26,22 @@ test('resolveProxy : app > profil > global, vide sinon', () => {
   assert.equal(resolveProxy({}, {}, ''), '');
 });
 
+test('appPartition : une page volante garde sa session jetable, même en profil partagé', () => {
+  // Consulter un lien de passage ne doit JAMAIS écrire dans le coffre à
+  // cookies d'un compte connecté : c'est la garantie de la page volante.
+  const fly = { id: 'fly-1', profileId: 'work', sessionKey: 'fly:fly-1', ephemeral: true };
+  assert.equal(appPartition(fly, false), 'persist:fly:fly-1');
+  assert.equal(appPartition(fly, true), 'persist:fly:fly-1');
+  // Un conteneur explicite reste prioritaire (cas théorique, mais l'ordre compte)
+  assert.equal(appPartition({ ...fly, containerId: 'c1' }, true), 'persist:ctn:c1');
+});
+
+test('appViewKey : une page volante ne remonte pas quand le profil bascule en partagé', () => {
+  const fly = { id: 'fly-1', ephemeral: true };
+  assert.equal(appViewKey(fly, false), 'fly-1');
+  assert.equal(appViewKey(fly, true), 'fly-1');
+});
+
 test('appViewKey : change avec conteneur / partage (force le remontage)', () => {
   assert.equal(appViewKey({ id: 'a', containerId: 'c1' }, false), 'a:ctn:c1');
   assert.equal(appViewKey({ id: 'a' }, true), 'a:shared');

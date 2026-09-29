@@ -1,4 +1,4 @@
-import { getWebview } from './webviewRegistry';
+import { getWebview } from './webviewRegistry.js';
 
 // Contrôles média partagés (mini-barre de la Topbar + mini-lecteur flottant).
 // Tout passe par le <webview> de l'app : execution de JS pour lecture/pause et

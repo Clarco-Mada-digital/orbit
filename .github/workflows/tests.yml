@@ -1,8 +1,16 @@
 name: Tests
 
-# Tests unitaires (testeur intégré de Node, zéro dépendance) sur les modules
-# purs et critiques : partition de session, disposition de barre, raccourcis,
-# génération de mots de passe.
+# Deux jobs volontairement séparés :
+#
+#  - `test` : testeur intégré de Node, ZÉRO dépendance installée. C'est une
+#    contrainte assumée — les modules couverts (calcul, conversions, URL,
+#    dispositions, dictionnaires i18n, catalogue d'apps, sessions, raccourcis)
+#    n'importent ni React ni le store, donc la suite démarre en quelques
+#    secondes sans `npm ci`.
+#
+#  - `lint` : ESLint a besoin de ses paquets, d'où le `npm ci`. Le plafond
+#    `--max-warnings` (dans package.json) empêche la dette de repartir à la
+#    hausse : on le baisse au fur et à mesure qu'on résorbe les avertissements.
 on:
   push:
     branches: [master]
@@ -21,3 +29,14 @@ jobs:
         with:
           node-version: 22
       - run: npm test
+
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run lint
