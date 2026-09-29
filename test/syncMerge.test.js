@@ -7,6 +7,7 @@ import {
   mergeTombstones,
   hasIncomingChanges,
   reconcileLocal,
+  isSafeKey,
   summarize,
   TOMBSTONE_TTL_MS,
   SYNC_FORMAT,
@@ -280,6 +281,53 @@ test('reconcileLocal : les entités absentes de l’instantané disparaissent', 
 test('reconcileLocal : entrées vides tolérées', () => {
   assert.deepEqual(reconcileLocal(null, null), []);
   assert.deepEqual(reconcileLocal(undefined, []), []);
+});
+
+// --- Robustesse face à un fichier de synchronisation malveillant ----------
+
+test('un fichier distant ne peut pas polluer Object.prototype', () => {
+  // Le fichier transite par un dossier partagé : son contenu n'est pas de
+  // confiance. Un identifiant « __proto__ » écrit dans un objet ordinaire
+  // contaminerait TOUS les objets de l'application.
+  const local = state({ apps: [app('sain')] });
+  const remote = buildSnapshot(state(), { now: T0 });
+  remote.apps = [
+    { id: '__proto__', name: 'malveillant', polluted: 'oui', updatedAt: T0 + 1000 },
+    { id: 'constructor', name: 'malveillant', updatedAt: T0 + 1000 },
+    app('legitime', { updatedAt: T0 + 1000 }),
+  ];
+  remote.tombstones = { __proto__: T0 + 2000, constructor: T0 + 2000, sain: 0 };
+
+  const { snapshot } = mergeSnapshots(local, remote, { now: T0 + 3000 });
+
+  assert.equal({}.polluted, undefined, 'Object.prototype a été pollué');
+  assert.equal({}.name, undefined, 'Object.prototype a été pollué');
+  // Les entités dangereuses sont écartées, les légitimes passent
+  const ids = snapshot.apps.map((a) => a.id).sort();
+  assert.deepEqual(ids, ['legitime', 'sain']);
+  assert.equal(Object.keys(snapshot.tombstones).includes('__proto__'), false);
+});
+
+test('mergeTombstones : refuse les clefs dangereuses, garde les autres', () => {
+  const now = T0 + 10_000;
+  const out = mergeTombstones(
+    { __proto__: now - 1000, constructor: now - 1000, prototype: now - 1000, bonne: now - 1000 },
+    null,
+    now
+  );
+  assert.deepEqual(Object.keys(out), ['bonne']);
+  // Objet sans prototype : même une lecture de `__proto__` ne remonte rien
+  assert.equal(Object.getPrototypeOf(out), null);
+});
+
+test('isSafeKey : rejette les clefs de pollution et les valeurs non textuelles', () => {
+  assert.equal(isSafeKey('app-1'), true);
+  assert.equal(isSafeKey('__proto__'), false);
+  assert.equal(isSafeKey('constructor'), false);
+  assert.equal(isSafeKey('prototype'), false);
+  assert.equal(isSafeKey(''), false);
+  assert.equal(isSafeKey(null), false);
+  assert.equal(isSafeKey(42), false);
 });
 
 test('summarize : agrège toutes les collections', () => {

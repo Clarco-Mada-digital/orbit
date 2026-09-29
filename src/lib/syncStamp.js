@@ -17,7 +17,7 @@
 //  2. Les suppressions laissent une pierre tombale, sinon la machine d'en face
 //     conclurait « il me manque cette app » et la réinstallerait.
 // ---------------------------------------------------------------------------
-import { SYNC_COLLECTIONS } from './syncMerge.js';
+import { SYNC_COLLECTIONS, isSafeKey } from './syncMerge.js';
 
 // Deux entités diffèrent-elles sur au moins un champ synchronisé ?
 export function syncedFieldsChanged(before, after, fields) {
@@ -105,6 +105,9 @@ export const stampSync = (config) => (set, get, api) =>
         const { list, removed, changed } = stampCollection(before[key], after[key], fields, now);
         if (changed) patch[key] = list;
         for (const id of removed) {
+          // Même précaution qu'à la fusion : un identifiant d'entité ne doit
+          // jamais pouvoir s'écrire sur Object.prototype.
+          if (!isSafeKey(id)) continue;
           tombstones = tombstones || { ...(after.tombstones || {}) };
           tombstones[id] = now;
         }

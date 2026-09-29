@@ -57,6 +57,15 @@ export const TOMBSTONE_TTL_MS = 30 * 24 * 3600 * 1000;
 const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 const num = (v) => (typeof v === 'number' && Number.isFinite(v) ? v : 0);
 
+// Le fichier de synchronisation transite par un dossier partagé : son contenu
+// n'est PAS de confiance. Un identifiant d'entité valant « __proto__ » écrit
+// dans un objet ordinaire polluerait Object.prototype de toute l'application.
+// Les pierres tombales sont donc indexées par identifiant venu du distant :
+// on refuse les clefs dangereuses et on part d'un objet sans prototype.
+const UNSAFE_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
+export const isSafeKey = (k) => typeof k === 'string' && k.length > 0 && !UNSAFE_KEYS.has(k);
+export const emptyDict = () => Object.create(null);
+
 // Ne garde que les champs synchronisables d'une entité, + son horodatage.
 function pick(entity, fields, now) {
   const out = {};
@@ -79,7 +88,7 @@ export function buildSnapshot(state, { deviceId, deviceName, now = Date.now() } 
     updatedAt: now,
     settings: isObj(state.settings) ? { ...state.settings } : {},
     settingsUpdatedAt: num(state.settingsUpdatedAt) || now,
-    tombstones: isObj(state.tombstones) ? { ...state.tombstones } : {},
+    tombstones: mergeTombstones(state.tombstones, null, now),
   };
   for (const [key, fields] of Object.entries(SYNC_COLLECTIONS)) {
     const list = Array.isArray(state[key]) ? state[key] : [];
@@ -106,11 +115,11 @@ function mergeList(localList, remoteList, fields, tombstones, now) {
   const stats = { added: 0, updated: 0, removed: 0 };
 
   for (const e of localList) {
-    if (e && e.id) byId.set(e.id, { entity: pick(e, fields, now), from: 'local' });
+    if (e && isSafeKey(e.id)) byId.set(e.id, { entity: pick(e, fields, now), from: 'local' });
   }
 
   for (const r of remoteList) {
-    if (!r || !r.id) continue;
+    if (!r || !isSafeKey(r.id)) continue;
     const remote = pick(r, fields, now);
     const current = byId.get(r.id);
     if (!current) {
@@ -141,10 +150,13 @@ function mergeList(localList, remoteList, fields, tombstones, now) {
 // Union des pierres tombales, en gardant la date la plus récente, et purge de
 // celles qui ont dépassé leur durée de vie.
 export function mergeTombstones(a, b, now = Date.now()) {
-  const out = {};
+  const out = emptyDict();
   for (const src of [a, b]) {
     if (!isObj(src)) continue;
     for (const [id, at] of Object.entries(src)) {
+      // Clef venue d'un fichier qu'on ne contrôle pas : on l'écarte plutôt que
+      // de risquer une pollution de prototype.
+      if (!isSafeKey(id)) continue;
       const t = num(at);
       if (!t || now - t > TOMBSTONE_TTL_MS) continue;
       if (!out[id] || t > out[id]) out[id] = t;
