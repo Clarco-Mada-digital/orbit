@@ -47,6 +47,9 @@ export function matchShortcut(e) {
   const shift = !!e.shiftKey;
   if (k === 'k') return 'search';
   if (k === ',') return 'settings';
+  // Modifier l'URL de la page courante — surtout utile sur une page VOLANTE :
+  // s'être trompé d'un caractère ne doit pas obliger à tout fermer et rouvrir.
+  if (k === 'l') return 'edit-url';
   if (shift && k === 'o') return 'store';
   if (shift && k === 'p') return 'profiles';
   if (shift && k === 'm') return 'mark-all-read';
@@ -95,6 +98,8 @@ export function matchShortcutInput(input) {
   const shift = !!input.shift;
   if (k === 'k') return 'search';
   if (k === ',') return 'settings';
+  // Même geste que côté renderer : Alt+L / ⌘L.
+  if (k === 'l') return 'edit-url';
   if (shift && k === 'o') return 'store';
   if (shift && k === 'p') return 'profiles';
   if (shift && k === 'm') return 'mark-all-read';

@@ -1,5 +1,5 @@
 import { Fragment, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Moon, Play, X, Columns2, Rows2, Wifi, KeyRound, Plus, Copy, ExternalLink } from 'lucide-react';
+import { Moon, Play, X, Columns2, Rows2, Wifi, KeyRound, Plus, Copy, ExternalLink, Globe } from 'lucide-react';
 import Sidebar from './components/Sidebar';
 import Topbar from './components/Topbar';
 import Bottombar from './components/Bottombar';
@@ -16,6 +16,7 @@ const AppStore = lazy(() => import('./components/AppStore'));
 import WebView from './components/WebView';
 import GuestContextMenu from './components/GuestContextMenu';
 import WebDialogHost from './components/WebDialogHost';
+import EditUrlDialog from './components/EditUrlDialog';
 import LockScreen from './components/LockScreen';
 import FindBar from './components/FindBar';
 import UpdateBanner from './components/UpdateBanner';
@@ -74,6 +75,7 @@ export default function App() {
   const [showAppStore, setShowAppStore] = useState(false);
   const [storePrefill, setStorePrefill] = useState(null); // app personnalisée pré-remplie depuis une page volante
   const [flyMenu, setFlyMenu] = useState(null); // { x, y, page } — menu contextuel d'une page volante
+const [editUrlFor, setEditUrlFor] = useState(null); // { id, url } — boîte « modifier l'adresse »
   const [showVault, setShowVault] = useState(false);
   const t = useT();
   const [captive, setCaptive] = useState(null); // { detected, url } | null
@@ -702,10 +704,34 @@ export default function App() {
     }
   }, [settings, activeProfile, profiles]);
 
+  // Ouvre `url` DANS la page `id` : on la pilote comme une app, mais sans passer
+// par openFlyPage — celui-ci cherche une page existante par URL et peut en créer
+// une seconde. Ici on corrige l'adresse de celle qui est déjà là, en gardant
+// son <webview> (donc son état de navigation).
+const navigateToUrl = useCallback((id, url) => {
+  if (!navigateApp(id, url)) return;
+  const st = useStore.getState();
+  if (st.flyPages.some((p) => p.id === id)) {
+    st.updateApp(id, { url });
+  }
+}, []);
+
+const openEditUrl = useCallback((id) => {
+  const st = useStore.getState();
+  const target =
+    st.flyPages.find((p) => p.id === id) || st.apps.find((a) => a.id === id) || null;
+  if (!target) return;
+  setEditUrlFor({ id, url: target.url || target.homeUrl || '' });
+}, []);
+
   // Exécute une action de raccourci (nom centralisé dans lib/shortcuts.js)
   const runShortcut = useCallback((action) => {
     if (action === 'search') return setShowQuickSwitcher((v) => !v);
     if (action === 'settings') return setShowSettings((v) => !v);
+    // Modifier l'adresse de la page courante : indispensable sur une page
+    // volante, qui n'a pas de champ d'URL et se corrigait jusqu'ici en
+    // fermant tout.
+    if (action === 'edit-url') return openEditUrl(useStore.getState().activeApp);
     if (action === 'store') return setShowAppStore((v) => !v);
     if (action === 'profiles') return setShowProfileManager((v) => !v);
     if (action === 'find') {
@@ -775,7 +801,7 @@ export default function App() {
     if (action === 'zoom-in') adjustAppZoom(activeApp, 0.1);
     else if (action === 'zoom-out') adjustAppZoom(activeApp, -0.1);
     else if (action === 'zoom-reset') resetAppZoom(activeApp);
-  }, []);
+  }, [openEditUrl]);
 
   // Raccourcis clavier quand le focus est dans l'interface (sidebar, topbar…)
   useEffect(() => {
@@ -1318,6 +1344,17 @@ export default function App() {
             >
               <Plus size={14} /> {t('fly.addAsApp')}
             </button>
+            {/* Modifier l'adresse : une faute de frappe sur une URL libre
+                ne devrait pas obliger à fermer la page et la rouvrir. */}
+            <button
+              className="w-full text-left px-3 py-2 hover:bg-bg-hover flex items-center gap-2"
+              onClick={() => {
+                openEditUrl(flyMenu.page.id);
+                setFlyMenu(null);
+              }}
+            >
+              <Globe size={14} /> {t('fly.editUrl')}
+            </button>
             <button
               className="w-full text-left px-3 py-2 hover:bg-bg-hover flex items-center gap-2"
               onClick={() => {
@@ -1351,6 +1388,17 @@ export default function App() {
       )}
 
       {/* Coffre-fort de mots de passe en overlay (bouton « trousseau » de la barre) */}
+      {editUrlFor && (
+        <EditUrlDialog
+          initialUrl={editUrlFor.url}
+          onClose={() => setEditUrlFor(null)}
+          onSubmit={(url) => {
+            navigateToUrl(editUrlFor.id, url);
+            setEditUrlFor(null);
+          }}
+        />
+      )}
+
       {showVault && (
         <div
           className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center animate-fade-in p-4"
