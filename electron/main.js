@@ -7,6 +7,8 @@ import { unpackCrx } from './crx.js';
 import { init as initKeepass, setEnabled as keepassSetEnabled, getLogins as keepassGetLogins, associate as keepassAssociate, checkStatus as keepassCheckStatus } from './keepass.js';
 import * as security from './security.js';
 import * as adblock from './adblock.js';
+import * as shields from './shields.js';
+import * as shieldRules from './shields-rules.js';
 import * as vault from './vault.js';
 import * as sitePermissions from './site-permissions.js';
 import * as tts from './tts.js';
@@ -14,6 +16,7 @@ import * as downloader from './downloader.js';
 import electronUpdater from 'electron-updater';
 import { matchShortcutInput } from '../src/lib/shortcuts.js';
 import { matchLinkRule } from '../src/lib/rules.js';
+import { getDomain } from 'tldts-experimental';
 import { fileURLToPath } from 'url';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -227,6 +230,22 @@ app.on('web-contents-created', (event, contents) => {
   } catch (err) {
     console.error('[orbit] guest UA failed:', err);
   }
+  // Origine du site affichée, pour les Boucliers : c'est elle qui donne accès
+  // aux réglages réseau (HTTPS, scripts, cookies, empreinte). Posée ICI plutôt
+  // que dans did-attach-webview pour couvrir aussi les webviews des fenêtres
+  // secondaires (popups), qui n'attachent pas au did-attach de la fenêtre principale.
+  const trackOrigin = () => {
+    try {
+      if (!contents.isDestroyed()) shields.setContentsOrigin(contents.id, contents.getURL());
+    } catch {
+      /* ignore */
+    }
+  };
+  trackOrigin();
+  contents.on('did-start-loading', trackOrigin);
+  contents.on('did-navigate', trackOrigin);
+  contents.on('did-frame-navigate', trackOrigin);
+  contents.once('destroyed', () => shields.clearContentsOrigin(contents.id));
   // À chaque chargement de page : republier la config Fake Data personnalisée
   // (email, nom, ville…) dans le DOM. Le content script de l'extension Fake
   // Data lit l'attribut data-orbit-fake-data — sans ce push, une page fraîche
@@ -354,11 +373,98 @@ function stripFramingHeaders(headers) {
 // la session ne suffit pas à savoir de quelle app vient une requête.
 const adblockOverrides = new Map();
 
+// Ordre de priorité pour le blocage de pub/traceurs :
+//   1. boucliers DU SITE : `enabled: false` coupe TOUT, `adblock: 'off'`
+//      coupe le blocage de pubs/traceurs en gardant les autres protections
+//      (HTTPS, cookies, empreinte) ;
+//   2. réglage par APP ('off'/'on') ;
+//   3. réglage global.
+//
+// `enabled: false` sur un site est un refus explicite de l'utilisateur : il doit
+// l'emporter sur les valeurs par défaut, sinon « couper » ne couperait rien
+// pour les sites jamais personnalisés.
 function adblockActiveFor(webContentsId) {
+  const site = webContentsId != null ? shields.getSettingsForContents(webContentsId) : null;
+  if (site) {
+    if (site.enabled === false) return false;
+    if (site.adblock === 'off') return false;
+  }
   const mode = webContentsId != null ? adblockOverrides.get(webContentsId) : undefined;
   if (mode === 'off') return false;
   if (mode === 'on') return true;
   return adblock.getState().enabled;
+}
+
+// ---------------------------------------------------------------------------
+// Boucliers avancés : appliqués requête par requête, à partir des réglages de
+// l'ORIGINE DU SITE (pas de l'URL de la requête). Un réglage posé sur
+// news.example.com vaut pour tous ses CDN et scripts tiers, comme dans Brave.
+//
+// Les DÉCISIONS vivent dans shields-rules.js (logique pure, testée sans
+// Electron). Ici on ne fait que les traduire en appels réseau.
+// ---------------------------------------------------------------------------
+function shieldSettingsFor(webContentsId) {
+  if (webContentsId == null) return null;
+  // webContents inconnu de la Map (webview tout juste créé) : on retombe sur
+  // les valeurs par défaut — mieux vaut une protection que pas de protection.
+  return shields.getSettingsForContents(webContentsId);
+}
+
+// Domaines enregistrables du site affiché et de la requête. `details.frame`
+// pointe la frame qui émet : pour un mainFrame c'est le site lui-même, pour
+// une sous-frame ou une ressource, `.top` remonte à la page hôte.
+function shieldDomains(details) {
+  let reqDomain = null;
+  try {
+    reqDomain = getDomain(new URL(details.url).hostname) || new URL(details.url).hostname;
+  } catch {
+    reqDomain = null;
+  }
+  let topOrigin = null;
+  if (details.resourceType === 'mainFrame') {
+    topOrigin = shields.originOf(details.url);
+  } else {
+    try {
+      const topUrl = details.frame && details.frame.top ? details.frame.top.url : '';
+      topOrigin = shields.originOf(topUrl);
+    } catch {
+      topOrigin = null;
+    }
+  }
+  const siteDomain = topOrigin ? getDomain(new URL(topOrigin).hostname) : null;
+  return { siteDomain, reqDomain };
+}
+
+// Etape 1 — onBeforeRequest : mise à niveau HTTPS + blocage des scripts.
+// Renvoie true si la requête a été traitée (et `done` a été appelé).
+function shieldsBeforeRequest(details, done) {
+  const site = shieldSettingsFor(details.webContentsId);
+  const decision = shieldRules.decideRequest(site, details);
+  if (!decision) return false;
+  if (decision.action === 'redirect') {
+    adblock.recordBlock(details.webContentsId, hostOfUrl(decision.url), 'mainFrame', 'https');
+    done({ redirectURL: decision.url });
+    return true;
+  }
+  if (decision.action === 'cancel') {
+    adblock.recordBlock(
+      details.webContentsId,
+      decision.domain || hostOfUrl(details.url),
+      decision.resourceType || 'other',
+      decision.reason
+    );
+    done({ cancel: true });
+    return true;
+  }
+  return false;
+}
+
+function hostOfUrl(url) {
+  try {
+    return new URL(url).hostname.replace(/^www\./, '');
+  } catch {
+    return '';
+  }
 }
 
 ipcMain.handle('adblock:setForContents', (_event, { webContentsId, mode } = {}) => {
@@ -386,6 +492,9 @@ function setupHeaderBypass(ses) {
   try {
     // Blocage réseau des pubs/traceurs (no-op si l'adblock est désactivé)
     ses.webRequest.onBeforeRequest((details, callback) => {
+      // Boucliers avancés d'abord : une redirection HTTPS ou un script bloqué
+      // n'a pas à passer par le moteur de listes.
+      if (shieldsBeforeRequest(details, callback)) return;
       adblock.beforeRequest(ses, details, callback, adblockActiveFor(details.webContentsId));
     });
 
@@ -401,6 +510,11 @@ function setupHeaderBypass(ses) {
         const headers = { ...(adResp.responseHeaders || details.responseHeaders) };
         // 3) Puis on lève X-Frame-Options / frame-ancestors pour l'embarquement
         stripFramingHeaders(headers);
+        // 4) Enfin, les boucliers : un Set-Cookie tiers refusé ici (le Cookie
+        //    correspondant a été retiré en onBeforeSendHeaders).
+        if (shieldsHeadersReceived(details)) {
+          stripResponseHeader(headers, 'set-cookie');
+        }
         callback({ ...adResp, responseHeaders: headers });
       }, adblockActiveFor(details.webContentsId));
     });
@@ -1333,6 +1447,19 @@ function buildGuestContextMenu(wc, params) {
 // ---------------------------------------------------------------------------
 const googleUASessions = new WeakSet();
 
+// Retire un en-tête des EN-TÊTES DE RÉPONSE (Set-Cookie). Renvoie true s'il a
+// été supprimé : permet d'éviter de réécrire la réponse si de rien n'a bougé.
+function stripResponseHeader(headers, target) {
+  const lower = target.toLowerCase();
+  let removed = false;
+  for (const key of Object.keys(headers)) {
+    if (key.toLowerCase() !== lower) continue;
+    delete headers[key];
+    removed = true;
+  }
+  return removed;
+}
+
 function setupGoogleUA(ses) {
   if (!ses || !ses.webRequest || googleUASessions.has(ses)) return;
   googleUASessions.add(ses);
@@ -1344,11 +1471,41 @@ function setupGoogleUA(ses) {
         /(^|\.)google\.\w+$/.test(host) ||
         /(^|\.)(gstatic|googleusercontent|googleapis|ggpht|googlevideo)\.com$/.test(host);
       if (isGoogle) headers['User-Agent'] = GOOGLE_UA;
+      shieldsBeforeSendHeaders(details, headers);
       callback({ requestHeaders: headers });
+      return;
     });
   } catch (err) {
     console.error('[orbit] google UA rewrite failed:', err);
   }
+}
+
+// Etape 2 — onBeforeSendHeaders : cookies tiers + réduction d'empreinte.
+// Les règles sont dans shields-rules.js ; on ne fait qu'appliquer les verdicts
+// à l'objet d'en-têtes.
+function shieldsBeforeSendHeaders(details, headers) {
+  const site = shieldSettingsFor(details.webContentsId);
+  if (!site || site.enabled === false) return;
+
+  const { siteDomain, reqDomain } = shieldDomains(details);
+  if (shieldRules.shouldStripCookieHeader(site, siteDomain, reqDomain)) {
+    stripResponseHeader(headers, 'cookie');
+  }
+  for (const key of shieldRules.headersToStrip(site, headers)) {
+    delete headers[key];
+  }
+  Object.assign(headers, shieldRules.headersToAdd(site));
+}
+
+// Etape 3 — onHeadersReceived : refus du Set-Cookie quand le Cookie de la
+// requête a été retiré (voir shieldsBeforeSendHeaders). Sans cela, Chromium
+// garderait le cookie et le renverrait à la requête suivante — le blocage
+// « tiers » ne tiendrait pas.
+function shieldsHeadersReceived(details) {
+  const site = shieldSettingsFor(details.webContentsId);
+  if (!site || site.enabled === false) return false;
+  const { siteDomain, reqDomain } = shieldDomains(details);
+  return shieldRules.shouldStripSetCookie(site, siteDomain, reqDomain);
 }
 
 // ---------------------------------------------------------------------------
@@ -2139,6 +2296,11 @@ function createWindow() {
       }
     });
 
+    // Réinitialise les stats de blocage au début de chaque chargement de page.
+    guestContents.on('did-start-loading', () => adblock.clearBlockedStats(guestContents.id));
+
+    
+
     // Filtrage cosmétique de l'adblock : masque les emplacements publicitaires
     // résiduels (cadres vides). On injecte le CSS calculé pour l'URL à chaque
     // chargement de page (insertCSS — compatible Electron 33).
@@ -2155,6 +2317,8 @@ function createWindow() {
     };
     guestContents.on('dom-ready', injectCosmetics);
     guestContents.on('did-frame-navigate', injectCosmetics);
+
+    
 
     // Menu contextuel natif (clic droit) : copier/enregistrer une image,
     // ouvrir/copier/télécharger un lien, rechercher la sélection, couper/
@@ -3131,6 +3295,24 @@ ipcMain.handle('miniplayer:action', (_e, action = {}) => {
 // ---------------------------------------------------------------------------
 ipcMain.handle('adblock:setEnabled', (_e, on) => adblock.setEnabled(on));
 ipcMain.handle('adblock:getState', () => adblock.getState());
+
+// Bloqueur de pub (Shields) par site / origine
+ipcMain.handle('shields:getSiteSettings', (_e, url) => shields.getSiteSettings(shields.originOf(url)));
+ipcMain.handle('shields:updateSiteSettings', (_e, url, updates) =>
+  shields.updateSiteSettings(shields.originOf(url), updates)
+);
+ipcMain.handle('shields:resetSiteSettings', (_e, url) => shields.resetSiteSettings(shields.originOf(url)));
+ipcMain.handle('shields:getDefaults', () => shields.getDefaults());
+ipcMain.handle('shields:updateDefaults', (_e, updates) => shields.updateDefaults(updates));
+ipcMain.handle('shields:listSites', () => shields.listSites());
+
+ipcMain.handle('shields:getBlockedStats', (_e, webContentsId) =>
+  adblock.getBlockedStats(Number(webContentsId))
+);
+ipcMain.handle('shields:clearBlockedStats', (_e, webContentsId) =>
+  adblock.clearBlockedStats(Number(webContentsId))
+);
+
 
 // Config de traduction (langue cible + moteur Google/LibreTranslate)
 ipcMain.handle('translate:setConfig', (_e, cfg = {}) => {
@@ -4575,6 +4757,9 @@ app.whenReady().then(() => {
   // renderer depuis les réglages ; ici on prépare juste le chemin du cache.
   adblock.initAdblock(app.getPath('userData'), false);
 
+  // Initialisation des Boucliers (Shields)
+  shields.init(app.getPath('userData'));
+
   // Bypass + permissions + téléchargements pour la session principale (React)
   setupHeaderBypass(session.defaultSession);
   setupGoogleUA(session.defaultSession);
@@ -4671,7 +4856,50 @@ try {
   /* powerMonitor n'émet pas ces événements partout */
 }
 
+// « Oublier ce site à la fermeture » : on purge cookies et stockages de chaque
+// origine concernée dans TOUTES les partitions connues (une même app peut avoir
+// été ouverte sous plusieurs profils). L'opération est best-effort : au moment
+// du quit, l'app part de toute façon.
+function forgetShieldSites() {
+  const origins = shields.sitesToForget();
+  if (!origins.length) return;
+  const partitions = new Set(['default', ...knownPartitions]);
+  for (const partition of partitions) {
+    let ses = null;
+    try {
+      ses = session.fromPartition(partition);
+    } catch {
+      ses = null;
+    }
+    if (!ses) continue;
+    for (const origin of origins) {
+      // cookies.remove exige un NOM : on liste donc ceux du domaine d'abord.
+      // `clearStorageData({ origin })` vide en revanche localStorage, IndexedDB,
+      // Cache Storage et service workers d'un coup.
+      try {
+        const host = new URL(origin).hostname;
+        ses.cookies
+          .get({ domain: host })
+          .then((cookies) =>
+            Promise.all(
+              cookies.map((c) => ses.cookies.remove(cookieSetUrl(c), c.name).catch(() => {}))
+            )
+          )
+          .catch(() => {});
+        ses.clearStorageData({ origin }).catch(() => {});
+      } catch {
+        /* ignore */
+      }
+    }
+  }
+}
+
 app.on('will-quit', () => {
+  try {
+    forgetShieldSites();
+  } catch {
+    /* ignore */
+  }
   try {
     globalShortcut.unregisterAll();
   } catch {

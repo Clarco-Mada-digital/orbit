@@ -28,6 +28,33 @@ let enabled = false;
 let cachePath = null;
 let loadingPromise = null;
 
+// Compteur de requêtes bloquées par webContents (par ID) : vidé à chaque
+// chargement de page, et utilisé pour afficher le panneau « Boucliers » de l'app.
+// On ne garde que les infos nécessaires à l'UI, pas les URLs complètes
+// (confidentialité) : le domaine, le type de ressource et la raison du blocage.
+const blockedRequests = new Map(); // webContentsId -> Map<clé, { type, domain, reason }>
+
+// Clé de dédoublonnage : un site-charge qui demande 40 fois la même pub ne
+// compte qu'une fois, sinon le compteur du panneau devient illisible (et les
+// statistiques « par domaine » aussi).
+function blockKey(domain, type, reason) {
+  return `${reason}|${type}|${domain}`;
+}
+
+// Enregistre un blocage et renvoie true s'il est nouveau pour cette page.
+// `reason` ∈ 'ads' | 'trackers' | 'script' | 'https' : le panneau affiche un
+// décompte par catégorie, pas un total indifférencié.
+export function recordBlock(webContentsId, domain, type = 'other', reason = 'ads') {
+  if (webContentsId == null) return false;
+  const id = contentId(webContentsId);
+  const blocks = blockedRequests.get(id) || new Map();
+  const key = blockKey(domain, type, reason);
+  if (blocks.has(key)) return false;
+  blocks.set(key, { type, domain, reason });
+  blockedRequests.set(id, blocks);
+  return true;
+}
+
 // Un BlockingContext par session (fournit les handlers onBeforeRequest /
 // onHeadersReceived publics, SANS enregistrer d'écouteur webRequest).
 const contexts = new WeakMap();
@@ -75,7 +102,26 @@ function contextFor(ses) {
 export function beforeRequest(ses, details, callback, active = enabled) {
   if (active && blocker) {
     const ctx = contextFor(ses);
-    if (ctx) return ctx.onBeforeRequest(details, callback);
+    if (ctx) {
+      // Pour compter les requêtes bloquées : on laisse `ctx.onBeforeRequest`
+      // décider, et on n'enregistre que si sa réponse annule la requête.
+      return ctx.onBeforeRequest(details, (response) => {
+        if (response && response.cancel) {
+          try {
+            const u = new URL(details.url);
+            recordBlock(
+              details.webContentsId,
+              u.hostname.replace(/^www\./, ''),
+              details.resourceType || 'other',
+              guessReason(u.hostname)
+            );
+          } catch {
+            /* URL illisible : on bloque sans compter */
+          }
+        }
+        callback(response);
+      });
+    }
   }
   callback({}); // laisser passer
 }
@@ -89,6 +135,16 @@ export function headersReceived(ses, details, callback, active = enabled) {
     if (ctx) return ctx.onHeadersReceived(details, callback);
   }
   callback({}); // aucune modification côté adblock
+}
+
+// Catégorise un blocage pour l'UI. L'adblocker ne dit pas POURQUOI il bloque,
+// et les listes qu'on embarque sont mélangées : on approxime sur le nom
+// d'hôte, en restant conservatrice (le doute va vers « publicité »).
+const TRACKER_HINTS =
+  /(?:^|\.)(?:google-analytics\.com|googletagmanager\.com|doubleclick\.net|facebook\.(?:net|com)|connect\.facebook\.net|hotjar\.com|hotjar\.io|mixpanel\.com|segment\.(?:io|com)|amplitude\.com|sentry\.io|bugsnag\.com|fullstory\.com|intercom\.io|crisp\.chat|taboola\.com|outbrain\.com|branch\.io|matomo\.cloud|criteo\.com|quantserve\.com|scorecardresearch\.com|newrelic\.com|datadoghq\.com|segment\.com)$/;
+
+function guessReason(hostname) {
+  return TRACKER_HINTS.test(String(hostname || '')) ? 'trackers' : 'ads';
 }
 
 // Charge le moteur si besoin — appelé quand une app force le blocage alors que
@@ -148,4 +204,53 @@ export function getCosmeticStyles(url, active = enabled) {
 
 export function getState() {
   return { enabled };
+}
+
+// Renvoie les statistiques de blocage d'un webContents, pour le panneau UI.
+// `domains` : la liste des sites bloqués (dédupliquée, ordre d'arrivée) ;
+// `byReason` : le décompte par catégorie, pour distinguer pubs et traceurs ;
+// `total` : le nombre de requêtes réellement annulées.
+const REASON_ORDER = ['ads', 'trackers', 'script', 'https'];
+
+export function getBlockedStats(webContentsId) {
+  const blocks = blockedRequests.get(contentId(webContentsId));
+  if (!blocks || blocks.size === 0) {
+    return { total: 0, domains: [], byReason: emptyReasons() };
+  }
+  const byReason = emptyReasons();
+  const domains = [];
+  const seen = new Set();
+  for (const { domain, reason } of blocks.values()) {
+    if (domain && !seen.has(domain)) {
+      seen.add(domain);
+      domains.push(domain);
+    }
+    if (reason in byReason) byReason[reason] += 1;
+  }
+  return {
+    total: blocks.size,
+    // `count` reste le nom historique lu par l'UI : on le conserve pour ne pas
+    // casser un composant qui l'attendrait encore.
+    count: blocks.size,
+    domains,
+    byReason,
+  };
+}
+
+function emptyReasons() {
+  const out = {};
+  for (const r of REASON_ORDER) out[r] = 0;
+  return out;
+}
+
+// Réinitialise les statistiques d'un webContents (à chaque chargement de page).
+export function clearBlockedStats(webContentsId) {
+  blockedRequests.delete(contentId(webContentsId));
+}
+
+// Les deux accès ci-dessus reçoivent un id venue de l'IPC : on normalise une
+// fois pour ici plutôt que de comparer `1` et `'1'` partout.
+function contentId(webContentsId) {
+  const id = Number(webContentsId);
+  return Number.isInteger(id) ? id : webContentsId;
 }

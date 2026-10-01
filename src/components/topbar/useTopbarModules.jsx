@@ -21,6 +21,8 @@ import {
   Plus,
   Trash2,
   KeyRound,
+  ShieldCheck,
+  ShieldOff,
 } from 'lucide-react';
 import { useStore, appVisibleIn } from '../../stores/useStore';
 import { layoutsFor, layoutFor, areaLetter } from '../../lib/splitLayouts';
@@ -28,7 +30,7 @@ import { useT } from '../../lib/i18n';
 import { useZoneHold } from '../../lib/autoHide';
 import { useGuestDismiss } from '../../lib/useDismiss';
 import { useLoadingStore } from '../../lib/loadingStore';
-import { getWebview, reloadApp } from '../../lib/webviewRegistry';
+import { getWebContentsIdFor, getWebview, reloadApp } from '../../lib/webviewRegistry';
 import { appPartition } from '../../lib/session';
 import OrbitLogo from '../OrbitLogo';
 import AppIcon from '../AppIcon';
@@ -40,6 +42,115 @@ import BatteryWidget from './BatteryWidget';
 import FocusTimer from './FocusTimer';
 import SystemWidget from './SystemWidget';
 import ProfileWidget from './ProfileWidget';
+import ShieldsPanel from './ShieldsPanel';
+
+function ShieldsButton({ appId, webContentsId, url, menuAlign, menuPos, t }) {
+  const [show, setShow] = useState(false);
+  // Le compteur est MÉMORISÉ AVEC l'id du webview qui l'a produit : sans ça,
+  // changer d'app affiche le badge de la précédente tant que la première
+  // requête n'est pas revenue.
+  const [badge, setBadge] = useState({ id: null, total: 0 });
+  const [siteEnabled, setSiteEnabled] = useState(true);
+
+  // Un <webview> n'est interrogeable qu'une fois attaché et après `dom-ready`.
+  // Au premier rendu ce n'est presque jamais le cas, et rien ne garantit un
+  // nouveau rendu à ce moment-là — sans ce sondage, le badge resterait à 0
+  // jusqu'au prochain rendu quelconque. On réessaie quelques fois, puis on
+  // arrête (au-delà, l'id n'apparaîtra plus).
+  const [polled, setPolled] = useState({ appId: null, id: null });
+  // L'id sondé n'est retenu que s'il appartient à l'app courante : quand on change
+  // d'app, le parent fournit déjà le bon `webContentsId` (ou null), donc aucune
+  // recopie de prop dans un état n'est nécessaire.
+  const wcId = polled.appId === appId && polled.id !== null ? polled.id : webContentsId;
+
+  useEffect(() => {
+    if (wcId || !appId) return undefined;
+    let tries = 0;
+    const id = setInterval(() => {
+      tries += 1;
+      const found = getWebContentsIdFor(appId);
+      if (found !== null) {
+        setPolled({ appId, id: found });
+        clearInterval(id);
+      } else if (tries >= 40) {
+        clearInterval(id);
+      }
+    }, 250);
+    return () => clearInterval(id);
+  }, [wcId, appId]);
+
+  const total = badge.id === wcId ? badge.total : 0;
+
+  // Le badge ne compte que les requêtes annulées. L'interrogation est partagée
+  // avec le panneau (qui rafraîchit aussi toutes les 5 s) : une seule horloge
+  // pour les deux, sinon le compteur « saute » à l'ouverture du panneau.
+  useEffect(() => {
+    if (!wcId) return;
+    let alive = true;
+    const fetchStats = async () => {
+      const s = await window.electronAPI?.shields?.getBlockedStats(wcId);
+      if (alive && s) setBadge({ id: wcId, total: s.total || 0 });
+    };
+    fetchStats();
+    const interval = setInterval(fetchStats, 5000);
+    return () => {
+      alive = false;
+      clearInterval(interval);
+    };
+  }, [wcId]);
+
+  // L'icône suit l'état des boucliers DU SITE : barrée quand ils sont coupés.
+  // Rafraîchit à chaque navigation (le site courant peut changer).
+  useEffect(() => {
+    let alive = true;
+    const read = async () => {
+      const origin = (() => {
+        try {
+          return new URL(url).origin;
+        } catch {
+          return null;
+        }
+      })();
+      if (!origin || !alive) {
+        if (alive) setSiteEnabled(true);
+        return;
+      }
+      const s = await window.electronAPI?.shields?.getSiteSettings(origin);
+      if (alive && s) setSiteEnabled(s.enabled !== false);
+    };
+    read();
+    return () => {
+      alive = false;
+    };
+  }, [url]);
+
+  return (
+    <div className="relative">
+      <button
+        onClick={() => setShow(!show)}
+        className={`btn-icon relative ${show ? 'bg-bg-hover' : ''}`}
+        title={t('shields.title')}
+      >
+        {siteEnabled ? <ShieldCheck size={18} /> : <ShieldOff size={18} className="text-error" />}
+        {total > 0 && (
+          <span className="absolute -top-0.5 -right-0.5 min-w-4 h-4 px-1 rounded-full bg-error text-white text-[10px] font-bold flex items-center justify-center">
+            {total > 99 ? '99+' : total}
+          </span>
+        )}
+      </button>
+      {show && (
+        <div className={`absolute ${menuAlign} ${menuPos} z-50`}>
+          <ShieldsPanel
+            webContentsId={wcId}
+            url={url}
+            onClose={() => setShow(false)}
+            onSiteEnabledChange={setSiteEnabled}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
 
 // Icône d'une extension dans une barre (comme la barre d'extensions d'un
 // navigateur). Les infos (nom, icône, page d'options) sont chargées une fois
@@ -130,6 +241,7 @@ export function useTopbarModules({ onOpenQuickSwitcher, onOpenVault, placement =
     activeApp,
     activeProfile,
     apps,
+    flyPages,
     extensions,
     updateExtensions,
     updateApp,
@@ -162,6 +274,7 @@ export function useTopbarModules({ onOpenQuickSwitcher, onOpenVault, placement =
   const wsMenuRef = useRef(null);
   const [wsSaving, setWsSaving] = useState(false);
   const [wsName, setWsName] = useState('');
+  const [showShieldsPanel, setShowShieldsPanel] = useState(false); // New state for ShieldsPanel
   // État du coffre : au moins un trousseau ouvert ? (pour la pastille du bouton)
   const [vaultLocked, setVaultLocked] = useState(true);
   useEffect(() => {
@@ -190,7 +303,15 @@ export function useTopbarModules({ onOpenQuickSwitcher, onOpenVault, placement =
   useZoneHold(placement, 'split', showSplitMenu);
   useZoneHold(placement, 'workspaces', showWsMenu);
 
-  const app = apps.find((a) => a.id === activeApp);
+  // L'app active peut être une APPLICATION ou une PAGE VOLANTE (un onglet
+// d'URL libre) : les deux vivent dans des listes distinctes du store
+// (`apps` / `flyPages`). Chercher dans `apps` seul renvoyait `undefined` sur
+// toute page volante, ce qui faisait disparaître d'un coup TOUS les modules
+// dépendants de `app` — dont Boucliers, alors que la protection réseau, elle,
+// s'appliquait bien (elle est posée sur la partition, pas sur la liste).
+const app = apps.find((a) => a.id === activeApp)
+    || flyPages.find((p) => p.id === activeApp)
+    || null;
 
   // Partition de l'app active : la page d'options des extensions doit tourner
   // dans CETTE partition pour que leur chrome.storage soit partagé avec les
@@ -347,9 +468,10 @@ export function useTopbarModules({ onOpenQuickSwitcher, onOpenVault, placement =
     setShowSplitMenu(false);
     setShowWsMenu(false);
     setShowNotifPanel(false);
+    setShowShieldsPanel(false);
   }, []);
   useGuestDismiss(
-    Boolean(extMenu) || showSplitMenu || showWsMenu || showNotifPanel,
+    Boolean(extMenu) || showSplitMenu || showWsMenu || showNotifPanel || showShieldsPanel,
     closeMenus
   );
 
@@ -1098,12 +1220,36 @@ export function useTopbarModules({ onOpenQuickSwitcher, onOpenVault, placement =
         return <SystemWidget key={key} />;
       case 'profile':
         return <ProfileWidget key={key} placement={placement} align={menuAlign} />;
+      case 'shields':
+        // Le bouton est rendu même quand l'identifiant manque : un <webview> pas
+        // encore attaché vaut null, pas une exception. Le bouton s'affiche alors
+        // sans badge ni panneau, ce qui vaut mieux qu'un emplacement vide qui
+        // risque de ne jamais se repeupler.
+        //
+        // La garde porte sur `app`, PAS sur `activeApp` : l'id d'app active peut
+        // être périmé (app fermée pendant que la barre se redessine), auquel cas
+        // `apps.find` renvoie undefined. Tester `activeApp` ne protège de rien.
+        return (
+          <Fragment key={key}>
+            {app && (
+              <ShieldsButton
+                appId={app.id}
+                webContentsId={getWebContentsIdFor(app.id)}
+                url={app.url}
+                menuAlign={menuAlign}
+                menuPos={menuPos}
+                t={t}
+              />
+            )}
+          </Fragment>
+        );
       case 'divider':
         return <div key={key} className="w-px h-5 bg-border flex-shrink-0" />;
       default:
         return null;
     }
   };
+
 
   return renderModule;
 }

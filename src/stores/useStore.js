@@ -530,9 +530,12 @@ export const useStore = create(
             ...state.flyPages,
             {
               id,
-              // Rattachée au profil courant : elle suit les mêmes règles de
-              // verrouillage et de visibilité que les apps de ce profil.
-              profileId: state.activeProfile,
+              // Portée « tous les profils » : une page volante n'est pas une
+              // application, elle n'appartient à aucun profil. La montrer dans
+              // chaque profil (et non seulement celui au moment de l'ouverture)
+              // est la seule chose cohérente — sinon basculer de profil
+              // faisait disparaître une page qu'on est en train de lire.
+              scope: 'all',
               // Partition jetable, distincte de toute app : consulter un lien
               // ne doit pas toucher aux cookies d'un compte connecté.
               sessionKey: `fly:${id}`,

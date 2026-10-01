@@ -16,6 +16,23 @@ export function getWebview(appId) {
   return registry.get(appId) || null;
 }
 
+// Identifiant du webContents d'une app, ou null si elle n'est pas encore
+// interrogeable. `getWebContentsId` LÈVE une exception tant que le <webview>
+// n'est pas attaché au DOM et n'a pas émis `dom-ready` — ce qui est
+// systématiquement le cas pendant un rendu. Les appels doivent donc passer par
+// ici : les boutons de la Topbar sont rendus avant que la page ait fini de
+// démarrer, et une exception à ce moment-là ferait tomber tout le <Topbar>
+// (et non seulement le bouton concerné) dans l'ErrorBoundary.
+export function getWebContentsIdFor(appId) {
+  const wv = registry.get(appId);
+  if (!wv) return null;
+  try {
+    return wv.getWebContentsId();
+  } catch {
+    return null;
+  }
+}
+
 // Toutes les <webview> montées (apps ouvertes/vivantes). Sert à recharger les
 // pages après un changement d'extensions : les content scripts ne s'injectent
 // que lors d'une navigation POSTÉRIEURE au chargement de l'extension.

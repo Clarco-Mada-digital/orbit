@@ -13,7 +13,7 @@ export const TOPBAR_ZONES = ['left', 'center', 'right'];
 export const DEFAULT_TOPBAR = {
   left: ['logo', 'nav', 'appTitle', 'zoom'],
   center: ['search'],
-  right: ['extensions', 'split', 'workspaces', 'favorite', 'nowPlaying', 'downloads', 'notifications'],
+  right: ['shields', 'extensions', 'split', 'workspaces', 'favorite', 'nowPlaying', 'downloads', 'notifications'],
 };
 
 // Disposition par défaut de la barre du bas (désactivée par défaut).
@@ -45,6 +45,7 @@ export const TOPBAR_MODULES = [
   { id: 'battery', labelKey: 'tbm.battery', descKey: 'tbm.battery.desc' },
   { id: 'focus', labelKey: 'tbm.focus', descKey: 'tbm.focus.desc' },
   { id: 'system', labelKey: 'tbm.system', descKey: 'tbm.system.desc' },
+  { id: 'shields', labelKey: 'shields.module', descKey: 'shields.moduleDesc' },
   { id: 'divider', labelKey: 'tbm.divider', descKey: 'tbm.divider.desc', repeatable: true },
 ];
 

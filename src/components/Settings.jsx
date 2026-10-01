@@ -33,6 +33,7 @@ import TopbarSettings from './TopbarSettings';
 import { shortcutKeys } from '../lib/shortcuts';
 import { useT } from '../lib/i18n';
 import SitePermissions from './SitePermissions';
+import ShieldSettings from './ShieldSettings';
 import { getBuiltinSound, resolveSoundUrl, playSound } from '../lib/sounds';
 import SoundPicker from './SoundPicker';
 
@@ -690,6 +691,8 @@ export default function Settings({ onClose }) {
               {activeTab === 'privacy' && (
                 <div className="space-y-6">
                   <SitePermissions />
+
+                  <ShieldSettings />
 
                   <div className="card">
                     <div className="flex items-center gap-2 mb-2">

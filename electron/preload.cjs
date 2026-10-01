@@ -95,6 +95,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
     setForContents: (webContentsId, mode) =>
       ipcRenderer.invoke('adblock:setForContents', { webContentsId, mode }),
   },
+  // Boucliers de sécurité et de confidentialité (Shields)
+  shields: {
+    getSiteSettings: (url) => ipcRenderer.invoke('shields:getSiteSettings', url),
+    updateSiteSettings: (url, updates) =>
+      ipcRenderer.invoke('shields:updateSiteSettings', url, updates),
+    resetSiteSettings: (url) => ipcRenderer.invoke('shields:resetSiteSettings', url),
+    getDefaults: () => ipcRenderer.invoke('shields:getDefaults'),
+    updateDefaults: (updates) => ipcRenderer.invoke('shields:updateDefaults', updates),
+    listSites: () => ipcRenderer.invoke('shields:listSites'),
+    getBlockedStats: (webContentsId) =>
+      ipcRenderer.invoke('shields:getBlockedStats', webContentsId),
+    clearBlockedStats: (webContentsId) =>
+      ipcRenderer.invoke('shields:clearBlockedStats', webContentsId),
+  },
+
   // Lecture vocale (moteur système / Piper hors ligne)
   tts: {
     state: () => ipcRenderer.invoke('tts:state'),
