@@ -279,6 +279,16 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
         color: '#0ea5e9',
         action: () => openFlyPage(url),
       });
+      // Même chose sans rien garder : session en mémoire, pas d'historique,
+      // aucun lien avec les apps déjà connectées au même site.
+      list.push({
+        type: 'url',
+        id: 'smart-url-private',
+        name: t('qs.openUrlPrivate'),
+        subtitle: `${url} — ${t('qs.openUrlPrivateDesc')}`,
+        color: '#7c3aed',
+        action: () => openFlyPage(url, { private: true }),
+      });
       list.push({
         type: 'url',
         id: 'smart-url-external',

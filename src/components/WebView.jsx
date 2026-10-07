@@ -145,8 +145,8 @@ export default function WebView({ app, active, visible, flexLayout }) {
 
       // Historique transverse (palette Alt+K) : le titre n'est pas encore
       // connu à cet instant, il arrivera par `page-title-updated` et viendra
-      // compléter l'entrée.
-      if (url) {
+      // compléter l'entrée. Une page privée n'y laisse aucune trace.
+      if (url && !app.private) {
         recordHistory({ url, appId: app.id, appName: app.name, title: '' });
       }
 
@@ -187,7 +187,7 @@ export default function WebView({ app, active, visible, flexLayout }) {
       // Complète l'entrée d'historique créée à la navigation (le titre arrive
       // toujours après l'URL).
       try {
-        setHistoryTitle(wv.getURL(), e.title);
+        if (!app.private) setHistoryTitle(wv.getURL(), e.title);
       } catch {
         /* webview détruit entre-temps */
       }
@@ -360,7 +360,7 @@ export default function WebView({ app, active, visible, flexLayout }) {
       wv.removeEventListener('did-start-loading', startLoading);
       wv.removeEventListener('did-stop-loading', stopLoading);
     };
-  }, [app.id, app.name, app.zoom, app.sleeping, app.muted, active, notificationsEnabled, notifSound, soundVolume, dnd, quietHoursEnabled, quietStart, quietEnd, updateApp, setAppLoading]);
+  }, [app.id, app.name, app.private, app.zoom, app.sleeping, app.muted, active, notificationsEnabled, notifSound, soundVolume, dnd, quietHoursEnabled, quietStart, quietEnd, updateApp, setAppLoading]);
 
   // « Lecture en cours » — effet DÉDIÉ, volontairement séparé de l'effet
   // principal ci-dessus : celui-ci se ré-exécute à chaque changement de réglage
@@ -590,7 +590,7 @@ export default function WebView({ app, active, visible, flexLayout }) {
 
       {/* Récupération de crash : le processus de rendu de l'app a planté */}
       {crashed && visible && (
-        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-4 bg-bg-base/95 backdrop-blur-sm text-center p-6">
+        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-4 bg-bg-base/95 backdrop-blur-xs text-center p-6">
           <div className="w-14 h-14 rounded-2xl bg-error/15 flex items-center justify-center">
             <AlertTriangle size={28} className="text-error" />
           </div>

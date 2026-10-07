@@ -510,15 +510,23 @@ export const useStore = create(
       // --- Pages volantes -------------------------------------------------
       // Ouvre une URL à la volée et l'affiche. Réutilise une page déjà ouverte
       // sur la même adresse plutôt que d'en empiler une seconde.
-      openFlyPage: (rawUrl) => {
+      //
+      // `{ private: true }` : navigation privée. La partition n'a pas de
+      // préfixe `persist:` (voir lib/session.js), donc Electron la garde en
+      // mémoire : ni cookies, ni cache, ni stockage sur le disque, pas
+      // d'extensions, pas d'historique. Une page privée ne réutilise jamais une
+      // page normale (et inversement) : ce serait mélanger les deux sessions.
+      openFlyPage: (rawUrl, { private: isPrivate = false } = {}) => {
         const url = String(rawUrl || '').trim();
         if (!/^https?:\/\//i.test(url)) return null;
-        const existing = get().flyPages.find((p) => p.url === url || p.homeUrl === url);
+        const existing = get().flyPages.find(
+          (p) => Boolean(p.private) === isPrivate && (p.url === url || p.homeUrl === url)
+        );
         if (existing) {
           set({ activeApp: existing.id });
           return existing.id;
         }
-        const id = `fly-${Date.now()}`;
+        const id = `${isPrivate ? 'priv' : 'fly'}-${Date.now()}`;
         let host = url;
         try {
           host = new URL(url).hostname.replace(/^www\./, '');
@@ -538,13 +546,14 @@ export const useStore = create(
               scope: 'all',
               // Partition jetable, distincte de toute app : consulter un lien
               // ne doit pas toucher aux cookies d'un compte connecté.
-              sessionKey: `fly:${id}`,
+              sessionKey: `${isPrivate ? 'priv' : 'fly'}:${id}`,
               ephemeral: true,
+              private: isPrivate,
               name: host,
               url,
               homeUrl: url,
-              icon: '🌐',
-              color: '#64748b',
+              icon: isPrivate ? '🕶️' : '🌐',
+              color: isPrivate ? '#7c3aed' : '#64748b',
               unread: 0,
               sleeping: false,
               zoom: 1,

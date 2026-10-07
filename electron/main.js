@@ -1766,6 +1766,13 @@ function openExternalHandler({ url }) {
 let pendingGuestPartition = null;
 const guestPartitions = new Map();
 
+// Partition d'une page privée (voir src/lib/session.js) : sans `persist:`,
+// Electron la garde en mémoire — cookies, cache et stockage disparaissent avec
+// le processus, rien n'est jamais écrit sur le disque.
+function isPrivatePartition(partition) {
+  return typeof partition === 'string' && partition.startsWith('priv:');
+}
+
 function hardenWebviewAttach(event, webPreferences, params) {
     // Durcir le guest
     webPreferences.nodeIntegration = false;
@@ -1808,6 +1815,12 @@ function hardenWebviewAttach(event, webPreferences, params) {
       console.error('[orbit] partition google UA failed:', err);
     }
 
+    // Page privée : session en mémoire, rien n'en sort. Pas d'extensions (elles
+    // gardent leur propre stockage sur disque et voient les pages visitées),
+    // et surtout pas de cookies rendus persistants — c'est l'inverse du but.
+    pendingGuestPartition = partition;
+    if (isPrivatePartition(partition)) return;
+
     // Injecter les extensions actives dans la session du webview
     knownPartitions.add(partition);
     ensureExtensionsForPartition(partition);
@@ -1815,7 +1828,6 @@ function hardenWebviewAttach(event, webPreferences, params) {
     // Sessions durables : les cookies de session deviennent persistants
     // (sinon déconnexion à chaque fermeture de l'app)
     setupSessionCookiePersistence(partition);
-    pendingGuestPartition = partition;
 }
 
 // Associe un <webview> à sa partition : sans ça, un pop-up ouvert depuis
@@ -2014,7 +2026,11 @@ function openInAppPopup(guestContents, url) {
   // Automatisations : une règle peut décider du sort de ce lien avant tout
   // le reste (voir src/lib/rules.js).
   const rule = matchLinkRule(linkRules, url);
-  if (rule) {
+  // Depuis une page privée, on ne renvoie jamais un lien vers une app ou une
+  // page volante : il y retrouverait les cookies d'un compte connecté. Bloquer
+  // ou ouvrir dans le navigateur, en revanche, ne trahit rien.
+  const fromPrivate = isPrivatePartition(guestPartitions.get(guestContents.id));
+  if (rule && !(fromPrivate && (rule.action === 'openInApp' || rule.action === 'flyPage'))) {
     if (rule.action === 'block') {
       permLog(`lien ${hostOf(url)} BLOQUÉ par la règle « ${rule.pattern} »`);
       return { action: 'deny' };
@@ -4654,8 +4670,11 @@ ipcMain.handle('fakedata:setEnabled', (_event, enabled) => {
 ipcMain.handle('sessions:clear', (_event, { sessionKey, profileId, appId } = {}) => {
   try {
     const key = sessionKey || `${profileId}:${appId}`;
-    const ses = session.fromPartition(`persist:${key}`);
+    const ses = session.fromPartition(isPrivatePartition(key) ? key : `persist:${key}`);
     ses.clearStorageData().catch(() => {});
+    // clearStorageData ne touche pas au cache HTTP : sans ça, les images et
+    // scripts d'une page volante fermée restaient lisibles sur le disque.
+    ses.clearCache().catch(() => {});
     return { success: true };
   } catch (err) {
     return { success: false, error: String(err.message || err) };
@@ -4731,6 +4750,29 @@ ipcMain.handle('update:install', () => {
 });
 ipcMain.handle('app:getVersion', () => app.getVersion());
 
+// Les pages volantes ne survivent pas à Orbit (exclues du store persisté),
+// mais leur partition `persist:fly:…` ne se purgeait qu'à la fermeture
+// explicite de la page : quitter Orbit laissait cookies et cache sur le disque,
+// sans plus rien dans l'interface pour les retrouver. Au démarrage, aucune page
+// volante n'existe encore : tout dossier `fly:` restant est orphelin.
+function purgeStaleFlyPartitions(userData) {
+  const dir = path.join(userData, 'Partitions');
+  let names = [];
+  try {
+    names = fs.readdirSync(dir);
+  } catch {
+    return; // pas encore de partitions
+  }
+  for (const name of names) {
+    if (!name.startsWith('fly%3A')) continue;
+    try {
+      fs.rmSync(path.join(dir, name), { recursive: true, force: true });
+    } catch (err) {
+      console.error('[orbit] purge page volante échouée:', name, err.message);
+    }
+  }
+}
+
 app.whenReady().then(() => {
   // Seconde instance : on a déjà quitté plus haut, on ne construit rien.
   if (!gotInstanceLock) return;
@@ -4739,6 +4781,8 @@ app.whenReady().then(() => {
   if (process.platform === 'win32') {
     app.setAppUserModelId('com.orbit.app');
   }
+
+  purgeStaleFlyPartitions(app.getPath('userData'));
 
   // Pont KeePassXC : charge l'association persistée + génère les clés de session
   initKeepass(app.getPath('userData'));

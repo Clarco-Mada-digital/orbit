@@ -1,5 +1,5 @@
 import { Fragment, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Moon, Play, X, Columns2, Rows2, Wifi, KeyRound, Plus, Copy, ExternalLink, Globe } from 'lucide-react';
+import { Moon, Play, X, Columns2, Rows2, Wifi, KeyRound, Plus, Copy, ExternalLink, Globe, EyeOff } from 'lucide-react';
 import Sidebar from './components/Sidebar';
 import Topbar from './components/Topbar';
 import Bottombar from './components/Bottombar';
@@ -1309,9 +1309,11 @@ const openEditUrl = useCallback((id) => {
       {/* Menu contextuel d'une page volante */}
       {flyMenu && (
         <>
-          {/* Voile : un clic n'importe où referme le menu */}
+          {/* Voile : un clic n'importe où referme le menu. Même étage que le
+              menu des apps (AppContextMenu, z-9999) : à z-70, la barre latérale
+              révélée en masquage auto (z-650) passait PAR-DESSUS le menu. */}
           <div
-            className="fixed inset-0 z-[70]"
+            className="fixed inset-0 z-[9998]"
             onClick={() => setFlyMenu(null)}
             onContextMenu={(e) => {
               e.preventDefault();
@@ -1319,10 +1321,16 @@ const openEditUrl = useCallback((id) => {
             }}
           />
           <div
-            className="fixed z-[71] min-w-52 bg-bg-elevated border border-border rounded-xl shadow-2xl py-1 text-sm"
+            className="fixed z-[9999] min-w-52 bg-bg-elevated border border-border rounded-xl shadow-2xl py-1 text-sm"
+            // Les pages volantes vivent en BAS de la barre latérale : le menu
+            // s'ouvre vers le haut dans la moitié basse de l'écran, plutôt que
+            // de déborder sous la barre du bas (l'ancien plafond fixe de 160 px
+            // était plus petit que le menu lui-même).
             style={{
               left: Math.min(flyMenu.x, window.innerWidth - 220),
-              top: Math.min(flyMenu.y, window.innerHeight - 160),
+              ...(flyMenu.y > window.innerHeight / 2
+                ? { bottom: Math.max(8, window.innerHeight - flyMenu.y) }
+                : { top: flyMenu.y }),
             }}
           >
             <button
@@ -1364,6 +1372,19 @@ const openEditUrl = useCallback((id) => {
             >
               <Copy size={14} /> {t('fly.copyUrl')}
             </button>
+            {/* Repartir de zéro sur la même adresse : nouvelle page privée, la
+                page actuelle reste ouverte telle quelle. */}
+            {!flyMenu.page.private && (
+              <button
+                className="w-full text-left px-3 py-2 hover:bg-bg-hover flex items-center gap-2"
+                onClick={() => {
+                  useStore.getState().openFlyPage(flyMenu.page.url, { private: true });
+                  setFlyMenu(null);
+                }}
+              >
+                <EyeOff size={14} /> {t('fly.openPrivate')}
+              </button>
+            )}
             <button
               className="w-full text-left px-3 py-2 hover:bg-bg-hover flex items-center gap-2"
               onClick={() => {

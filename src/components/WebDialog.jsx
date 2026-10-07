@@ -147,7 +147,7 @@ export default function WebDialog({ dialog, onAnswer }) {
 
   return (
     <div
-      className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-fade-in"
+      className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/50 backdrop-blur-xs animate-fade-in"
       // Un clic à côté ne répond pas à la place de l'utilisateur : la page
       // attend une réponse, et deviner à sa place serait pire que d'attendre.
       onMouseDown={(e) => e.stopPropagation()}

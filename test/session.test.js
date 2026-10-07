@@ -36,6 +36,15 @@ test('appPartition : une page volante garde sa session jetable, même en profil 
   assert.equal(appPartition({ ...fly, containerId: 'c1' }, true), 'persist:ctn:c1');
 });
 
+test('appPartition : une page privée vit en mémoire (jamais de `persist:`)', () => {
+  // Sans le préfixe `persist:`, Electron ne crée aucun dossier sur le disque :
+  // c'est ce qui garantit qu'une page privée ne laisse rien à la fermeture.
+  const priv = { id: 'priv-1', profileId: 'work', sessionKey: 'priv:priv-1', ephemeral: true, private: true };
+  assert.equal(appPartition(priv, false), 'priv:priv-1');
+  assert.equal(appPartition(priv, true), 'priv:priv-1');
+  assert.equal(appViewKey(priv, true), 'priv-1');
+});
+
 test('appViewKey : une page volante ne remonte pas quand le profil bascule en partagé', () => {
   const fly = { id: 'fly-1', ephemeral: true };
   assert.equal(appViewKey(fly, false), 'fly-1');

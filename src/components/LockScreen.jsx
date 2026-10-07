@@ -92,7 +92,7 @@ export default function LockScreen({
     <div
       className={`${
         fullScreen ? 'fixed inset-0' : 'absolute inset-0'
-      } z-[10000] flex flex-col items-center justify-center bg-bg-primary/95 backdrop-blur-sm`}
+      } z-[10000] flex flex-col items-center justify-center bg-bg-primary/95 backdrop-blur-xs`}
       style={fullScreen ? { borderRadius: 12 } : undefined}
     >
       <div className="w-[min(360px,90%)] bg-bg-elevated border border-border rounded-2xl shadow-2xl p-6">

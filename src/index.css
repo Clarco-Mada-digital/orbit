@@ -1,6 +1,69 @@
-@tailwind base;
-@tailwind components;
-@tailwind utilities;
+@import "tailwindcss";
+
+/* ===== Thème Tailwind v4 ==============================================
+   Ancien `tailwind.config.js` (theme.extend) converti en `@theme`.
+   `inline` : les utilitaires référencent directement `rgb(var(--…))`
+   pour que le thème clair / l'accent posés sur <html> prennent effet
+   partout (sinon la valeur serait figée au niveau de :root). */
+@theme inline {
+  /* Couleurs pilotées par des variables CSS → thème & accent en direct */
+  --color-bg-primary: rgb(var(--bg-primary));
+  --color-bg-secondary: rgb(var(--bg-secondary));
+  --color-bg-elevated: rgb(var(--bg-elevated));
+  --color-bg-hover: rgb(var(--bg-hover));
+  --color-accent-primary: rgb(var(--accent-primary));
+  --color-accent-hover: rgb(var(--accent-hover));
+  --color-accent-light: rgb(var(--accent-light));
+  --color-text-primary: rgb(var(--text-primary));
+  --color-text-secondary: rgb(var(--text-secondary));
+  --color-text-muted: rgb(var(--text-muted));
+  --color-border: rgb(var(--border));
+  --color-border-light: rgb(var(--border-light));
+  --color-success: #10b981;
+  --color-warning: #f59e0b;
+  --color-error: #ef4444;
+
+  --font-sans: "Inter", system-ui, -apple-system, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+
+  --shadow-glow: 0 0 20px rgba(99, 102, 241, 0.3);
+  --shadow-glow-lg: 0 0 40px rgba(99, 102, 241, 0.4);
+
+  --animate-slide-in: slideIn 0.2s ease-out;
+  --animate-fade-in: fadeIn 0.15s ease-out;
+  --animate-scale-in: scaleIn 0.2s ease-out;
+}
+
+@keyframes slideIn {
+  0% {
+    transform: translateY(-10px);
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+@keyframes fadeIn {
+  0% {
+    opacity: 0;
+  }
+  100% {
+    opacity: 1;
+  }
+}
+
+@keyframes scaleIn {
+  0% {
+    transform: scale(0.95);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
 
 @layer base {
   /* ===== Thème sombre (défaut) — valeurs en triplets RGB pour Tailwind ===== */
@@ -63,10 +126,10 @@
     background: #ffffff;
   }
 
-  /* Mode compact */
-  .compact-mode {
-    --spacing: 0.5rem;
-  }
+  /* Mode compact : `--spacing` ne faisait rien en v3 (Tailwind v3 n'utilise
+     pas cette variable) ; en v4 il pilote l'échelle d'espacement et le
+     porterait à 0.5rem (au lieu de 0.25rem) → on retire la règle pour
+     garder exactement le rendu v3. */
 
   /* Désactiver les animations */
   .no-animations * {

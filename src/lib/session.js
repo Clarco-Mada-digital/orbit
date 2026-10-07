@@ -15,6 +15,8 @@ export function appPartition(app, sharedSession) {
   // Consulter un lien de passage ne doit jamais écrire dans le coffre à
   // cookies d'un compte connecté — c'est tout l'intérêt de la session jetable,
   // purgée à la fermeture de la page.
+  // Page privée : pas de `persist:` → partition en mémoire, rien sur le disque.
+  if (app.private) return app.sessionKey;
   if (app.ephemeral) return `persist:${app.sessionKey}`;
   if (sharedSession) return `persist:${app.profileId}`;
   return `persist:${app.sessionKey || `${app.profileId}:${app.id}`}`;

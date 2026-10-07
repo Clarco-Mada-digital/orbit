@@ -18,7 +18,7 @@ export default function Welcome({ onClose, onOpenStore }) {
   ];
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+    <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-xs p-4">
       <div className="w-full max-w-lg bg-bg-elevated border border-border rounded-2xl shadow-2xl overflow-hidden animate-scale-in">
         <div className="px-6 pt-6 pb-4 text-center border-b border-border">
           <div className="w-14 h-14 rounded-2xl bg-accent-primary/15 flex items-center justify-center mx-auto mb-3">
