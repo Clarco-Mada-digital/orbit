@@ -68,6 +68,27 @@ test('https : les hôtes locaux sont préservés (pas de TLS en local)', () => {
   }
 });
 
+test('https : une adresse IP littérale n’est PAS upgradée (page blanche sinon)', () => {
+  // Cas réel : http://109.199.112.67:3000/dashboard/home — le port applicatif
+  // ne parle pas TLS. L'upgrader vers https casse la page alors qu'un
+  // navigateur classique l'affiche.
+  for (const host of ['109.199.112.67:3000', '192.168.1.50:8080', '10.0.0.4', '[::1]:3000', '[fe80::1]:80']) {
+    assert.equal(
+      rules.decideRequest(site({ httpsUpgrade: true }), mainFrame(`http://${host}/x`)),
+      null,
+      `${host} ne doit pas être upgradé`
+    );
+  }
+});
+
+test('isIpLiteral : vrai pour v4/v6, faux pour un nom de domaine', () => {
+  assert.equal(rules.isIpLiteral('109.199.112.67'), true);
+  assert.equal(rules.isIpLiteral('[::1]'), true);
+  assert.equal(rules.isIpLiteral('fe80::1'), true);
+  assert.equal(rules.isIpLiteral('exemple.com'), false);
+  assert.equal(rules.isIpLiteral(''), false);
+});
+
 test('https : le réglage désactivé ne redirige rien', () => {
   assert.equal(rules.decideRequest(site({ httpsUpgrade: false }), mainFrame('http://exemple.com')), null);
 });

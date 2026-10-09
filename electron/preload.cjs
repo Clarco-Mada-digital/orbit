@@ -289,5 +289,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setPopupStyle: (payload) => ipcRenderer.invoke('popup:setStyle', payload),
   // Charge CPU / mémoire de la machine (widget « moniteur » de l'en-tête)
   getSystemStats: () => ipcRenderer.invoke('system:stats'),
+  // Mémoire (et CPU) d'une app précise — bulle au survol de la barre latérale.
+  // `webContentsId` vient de webviewRegistry.getWebContentsIdFor(appId).
+  getAppMemory: (webContentsId) => ipcRenderer.invoke('app:memory', { webContentsId }),
   platform: process.platform,
 });

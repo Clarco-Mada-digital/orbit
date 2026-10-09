@@ -8,6 +8,41 @@ Format : une section `## [X.Y.Z] — AAAA-MM-JJ` par version, puis des
 sous-sections `### Ajouté` / `### Modifié` / `### Corrigé` / `### Sécurité`.
 La plus récente en premier.
 
+## [1.13.0] — 2026-10-09
+
+### Ajouté
+- **Mémoire et CPU de chaque app** : survoler une ligne de la barre latérale
+  (une application installée comme une page volante) affiche sa mémoire
+  résidente et son CPU, **ainsi que le classement des cinq plus gourmandes**
+  avec leur total — de quoi repérer d'un coup d'œil l'app qui mange la machine,
+  sans les survoler une par une. Le relevé est **local** et ne tourne que
+  pendant le survol (toutes les 2 s). Une app en veille, non chargée, ou dont le
+  processus de rendu n'est pas encore né, affiche un état explicite (« en
+  veille », « non chargée », « relevé en cours ») plutôt qu'un chiffre faux.
+
+### Corrigé
+- **Page blanche sur une adresse IP littérale** : avec « passer en HTTPS »
+  activé, Orbit réécrivait `http://192.168.1.50:8080` en `https://…`. Un serveur
+  joignable en `IP:port` (NAS, box, backend auto-hébergé, dev local) ne parle
+  presque jamais TLS — le handshake échouait et la page restait **blanche**,
+  alors qu'un navigateur classique l'affiche sans broncher. Les adresses IP
+  (IPv4 comme IPv6) sont désormais traitées comme les hôtes locaux : jamais
+  « upgradées ».
+- **Correcteur orthographique : la suggestion ne remplaçait rien** : cliquer un
+  mot proposé dans le menu contextuel laissait le mot fautif souligné — « rien
+  ne change ». Le menu est une surcouche HTML dans la fenêtre d'Orbit : il
+  prenait le focus de la fenêtre, alors que Chromium remplace le mot de la frame
+  **focalisée**, c'est-à-dire celle de l'app. Le remplacement visait donc une
+  frame qui n'était plus la bonne. Le menu ne vole plus le focus, et le
+  remplacement attend qu'il soit effectivement acquis avant d'agir.
+
+### Interne
+- Le relevé de mémoire passe par `app.getAppMetrics()` :
+  `webContents.getProcessMemoryInfo()` n'existe pas dans le build Electron
+  épinglé, et l'appel échouait silencieusement.
+- Suite de tests portée à **234 tests** (dont l'exclusion des IP littérales de
+  la réécriture HTTPS).
+
 ## [1.12.0] — 2026-09-29
 
 ### Ajouté

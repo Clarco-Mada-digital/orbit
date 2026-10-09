@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useStore } from '../stores/useStore';
 import { ChevronLeft, ChevronRight, Plus, Settings, Grid, User, Moon, BellOff, Lock, Volume2, VolumeX, LogIn, Globe, X, EyeOff } from 'lucide-react';
@@ -6,7 +6,7 @@ import AppContextMenu from './AppContextMenu';
 import AppIcon from './AppIcon';
 import { useSecurityStore } from '../lib/securityStore';
 import { useMediaStore } from '../lib/mediaStore';
-import { getWebview } from '../lib/webviewRegistry';
+import { getWebview, getRegisteredWebviews } from '../lib/webviewRegistry';
 import { useT } from '../lib/i18n';
 import { useZoneHold, REVEALED_BAR_Z } from '../lib/autoHide';
 
@@ -24,7 +24,7 @@ export default function Sidebar({
   revealed = true,
   revealHandlers = {},
 }) {
-  const { profiles, activeProfile, setActiveProfile, getProfileApps, activeApp, settings, reorderApps, containers, flyPages, closeFlyPage, closeAllFlyPages } = useStore();
+  const { profiles, activeProfile, setActiveProfile, getProfileApps, activeApp, settings, reorderApps, containers, flyPages, closeFlyPage, closeAllFlyPages, apps: storedApps } = useStore();
   const { lockedProfileIds, unlockedProfileIds } = useSecurityStore();
   const t = useT();
   const media = useMediaStore((s) => s.media);
@@ -58,6 +58,85 @@ export default function Sidebar({
   const isPinned = (a) => a.isFavorite || a.scope === 'all';
   const pinned = apps.filter(isPinned);
   const unpinned = apps.filter((a) => !isPinned(a));
+
+  // --- Mémoire par app (bulle au survol) ----------------------------------
+  // Au survol d'une ligne (app installée ou page volante), on lit le processus
+  // de rendu de chaque <webview> montée et on affiche la mémoire de la ligne
+  // survolée + le classement des plus gourmandes. Rafraîchi toutes les 2 s tant
+  // que la souris reste dessus.
+  const [memPopup, setMemPopup] = useState(null); // { appId, name, top, left }
+  const [memData, setMemData] = useState({}); // appId -> { residentSet, cpu… }
+  const memHoveredRef = useRef(null);
+
+  const readAppMemory = async () => {
+    const next = {};
+    await Promise.all(
+      getRegisteredWebviews().map(async ([id, wv]) => {
+        let wcId = null;
+        try {
+          wcId = wv.getWebContentsId();
+        } catch {
+          return; // webview pas encore attaché (pas de dom-ready)
+        }
+        try {
+          const data = await window.electronAPI?.getAppMemory?.(wcId);
+          if (data) next[id] = data;
+        } catch {
+          /* process fermé entre-temps */
+        }
+      })
+    );
+    // La souris est peut-être repartie pendant l'attente : on ne publie rien
+    // dans ce cas (sinon la bulle se rouvrirait toute seule).
+    if (memHoveredRef.current) setMemData(next);
+  };
+
+  useEffect(() => {
+    const hovered = memPopup?.appId;
+    if (!hovered) return undefined;
+    memHoveredRef.current = hovered;
+    readAppMemory();
+    const timer = setInterval(readAppMemory, 2000);
+    return () => {
+      memHoveredRef.current = null;
+      clearInterval(timer);
+    };
+  }, [memPopup?.appId]);
+
+  const showMemPopup = (app, e) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    setMemPopup({
+      appId: app.id,
+      name: app.name,
+      sleeping: !!app.sleeping,
+      mounted: !!getWebview(app.id),
+      // Bulle à droite de la ligne, bornée à l'écran (largeur ~260 px).
+      top: Math.max(8, Math.min(rect.top, window.innerHeight - 230)),
+      left: Math.min(rect.right + 8, window.innerWidth - 268),
+    });
+  };
+  const hideMemPopup = () => setMemPopup(null);
+
+  const fmtMem = (kb) => {
+    if (!Number.isFinite(kb)) return '—';
+    const mo = kb / 1024;
+    return mo >= 1024 ? `${(mo / 1024).toFixed(1)} Go` : `${Math.round(mo)} Mo`;
+  };
+
+  // Classement des webviews ouvertes (top 5) : répond d'un coup d'œil à
+  // « quelle app consomme le plus », sans survoler chacune.
+  const memRanked = Object.entries(memData)
+    .map(([id, d]) => ({
+      id,
+      name:
+        storedApps.find((a) => a.id === id)?.name ||
+        flyPages.find((p) => p.id === id)?.name ||
+        id,
+      kb: d?.residentSet || 0,
+    }))
+    .sort((a, b) => b.kb - a.kb)
+    .slice(0, 5);
+  const memTotal = memRanked.reduce((sum, r) => sum + r.kb, 0);
 
   // Menu contextuel (clic droit) : { appId, x, y } | null
   const [menu, setMenu] = useState(null);
@@ -147,6 +226,8 @@ export default function Sidebar({
       onDragOver={(e) => handleDragOver(e, app.id)}
       onDrop={(e) => handleDrop(e, app.id)}
       onDragEnd={handleDragEnd}
+      onMouseEnter={(e) => showMemPopup(app, e)}
+      onMouseLeave={hideMemPopup}
       className={`w-full flex items-center ${collapsed ? 'justify-center' : 'gap-3'} ${
         settings.compactMode ? 'px-2 py-1.5' : 'px-3 py-2'
       } rounded-lg transition-all group relative cursor-pointer active:cursor-grabbing ${
@@ -437,6 +518,8 @@ export default function Sidebar({
                   key={page.id}
                   onClick={() => onSelectApp?.(page.id)}
                   onContextMenu={(e) => onFlyPageMenu?.(e, page)}
+                  onMouseEnter={(e) => showMemPopup(page, e)}
+                  onMouseLeave={hideMemPopup}
                   title={`${page.private ? `${t('fly.privateBadge')} — ` : ''}${collapsed ? page.name : page.url}`}
                   className={`w-full flex items-center gap-2 ${
                     settings.compactMode ? 'px-2 py-1.5' : 'px-2 py-1.5'
@@ -544,6 +627,60 @@ export default function Sidebar({
             y={menu.y}
             onClose={() => setMenu(null)}
           />,
+          document.body
+        )}
+
+      {/* Bulle mémoire — portail à la racine du document pour la même raison
+          que le menu contextuel : la sidebar crée un contexte d'empilement
+          (z-10) qui piégerait la bulle sous les webviews. */}
+      {memPopup &&
+        createPortal(
+          <div
+            className="fixed z-[9999] w-64 pointer-events-none rounded-xl border border-border bg-bg-elevated shadow-2xl p-3 text-xs"
+            style={{ top: memPopup.top, left: memPopup.left }}
+          >
+            <div className="font-semibold truncate mb-1.5">{memPopup.name}</div>
+            {memPopup.sleeping ? (
+              <p className="text-text-muted">{t('sb.memSleeping')}</p>
+            ) : !memPopup.mounted ? (
+              <p className="text-text-muted">{t('sb.memUnloaded')}</p>
+            ) : memData[memPopup.appId] ? (
+              <div className="flex items-baseline gap-2">
+                <span className="text-lg font-semibold text-accent-primary tabular-nums">
+                  {fmtMem(memData[memPopup.appId].residentSet)}
+                </span>
+                {memData[memPopup.appId].cpu != null && (
+                  <span className="text-text-muted tabular-nums">
+                    CPU {memData[memPopup.appId].cpu}%
+                  </span>
+                )}
+              </div>
+            ) : (
+              <p className="text-text-muted">{t('sb.memLoading')}</p>
+            )}
+
+            {memRanked.length > 0 && (
+              <div className="mt-2 pt-2 border-t border-border">
+                <div className="flex items-center justify-between text-[10px] uppercase tracking-wider text-text-muted mb-1">
+                  <span>{t('sb.memTop')}</span>
+                  <span className="tabular-nums normal-case">{fmtMem(memTotal)}</span>
+                </div>
+                <ul className="space-y-0.5">
+                  {memRanked.map((r) => (
+                    <li
+                      key={r.id}
+                      className={`flex items-center gap-2 ${
+                        r.id === memPopup.appId ? 'text-accent-primary' : 'text-text-secondary'
+                      }`}
+                    >
+                      <span className="flex-1 truncate">{r.name}</span>
+                      <span className="tabular-nums">{fmtMem(r.kb)}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>,
           document.body
         )}
     </aside>

@@ -2637,13 +2637,50 @@ handleFromUi('ctx:action', (_event, { wcId, action, value } = {}) => {
       wc.focus();
       wc.selectAll();
       break;
-    case 'replaceMisspelling':
+    case 'replaceMisspelling': {
       // On n'accepte que les suggestions que le correcteur a lui-même fournies.
       if ((params.dictionarySuggestions || []).includes(value)) {
-        wc.focus();
-        wc.replaceMisspelling(value);
+        // Chromium remplace le mot fautif de la frame FOCALISÉE. Notre menu
+        // contextuel est une surcouche HTML dans la fenêtre Orbit : cliquer une
+        // suggestion donne le focus à l'UI, pas à l'app. La frame focalisée de
+        // l'app n'est alors plus « la bonne » et `replaceMisspelling` ne fait
+        // RIEN (le mot reste souligné, rien ne change). Refocaliser puis
+        // remplacer dans le MÊME tick ne suffit pas : le changement de frame
+        // focalisée traverse le process de façon asynchrone. On rend donc le
+        // focus, puis on remplace une fois qu'il est effectivement acquis.
+        // (Le menu natif, lui, n'a pas ce problème : la pop-up native ne vole
+        // pas le focus — voir buildGuestContextMenu.)
+        let done = false;
+        const replace = () => {
+          if (done || wc.isDestroyed()) return;
+          done = true;
+          try {
+            wc.replaceMisspelling(value);
+          } catch {
+            /* webContents parti entre-temps */
+          }
+        };
+        try {
+          wc.focus();
+          let tries = 0;
+          const waitFocused = () => {
+            if (wc.isDestroyed() || done) return;
+            if (wc.isFocused()) {
+              // Petit délai : `isFocused()` peut être vrai un battement avant
+              // que GetFocusedFrame() ne bascule côté frame de rendu.
+              setTimeout(replace, 30);
+              return;
+            }
+            if (tries++ < 12) setTimeout(waitFocused, 20);
+            else replace(); // filet : on tente quand même plutôt que rien
+          };
+          waitFocused();
+        } catch {
+          replace();
+        }
       }
       break;
+    }
     case 'openLink':
       if (isWebUrl(params.linkURL)) shell.openExternal(params.linkURL);
       break;
@@ -3240,6 +3277,50 @@ ipcMain.handle('system:stats', () => {
     uptime: os.uptime(),
     platform: process.platform,
   };
+});
+
+// Mémoire (et CPU) d'UNE app, pour la bulle au survol de la barre latérale.
+// Chaque <webview> vit dans son propre processus de rendu : le renderer fournit
+// l'id de son webContents, on lit le pid de ce processus et on le rapproche des
+// métriques d'Electron. Renvoie null quand l'app n'est pas montée (en veille,
+// fermée, jamais ouverte) OU quand son processus n'est pas encore né : le
+// renderer affiche « en veille » / « … » au lieu d'un chiffre trompeur.
+//
+// ⚠️ `webContents.getProcessMemoryInfo()` N'EXISTE PAS dans le build Electron
+// épinglé (43.2.0) : l'appeler levait `is not a function`, l'erreur était
+// avalée par le try/catch, et la bulle restait bloquée sur « … » pour toutes
+// les apps. On passe donc par `app.getAppMetrics()` — l'API publique qui donne,
+// par pid, la mémoire résidente (`workingSetSize`, en Ko) ET le CPU.
+//
+// NB : Chromium peut regrouper plusieurs webviews du même site dans un seul
+// processus — le chiffre est alors celui du processus partagé, comme dans le
+// gestionnaire de tâches du navigateur.
+ipcMain.handle('app:memory', (_event, { webContentsId } = {}) => {
+  const id = Number(webContentsId);
+  if (!Number.isInteger(id)) return null;
+  try {
+    const wc = webContents.fromId(id);
+    if (!wc || wc.isDestroyed()) return null;
+    let pid = 0;
+    try {
+      pid = wc.getOSProcessId();
+    } catch {
+      pid = 0;
+    }
+    // 0 = le processus de rendu n'est pas encore rattaché (webview tout juste
+    // monté). Le prochain relevé (2 s plus tard) le trouvera.
+    if (!pid) return null;
+    const proc = app.getAppMetrics().find((m) => m.pid === pid);
+    if (!proc || !proc.memory) return null;
+    return {
+      residentSet: Math.round(proc.memory.workingSetSize || 0), // Ko
+      peak: Math.round(proc.memory.peakWorkingSetSize || 0),
+      pid,
+      cpu: proc.cpu ? Math.round(proc.cpu.percentCPUUsage * 10) / 10 : null,
+    };
+  } catch {
+    return null;
+  }
 });
 
 ipcMain.handle('miniplayer:open', () => {

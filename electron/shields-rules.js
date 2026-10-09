@@ -18,6 +18,21 @@ const LOCAL_HOSTS =
 
 export { LOCAL_HOSTS };
 
+// Adresse IP littérale (v4 ou v6, avec ou sans crochets). Les serveurs en
+// IP:port (dev local, NAS, box, backend auto-hébergé) exposent rarement TLS —
+// et souvent PAS sur le port applicatif. Upgrader http://IP:3000 vers
+// https://IP:3000 échoue alors au handshake TLS : la page reste blanche alors
+// qu'un navigateur classique l'affiche très bien. Chrome n'« upgrade » jamais
+// une IP littérale de la même manière : on l'exclut donc, comme les hôtes locaux.
+const IPV4 = /^\d{1,3}(?:\.\d{1,3}){3}$/;
+export function isIpLiteral(hostname) {
+  const h = String(hostname || '');
+  if (!h) return false;
+  if (IPV4.test(h)) return true;
+  // IPv6 : le hostname d'une URL contient des ':' (et des crochets conservés).
+  return h.includes(':') || (h.startsWith('[') && h.endsWith(']'));
+}
+
 // Types de ressources qui portent du JavaScript exécutable. 'object' couvre
 // <embed>/<object> ; les images, polices et feuilles de style passent — sans
 // CSS un site devient simplement laid, sans JS il devient souvent inutilisable.
@@ -65,7 +80,9 @@ export function upgradeToHttps(url) {
     return null;
   }
   if (u.protocol !== 'http:') return null;
-  if (LOCAL_HOSTS.test(u.hostname)) return null;
+  // Hôtes locaux ET IP littérales : pas de TLS à attendre → ne pas casser la
+  // navigation en la redirigeant vers un port qui ne parle pas https.
+  if (LOCAL_HOSTS.test(u.hostname) || isIpLiteral(u.hostname)) return null;
   u.protocol = 'https:';
   return u.toString();
 }

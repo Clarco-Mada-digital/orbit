@@ -274,6 +274,12 @@ export default function GuestContextMenu() {
     </button>
   );
 
+  // Le menu NE DOIT PAS prendre le focus : cliquer une suggestion
+  // orthographique remplace le mot via `replaceMisspelling`, qui agit sur la
+  // frame focalisée — celle de l'app. Si le clic déplace le focus vers l'UI
+  // d'Orbit, le mot fautif n'est plus « la » frame active et le remplacement
+  // est ignoré (c'est la cause du « rien ne change »). `preventDefault` sur
+  // mousedown empêche la prise de focus tout en laissant `onClick` suivre.
   return (
     <div
       ref={ref}
@@ -281,6 +287,7 @@ export default function GuestContextMenu() {
       className="fixed z-[9000] bg-bg-elevated border border-border rounded-xl shadow-2xl py-1.5 animate-scale-in select-none"
       style={{ left: pos.left, top: pos.top, width: MENU_WIDTH }}
       onContextMenu={(e) => e.preventDefault()}
+      onMouseDown={(e) => e.preventDefault()}
     >
       {/* Rangée d'icônes : les gestes de navigation, qu'on reconnaît sans les
           lire. Ils occupaient quatre lignes de texte dans le menu natif. */}
