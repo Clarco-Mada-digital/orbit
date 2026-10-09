@@ -2,11 +2,12 @@ name: Tests
 
 # Deux jobs volontairement séparés :
 #
-#  - `test` : testeur intégré de Node, ZÉRO dépendance installée. C'est une
-#    contrainte assumée — les modules couverts (calcul, conversions, URL,
-#    dispositions, dictionnaires i18n, catalogue d'apps, sessions, raccourcis)
-#    n'importent ni React ni le store, donc la suite démarre en quelques
-#    secondes sans `npm ci`.
+#  - `test` : testeur intégré de Node, sans `npm ci`. C'est une contrainte
+#    assumée — les modules couverts (calcul, conversions, URL, dispositions,
+#    dictionnaires i18n, catalogue d'apps, sessions, raccourcis) n'importent ni
+#    React ni le store, donc la suite démarre en quelques secondes. Une seule
+#    dépendance est réellement importée par un fichier de test (voir plus bas) :
+#    on l'installe seule, pas l'arbre entier.
 #
 #  - `lint` : ESLint a besoin de ses paquets, d'où le `npm ci`. Le plafond
 #    `--max-warnings` (dans package.json) empêche la dette de repartir à la
@@ -28,6 +29,16 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 22
+      # Une seule exception à la règle du zéro-dépendance : test/shields-rules
+      # calcule le domaine enregistrable avec tldts-experimental — la MÊME
+      # librairie que l'app (electron/main.js). Y renoncer ferait passer des
+      # tests qui ne porteraient plus sur la vraie clé de site.
+      # `--prefix test` installe UNIQUEMENT ces deux paquets (tldts-core est la
+      # dépendance de l'autre) dans test/node_modules, que la résolution ESM
+      # trouve depuis le fichier de test. Sans le préfixe, npm installerait tout
+      # l'arbre du projet par-dessus (React, onnxruntime… ~1 min 30).
+      # `--no-save --no-package-lock` : l'installation ne modifie pas le dépôt.
+      - run: npm install --no-save --no-package-lock --prefix test tldts-experimental
       - run: npm test
 
   lint:
