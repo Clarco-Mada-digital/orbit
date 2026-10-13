@@ -3,6 +3,9 @@ import path from 'path';
 import fs from 'fs';
 import os from 'node:os';
 import crypto from 'node:crypto';
+import { execFileSync } from 'node:child_process';
+import { extractOpenables } from './open-links.js';
+import * as defaultApp from './default-app.js';
 import { unpackCrx } from './crx.js';
 import { init as initKeepass, setEnabled as keepassSetEnabled, getLogins as keepassGetLogins, associate as keepassAssociate, checkStatus as keepassCheckStatus } from './keepass.js';
 import * as security from './security.js';
@@ -72,6 +75,38 @@ function toggleMainWindow() {
   if (!mainWindow || mainWindow.isDestroyed()) return;
   if (mainWindow.isVisible() && mainWindow.isFocused()) mainWindow.hide();
   else showMainWindow();
+}
+
+// --- Liens ouverts depuis l'extérieur ---------------------------------------
+// L'OS nous lance avec une URL (clic sur un lien dont Orbit est le gestionnaire
+// choisi) ou le chemin d'un .html (double-clic, « Ouvrir avec »). Au lancement,
+// l'interface n'est pas encore montée : on met en file d'attente, et on livre
+// dès que le renderer signale qu'il écoute (`links:ready`). Les liens arrivent
+// ensuite dans une PAGE VOLANTE (un « lien libre »), pas dans une app connectée.
+let pendingOpenLinks = [];
+let rendererLinksReady = false;
+
+function deliverOpenLinks(items) {
+  if (!items || items.length === 0) return;
+  if (!rendererLinksReady || !mainWindow || mainWindow.isDestroyed()) {
+    pendingOpenLinks.push(...items);
+    return;
+  }
+  for (const item of items) {
+    try {
+      mainWindow.webContents.send('orbit:open-link', item);
+    } catch {
+      pendingOpenLinks.push(item);
+    }
+  }
+}
+
+// Le serveur de dev ne doit jamais être ouvert comme une page volante : en
+// développement, il est déjà l'interface elle-même.
+function openLinksFromArgv(argv) {
+  return extractOpenables(argv || [], {
+    ignore: VITE_DEV_SERVER_URL ? [VITE_DEV_SERVER_URL, `${VITE_DEV_SERVER_URL}/`] : [],
+  });
 }
 
 // Choisit une icône de tray existante et de taille raisonnable. Sous Linux
@@ -169,7 +204,32 @@ const gotInstanceLock = app.requestSingleInstanceLock();
 if (!gotInstanceLock) {
   app.quit();
 }
-app.on('second-instance', () => showMainWindow());
+app.on('second-instance', (_event, argv) => {
+  showMainWindow();
+  // Une 2e instance n'est lancée QUE pour nous transmettre un lien (ou parce
+  // que l'utilisateur a relancé l'app) : l'argument porte l'URL ou le fichier.
+  deliverOpenLinks(openLinksFromArgv(argv));
+});
+
+// macOS ne passe PAS les liens en argument de commande : le système émet
+// `open-url` pour un lien, et `open-file` pour un document associé (un .html
+// double-cliqué — c'est exactement ce que déclarent `mac.fileAssociations` et
+// `mac.protocols` dans package.json). Sans ce second écouteur, l'association
+// cochérait sans jamais rien ouvrir. Les deux sont déclarés TÔT : un lien reçu
+// pendant le démarrage serait sinon perdu.
+app.on('open-url', (event, url) => {
+  event.preventDefault();
+  showMainWindow();
+  deliverOpenLinks(extractOpenables([url]));
+});
+
+app.on('open-file', (event, filePath) => {
+  event.preventDefault();
+  showMainWindow();
+  // Le filtre d'extension de open-links.js s'applique ici aussi : Orbit n'est
+  // pas une visionneuse, seules les pages sont retenues.
+  deliverOpenLinks(extractOpenables([filePath]));
+});
 
 const isDev = !app.isPackaged;
 const VITE_DEV_SERVER_URL = 'http://localhost:5173';
@@ -413,26 +473,24 @@ function shieldSettingsFor(webContentsId) {
 // Domaines enregistrables du site affiché et de la requête. `details.frame`
 // pointe la frame qui émet : pour un mainFrame c'est le site lui-même, pour
 // une sous-frame ou une ressource, `.top` remonte à la page hôte.
+// Le calcul vit dans shields-rules.js (testé) : ici on ne fait que lui donner
+// la page hôte et l'URL demandée. Un hôte sans domaine enregistrable
+// (localhost, IP littérale) y est comparé à l'aide de son HÔTE, sinon `null`
+// le ferait passer pour un tiers vis-à-vis de lui-même et le blocage des
+// cookies tiers supprimerait sa propre session — d'où l'impossibilité de se
+// connecter à une app servie en local.
 function shieldDomains(details) {
-  let reqDomain = null;
-  try {
-    reqDomain = getDomain(new URL(details.url).hostname) || new URL(details.url).hostname;
-  } catch {
-    reqDomain = null;
-  }
-  let topOrigin = null;
-  if (details.resourceType === 'mainFrame') {
-    topOrigin = shields.originOf(details.url);
-  } else {
+  // Page hôte : la frame du dessus. Pour une navigation de premier niveau,
+  // c'est la page elle-même (details.frame.top n'y est pas toujours renseigné).
+  let pageUrl = details.url;
+  if (details.resourceType !== 'mainFrame') {
     try {
-      const topUrl = details.frame && details.frame.top ? details.frame.top.url : '';
-      topOrigin = shields.originOf(topUrl);
+      pageUrl = (details.frame && details.frame.top && details.frame.top.url) || '';
     } catch {
-      topOrigin = null;
+      pageUrl = '';
     }
   }
-  const siteDomain = topOrigin ? getDomain(new URL(topOrigin).hostname) : null;
-  return { siteDomain, reqDomain };
+  return shieldRules.comparisonDomains(pageUrl, details.url, getDomain);
 }
 
 // Etape 1 — onBeforeRequest : mise à niveau HTTPS + blocage des scripts.
@@ -4831,6 +4889,85 @@ ipcMain.handle('update:install', () => {
 });
 ipcMain.handle('app:getVersion', () => app.getVersion());
 
+// ---------------------------------------------------------------------------
+// Intégration système : figurer dans « Ouvrir avec » — et RIEN de plus.
+// On ne s'auto-désigne jamais gestionnaire par défaut : sur Linux le bureau en
+// décide, ailleurs le système impose une confirmation à l'utilisateur.
+// ---------------------------------------------------------------------------
+// Le module (default-app.js) ne connaît ni Electron ni l'utilisateur : il reçoit
+// ce contexte, ce qui permet de le tester dans des dossiers temporaires.
+function systemIntegrationContext() {
+  const icon = resourcePath('build/icon.png');
+  return {
+    platform: process.platform,
+    packaged: app.isPackaged,
+    appName: 'Orbit',
+    // AppImage : le point de montage est éphémère — l'entrée de bureau doit
+    // pointer sur le FICHIER .AppImage, sinon l'association casse au démontage.
+    execPath: process.env.APPIMAGE || process.execPath,
+    // En développement, Electron a besoin du chemin du projet en argument.
+    execArgs: app.isPackaged ? [] : [app.getAppPath()],
+    iconPath: fs.existsSync(icon) ? icon : '',
+    applicationsDir: path.join(app.getPath('home'), '.local', 'share', 'applications'),
+    systemApplicationsDirs: ['/usr/share/applications', '/usr/local/share/applications'],
+  };
+}
+
+// Qui ouvre ce type aujourd'hui ? Lecture seule — sert uniquement à INFORMER
+// l'écran de réglages (on ne défait jamais un choix de l'utilisateur).
+function xdgMimeDefault(mime) {
+  try {
+    return execFileSync('xdg-mime', ['query', 'default', mime], { encoding: 'utf8', timeout: 4000 }).trim();
+  } catch {
+    return '';
+  }
+}
+
+// Sans ce rafraîchissement, la liste « Ouvrir avec » peut ignorer la nouvelle
+// entrée jusqu'à la prochaine session. Best effort : l'absence de la commande
+// n'est pas une erreur (tous les bureaux ne l'ont pas).
+function refreshDesktopDatabase(ctx) {
+  try {
+    execFileSync('update-desktop-database', [ctx.applicationsDir], { timeout: 8000 });
+  } catch {
+    /* ignore */
+  }
+}
+
+function systemIntegrationStatus(ctx) {
+  const probes =
+    ctx.platform === 'linux'
+      ? { webDefault: xdgMimeDefault('x-scheme-handler/http'), htmlDefault: xdgMimeDefault('text/html') }
+      : {};
+  return defaultApp.status(ctx, probes);
+}
+
+ipcMain.handle('sysint:status', () => systemIntegrationStatus(systemIntegrationContext()));
+
+ipcMain.handle('sysint:propose', () => {
+  const ctx = systemIntegrationContext();
+  const res = defaultApp.propose(ctx);
+  if (res.changed) refreshDesktopDatabase(ctx);
+  // On renvoie l'état À JOUR : l'écran n'a pas à le redemander.
+  return { ...res, status: systemIntegrationStatus(ctx) };
+});
+
+ipcMain.handle('sysint:unpropose', () => {
+  const ctx = systemIntegrationContext();
+  const res = defaultApp.unpropose(ctx);
+  if (res.changed) refreshDesktopDatabase(ctx);
+  return { ...res, status: systemIntegrationStatus(ctx) };
+});
+
+// L'interface est montée et écoute : on peut livrer les liens arrivés pendant
+// le démarrage (l'OS nous a lancés avec une URL, ou un .html).
+ipcMain.on('links:ready', () => {
+  rendererLinksReady = true;
+  const items = pendingOpenLinks;
+  pendingOpenLinks = [];
+  deliverOpenLinks(items);
+});
+
 // Les pages volantes ne survivent pas à Orbit (exclues du store persisté),
 // mais leur partition `persist:fly:…` ne se purgeait qu'à la fermeture
 // explicite de la page : quitter Orbit laissait cookies et cache sur le disque,
@@ -4906,6 +5043,10 @@ app.whenReady().then(() => {
 
   createWindow();
   createTray();
+
+  // Un lien (ou un .html) a lancé Orbit : on le met en file — il partira dès
+  // que l'interface aura signalé qu'elle est prête à les recevoir.
+  deliverOpenLinks(openLinksFromArgv(process.argv.slice(1)));
 
   // Mise à jour automatique (après un court délai, laisser la fenêtre s'afficher)
   setTimeout(initAutoUpdate, 6000);

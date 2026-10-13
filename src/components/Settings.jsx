@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import {
   X,
   User,
@@ -17,6 +17,9 @@ import {
   Volume2,
   Globe,
   Workflow,
+  Home,
+  Upload,
+  Link2,
 } from 'lucide-react';
 import { useStore } from '../stores/useStore';
 import ProfileManager from './ProfileManager';
@@ -36,6 +39,7 @@ import SitePermissions from './SitePermissions';
 import ShieldSettings from './ShieldSettings';
 import { getBuiltinSound, resolveSoundUrl, playSound } from '../lib/sounds';
 import SoundPicker from './SoundPicker';
+import { normalizeHome, HOME_BACKGROUNDS, ACCENT_BACKGROUND } from '../lib/home';
 
 // Polices proposées, groupées par style. Chaque entrée est rendue
 // dans sa propre police → aperçu en direct avant de choisir.
@@ -107,6 +111,64 @@ export default function Settings({ onClose }) {
   };
   const { settings, updateSettings, apps, profiles } = useStore();
   const t = useT();
+
+  // Page d'accueil : on passe toujours par `normalizeHome` (installation mise
+  // à jour = pas encore de clé `settings.home`).
+  const home = normalizeHome(settings.home);
+  const homeFileRef = useRef(null);
+  const handleHomeImage = (e) => {
+    const file = e.target.files && e.target.files[0];
+    if (file) {
+      const reader = new FileReader();
+      reader.onload = () => {
+        const cur = useStore.getState().settings.home;
+        updateSettings({ home: { ...normalizeHome(cur), imageUrl: String(reader.result || '') } });
+      };
+      reader.readAsDataURL(file);
+    }
+    e.target.value = '';
+  };
+
+  // « Ouvrir avec » : on lit l'état réel auprès du processus principal (lui
+  // seul sait quel fichier .desktop existe et qui ouvre quoi aujourd'hui).
+  const [sysint, setSysint] = useState(null);
+  const [sysintBusy, setSysintBusy] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    // L'état arrive par un aller-retour IPC : on ne le pose que dans le
+    // callback, et jamais si l'écran a été refermé entre-temps. En cas d'échec
+    // (ou hors Electron, ex. navigateur) la carte reste simplement descriptive.
+    const probe = window.electronAPI?.systemIntegration?.status?.();
+    if (probe && typeof probe.then === 'function') {
+      probe.then((st) => {
+        if (alive && st) setSysint(st);
+      });
+    }
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  const toggleSysint = async (enable) => {
+    setSysintBusy(true);
+    try {
+      const api = window.electronAPI?.systemIntegration;
+      const res = enable ? await api?.propose?.() : await api?.unpropose?.();
+      // La réponse porte l'état à jour : pas d'aller-retour supplémentaire.
+      if (res?.status) setSysint(res.status);
+      if (res && res.success === false) {
+        const msg =
+          res.error === 'file-exists'
+            ? t('st.sysint.errFileExists')
+            : res.error === 'unsupported-platform'
+              ? t('st.sysint.errUnsupported')
+              : t('st.sysint.errFailed', { error: res.error });
+        alert(msg);
+      }
+    } finally {
+      setSysintBusy(false);
+    }
+  };
 
   const tabs = [
     { id: 'general', name: t('st.tab.general'), icon: Zap },
@@ -218,6 +280,84 @@ export default function Settings({ onClose }) {
                         );
                       })}
                     </select>
+                  </div>
+
+                  {/* « Ouvrir avec » : figurer dans la liste du système, sans
+                      jamais prendre la place du navigateur par défaut. */}
+                  <div className="card">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Link2 size={18} className="text-accent-primary" />
+                      <h4 className="font-semibold">{t('st.sysint.title')}</h4>
+                    </div>
+                    <p className="text-sm text-text-muted mb-4">{t('st.sysint.desc')}</p>
+
+                    {sysint &&
+                      (sysint.canManage ? (
+                        <>
+                          <div className="space-y-2 mb-4">
+                            {[
+                              ['web', t('st.sysint.web')],
+                              ['html', t('st.sysint.html')],
+                            ].map(([key, label]) => {
+                              const s = sysint[key] || {};
+                              return (
+                                <div key={key} className="flex items-center justify-between gap-3 text-sm">
+                                  <span>{label}</span>
+                                  <span className="flex items-center gap-2 flex-shrink-0">
+                                    <span
+                                      className={`px-2 py-0.5 rounded-full text-xs ${
+                                        s.proposed
+                                          ? 'bg-success/15 text-success'
+                                          : 'bg-bg-hover text-text-muted'
+                                      }`}
+                                    >
+                                      {s.proposed ? t('st.sysint.proposed') : t('st.sysint.notProposed')}
+                                    </span>
+                                    {s.isDefault && (
+                                      <span className="px-2 py-0.5 rounded-full text-xs bg-accent-primary/15 text-accent-primary">
+                                        {t('st.sysint.isDefault')}
+                                      </span>
+                                    )}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+
+                          <div className="flex flex-wrap items-center gap-3">
+                            {sysint.managed ? (
+                              <button
+                                onClick={() => toggleSysint(false)}
+                                disabled={sysintBusy}
+                                className="btn btn-secondary btn-sm"
+                              >
+                                {t('st.sysint.disable')}
+                              </button>
+                            ) : sysint.web?.proposed && sysint.html?.proposed ? (
+                              <span className="text-sm text-text-muted">
+                                {t('st.sysint.alreadyInstalled')}
+                              </span>
+                            ) : (
+                              <button
+                                onClick={() => toggleSysint(true)}
+                                disabled={sysintBusy}
+                                className="btn btn-primary btn-sm"
+                              >
+                                {t('st.sysint.enable')}
+                              </button>
+                            )}
+                          </div>
+                          <p className="text-xs text-text-muted mt-3">{t('st.sysint.linuxHint')}</p>
+                        </>
+                      ) : (
+                        <p className="text-sm text-text-muted">
+                          {sysint.note === 'bundled' ? t('st.sysint.macHint') : t('st.sysint.winHint')}
+                        </p>
+                      ))}
+
+                    {sysint && !sysint.packaged && (
+                      <p className="text-xs text-warning mt-3">{t('st.sysint.unpackaged')}</p>
+                    )}
                   </div>
 
                   <div className="card">
@@ -605,6 +745,156 @@ export default function Settings({ onClose }) {
                         className="w-12 h-6 bg-bg-hover rounded-full relative cursor-pointer appearance-none checked:bg-accent-primary transition-colors after:content-[''] after:absolute after:top-1 after:left-1 after:w-4 after:h-4 after:bg-white after:rounded-full after:transition-transform checked:after:translate-x-6"
                       />
                     </label>
+                  </div>
+
+                  {/* Page d'accueil : le fond et les widgets affichés dans un
+                      profil quand aucune app n'est ouverte. */}
+                  <div className="card">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Home size={18} className="text-accent-primary" />
+                      <h4 className="font-semibold">{t('st.homeTitle')}</h4>
+                    </div>
+                    <p className="text-sm text-text-muted mb-4">{t('st.homeDesc')}</p>
+
+                    {/* Fonds proposés (dégradés) */}
+                    <div className="text-sm font-medium mb-2">{t('st.homeBackground')}</div>
+                    <div className="flex flex-wrap gap-3">
+                      {HOME_BACKGROUNDS.map((b) => {
+                        const selected = !home.imageUrl && home.background === b.id;
+                        return (
+                          <button
+                            key={b.id}
+                            onClick={() =>
+                              updateSettings({ home: { ...home, background: b.id, imageUrl: '' } })
+                            }
+                            title={t(`home.bg.${b.id}`)}
+                            className={`w-12 h-12 rounded-xl border-2 transition-all ${
+                              selected ? 'border-white scale-105' : 'border-transparent hover:scale-105'
+                            }`}
+                            style={{
+                              backgroundImage: b.accent ? ACCENT_BACKGROUND : b.css,
+                              backgroundSize: 'cover',
+                            }}
+                          />
+                        );
+                      })}
+                    </div>
+
+                    {/* Image personnalisée : URL ou fichier local */}
+                    <div className="mt-5 pt-4 border-t border-border space-y-3">
+                      <div className="text-sm font-medium">{t('st.homeCustomImage')}</div>
+                      <div className="flex gap-2">
+                        <input
+                          type="text"
+                          value={home.imageUrl}
+                          onChange={(e) =>
+                            updateSettings({ home: { ...home, imageUrl: e.target.value } })
+                          }
+                          placeholder={t('st.homeImageUrl')}
+                          className="input flex-1"
+                        />
+                        <button
+                          onClick={() => homeFileRef.current?.click()}
+                          className="btn btn-secondary whitespace-nowrap"
+                        >
+                          <Upload size={15} />
+                          <span className="hidden sm:inline">{t('st.homeChooseImage')}</span>
+                        </button>
+                        <input
+                          ref={homeFileRef}
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={handleHomeImage}
+                        />
+                      </div>
+
+                      {home.imageUrl && (
+                        <>
+                          <div className="flex items-center gap-3">
+                            <div
+                              className="h-16 w-28 rounded-lg border border-border bg-cover bg-center"
+                              style={{ backgroundImage: `url("${home.imageUrl}")` }}
+                            />
+                            <button
+                              onClick={() =>
+                                updateSettings({ home: { ...home, imageUrl: '' } })
+                              }
+                              className="btn btn-ghost btn-sm"
+                            >
+                              {t('st.homeRemoveImage')}
+                            </button>
+                          </div>
+                          <label className="block">
+                            <div className="flex items-center justify-between text-sm">
+                              <span>{t('st.homeBlur')}</span>
+                              <span className="text-text-muted tabular-nums">{home.blur} px</span>
+                            </div>
+                            <input
+                              type="range"
+                              min="0"
+                              max="24"
+                              step="1"
+                              value={home.blur}
+                              onChange={(e) =>
+                                updateSettings({
+                                  home: { ...home, blur: parseInt(e.target.value, 10) },
+                                })
+                              }
+                              className="w-full accent-accent-primary mt-1"
+                            />
+                          </label>
+                        </>
+                      )}
+
+                      {/* Voile sombre : garde le texte lisible sur une photo claire */}
+                      <label className="block">
+                        <div className="flex items-center justify-between text-sm">
+                          <span>{t('st.homeDim')}</span>
+                          <span className="text-text-muted tabular-nums">{home.dim} %</span>
+                        </div>
+                        <input
+                          type="range"
+                          min="0"
+                          max="80"
+                          step="5"
+                          value={home.dim}
+                          onChange={(e) =>
+                            updateSettings({ home: { ...home, dim: parseInt(e.target.value, 10) } })
+                          }
+                          className="w-full accent-accent-primary mt-1"
+                        />
+                      </label>
+                    </div>
+
+                    {/* Widgets affichés : volontairement peu nombreux */}
+                    <div className="mt-5 pt-4 border-t border-border">
+                      <div className="text-sm font-medium mb-3">{t('st.homeWidgets')}</div>
+                      <div className="flex flex-wrap gap-6">
+                        {[
+                          ['clock', t('st.homeWidgetClock')],
+                          ['weather', t('st.homeWidgetWeather')],
+                          ['apps', t('st.homeWidgetApps')],
+                        ].map(([key, label]) => (
+                          <label key={key} className="flex items-center gap-2 text-sm">
+                            <input
+                              type="checkbox"
+                              checked={home.widgets[key] !== false}
+                              onChange={(e) =>
+                                updateSettings({
+                                  home: {
+                                    ...home,
+                                    widgets: { ...home.widgets, [key]: e.target.checked },
+                                  },
+                                })
+                              }
+                              className="w-4 h-4 accent-accent-primary"
+                            />
+                            {label}
+                          </label>
+                        ))}
+                      </div>
+                    </div>
                   </div>
 
                   {/* Composition de l'en-tête + widgets (horloge, météo…) */}

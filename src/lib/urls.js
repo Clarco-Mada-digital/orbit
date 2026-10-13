@@ -132,3 +132,41 @@ export function computeStartUrl(app, recipes) {
   if (home && app.url && !sameHost(home, app.url)) return home;
   return isLoginPageUrl(app.url) ? home : app.url;
 }
+
+// Extensions qu'on accepte d'ouvrir comme une page. Le pendant côté process
+// principal est PAGE_EXTENSIONS (electron/open-links.js) : les deux doivent
+// rester d'accord, sinon le système nous passe un lien qu'on refuse d'ouvrir.
+const PAGE_EXTENSIONS = new Set(['html', 'htm', 'xhtml']);
+
+// Cible d'une PAGE VOLANTE (« lien libre ») : une adresse web, ou une page HTML
+// locale — c'est le cas d'un fichier .html qu'on choisit d'ouvrir avec Orbit
+// depuis son système (double-clic, « Ouvrir avec »). Renvoie null pour tout le
+// reste : une page volante n'est pas une visionneuse de fichiers quelconques.
+export function flyPageTarget(rawUrl) {
+  const url = String(rawUrl || '').trim();
+  if (!url) return null;
+
+  if (/^https?:\/\/\S+$/i.test(url)) {
+    let name = url;
+    try {
+      name = new URL(url).hostname.replace(/^www\./, '') || url;
+    } catch {
+      /* URL déjà validée : on garde l'adresse comme nom */
+    }
+    return { url, name, local: false };
+  }
+
+  if (/^file:\/\/\S+$/i.test(url)) {
+    try {
+      const u = new URL(url);
+      const file = decodeURIComponent(u.pathname.split('/').pop() || '');
+      const ext = (file.split('.').pop() || '').toLowerCase();
+      if (!PAGE_EXTENSIONS.has(ext)) return null;
+      return { url, name: file || url, local: true };
+    } catch {
+      return null;
+    }
+  }
+
+  return null;
+}

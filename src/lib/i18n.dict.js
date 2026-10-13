@@ -1147,6 +1147,71 @@ export const fr = {
   'vs.preview': 'Essayer',
   'vs.stop': 'Arrêter',
   'vs.failed': 'Opération impossible.',
+
+  // --- Page d'accueil (profil sans app ouverte) ---
+  'home.greetMorning': 'Bonjour',
+  'home.greetAfternoon': 'Bon après-midi',
+  'home.greetEvening': 'Bonsoir',
+  'home.greetNight': 'Bonne nuit',
+  'home.subtitle': 'Aucune app ouverte dans ce profil.',
+  'home.searchPlaceholder': 'Rechercher une app, une action, une adresse…',
+  'home.customize': 'Personnaliser',
+  'home.clock': 'Heure',
+  'home.weather': 'Météo',
+  'home.weatherSetCity': 'Choisissez une ville dans les réglages',
+  'home.weatherError': 'Météo indisponible',
+  'home.apps': 'Accès rapide',
+  'home.browseStore': 'Boutique',
+  'home.noApps': 'Aucune app dans ce profil.',
+  'home.addApp': 'Ajouter une app',
+  'home.bg.accent': 'Couleur d’accent',
+  'home.bg.night': 'Nuit',
+  'home.bg.aurora': 'Aurore',
+  'home.bg.sunset': 'Couchant',
+  'home.bg.ocean': 'Océan',
+  'home.bg.plum': 'Prune',
+  'home.bg.mono': 'Gris',
+  'home.bg.plain': 'Sombre',
+  'st.homeTitle': 'Page d’accueil',
+  'st.homeDesc':
+    'Affichée dans un profil quand aucune app n’est ouverte : un fond personnalisable, le champ de recherche Alt+K et quelques widgets. On laisse un peu de vide pour profiter du fond.',
+  'st.homeBackground': 'Fond',
+  'st.homeCustomImage': 'Image personnalisée',
+  'st.homeImageUrl': 'https://exemple.com/image.jpg',
+  'st.homeChooseImage': 'Choisir…',
+  'st.homeRemoveImage': 'Retirer l’image',
+  'st.homeBlur': 'Flou',
+  'st.homeDim': 'Assombrir',
+  'st.homeWidgets': 'Widgets affichés',
+  'st.homeWidgetClock': 'Heure et date',
+  'st.homeWidgetWeather': 'Météo',
+  'st.homeWidgetApps': 'Accès rapide aux apps',
+
+  // --- « Ouvrir avec » (intégration système) ---
+  'st.sysint.title': 'Ouvrir des liens avec Orbit',
+  'st.sysint.desc':
+    'Orbit peut figurer dans la liste « Ouvrir avec » du système, pour les liens web et les fichiers .html. Rien ne change tant que vous ne l’activez pas ici : on ne PREND rien par défaut, et un lien reçu s’ouvre en page volante — un lien libre, jamais dans un de vos comptes.',
+  'st.sysint.web': 'Liens web (http / https)',
+  'st.sysint.html': 'Fichiers .html',
+  'st.sysint.proposed': 'Proposé',
+  'st.sysint.notProposed': 'Non proposé',
+  'st.sysint.isDefault': 'Par défaut',
+  'st.sysint.enable': 'Proposer Orbit',
+  'st.sysint.disable': 'Retirer la proposition',
+  'st.sysint.alreadyInstalled': 'Déjà proposé par l’application installée — rien à faire.',
+  'st.sysint.linuxHint':
+    'Après activation, « Ouvrir avec → Orbit » apparaît pour les liens et les pages HTML, et s’ouvre en page volante. Pour en faire le navigateur par défaut, c’est le réglage de votre bureau qui décide (Orbit ne le fait jamais tout seul).',
+  'st.sysint.macHint':
+    'Sous macOS, c’est le système qui propose « Ouvrir avec » : l’application installée y figure déjà, il n’y a aucun réglage à toucher ici. Pour la choisir par défaut, passez par Réglages Système → Applications par défaut.',
+  'st.sysint.winHint':
+    'Sous Windows 10/11, un programme ne peut pas s’inscrire lui-même dans « Ouvrir avec » sans devenir gestionnaire par défaut : utilisez « Ouvrir avec → Choisir une autre application », puis épinglez Orbit (Parcourir… jusqu’au programme installé).',
+  'st.sysint.unpackaged':
+    'Vous lancez la version de développement : l’association pointerait vers ce binaire Electron. Préférez l’application installée.',
+  'st.sysint.errFileExists':
+    'Un fichier orbit.desktop existe déjà et n’appartient pas à Orbit : nous ne l’écrasons pas.',
+  'st.sysint.errUnsupported':
+    'Ce système ne permet pas de le faire depuis l’application (voir la note ci-dessus).',
+  'st.sysint.errFailed': 'Impossible de modifier l’association : {error}',
   'vs.note':
     "Le volume suit celui d'Orbit (Réglages → Notifications). Une voix Piper occupe de l'espace disque mais ne consomme rien tant qu'elle ne parle pas.",
 };
@@ -2290,5 +2355,70 @@ export const en = {
   'st.shieldsInherited': '(default)',
   'st.shieldsReset': 'Back to default values',
   'st.shieldsForgetAll': 'Reset all',
+
+  // --- Home page (profile with no open app) ---
+  'home.greetMorning': 'Good morning',
+  'home.greetAfternoon': 'Good afternoon',
+  'home.greetEvening': 'Good evening',
+  'home.greetNight': 'Good night',
+  'home.subtitle': 'No app open in this profile.',
+  'home.searchPlaceholder': 'Search an app, an action or a web address…',
+  'home.customize': 'Customize',
+  'home.clock': 'Time',
+  'home.weather': 'Weather',
+  'home.weatherSetCity': 'Pick a city in the settings',
+  'home.weatherError': 'Weather unavailable',
+  'home.apps': 'Quick access',
+  'home.browseStore': 'Store',
+  'home.noApps': 'No app in this profile.',
+  'home.addApp': 'Add an app',
+  'home.bg.accent': 'Accent color',
+  'home.bg.night': 'Night',
+  'home.bg.aurora': 'Aurora',
+  'home.bg.sunset': 'Sunset',
+  'home.bg.ocean': 'Ocean',
+  'home.bg.plum': 'Plum',
+  'home.bg.mono': 'Grey',
+  'home.bg.plain': 'Dark',
+  'st.homeTitle': 'Home page',
+  'st.homeDesc':
+    'Shown in a profile when no app is open: a customizable background, the Alt+K search field and a few widgets. Keep it airy to enjoy the background.',
+  'st.homeBackground': 'Background',
+  'st.homeCustomImage': 'Custom image',
+  'st.homeImageUrl': 'https://example.com/image.jpg',
+  'st.homeChooseImage': 'Choose…',
+  'st.homeRemoveImage': 'Remove image',
+  'st.homeBlur': 'Blur',
+  'st.homeDim': 'Dim',
+  'st.homeWidgets': 'Shown widgets',
+  'st.homeWidgetClock': 'Time and date',
+  'st.homeWidgetWeather': 'Weather',
+  'st.homeWidgetApps': 'Quick app access',
+
+  // --- "Open with" (system integration) ---
+  'st.sysint.title': 'Open links with Orbit',
+  'st.sysint.desc':
+    'Orbit can appear in your system’s “Open with” list, for web links and .html files. Nothing changes until you enable it here: Orbit takes NOTHING by default, and a link handed to it opens as a free page — never inside one of your accounts.',
+  'st.sysint.web': 'Web links (http / https)',
+  'st.sysint.html': '.html files',
+  'st.sysint.proposed': 'Offered',
+  'st.sysint.notProposed': 'Not offered',
+  'st.sysint.isDefault': 'Default',
+  'st.sysint.enable': 'Offer Orbit',
+  'st.sysint.disable': 'Remove the offer',
+  'st.sysint.alreadyInstalled': 'Already offered by the installed app — nothing to do.',
+  'st.sysint.linuxHint':
+    'Once enabled, “Open with → Orbit” shows up for links and HTML pages, and opens them as a free page. Making Orbit your default browser is your desktop’s decision (Orbit never does that on its own).',
+  'st.sysint.macHint':
+    'On macOS the system offers “Open With”: the installed app already appears there, so there is nothing to toggle here. To make it the default, use System Settings → Default apps.',
+  'st.sysint.winHint':
+    'On Windows 10/11 a program cannot add itself to “Open with” without becoming the default handler: use “Open with → Choose another app”, then pin Orbit (Browse… to the installed program).',
+  'st.sysint.unpackaged':
+    'You are running the development build: the association would point at this Electron binary. Prefer the installed app.',
+  'st.sysint.errFileExists':
+    'An orbit.desktop file already exists and does not belong to Orbit: we do not overwrite it.',
+  'st.sysint.errUnsupported':
+    'This system does not allow doing that from the app (see the note above).',
+  'st.sysint.errFailed': 'Could not change the association: {error}',
 };
 

@@ -235,6 +235,26 @@ contextBridge.exposeInMainWorld('electronAPI', {
     return () => ipcRenderer.removeListener('rules:linkRouted', handler);
   },
 
+  // Liens ouverts depuis l'EXTÉRIEUR : le système nous a lancés (ou rappelés)
+  // avec une URL, ou le chemin d'un fichier .html (double-clic, « Ouvrir avec »).
+  // Le renderer les ouvre en page volante — un lien libre, pas une app connectée.
+  onOpenLink: (cb) => {
+    const handler = (_e, payload) => cb(payload);
+    ipcRenderer.on('orbit:open-link', handler);
+    return () => ipcRenderer.removeListener('orbit:open-link', handler);
+  },
+  // « J'écoute » : le main processus peut alors livrer les liens reçus pendant
+  // le démarrage (fenêtre pas encore montée).
+  linksReady: () => ipcRenderer.send('links:ready'),
+
+  // « Ouvrir avec » : proposer Orbit, ou retirer la proposition.
+  // On ne se désigne jamais gestionnaire par défaut.
+  systemIntegration: {
+    status: () => ipcRenderer.invoke('sysint:status'),
+    propose: () => ipcRenderer.invoke('sysint:propose'),
+    unpropose: () => ipcRenderer.invoke('sysint:unpropose'),
+  },
+
   // Synchronisation entre machines par dossier partagé (voir main.js)
   sync: {
     identity: () => ipcRenderer.invoke('sync:identity'),

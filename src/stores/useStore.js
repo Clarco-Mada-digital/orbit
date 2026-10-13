@@ -1,9 +1,10 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { recipes } from '../lib/recipes';
-import { DEFAULT_TOPBAR, DEFAULT_BOTTOMBAR } from '../lib/topbarLayout';
-import { stampSync, NO_STAMP } from '../lib/syncStamp';
-import { reconcileLocal } from '../lib/syncMerge';
+import { recipes } from '../lib/recipes.js';
+import { flyPageTarget } from '../lib/urls.js';
+import { DEFAULT_TOPBAR, DEFAULT_BOTTOMBAR } from '../lib/topbarLayout.js';
+import { stampSync, NO_STAMP } from '../lib/syncStamp.js';
+import { reconcileLocal } from '../lib/syncMerge.js';
 
 // Hostname d'une URL (pour la migration des favicons)
 function hostnameOf(url) {
@@ -138,6 +139,17 @@ export const defaultSettings = {
   // Style des fenêtres secondaires (pop-ups d'apps : connexion Google, liens
   // ouverts dans une nouvelle fenêtre…)
   popupStyle: 'orbit', // orbit (habillage Orbit, coins arrondis) | native | external
+
+  // Page d'accueil : ce qu'on voit dans un profil quand aucune app n'est
+  // ouverte (fond personnalisable, champ de recherche Alt+K, petits widgets).
+  // Voir src/lib/home.js pour les fonds proposés et la normalisation.
+  home: {
+    background: 'accent', // id d'un fond de HOME_BACKGROUNDS
+    imageUrl: '', // image personnalisée (URL ou data URL) — prime sur le fond
+    blur: 0, // 0-24 px de flou sur l'image
+    dim: 30, // 0-80 % de voile sombre sur le fond
+    widgets: { clock: true, weather: true, apps: true },
+  },
 };
 
 // Store principal pour gérer les profils, apps, et l'état global
@@ -517,8 +529,11 @@ export const useStore = create(
       // d'extensions, pas d'historique. Une page privée ne réutilise jamais une
       // page normale (et inversement) : ce serait mélanger les deux sessions.
       openFlyPage: (rawUrl, { private: isPrivate = false } = {}) => {
-        const url = String(rawUrl || '').trim();
-        if (!/^https?:\/\//i.test(url)) return null;
+        // `flyPageTarget` (lib/urls.js) tranche : adresse web, ou page HTML
+        // locale ouverte depuis le système. Le reste est refusé.
+        const target = flyPageTarget(rawUrl);
+        if (!target) return null;
+        const url = target.url;
         const existing = get().flyPages.find(
           (p) => Boolean(p.private) === isPrivate && (p.url === url || p.homeUrl === url)
         );
@@ -527,12 +542,8 @@ export const useStore = create(
           return existing.id;
         }
         const id = `${isPrivate ? 'priv' : 'fly'}-${Date.now()}`;
-        let host = url;
-        try {
-          host = new URL(url).hostname.replace(/^www\./, '');
-        } catch {
-          /* URL déjà validée par la regex : ce cas ne devrait pas arriver */
-        }
+        // Nom affiché : le domaine du site, ou le nom du fichier local.
+        const host = target.name;
         set((state) => ({
           flyPages: [
             ...state.flyPages,
@@ -552,7 +563,7 @@ export const useStore = create(
               name: host,
               url,
               homeUrl: url,
-              icon: isPrivate ? '🕶️' : '🌐',
+              icon: isPrivate ? '🕶️' : target.local ? '📄' : '🌐',
               color: isPrivate ? '#7c3aed' : '#64748b',
               unread: 0,
               sleeping: false,
@@ -711,7 +722,9 @@ export const useStore = create(
       // v10 : sons du minuteur + volume global. Le bump de version suffit :
       // la fusion avec `defaultSettings` en tête de `migrate` les ajoute aux
       // installations existantes.
-      version: 12,
+      // v13 : page d'accueil (`settings.home`). Ajoutée par la même fusion —
+      // les installations existantes ont un `home` par défaut (fond accent).
+      version: 13,
       migrate: (persistedState, version) => {
         // Fusionne les anciennes données avec les paramètres par défaut
         // (évite les champs manquants → bug "input non contrôlé")

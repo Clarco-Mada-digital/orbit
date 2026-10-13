@@ -235,6 +235,139 @@ test('isSameSite : symétrique et false si un côté manque', () => {
 });
 
 // ---------------------------------------------------------------------------
+// Hôtes sans domaine enregistrable (localhost, IP) — le cas « app en local »
+// ---------------------------------------------------------------------------
+
+test('domainForComparison : repli sur l’hôte quand la liste PSL ne connaît pas le domaine', () => {
+  // C'est CE repli qui manquait : getDomain('localhost') et
+  // getDomain('127.0.0.1') renvoient null, et comparer null à « localhost »
+  // faisait passer le site pour un tiers vis-à-vis de lui-même.
+  assert.equal(getDomain('localhost'), null);
+  assert.equal(getDomain('127.0.0.1'), null);
+  assert.equal(rules.domainForComparison('localhost', getDomain('localhost')), 'localhost');
+  assert.equal(rules.domainForComparison('127.0.0.1', getDomain('127.0.0.1')), '127.0.0.1');
+});
+
+test('domainForComparison : domaine enregistrable conservé quand il existe', () => {
+  assert.equal(
+    rules.domainForComparison('mail.google.com', getDomain('mail.google.com')),
+    'google.com'
+  );
+  assert.equal(rules.domainForComparison('exemple.com', getDomain('exemple.com')), 'exemple.com');
+});
+
+test('domainForComparison : hôte absent → null', () => {
+  assert.equal(rules.domainForComparison('', null), null);
+  assert.equal(rules.domainForComparison(undefined, null), null);
+});
+
+test('cookies tiers : une app en localhost garde sa propre session', () => {
+  // Bogue historique : `siteDomain` valait null pour localhost, donc
+  // isSameSite(null, 'localhost') = false → le blocage des cookies tiers
+  // (actif par défaut) supprimait le cookie de session de PREMIÈRE partie,
+  // à l'envoi comme au dépôt → connexion impossible sur l'app de dev, alors
+  // que la même app en ligne fonctionnait.
+  const s = site({ cookies: 'cross-site' });
+  const local = rules.domainForComparison('localhost', getDomain('localhost'));
+  assert.equal(rules.shouldStripCookieHeader(s, local, local), false);
+  assert.equal(rules.shouldStripSetCookie(s, local, local), false);
+  // IP littérale : même situation, même correctif.
+  const ip = rules.domainForComparison('127.0.0.1', getDomain('127.0.0.1'));
+  assert.equal(rules.shouldStripCookieHeader(s, ip, ip), false);
+});
+
+test('cookies tiers : les vrais tiers restent bloqués depuis un hôte local', () => {
+  // Le repli ne doit pas transformer localhost en passe-droit général.
+  const s = site({ cookies: 'cross-site' });
+  const local = rules.domainForComparison('localhost', getDomain('localhost'));
+  assert.equal(rules.shouldStripCookieHeader(s, local, domain('https://cdn.exemple.com')), true);
+  assert.equal(rules.shouldStripCookieHeader(s, local, 'autre-hote'), true);
+  assert.equal(rules.shouldStripSetCookie(s, local, domain('https://tracker.net')), true);
+});
+
+test('cookies tiers : origine encore inconnue → on retire (prudence inchangée)', () => {
+  // `siteDomain` null ne signifie plus « localhost » mais « on ne sait pas
+  // encore quelle page parle » : le comportement conservateur reste.
+  const s = site({ cookies: 'cross-site' });
+  assert.equal(rules.shouldStripCookieHeader(s, null, 'localhost'), true);
+});
+
+// comparisonDomains est LA fonction appelée par le process principal (main.js
+// lui passe `getDomain` de tldts) : ces tests exercent donc la vraie chaîne de
+// décision, pas une réplique.
+
+test('comparisonDomains : une app servie en localhost reste de PREMIÈRE partie', () => {
+  const { siteDomain, reqDomain } = rules.comparisonDomains(
+    'http://localhost:5173/',
+    'http://localhost:5173/',
+    getDomain
+  );
+  assert.deepEqual({ siteDomain, reqDomain }, { siteDomain: 'localhost', reqDomain: 'localhost' });
+  // Avant correctif : siteDomain valait null ici, donc le cookie de session
+  // était supprimé → connexion impossible.
+  assert.equal(rules.shouldStripCookieHeader(site({ cookies: 'cross-site' }), siteDomain, reqDomain), false);
+});
+
+test('comparisonDomains : localhost et 127.0.0.1 gardent leurs cookies', () => {
+  for (const host of ['http://localhost:5173', 'http://127.0.0.1:8080', 'http://[::1]:3000']) {
+    const { siteDomain, reqDomain } = rules.comparisonDomains(host, host, getDomain);
+    assert.equal(
+      rules.shouldStripCookieHeader(site({ cookies: 'cross-site' }), siteDomain, reqDomain),
+      false,
+      `${host} doit garder ses propres cookies`
+    );
+  }
+});
+
+test('comparisonDomains : le port ne fait pas un autre site (dev 5173 → API 3000)', () => {
+  // Cas classique : la page de dev appelle son backend sur un autre port du
+  // même hôte. Hors localhost ce serait déjà « same-site » (le port ne compte
+  // pas) ; le correctif aligne le comportement pour les hôtes locaux.
+  const { siteDomain, reqDomain } = rules.comparisonDomains(
+    'http://localhost:5173/',
+    'http://localhost:3000/api/login',
+    getDomain
+  );
+  assert.equal(siteDomain, 'localhost');
+  assert.equal(reqDomain, 'localhost');
+  assert.equal(rules.shouldStripCookieHeader(site({ cookies: 'cross-site' }), siteDomain, reqDomain), false);
+});
+
+test('comparisonDomains : les sites normaux ne changent pas de comportement', () => {
+  const same = rules.comparisonDomains('https://mail.google.com/', 'https://mail.google.com/', getDomain);
+  assert.deepEqual(same, { siteDomain: 'google.com', reqDomain: 'google.com' });
+  assert.equal(rules.shouldStripCookieHeader(site({ cookies: 'cross-site' }), same.siteDomain, same.reqDomain), false);
+
+  // Sous-domaines d'un même site : même domaine enregistrable → conservés.
+  const sub = rules.comparisonDomains('https://news.exemple.com/', 'https://api.exemple.com/x', getDomain);
+  assert.equal(rules.shouldStripCookieHeader(site({ cookies: 'cross-site' }), sub.siteDomain, sub.reqDomain), false);
+
+  // Vrai tiers : toujours retiré.
+  const third = rules.comparisonDomains('https://exemple.com/', 'https://tracker.net/pixel', getDomain);
+  assert.equal(rules.shouldStripCookieHeader(site({ cookies: 'cross-site' }), third.siteDomain, third.reqDomain), true);
+});
+
+test('comparisonDomains : depuis localhost, un vrai tiers est toujours bloqué', () => {
+  // Le correctif ne doit pas transformer un hôte local en passe-droit.
+  const { siteDomain, reqDomain } = rules.comparisonDomains(
+    'http://localhost:5173/',
+    'https://cdn.exemple.com/track.js',
+    getDomain
+  );
+  assert.equal(siteDomain, 'localhost');
+  assert.equal(reqDomain, 'exemple.com');
+  assert.equal(rules.shouldStripCookieHeader(site({ cookies: 'cross-site' }), siteDomain, reqDomain), true);
+});
+
+test('comparisonDomains : page hôte inconnue (about:blank, URL illisible) → tiers', () => {
+  for (const page of ['about:blank', '', 'file:///tmp/x.html']) {
+    const { siteDomain } = rules.comparisonDomains(page, 'https://exemple.com/', getDomain);
+    assert.equal(siteDomain, null, `${page || '(vide)'} n’a pas de domaine`);
+    assert.equal(rules.shouldStripCookieHeader(site({ cookies: 'cross-site' }), siteDomain, 'exemple.com'), true);
+  }
+});
+
+// ---------------------------------------------------------------------------
 // Empreinte numérique
 // ---------------------------------------------------------------------------
 

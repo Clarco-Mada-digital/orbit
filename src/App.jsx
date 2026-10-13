@@ -21,6 +21,7 @@ import LockScreen from './components/LockScreen';
 import FindBar from './components/FindBar';
 import UpdateBanner from './components/UpdateBanner';
 import Welcome from './components/Welcome';
+import HomeDashboard from './components/HomeDashboard';
 import PasswordVault from './components/PasswordVault';
 import { useStore, appVisibleIn } from './stores/useStore';
 import { useSecurityStore } from './lib/securityStore';
@@ -154,6 +155,22 @@ const [editUrlFor, setEditUrlFor] = useState(null); // { id, url } — boîte «
         if (!navigateApp(app.id, target)) st.openFlyPage(target);
       }, 250);
     });
+    return () => {
+      if (typeof off === 'function') off();
+    };
+  }, []);
+
+  // Liens venus de l'EXTÉRIEUR : le système a lancé (ou rappelé) Orbit avec une
+  // URL ou un fichier .html — parce que l'utilisateur a choisi Orbit dans
+  // « Ouvrir avec », ou double-cliqué une page associée. On l'ouvre en PAGE
+  // VOLANTE : un « lien libre », jamais un compte déjà connecté.
+  useEffect(() => {
+    const off = window.electronAPI?.onOpenLink?.(({ url } = {}) => {
+      if (url) useStore.getState().openFlyPage(url);
+    });
+    // On prévient le processus principal qu'on écoute : il livre alors ce qui
+    // est arrivé pendant le démarrage (sinon le lien serait perdu).
+    window.electronAPI?.linksReady?.();
     return () => {
       if (typeof off === 'function') off();
     };
@@ -881,7 +898,20 @@ const openEditUrl = useCallback((id) => {
   // Haut de la barre latérale : collée à 0 quand l'en-tête ne réserve plus de
   // place, sous l'en-tête sinon.
   const sidebarTop = hideTop ? 0 : '3rem';
-  const hasApps = profileApps.length > 0;
+
+  // Y a-t-il une app RÉELLEMENT affichée ? Une app en veille a son propre écran
+  // de réveil, et une app d'un autre profil n'est pas atteignable d'ici (son
+  // <webview> reste monté mais masqué) : dans ces deux cas, rien n'est visible
+  // et c'est la page d'accueil qui prend la place.
+  const activeAppVisible =
+    !!activeAppData && !activeAppData.sleeping && appVisibleIn(activeAppData, activeProfile);
+  // Page d'accueil : affichée dans un profil où aucune app n'est ouverte — ce
+  // qui remplace l'écran noir (et l'ancien écran de bienvenue, qui ne servait
+  // qu'au cas « profil sans aucune app »). On attend que l'état de verrouillage
+  // soit chargé (`security.ready`) pour ne pas la peindre une fraction de
+  // seconde par-dessus un profil verrouillé.
+  const showHome =
+    security.ready && !appLocked && activeProfileAccessible && !activeSplit && !activeAppVisible;
 
   // Un overlay (Réglages, Boutique…) est ouvert : on masque les webviews.
   // Évite tout problème de composition GPU où un webview serait peint
@@ -1001,7 +1031,12 @@ const openEditUrl = useCallback((id) => {
                   : ''
             }`}
             style={{
-              visibility: overlayOpen ? 'hidden' : 'visible',
+              // …sauf quand c'est la page d'accueil qui occupe la zone : elle
+              // n'a aucune webview à peindre, et la masquer ferait disparaître
+              // le fond d'écran derrière la palette de recherche. Les webviews
+              // montées mais inactives se masquent déjà elles-mêmes (voir
+              // WebView.jsx).
+              visibility: overlayOpen && !showHome ? 'hidden' : 'visible',
               ...(splitLayout
                 ? {
                     gridTemplateColumns: gridCols.map((f) => `${f}fr`).join(' '),
@@ -1169,59 +1204,17 @@ const openEditUrl = useCallback((id) => {
                   </div>
                 )}
 
-            {/* Écran d'accueil : superposé quand le profil actif n'a aucune app.
-                Rendu par-dessus les webviews (qui restent montés pour les autres
-                profils) plutôt qu'à leur place → pas de démontage. */}
-            {!hasApps && (
-              <div className="absolute inset-0 flex flex-col items-center justify-center h-full bg-bg-secondary">
-                <div className="w-24 h-24 rounded-full bg-gradient-to-br from-accent-primary to-purple-500 flex items-center justify-center mb-6 animate-pulse">
-                  <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2">
-                    <circle cx="12" cy="12" r="3" />
-                    <path d="M12 1v6m0 6v6m8.66-15.66l-4.24 4.24m-4.84 4.84l-4.24 4.24m15.08.08l-4.24-4.24m-4.84-4.84L2.34 2.34" />
-                  </svg>
-                </div>
-                <h2 className="text-2xl font-semibold mb-2">Bienvenue dans Orbit 🛰</h2>
-                <p className="text-text-secondary mb-6 text-center max-w-md">
-                  Installez vos applications depuis la boutique ou appuyez sur{' '}
-                  <kbd className="px-2 py-1 bg-bg-elevated border border-border rounded mx-1">⌘K</kbd>{' '}
-                  pour rechercher
-                </p>
-                <div className="flex gap-3">
-                  <button onClick={() => setShowQuickSwitcher(true)} className="btn btn-primary">
-                    🔍 Rechercher
-                  </button>
-                  <button onClick={() => setShowAppStore(true)} className="btn btn-secondary">
-                    🛍️ Boutique
-                  </button>
-                </div>
-
-                <div className="mt-12 grid grid-cols-2 gap-4 max-w-2xl">
-                  <div className="card text-left">
-                    <div className="text-2xl mb-2">⚡</div>
-                    <h3 className="font-semibold mb-1">Quick Switcher</h3>
-                    <p className="text-sm text-text-muted">
-                      Appuyez sur Cmd/Ctrl + K pour rechercher rapidement
-                    </p>
-                  </div>
-                  <div className="card text-left">
-                    <div className="text-2xl mb-2">💼</div>
-                    <h3 className="font-semibold mb-1">Profils multiples</h3>
-                    <p className="text-sm text-text-muted">
-                      Séparez travail et personnel avec des profils
-                    </p>
-                  </div>
-                  <div className="card text-left">
-                    <div className="text-2xl mb-2">🎨</div>
-                    <h3 className="font-semibold mb-1">Personnalisable</h3>
-                    <p className="text-sm text-text-muted">Thèmes, couleurs d'accent et plus encore</p>
-                  </div>
-                  <div className="card text-left">
-                    <div className="text-2xl mb-2">🌐</div>
-                    <h3 className="font-semibold mb-1">80+ Apps</h3>
-                    <p className="text-sm text-text-muted">Gmail, Slack, Notion, ChatGPT et bien plus</p>
-                  </div>
-                </div>
-              </div>
+            {/* Page d'accueil : superposée quand le profil actif n'a aucune app
+                ouverte. Rendu par-dessus les webviews (qui restent montés pour
+                les autres profils) plutôt qu'à leur place → pas de démontage. */}
+            {showHome && (
+              <HomeDashboard
+                apps={profileApps}
+                onSelectApp={handleSetActiveApp}
+                onOpenSearch={() => setShowQuickSwitcher(true)}
+                onOpenStore={() => setShowAppStore(true)}
+                onOpenSettings={() => setShowSettings(true)}
+              />
             )}
 
             {/* Rechercher dans la page (Ctrl/Cmd+F) — sur l'app active */}

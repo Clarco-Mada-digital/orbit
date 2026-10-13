@@ -8,6 +8,7 @@ import {
   homeUrlFor,
   computeStartUrl,
   detectUrl,
+  flyPageTarget,
 } from '../src/lib/urls.js';
 
 // --- detectUrl : « est-ce que l'utilisateur a tapé une adresse ? » --------
@@ -187,4 +188,38 @@ test('computeStartUrl : homeUrl explicite prioritaire sur la recette', () => {
     url: 'https://accounts.google.com/signin',
   };
   assert.equal(computeStartUrl(app, RECIPES), 'https://mail.google.com/mail/u/1/');
+});
+
+// --- flyPageTarget : ce qu'on accepte d'ouvrir en « lien libre » ----------
+// Une page volante peut aussi être un fichier HTML local, quand l'utilisateur
+// choisit Orbit dans « Ouvrir avec » de son système.
+
+test('flyPageTarget : une adresse web donne son domaine comme nom', () => {
+  assert.deepEqual(flyPageTarget('https://www.exemple.com/a?b=1'), {
+    url: 'https://www.exemple.com/a?b=1',
+    name: 'exemple.com',
+    local: false,
+  });
+});
+
+test('flyPageTarget : un fichier .html local donne le nom du fichier', () => {
+  const t = flyPageTarget('file:///home/lea/Documents/rapport%20final.html');
+  assert.equal(t.local, true);
+  assert.equal(t.name, 'rapport final.html', 'le nom est décodé et sans son chemin');
+  assert.equal(t.url, 'file:///home/lea/Documents/rapport%20final.html');
+});
+
+test('flyPageTarget : les extensions de page sont reconnues, pas le reste', () => {
+  assert.equal(flyPageTarget('file:///tmp/a.htm').local, true);
+  assert.equal(flyPageTarget('file:///tmp/a.xhtml').local, true);
+  // Orbit n'est pas une visionneuse : refus explicite.
+  assert.equal(flyPageTarget('file:///tmp/rapport.pdf'), null);
+  assert.equal(flyPageTarget('file:///tmp/photo.png'), null);
+  assert.equal(flyPageTarget('file:///tmp/sans-extension'), null);
+});
+
+test('flyPageTarget : refus de tout ce qui n’est ni web ni page locale', () => {
+  for (const bad of ['', '   ', 'javascript:alert(1)', 'mailto:a@b.c', 'notes.txt', 'file:///etc/passwd']) {
+    assert.equal(flyPageTarget(bad), null, `${JSON.stringify(bad)} doit être refusé`);
+  }
 });

@@ -4,50 +4,25 @@ import { useStore } from '../../stores/useStore';
 import { useT } from '../../lib/i18n';
 import { useZoneHold } from '../../lib/autoHide';
 import { useDismiss } from '../../lib/useDismiss';
+import {
+  WEATHER_REFRESH_MS as REFRESH_MS,
+  describeWeather as describe,
+  readWeatherCache,
+  writeWeatherCache,
+  fetchWeather,
+} from '../../lib/weather';
 
-// Météo via Open-Meteo : API publique, sans clé ni compte. La position vient
-// de la ville saisie dans les paramètres (géocodage Open-Meteo) — jamais de
-// géolocalisation silencieuse.
-const CACHE_KEY = 'orbit.weather.cache';
-const REFRESH_MS = 15 * 60 * 1000;
+// Météo via Open-Meteo : la logique (codes WMO, cache, appel API) vit dans
+// lib/weather.js — partagée avec la page d'accueil. Ici, seul l'habillage du
+// widget de l'en-tête.
 
-// Codes météo WMO → emoji + libellé
-const WMO = {
-  0: ['☀️', 'Ciel dégagé'],
-  1: ['🌤️', 'Plutôt dégagé'],
-  2: ['⛅', 'Partiellement nuageux'],
-  3: ['☁️', 'Couvert'],
-  45: ['🌫️', 'Brouillard'],
-  48: ['🌫️', 'Brouillard givrant'],
-  51: ['🌦️', 'Bruine légère'],
-  53: ['🌦️', 'Bruine'],
-  55: ['🌦️', 'Bruine dense'],
-  61: ['🌧️', 'Pluie faible'],
-  63: ['🌧️', 'Pluie'],
-  65: ['🌧️', 'Pluie forte'],
-  66: ['🌧️', 'Pluie verglaçante'],
-  67: ['🌧️', 'Pluie verglaçante forte'],
-  71: ['🌨️', 'Neige faible'],
-  73: ['🌨️', 'Neige'],
-  75: ['❄️', 'Neige forte'],
-  77: ['🌨️', 'Grains de neige'],
-  80: ['🌦️', 'Averses'],
-  81: ['🌧️', 'Averses'],
-  82: ['⛈️', 'Fortes averses'],
-  85: ['🌨️', 'Averses de neige'],
-  86: ['❄️', 'Fortes averses de neige'],
-  95: ['⛈️', 'Orage'],
-  96: ['⛈️', 'Orage et grêle'],
-  99: ['⛈️', 'Orage violent'],
-};
-const describe = (code) => WMO[code] || ['🌡️', '—'];
 
 export default function WeatherWidget({ placement = 'top', align = 'right-0' }) {
   const t = useT();
   const settings = useStore((s) => s.settings);
   const cfg = settings?.weather || {};
   const city = (cfg.city || '').trim();
-  const unit = cfg.units === 'imperial' ? 'fahrenheit' : 'celsius';
+  const units = cfg.units;
   const [data, setData] = useState(null);
   const [state, setState] = useState('idle'); // idle | loading | error
   const [reload, setReload] = useState(0); // incrémenté par le bouton « Actualiser »
@@ -71,44 +46,22 @@ export default function WeatherWidget({ placement = 'top', align = 'right-0' }) 
     const load = async (force = false) => {
       // Cache local : évite de retaper l'API à chaque ouverture d'Orbit
       if (!force) {
-        try {
-          const raw = JSON.parse(localStorage.getItem(CACHE_KEY) || 'null');
-          if (raw && raw.key === `${city}|${unit}` && Date.now() - raw.at < REFRESH_MS) {
-            if (alive) {
-              setData(raw.data);
-              setState('idle');
-            }
-            return;
+        const cached = readWeatherCache(city, units);
+        if (cached) {
+          if (alive) {
+            setData(cached);
+            setState('idle');
           }
-        } catch { /* cache illisible */ }
+          return;
+        }
       }
       if (alive) setState('loading');
       try {
-        const geo = await fetch(
-          `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(city)}&count=1&language=fr&format=json`
-        ).then((r) => r.json());
-        const place = geo?.results?.[0];
-        if (!place) throw new Error('ville introuvable');
-        const w = await fetch(
-          `https://api.open-meteo.com/v1/forecast?latitude=${place.latitude}&longitude=${place.longitude}` +
-            `&current=temperature_2m,apparent_temperature,relative_humidity_2m,wind_speed_10m,weather_code` +
-            `&daily=weather_code,temperature_2m_max,temperature_2m_min&forecast_days=4&timezone=auto` +
-            `&temperature_unit=${unit}&wind_speed_unit=${unit === 'fahrenheit' ? 'mph' : 'kmh'}`
-        ).then((r) => r.json());
-        if (!w?.current) throw new Error('météo indisponible');
-        const payload = {
-          place: `${place.name}${place.country_code ? `, ${place.country_code}` : ''}`,
-          current: w.current,
-          daily: w.daily,
-          windUnit: unit === 'fahrenheit' ? 'mph' : 'km/h',
-          tempUnit: unit === 'fahrenheit' ? '°F' : '°C',
-        };
+        const payload = await fetchWeather(city, units);
         if (!alive) return;
         setData(payload);
         setState('idle');
-        try {
-          localStorage.setItem(CACHE_KEY, JSON.stringify({ key: `${city}|${unit}`, at: Date.now(), data: payload }));
-        } catch { /* quota */ }
+        writeWeatherCache(city, units, payload);
       } catch {
         if (alive) setState('error');
       }
@@ -120,7 +73,7 @@ export default function WeatherWidget({ placement = 'top', align = 'right-0' }) 
       alive = false;
       clearInterval(id);
     };
-  }, [city, unit, reload]);
+  }, [city, units, reload]);
 
   // Pas de ville configurée : on invite à en choisir une plutôt que de
   // disparaître silencieusement (sinon le widget semble cassé).

@@ -1,6 +1,6 @@
 {
   "name": "orbit",
-  "version": "1.13.0",
+  "version": "1.14.0",
   "description": "Orbit — toutes vos apps web dans une seule fenêtre (Windows, macOS, Linux)",
   "main": "electron/main.js",
   "type": "module",
@@ -105,6 +105,11 @@
       ],
       "category": "Utility",
       "icon": "build/icons",
+      "mimeTypes": [
+        "text/html",
+        "x-scheme-handler/http",
+        "x-scheme-handler/https"
+      ],
       "desktop": {
         "entry": {
           "Name": "Orbit",
@@ -126,7 +131,28 @@
         "zip"
       ],
       "category": "public.app-category.productivity",
-      "icon": "build/icon.png"
+      "icon": "build/icon.png",
+      "fileAssociations": [
+        {
+          "ext": [
+            "html",
+            "htm",
+            "xhtml"
+          ],
+          "name": "HTML document",
+          "role": "Viewer"
+        }
+      ],
+      "protocols": [
+        {
+          "name": "Web link",
+          "schemes": [
+            "http",
+            "https"
+          ],
+          "role": "Viewer"
+        }
+      ]
     }
   },
   "allowScripts": {

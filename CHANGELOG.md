@@ -8,6 +8,42 @@ Format : une section `## [X.Y.Z] — AAAA-MM-JJ` par version, puis des
 sous-sections `### Ajouté` / `### Modifié` / `### Corrigé` / `### Sécurité`.
 La plus récente en premier.
 
+## [1.14.0] — 2026-10-13
+
+### Ajouté
+- **Ouvrir des liens avec Orbit** : Orbit se propose dans la liste « Ouvrir avec »
+  du système pour les liens web (`http` / `https`) et les fichiers `.html` /
+  `.htm` / `.xhtml`. Rien ne change tant qu'on n'active pas cette option dans
+  Réglages : on ne prend **jamais** le gestionnaire par défaut. Une fois activé,
+  un lien ou un fichier reçu depuis l'extérieur s'ouvre dans une **page volante**
+  (session isolée, jetable).
+- **Page d'accueil personnalisable** : quand aucune app n'est ouverte dans un
+  profil, on affiche maintenant une page d'accueil au lieu d'un écran noir.
+  Fond configurable (presets dégradés, image, flou/assombrissement),
+  raccourci Alt+K affiché sur la page, et quelques widgets légers.
+
+### Corrigé
+- **Impossible de se connecter depuis une app en localhost** : les cookies d'un
+  site local (`localhost`, `127.0.0.1`) étaient supprimés lors de la navigation.
+  La cause était la règle des Boucliers qui classait ces requêtes comme tierces
+  : la règle replie désormais sur l'hôte quand l'origine n'a pas de domaine
+  enregistrable — sans toucher aux tiers (un vrai site tiers reste bloqué).
+
+### Modifié
+- Le choix des liens reçus (cli, second-instance, `open-url`, `open-file` macOS)
+  est centralisé dans `electron/open-links.js` : règles strictes (http/https
+  uniquement, et uniquement les pages `.html`), gère les arguments cités,
+  ignore les options CLI et le serveur de dev.
+- **Release** : ajout des déclarations d'association dans `package.json` (`linux`
+  `mimeTypes`, `mac` `fileAssociations` + `protocols`) et d'un module
+  `electron/default-app.js` pour la proposition réversible sur Linux.
+
+### Interne
+- `electron/open-links.js` et `electron/default-app.js` couverts par des tests
+  unitaires (dépôt intégrité, types MIME, refus hors-Linux, non-écrasement
+  d'un fichier étranger).
+- Suite de tests portée à **294 tests**.
+
 ## [1.13.0] — 2026-10-09
 
 ### Ajouté

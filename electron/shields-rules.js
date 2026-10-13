@@ -91,7 +91,8 @@ export function upgradeToHttps(url) {
 // Étape 2 — onBeforeSendHeaders (cookies tiers + empreinte)
 // ---------------------------------------------------------------------------
 // `siteDomain` = domaine enregistrable du site de premier niveau (ex.
-// 'example.com'), `reqDomain` = celui de la requête (ex. 'cdn.net').
+// 'example.com'), ou l'HÔTE lui-même quand il n'en a pas (localhost, IP — voir
+// domainForComparison) ; `reqDomain` = celui de la requête (ex. 'cdn.net').
 // Renvoie true si l'en-tête Cookie doit être SUPPRIMÉ de la requête.
 export function shouldStripCookieHeader(site, siteDomain, reqDomain) {
   if (!site || site.enabled === false) return false;
@@ -108,12 +109,49 @@ export function shouldStripSetCookie(site, siteDomain, reqDomain) {
 }
 
 // « same-site » au sens du SITE affiché, pas de l'URL : c'est ce que fait un
-// navigateur et c'est ce qu'attend l'utilisateur. Un domaine inconnu des deux
-// côtés (localhost, IP) est considéré comme tiers : mieux vaut un cookie en
-// trop qu'un cookie absent.
+// navigateur et c'est ce qu'attend l'utilisateur. Un domaine inconnu d'un côté
+// (webview pas encore rattaché à une origine) est considéré comme tiers :
+// faute de savoir de quoi il s'agit, mieux vaut retirer le cookie que le
+// laisser fuiter.
 export function isSameSite(siteDomain, reqDomain) {
   if (!siteDomain || !reqDomain) return false;
   return siteDomain === reqDomain;
+}
+
+// Référence de comparaison d'un hôte : son domaine enregistrable s'il en a un,
+// sinon l'HÔTE LUI-MÊME.
+//
+// Ce repli n'est pas cosmétique. `getDomain('localhost')` (et toute IP
+// littérale) renvoie null : en comparant `null` à « localhost », le site
+// passait pour un TIERS vis-à-vis de lui-même. Le blocage des cookies tiers,
+// actif par défaut (`cookies: 'cross-site'`), supprimait alors jusqu'au cookie
+// de session de PREMIÈRE partie — envoi ET dépôt. Résultat : impossible de se
+// connecter à une app servie en local (http://localhost:5173) alors que la
+// même app en ligne fonctionne très bien, en navigation normale comme privée.
+// Les vraies ressources tierces restent, elles, correctement retirées :
+// « localhost » ≠ « cdn.exemple.com ».
+export function domainForComparison(hostname, registrableDomain) {
+  return registrableDomain || String(hostname || '') || null;
+}
+
+// Domaines « comparables » du site affiché et de la requête, à partir des deux
+// URL. `registrable` est injectée (c'est `getDomain` de tldts côté main) : ce
+// module reste sans dépendance, et la décision — celle qui casse une connexion
+// quand elle est fausse — est exécutable sous `node --test` telle quelle.
+//
+// `pageUrl` : la page HÔTE qui émet la requête (le site affiché) ;
+// `requestUrl` : l'URL réellement demandée.
+export function comparisonDomains(pageUrl, requestUrl, registrable) {
+  const of = (url) => {
+    try {
+      const host = new URL(url).hostname;
+      return domainForComparison(host, registrable(host));
+    } catch {
+      // URL illisible ou schéma sans hôte (about:, file:, data:) : inconnu.
+      return null;
+    }
+  };
+  return { siteDomain: of(pageUrl), reqDomain: of(requestUrl) };
 }
 
 // ---------------------------------------------------------------------------
