@@ -27,6 +27,7 @@ export const DEFAULT_BOTTOMBAR = {
 // Catalogue complet. `labelKey` / `descKey` sont des clés i18n.
 export const TOPBAR_MODULES = [
   { id: 'logo', labelKey: 'tbm.logo', descKey: 'tbm.logo.desc' },
+  { id: 'home', labelKey: 'tbm.home', descKey: 'tbm.home.desc' },
   { id: 'nav', labelKey: 'tbm.nav', descKey: 'tbm.nav.desc' },
   { id: 'appTitle', labelKey: 'tbm.appTitle', descKey: 'tbm.appTitle.desc' },
   { id: 'zoom', labelKey: 'tbm.zoom', descKey: 'tbm.zoom.desc' },

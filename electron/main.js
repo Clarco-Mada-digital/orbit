@@ -6,6 +6,7 @@ import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { extractOpenables } from './open-links.js';
 import * as defaultApp from './default-app.js';
+import { collectBackupFiles, stageRestore, applyPendingRestore } from './backup-files.js';
 import { unpackCrx } from './crx.js';
 import { init as initKeepass, setEnabled as keepassSetEnabled, getLogins as keepassGetLogins, associate as keepassAssociate, checkStatus as keepassCheckStatus } from './keepass.js';
 import * as security from './security.js';
@@ -3649,20 +3650,54 @@ function decryptBackup(container, password) {
   return JSON.parse(dec.toString('utf8'));
 }
 
-ipcMain.handle('backup:export', async (_e, { data, password } = {}) => {
+ipcMain.handle('backup:export', async (_e, { data, password, full } = {}) => {
   try {
+    let payload = data;
+    // Sauvegarde complète : on ajoute les fichiers de SESSION (cookies,
+    // stockages) et les TROUSSEAUX — c'est ce qui retrouve les comptes
+    // connectés sur un autre ordinateur. Collecté AVANT le dialogue : une
+    // sauvegarde trop volumineuse échoue sans avoir ouvert la fenêtre.
+    if (full) {
+      payload = { ...data, files: collectBackupFiles(app.getPath('userData')) };
+    }
     const res = await dialog.showSaveDialog(mainWindow, {
       title: 'Exporter la configuration Orbit',
       defaultPath: `orbit-backup-${new Date().toISOString().slice(0, 10)}.orbit`,
       filters: [{ name: 'Sauvegarde Orbit', extensions: ['orbit', 'json'] }],
     });
     if (res.canceled || !res.filePath) return { success: false, canceled: true };
-    const json = JSON.stringify(data);
+    const json = JSON.stringify(payload);
     fs.writeFileSync(res.filePath, password ? encryptBackup(json, password) : json);
     return { success: true, path: res.filePath, encrypted: Boolean(password) };
   } catch (err) {
+    const msg = String(err.message || err);
+    return {
+      success: false,
+      error:
+        msg === 'tooBig'
+          ? 'Sessions et trousseaux trop volumineux (plus de 750 Mo) : impossible de tout sauvegarder dans un seul fichier.'
+          : msg,
+    };
+  }
+});
+
+// Restauration complète : on ÉTAGE les fichiers de session (pending-restore),
+// on applique la configuration, puis on redémarre. Le fichier est consommé au
+// PROCHAIN démarrage, AVANT qu'Electron n'ouvre la moindre partition — sinon la
+// session en mémoire réécrirait par-dessus les cookies restaurés.
+ipcMain.handle('backup:stage', (_e, { files } = {}) => {
+  try {
+    const r = stageRestore(app.getPath('userData'), files);
+    return { success: true, count: r.count };
+  } catch (err) {
     return { success: false, error: String(err.message || err) };
   }
+});
+
+ipcMain.handle('backup:relaunch', () => {
+  app.relaunch();
+  app.quit();
+  return { success: true };
 });
 
 ipcMain.handle('backup:import', async () => {
@@ -4998,6 +5033,21 @@ app.whenReady().then(() => {
   // Identifiant d'app Windows : indispensable pour les notifications natives
   if (process.platform === 'win32') {
     app.setAppUserModelId('com.orbit.app');
+  }
+
+  // Restauration différée d'une sauvegarde complète : posée au redémarrage
+  // qui suit l'import, AVANT toute session ouverte (le moindre
+  // session.fromPartition chargerait les anciens cookies en mémoire, et la
+  // fermeture les réécrirait par-dessus les fichiers restaurés).
+  try {
+    const restored = applyPendingRestore(app.getPath('userData'));
+    if (restored.count > 0) {
+      console.log(`[orbit] ${restored.count} fichier(s) de session restauré(s)`);
+    } else if (restored.error) {
+      console.error('[orbit] restauration différée impossible :', restored.error);
+    }
+  } catch {
+    /* jamais bloquant au démarrage */
   }
 
   purgeStaleFlyPartitions(app.getPath('userData'));

@@ -8,16 +8,21 @@ import { useT } from '../lib/i18n';
 import { loadSyncConfig, saveSyncConfig, runSync, loadPassphrase, savePassphrase } from '../lib/syncClient';
 
 // Champs de configuration inclus dans une sauvegarde (on exclut l'état
-// transitoire : app active, écran partagé…).
+// transitoire : app active, écran partagé…). Les espaces de travail, les
+// conteneurs et les automatisations font partie de l'espace de travail — les
+// laisser de côté rendait une restauration incomplète.
 function buildPayload() {
   const s = useStore.getState();
   return {
-    orbitBackup: 1,
+    orbitBackup: 2,
     exportedAt: new Date().toISOString(),
     profiles: s.profiles,
     apps: s.apps,
     settings: s.settings,
     extensions: s.extensions,
+    containers: s.containers,
+    workspaces: s.workspaces,
+    rules: s.rules,
     activeProfile: s.activeProfile,
     sidebarCollapsed: s.sidebarCollapsed,
   };
@@ -34,6 +39,9 @@ function applyPayload(data, t) {
     apps: data.apps,
     settings: { ...defaultSettings, ...(data.settings || {}) },
     extensions: Array.isArray(data.extensions) ? data.extensions : [],
+    containers: Array.isArray(data.containers) ? data.containers : [],
+    workspaces: Array.isArray(data.workspaces) ? data.workspaces : [],
+    rules: Array.isArray(data.rules) ? data.rules : [],
     activeProfile: data.activeProfile || data.profiles[0]?.id,
     sidebarCollapsed: !!data.sidebarCollapsed,
     activeApp: null,
@@ -206,6 +214,11 @@ function SyncCard() {
 export default function BackupSettings() {
   const t = useT();
   const [exportPwd, setExportPwd] = useState('');
+  // Sauvegarde complète (sessions + trousseaux) : activée par défaut — c'est
+  // ce qui retrouve ses comptes connectés sur un autre ordinateur. Exige un
+  // mot de passe : les cookies de connexion ne doivent jamais reposer en clair
+  // dans un fichier qu'on enverra à un service de stockage.
+  const [full, setFull] = useState(true);
   const [busy, setBusy] = useState(null); // 'export' | 'import' | null
   const [msg, setMsg] = useState(null); // { type: 'ok'|'err', text }
   // Import chiffré : on garde le blob en attendant le mot de passe
@@ -213,12 +226,17 @@ export default function BackupSettings() {
   const [importPwd, setImportPwd] = useState('');
 
   const handleExport = async () => {
+    if (full && !exportPwd.trim()) {
+      setMsg({ type: 'err', text: t('bk.fullNeedsPwd') });
+      return;
+    }
     setBusy('export');
     setMsg(null);
     try {
       const res = await window.electronAPI?.backupExport?.({
         data: buildPayload(),
         password: exportPwd || '',
+        full,
       });
       if (res?.success) {
         setMsg({ type: 'ok', text: res.encrypted ? t('bk.savedEnc') : t('bk.saved') });
@@ -234,6 +252,22 @@ export default function BackupSettings() {
   const finishImport = (data) => {
     try {
       applyPayload(data, t);
+      // Fichiers de session / trousseaux dans la sauvegarde : on les ÉTAGE,
+      // puis on redémarre — ils ne seront appliqués qu'au prochain lancement,
+      // avant qu'Electron n'ouvre la moindre session (sinon les cookies en
+      // mémoire réécriraient par-dessus).
+      const files = Array.isArray(data.files) ? data.files : [];
+      if (files.length > 0) {
+        setMsg({ type: 'ok', text: t('bk.restarting') });
+        window.electronAPI?.backupStageRestore?.({ files }).then((st) => {
+          if (st?.success) {
+            setTimeout(() => window.electronAPI?.backupRelaunch?.(), 1200);
+          } else {
+            setMsg({ type: 'err', text: st?.error || t('bk.importFail') });
+          }
+        });
+        return;
+      }
       setMsg({ type: 'ok', text: t('bk.restored') });
       setTimeout(() => window.location.reload(), 800);
     } catch (err) {
@@ -284,6 +318,16 @@ export default function BackupSettings() {
         <p className="text-sm text-text-muted mb-4">
           {t('bk.exportDesc')}
         </p>
+        <label className="flex items-start gap-2 mb-3 cursor-pointer">
+          <input
+            type="checkbox"
+            checked={full}
+            onChange={(e) => setFull(e.target.checked)}
+            className="mt-0.5 w-4 h-4 accent-accent-primary"
+          />
+          <span className="text-sm">{t('bk.fullLabel')}</span>
+        </label>
+        <p className="text-xs text-text-muted mb-3">{t('bk.fullDesc')}</p>
         <div className="flex gap-2">
           <input
             type="password"

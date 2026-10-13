@@ -716,10 +716,15 @@ export const fr = {
   'bk.wrongPwd': 'Mot de passe incorrect',
   'bk.exportTitle': 'Exporter la configuration',
   'bk.exportDesc':
-    'Enregistre vos profils, apps et réglages dans un fichier. Idéal comme sauvegarde ou pour migrer vers un autre PC. Les sessions/comptes connectés ne sont pas inclus (ils restent sur la machine).',
-  'bk.exportPwdPlaceholder': 'Mot de passe (optionnel, pour chiffrer)',
+    'Enregistre vos profils, apps et réglages dans un fichier. Idéal comme sauvegarde ou pour migrer vers un autre PC. Les sessions/comptes connectés ne sont pas inclus (ils restent sur la machine).',  'bk.exportPwdPlaceholder': 'Mot de passe (optionnel, pour chiffrer)',
   'bk.export': 'Exporter',
   'bk.encNote': 'Le fichier sera chiffré (AES-256). Sans ce mot de passe, il sera illisible.',
+  'bk.fullLabel': 'Inclure les sessions et les trousseaux',
+  'bk.fullDesc':
+    'Cookies, comptes connectés et coffres-fort — les mêmes apps déjà ouvertes et connectées sur un autre ordinateur. Obligatoire pour retrouver son espace de travail complet.',
+  'bk.fullNeedsPwd':
+    'Une sauvegarde avec sessions exige un mot de passe : elle contient vos cookies de connexion.',
+  'bk.restarting': 'Restauration en cours — Orbit redémarre…',
   'bk.importTitle': 'Importer / restaurer',
   'bk.importDesc': 'Remplace la configuration actuelle par celle du fichier. Orbit se recharge ensuite.',
   'bk.filePwdPlaceholder': 'Mot de passe du fichier',
@@ -792,6 +797,8 @@ export const fr = {
   // --- En-tête configurable : modules, zones et widgets -------------------
   'tbm.logo': 'Logo Orbit',
   'tbm.logo.desc': 'Le nom et l’icône d’Orbit',
+  'tbm.home': 'Page d’accueil',
+  'tbm.home.desc': 'Revenir à la page d’accueil du profil (aucune app ouverte)',
   'tbm.nav': 'Navigation',
   'tbm.nav.desc': 'Précédent, suivant, actualiser',
   'tbm.appTitle': 'App active',
@@ -1929,6 +1936,12 @@ export const en = {
   'bk.exportPwdPlaceholder': 'Password (optional, to encrypt)',
   'bk.export': 'Export',
   'bk.encNote': 'The file will be encrypted (AES-256). Without this password, it will be unreadable.',
+  'bk.fullLabel': 'Include sessions and keychains',
+  'bk.fullDesc':
+    'Cookies, signed-in accounts and vaults — the same apps already open and signed in on another computer. Required to get your complete workspace back.',
+  'bk.fullNeedsPwd':
+    'A backup with sessions requires a password: it contains your sign-in cookies.',
+  'bk.restarting': 'Restoring — Orbit is restarting…',
   'bk.importTitle': 'Import / restore',
   'bk.importDesc': 'Replaces the current configuration with the one from the file. Orbit then reloads.',
   'bk.filePwdPlaceholder': 'File password',
@@ -2001,6 +2014,8 @@ export const en = {
   // --- Configurable header: modules, zones and widgets --------------------
   'tbm.logo': 'Orbit logo',
   'tbm.logo.desc': 'Orbit’s name and icon',
+  'tbm.home': 'Home page',
+  'tbm.home.desc': 'Back to the profile’s home page (no app open)',
   'tbm.nav': 'Navigation',
   'tbm.nav.desc': 'Back, forward, reload',
   'tbm.appTitle': 'Active app',

@@ -18,6 +18,7 @@ import {
   Unplug,
   Moon,
   LayoutGrid,
+  Home as HomeIcon,
   Plus,
   Trash2,
   KeyRound,
@@ -1206,6 +1207,25 @@ const app = apps.find((a) => a.id === activeApp)
                 </div>
               )}
             </div>
+          </Fragment>
+        );
+      case 'home':
+        // Retour à la page d'accueil du profil : ferme l'écran partagé puis
+        // désélectionne l'app — `showHome` (App.jsx) s'affiche alors. Sans
+        // `clearSplitView`, le partage resterait actif et l'accueil restait
+        // masqué derrière ses deux panneaux.
+        return (
+          <Fragment key={key}>
+            <button
+              onClick={() => {
+                clearSplitView();
+                setActiveApp(null);
+              }}
+              className="btn-icon"
+              title={t('tbm.home')}
+            >
+              <HomeIcon size={18} />
+            </button>
           </Fragment>
         );
       case 'clock':
