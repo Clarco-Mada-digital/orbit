@@ -1,10 +1,34 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { recipes } from '../lib/recipes.js';
-import { flyPageTarget } from '../lib/urls.js';
+import { flyPageTarget, outsideFallbackFor } from '../lib/urls.js';
 import { DEFAULT_TOPBAR, DEFAULT_BOTTOMBAR } from '../lib/topbarLayout.js';
 import { stampSync, NO_STAMP } from '../lib/syncStamp.js';
 import { reconcileLocal } from '../lib/syncMerge.js';
+import {
+  makeFolder,
+  pruneEmptyFolders,
+  normalizeFolderName,
+  withoutFolderId,
+} from '../lib/appGroups.js';
+import { KIND } from '../lib/fileTypes.js';
+
+// Compteur d'identifiants de pages volantes (voir `openFlyPage`).
+let flySeq = 0;
+
+// Apparence d'une page volante selon la NATURE du document (voir
+// lib/fileTypes.js) : l'icône de la barre latérale annonce ce qu'on va voir.
+const FLY_PAGE_LOOKS = {
+  page: { icon: '🌐', color: '#64748b' },
+  markdown: { icon: '📝', color: '#8b5cf6' },
+  json: { icon: '🧾', color: '#f59e0b' },
+  csv: { icon: '📊', color: '#10b981' },
+  code: { icon: '💻', color: '#06b6d4' },
+  text: { icon: '📄', color: '#64748b' },
+  pdf: { icon: '📕', color: '#ef4444' },
+  image: { icon: '🖼️', color: '#0ea5e9' },
+  media: { icon: '🎬', color: '#f97316' },
+};
 
 // Hostname d'une URL (pour la migration des favicons)
 function hostnameOf(url) {
@@ -84,6 +108,15 @@ export const defaultSettings = {
   globalProxy: '',
   // Bloqueur de pub / traceurs natif (activé par défaut)
   adblock: true,
+  // Téléchargements : dossier d'enregistrement personnalisé.
+  // '' (par défaut) = le dossier Téléchargements du système. Un choix nul ou
+  // composé d'espaces revient au même : un réglage ne doit JAMAIS empêcher
+  // d'enregistrer (voir src/lib/downloadPath.js).
+  downloadDir: '',
+  // Ouvrir la boîte d'enregistrement du système à chaque téléchargement.
+  // Désactivé par défaut : la majorité des fichiers vont au même endroit et
+  // une question à chaque fois devient vite un réflexe d'acquiescement.
+  askDownloadPath: false,
   // Menu contextuel des apps : celui d'Orbit par défaut, celui du système en
   // repli pour qui le préfère (ou si le nôtre pose problème).
   nativeContextMenu: false,
@@ -218,8 +251,20 @@ export const useStore = create(
       // « isolé » → permet plusieurs comptes d'un même service. [{ id, name, color }]
       containers: [],
 
+      // Dossiers d'apps (rangement visuel) : un dossier appartient à UN profil
+      // et les apps le rejoignent en portant son `folderId` (voir lib/appGroups.js).
+      // Aucune app n'est « contenue » ici : supprimer un dossier ne peut donc
+      // jamais supprimer une app. [{ id, name, profileId, emoji, color, order, collapsed }]
+      folders: [],
+
       // Sidebar réduite (persisté : on la retrouve au prochain lancement)
       sidebarCollapsed: false,
+
+      // Liste des profils dépliée dans la barre latérale ? Repliée par défaut :
+      // avec plusieurs profils, la liste occupait une dizaine de lignes en
+      // permanence. Préférence PUREMENT locale (elle ne voyage pas avec la
+      // synchronisation) : chaque machine garde son propre pliage.
+      sidebarProfilesOpen: false,
 
       // Écran partagé : deux apps affichées en même temps
       // { appIds: [idA, idB], direction: 'row' (côte à côte) | 'col' (haut/bas) }
@@ -284,6 +329,10 @@ export const useStore = create(
           return {
             profiles: state.profiles.filter((p) => p.id !== profileId),
             apps: state.apps.filter((a) => a.profileId !== profileId),
+            // Les dossiers du profil partent avec lui : sans ça, ils
+            // resteraient en base et réapparaîtraient à la reconnexion d'un
+            // dossier de sauvegarde.
+            folders: state.folders.filter((f) => f.profileId !== profileId),
             activeProfile:
               state.activeProfile === profileId ? state.profiles[0]?.id : state.activeProfile,
           };
@@ -332,12 +381,40 @@ export const useStore = create(
       deleteApp: (appId) =>
         set((state) => {
           const app = state.apps.find((a) => a.id === appId);
+          const apps = state.apps.filter((a) => a.id !== appId);
           return {
-            apps: state.apps.filter((a) => a.id !== appId),
+            apps,
             activeApp: state.activeApp === appId ? null : state.activeApp,
             trash: app
               ? [{ ...app, deletedAt: Date.now() }, ...state.trash].slice(0, 30)
               : state.trash,
+            // Dernière app du dossier → le dossier vide est retiré (sinon il
+            // resterait une ligne fantôme, invisible et impossible à purger).
+            folders: pruneEmptyFolders(state.folders, apps),
+          };
+        }),
+
+      // Désinstalle PLUSIEURS apps d'un coup (menu de sélection multiple) —
+      // une seule écriture, donc un seul rendu de la liste.
+      deleteApps: (appIds) =>
+        set((state) => {
+          const ids = new Set(appIds || []);
+          if (!ids.size) return state;
+          const removed = state.apps.filter((a) => ids.has(a.id));
+          if (!removed.length) return state;
+          const apps = state.apps.filter((a) => !ids.has(a.id));
+          const idsSet = new Set(removed.map((a) => a.id));
+          return {
+            apps,
+            activeApp: idsSet.has(state.activeApp) ? null : state.activeApp,
+            splitView: state.splitView?.appIds?.some((i) => idsSet.has(i))
+              ? null
+              : state.splitView,
+            trash: [
+              ...removed.map((a) => ({ ...a, deletedAt: Date.now() })),
+              ...state.trash,
+            ].slice(0, 30),
+            folders: pruneEmptyFolders(state.folders, apps),
           };
         }),
 
@@ -351,9 +428,26 @@ export const useStore = create(
             : state.profiles[0]?.id;
           const { deletedAt, ...app } = item; // eslint-disable-line no-unused-vars
           const order = state.apps.filter((a) => a.profileId === profileId).length;
+          // Le dossier d'origine a pu disparaître pendant que l'app était dans
+          // la corbeille (supprimé à la main, ou vidé en la désinstallant) : on
+          // retire alors le `folderId` orphelin plutôt que de le garder.
+          const restored = state.folders.some((f) => f.id === app.folderId)
+            ? app
+            : withoutFolderId(app);
           return {
-            apps: [...state.apps, { ...app, profileId, order }],
+            apps: [...state.apps, { ...restored, profileId, order }],
             trash: state.trash.filter((a) => a.id !== appId),
+          };
+        }),
+
+      // Applique les mêmes changements à plusieurs apps (veille, épingle,
+      // sourdine…) depuis le menu de sélection multiple.
+      bulkUpdateApps: (appIds, updates) =>
+        set((state) => {
+          const ids = new Set(appIds || []);
+          if (!ids.size) return state;
+          return {
+            apps: state.apps.map((a) => (ids.has(a.id) ? { ...a, ...updates } : a)),
           };
         }),
 
@@ -403,6 +497,29 @@ export const useStore = create(
           };
         }),
 
+      // Déplace PLUSIEURS apps vers un profil (menu de sélection multiple).
+      // Chacune quitte son dossier au passage : un dossier n'existe que dans un
+      // profil, l'y laisser la rangerait dans un dossier invisible depuis son
+      // nouveau profil (elle disparaîtrait de l'interface).
+      moveAppsToProfile: (appIds, targetProfileId) =>
+        set((state) => {
+          const ids = new Set(appIds || []);
+          if (!ids.size || !state.profiles.some((p) => p.id === targetProfileId)) return state;
+          const moved = state.apps.filter((a) => ids.has(a.id) && a.profileId !== targetProfileId);
+          if (!moved.length) return state;
+          let order = state.apps.filter((a) => a.profileId === targetProfileId).length;
+          const apps = state.apps.map((a) => {
+            if (!ids.has(a.id) || a.profileId === targetProfileId) return a;
+            return { ...a, profileId: targetProfileId, order: order++, folderId: undefined };
+          });
+          return {
+            apps,
+            activeApp: moved.some((a) => a.id === state.activeApp) ? null : state.activeApp,
+            splitView: state.splitView?.appIds?.some((i) => ids.has(i)) ? null : state.splitView,
+            folders: pruneEmptyFolders(state.folders, apps),
+          };
+        }),
+
       // Veille : ferme l'app (la page est détruite) mais la garde installée.
       // L'icône apparaît grisée dans la sidebar.
       toggleAppSleep: (appId) =>
@@ -416,6 +533,93 @@ export const useStore = create(
         set((state) => ({
           apps: state.apps.map((a) => ({ ...a, unread: 0 })),
         })),
+
+      // --- Dossiers -------------------------------------------------------
+      // Crée un dossier (dans le profil des apps visées) et y range les apps
+      // d'un coup. Le dossier et l'affectation sont écrits en UN seul `set` :
+      // deux écritures laisseraient entrevoir une ligne vide le temps d'un rendu.
+      createFolderWithApps: (name, appIds, { emoji, color, fallbackName } = {}) =>
+        set((state) => {
+          const ids = new Set(appIds || []);
+          const selected = state.apps.filter((a) => ids.has(a.id));
+          if (!selected.length) return state;
+          const profileId = selected[0].profileId || state.activeProfile;
+          const order = state.folders.filter((f) => f.profileId === profileId).length;
+          const folder = makeFolder({
+            name,
+            profileId,
+            emoji,
+            color,
+            order,
+            fallbackName: fallbackName || normalizeFolderName(name),
+          });
+          return {
+            folders: [...state.folders, folder],
+            apps: state.apps.map((a) => (ids.has(a.id) ? { ...a, folderId: folder.id } : a)),
+          };
+        }),
+
+      // Range des apps dans un dossier existant — ou les en sort (`folderId`
+      // vide, on retire aussi le champ pour ne pas laisser de résidu).
+      assignAppsToFolder: (appIds, folderId) =>
+        set((state) => {
+          const ids = new Set(appIds || []);
+          if (!ids.size) return state;
+          const target =
+            folderId && state.folders.some((f) => f.id === folderId) ? folderId : undefined;
+          const apps = state.apps.map((a) => {
+            if (!ids.has(a.id)) return a;
+            return target ? { ...a, folderId: target } : withoutFolderId(a);
+          });
+          return { apps, folders: pruneEmptyFolders(state.folders, apps) };
+        }),
+
+      // Range UNE app (glisser-déposer) — même contrat que ci-dessus.
+      setAppFolder: (appId, folderId) =>
+        set((state) => {
+          const target =
+            folderId && state.folders.some((f) => f.id === folderId) ? folderId : undefined;
+          const apps = state.apps.map((a) => {
+            if (a.id !== appId) return a;
+            return target ? { ...a, folderId: target } : withoutFolderId(a);
+          });
+          return { apps, folders: pruneEmptyFolders(state.folders, apps) };
+        }),
+
+      renameFolder: (id, name) =>
+        set((state) => ({
+          folders: state.folders.map((f) =>
+            f.id === id ? { ...f, name: normalizeFolderName(name, f.name) } : f
+          ),
+        })),
+
+      updateFolder: (id, updates) =>
+        set((state) => ({
+          folders: state.folders.map((f) => (f.id === id ? { ...f, ...updates } : f)),
+        })),
+
+      // Plier / déplier un dossier (état d'affichage, non synchronisé).
+      toggleFolderCollapsed: (id) =>
+        set((state) => ({
+          folders: state.folders.map((f) =>
+            f.id === id ? { ...f, collapsed: !f.collapsed } : f
+          ),
+        })),
+
+      setFolderCollapsed: (id, collapsed) =>
+        set((state) => ({
+          folders: state.folders.map((f) => (f.id === id ? { ...f, collapsed: !!collapsed } : f)),
+        })),
+
+      // Supprime LE DOSSIER (pas les apps) : elles redeviennent libres.
+      deleteFolder: (id) =>
+        set((state) => ({
+          folders: state.folders.filter((f) => f.id !== id),
+          apps: state.apps.map((a) => withoutFolderId(a)),
+        })),
+
+      // Déplie / replie la liste des profils de la barre latérale.
+      setSidebarProfilesOpen: (open) => set({ sidebarProfilesOpen: open !== false }),
 
       // Conteneurs multi-comptes
       addContainer: (name, color) =>
@@ -528,11 +732,26 @@ export const useStore = create(
       // mémoire : ni cookies, ni cache, ni stockage sur le disque, pas
       // d'extensions, pas d'historique. Une page privée ne réutilise jamais une
       // page normale (et inversement) : ce serait mélanger les deux sessions.
-      openFlyPage: (rawUrl, { private: isPrivate = false } = {}) => {
+      //
+      // `filePath` : chemin réel d'un fichier local ouvert depuis le système.
+      // Il est transmis tel quel au processus principal, qui ne lit QUE les
+      // fichiers que l'utilisateur a lui-même ouverts (voir documents:read).
+      openFlyPage: (rawUrl, { private: isPrivate = false, filePath } = {}) => {
         // `flyPageTarget` (lib/urls.js) tranche : adresse web, ou page HTML
         // locale ouverte depuis le système. Le reste est refusé.
         const target = flyPageTarget(rawUrl);
-        if (!target) return null;
+        if (!target) {
+          // JAMAIS SILENCIEUX : refuser un document qu'on ne sait pas afficher
+          // est juste (.docx, .zip, .exe → le moteur en ferait une page
+          // blanche), mais rester muet donne exactement le même symptôme. On
+          // rend donc la main au navigateur du système, qui le téléchargera —
+          // le retour de `openFlyPage` reste `null` : aucun onglet n'a été
+          // ouvert, l'appelant n'a rien à faire.
+          if (outsideFallbackFor(rawUrl) === 'browser') {
+            globalThis.window?.electronAPI?.openOutside?.(String(rawUrl).trim());
+          }
+          return null;
+        }
         const url = target.url;
         const existing = get().flyPages.find(
           (p) => Boolean(p.private) === isPrivate && (p.url === url || p.homeUrl === url)
@@ -541,7 +760,13 @@ export const useStore = create(
           set({ activeApp: existing.id });
           return existing.id;
         }
-        const id = `${isPrivate ? 'priv' : 'fly'}-${Date.now()}`;
+        // Compteur monotone en plus de l'horodatage : plusieurs documents
+        // peuvent être ouverts dans la MÊME milliseconde (le système passe
+        // plusieurs fichiers d'un coup dans les arguments de lancement), et
+        // deux pages portant le même identifiant se fermeraient ensemble,
+        // casseraient les clés React et doubleraient les lignes du menu.
+        flySeq += 1;
+        const id = `${isPrivate ? 'priv' : 'fly'}-${Date.now()}-${flySeq}`;
         // Nom affiché : le domaine du site, ou le nom du fichier local.
         const host = target.name;
         set((state) => ({
@@ -560,11 +785,22 @@ export const useStore = create(
               sessionKey: `${isPrivate ? 'priv' : 'fly'}:${id}`,
               ephemeral: true,
               private: isPrivate,
+              // NATURE du document : elle décide de l'affichage — visionneuse
+              // Orbit pour les formats texte, <webview> pour le reste.
+              kind: target.kind,
+              // Chemin réel d'un fichier local (null pour une adresse web).
+              filePath: target.local ? filePath || null : null,
               name: host,
               url,
               homeUrl: url,
-              icon: isPrivate ? '🕶️' : target.local ? '📄' : '🌐',
-              color: isPrivate ? '#7c3aed' : '#64748b',
+              // Une page HTML LOCALE reste un document : icône de feuille, pas de
+              // globe (le globe est réservé aux adresses web).
+              icon: isPrivate
+                ? '🕶️'
+                : target.local && target.kind === KIND.page
+                  ? '📄'
+                  : FLY_PAGE_LOOKS[target.kind]?.icon || (target.local ? '📄' : '🌐'),
+              color: isPrivate ? '#7c3aed' : FLY_PAGE_LOOKS[target.kind]?.color || '#64748b',
               unread: 0,
               sleeping: false,
               zoom: 1,
@@ -686,6 +922,7 @@ export const useStore = create(
             // veille (l'instantané ne les transporte pas).
             profiles: reconcileLocal(state.profiles, snap.profiles),
             apps: reconcileLocal(state.apps, snap.apps),
+            folders: reconcileLocal(state.folders, snap.folders || []),
             containers: reconcileLocal(state.containers, snap.containers),
             workspaces: reconcileLocal(state.workspaces, snap.workspaces),
             rules: reconcileLocal(state.rules, snap.rules),
@@ -724,7 +961,10 @@ export const useStore = create(
       // installations existantes.
       // v13 : page d'accueil (`settings.home`). Ajoutée par la même fusion —
       // les installations existantes ont un `home` par défaut (fond accent).
-      version: 13,
+      // v14 : dossiers d'applications (`folders`) + pliage de la liste des
+      // profils. Rien à convertir : une installation existante n'a simplement
+      // aucun dossier, et la liste des profils démarre repliée.
+      version: 14,
       migrate: (persistedState, version) => {
         // Fusionne les anciennes données avec les paramètres par défaut
         // (évite les champs manquants → bug "input non contrôlé")
@@ -834,6 +1074,24 @@ export const useStore = create(
               ...next.settings,
               credentials: { source: kpOff ? 'vault' : 'both' },
             },
+          };
+        }
+        // v14 : dossiers d'applications. On garantit un tableau (des données
+        // restaurées à la main pourraient l'avoir perdu) et des `folderId`
+        // pointant sur un dossier existant — sinon une app se retrouverait
+        // rangée « nulle part » sans que rien ne l'explique.
+        if (version < 14) {
+          const folders = Array.isArray(next.folders) ? next.folders : [];
+          const known = new Set(folders.map((f) => f?.id));
+          next = {
+            ...next,
+            folders,
+            sidebarProfilesOpen: false,
+            // Une app rangée dans un dossier introuvable redevient libre :
+            // sans ce nettoyage elle s'afficherait « nulle part ».
+            apps: (next.apps || []).map((a) =>
+              a.folderId && !known.has(a.folderId) ? withoutFolderId(a) : a
+            ),
           };
         }
         return next;

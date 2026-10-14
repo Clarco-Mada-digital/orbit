@@ -9,6 +9,7 @@ import {
   computeStartUrl,
   detectUrl,
   flyPageTarget,
+  outsideFallbackFor,
 } from '../src/lib/urls.js';
 
 // --- detectUrl : « est-ce que l'utilisateur a tapé une adresse ? » --------
@@ -191,14 +192,17 @@ test('computeStartUrl : homeUrl explicite prioritaire sur la recette', () => {
 });
 
 // --- flyPageTarget : ce qu'on accepte d'ouvrir en « lien libre » ----------
-// Une page volante peut aussi être un fichier HTML local, quand l'utilisateur
-// choisit Orbit dans « Ouvrir avec » de son système.
+// Une page volante peut être une adresse web, ou un fichier local quand
+// l'utilisateur choisit Orbit dans « Ouvrir avec » de son système. La cible
+// porte sa NATURE (`kind`) : c'est elle qui décide entre <webview> et
+// visionneuse de documents (voir lib/fileTypes.js).
 
 test('flyPageTarget : une adresse web donne son domaine comme nom', () => {
   assert.deepEqual(flyPageTarget('https://www.exemple.com/a?b=1'), {
     url: 'https://www.exemple.com/a?b=1',
     name: 'exemple.com',
     local: false,
+    kind: 'page',
   });
 });
 
@@ -207,19 +211,88 @@ test('flyPageTarget : un fichier .html local donne le nom du fichier', () => {
   assert.equal(t.local, true);
   assert.equal(t.name, 'rapport final.html', 'le nom est décodé et sans son chemin');
   assert.equal(t.url, 'file:///home/lea/Documents/rapport%20final.html');
+  assert.equal(t.kind, 'page');
 });
 
-test('flyPageTarget : les extensions de page sont reconnues, pas le reste', () => {
-  assert.equal(flyPageTarget('file:///tmp/a.htm').local, true);
-  assert.equal(flyPageTarget('file:///tmp/a.xhtml').local, true);
-  // Orbit n'est pas une visionneuse : refus explicite.
-  assert.equal(flyPageTarget('file:///tmp/rapport.pdf'), null);
-  assert.equal(flyPageTarget('file:///tmp/photo.png'), null);
-  assert.equal(flyPageTarget('file:///tmp/sans-extension'), null);
+test('flyPageTarget : les fichiers locaux lisibles sont acceptés, avec leur nature', () => {
+  const cases = {
+    'file:///tmp/a.htm': 'page',
+    'file:///tmp/a.xhtml': 'page',
+    'file:///tmp/rapport.pdf': 'pdf',
+    'file:///tmp/photo.png': 'image',
+    'file:///tmp/notes.md': 'markdown',
+    'file:///tmp/notes.txt': 'text',
+    'file:///tmp/data.json': 'json',
+    'file:///tmp/table.csv': 'csv',
+    'file:///tmp/app.ts': 'code',
+  };
+  for (const [url, kind] of Object.entries(cases)) {
+    const t = flyPageTarget(url);
+    assert.ok(t, `${url} devrait être ouvrable`);
+    assert.equal(t.kind, kind, `nature attendue pour ${url}`);
+    assert.equal(t.local, true);
+  }
 });
 
-test('flyPageTarget : refus de tout ce qui n’est ni web ni page locale', () => {
-  for (const bad of ['', '   ', 'javascript:alert(1)', 'mailto:a@b.c', 'notes.txt', 'file:///etc/passwd']) {
+test('flyPageTarget : un .zip ou un .docx ne s’ouvre pas (cadre blanc garanti)', () => {
+  // Le moteur en ferait un téléchargement, donc aucune page à afficher.
+  for (const bad of ['file:///tmp/pack.zip', 'file:///tmp/rapport.docx', 'file:///tmp/setup.exe']) {
+    assert.equal(flyPageTarget(bad), null, `${bad} doit être refusé`);
+  }
+  // Une adresse de téléchargement non plus.
+  assert.equal(flyPageTarget('https://exemple.com/fichiers/pack.zip'), null);
+});
+
+test('flyPageTarget : un document distant prend le nom du fichier', () => {
+  const md = flyPageTarget('https://exemple.com/docs/readme.md');
+  assert.equal(md.kind, 'markdown');
+  assert.equal(md.name, 'readme.md', 'le nom du fichier est plus parlant que le domaine');
+  assert.equal(md.local, false);
+});
+
+test('flyPageTarget : refus de tout ce qui n’est ni web ni fichier lisible', () => {
+  for (const bad of ['', '   ', 'javascript:alert(1)', 'mailto:a@b.c', 'file:///etc/passwd']) {
     assert.equal(flyPageTarget(bad), null, `${JSON.stringify(bad)} doit être refusé`);
+  }
+  // Un chemin nu (sans schéma file:) n'est pas traité ici : c'est le rôle du
+  // processus principal, qui reçoit les arguments du système.
+  assert.equal(flyPageTarget('notes.txt'), null);
+});
+
+test('outsideFallbackFor : jamais silencieux — un document refusé part au navigateur', () => {
+  // Un .docx, un .zip ou un .exe n'ont AUCUN rendu dans Orbit : les refuser est
+  // juste, mais ne rien faire donne le même symptôme qu'une page blanche.
+  for (const unsupported of [
+    'https://exemple.com/fichiers/rapport.docx',
+    'https://exemple.com/fichiers/classeur.xlsx',
+    'https://exemple.com/fichiers/archive.zip',
+    'https://exemple.com/fichiers/setup.exe',
+  ]) {
+    assert.equal(
+      outsideFallbackFor(unsupported),
+      'browser',
+      `${unsupported} doit être rendu au navigateur`
+    );
+  }
+});
+
+test('outsideFallbackFor : un lien qu’Orbit ouvre reste chez Orbit', () => {
+  // Pas de double ouverture : si la visionneuse ou le moteur s'en charge, on
+  // n'appelle pas le navigateur.
+  for (const handled of [
+    'https://exemple.com/docs/guide.md',
+    'https://exemple.com/',
+    'https://exemple.com/fichiers/photo.png',
+    'https://exemple.com/fichiers/rapport.pdf',
+  ]) {
+    assert.equal(outsideFallbackFor(handled), null, `${handled} ne part pas au navigateur`);
+  }
+});
+
+test('outsideFallbackFor : rien à ouvrir extérieurement pour les autres schémas', () => {
+  // On n'invente PAS une action à la place d'une autre : un lien `javascript:`
+  // ou `mailto:` n'a pas d'équivalent « navigateur » sûr ici.
+  for (const other of ['', '   ', 'javascript:alert(1)', 'mailto:a@b.c', 'file:///tmp/notes.txt']) {
+    assert.equal(outsideFallbackFor(other), null, `${JSON.stringify(other)} n'a pas de repli`);
   }
 });

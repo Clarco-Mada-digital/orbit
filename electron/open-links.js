@@ -14,20 +14,22 @@
 // ---------------------------------------------------------------------------
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { isSupportedPath } from '../src/lib/fileTypes.js';
 
 // Adresse web. Volontairement strict : http/https seulement — ni javascript:,
 // ni mailto:, ni chrome:// (une page volante les chargerait dans un <webview>).
 const WEB_LINK = /^https?:\/\/[^\s]+$/i;
 
-// Extensions considérées comme des pages : ouvrir un .pdf ou un .zip « comme un
-// document » n'aurait aucun sens ici (Orbit n'est pas une visionneuse).
-export const PAGE_EXTENSIONS = new Set(['.html', '.htm', '.xhtml']);
-
 export function isWebLink(value) {
   return WEB_LINK.test(String(value || '').trim());
 }
 
-const pageExtension = (p) => PAGE_EXTENSIONS.has(path.extname(String(p || '')).toLowerCase());
+// Ce qu'Orbit sait MONTRER d'un fichier local : pages, PDF, images, médias, et
+// depuis la visionneuse, tous les formats texte (md, txt, json, csv, code…).
+// La décision vit dans src/lib/fileTypes.js, partagée avec l'interface — une
+// seule liste à tenir à jour, sinon le système nous passe un fichier qu'on
+// refuse d'ouvrir (ou l'inverse).
+const supportedFile = (p) => isSupportedPath(String(p || ''));
 
 // Transforme UN argument en lien ouvrable, ou null.
 //   { kind: 'url'  | 'file', url, path? }
@@ -44,7 +46,7 @@ export function toOpenable(arg, { cwd = process.cwd() } = {}) {
   if (/^file:/i.test(raw)) {
     try {
       const u = new URL(raw);
-      if (!pageExtension(u.pathname)) return null;
+      if (!supportedFile(u.pathname)) return null;
       return { kind: 'file', url: u.href, path: decodeURIComponent(u.pathname) };
     } catch {
       return null;
@@ -52,7 +54,7 @@ export function toOpenable(arg, { cwd = process.cwd() } = {}) {
   }
 
   // Un chemin local : c'est ce que le système passe pour un fichier associé.
-  if (!pageExtension(raw)) return null;
+  if (!supportedFile(raw)) return null;
   const abs = path.resolve(cwd, raw);
   return { kind: 'file', url: pathToFileURL(abs).href, path: abs };
 }

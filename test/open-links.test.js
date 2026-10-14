@@ -8,7 +8,12 @@ import { extractOpenables, isWebLink, toOpenable } from '../electron/open-links.
 // Le système lance Orbit avec ce qu'il a sous la main : une URL de lien, ou le
 // CHEMIN d'un fichier associé. Ces tests verrouillent ce qu'on accepte
 // d'ouvrir — accepter trop large, c'est charger n'importe quoi dans une page
-// volante ; refuser trop, c'est une association qui ne fait rien.
+// volante (un .docx y donnait un cadre BLANC, le moteur en faisant un
+// téléchargement) ; refuser trop, c'est une association qui ne fait rien.
+//
+// Ce qu'Orbit sait MONTRER depuis la visionneuse : pages, PDF, images, médias
+// et tous les formats texte (md, txt, json, csv, code…). Le reste (binaires,
+// archives, documents bureautiques) n'est pas ouvert : il part au navigateur.
 
 const CWD = '/home/dev/projet';
 
@@ -43,18 +48,40 @@ test('toOpenable : un chemin local de page HTML devient une URL file:', () => {
   assert.equal(toOpenable('/tmp/a/b.htm', { cwd: CWD }).path, '/tmp/a/b.htm');
 });
 
-test('toOpenable : une URL file: n’est acceptée que pour une page', () => {
+test('toOpenable : une URL file: est acceptée pour tout ce qu’on sait montrer', () => {
   assert.equal(toOpenable('file:///tmp/rapport.html', { cwd: CWD }).kind, 'file');
   assert.equal(toOpenable('file:///C:/Dossier/page.xhtml', { cwd: CWD }).kind, 'file');
-  // Ni un PDF, ni un fichier quelconque : Orbit n'est pas une visionneuse.
-  assert.equal(toOpenable('file:///tmp/rapport.pdf', { cwd: CWD }), null);
-  assert.equal(toOpenable('file:///tmp/photo.png', { cwd: CWD }), null);
+  // Le PDF et l'image sont rendus par le moteur, comme la page HTML.
+  assert.equal(toOpenable('file:///tmp/rapport.pdf', { cwd: CWD }).kind, 'file');
+  assert.equal(toOpenable('file:///tmp/photo.png', { cwd: CWD }).kind, 'file');
+  // Les documents texte passent par la visionneuse d'Orbit.
+  for (const name of ['notes.md', 'notes.txt', 'data.json', 'table.csv', 'app.ts', 'README']) {
+    assert.equal(
+      toOpenable(`file:///tmp/${name}`, { cwd: CWD }).kind,
+      'file',
+      `${name} devrait pouvoir s’ouvrir dans Orbit`
+    );
+  }
 });
 
-test('toOpenable : ce qui n’est ni un lien ni une page → null', () => {
-  for (const arg of ['', '   ', '--no-sandbox', '.', '/usr/bin/orbit', 'notes.txt', 'archive.tar.gz']) {
+test('toOpenable : ce qui ne s’affiche pas ne s’ouvre pas', () => {
+  // Ni un binaire, ni une archive, ni un document bureautique : ouvrir ça
+  // donnerait une page blanche (le moteur en fait un téléchargement).
+  for (const name of ['archive.tar.gz', 'rapport.docx', 'pack.zip', 'setup.exe', 'image.iso']) {
+    assert.equal(toOpenable(`file:///tmp/${name}`, { cwd: CWD }), null, `${name} ne doit rien ouvrir`);
+  }
+});
+
+test('toOpenable : ce qui n’est ni un lien ni un fichier lisible → null', () => {
+  for (const arg of ['', '   ', '--no-sandbox', '.', '/usr/bin/orbit']) {
     assert.equal(toOpenable(arg, { cwd: CWD }), null, `${JSON.stringify(arg)} ne doit rien ouvrir`);
   }
+});
+
+test('toOpenable : les notes et le code s’ouvrent depuis « Ouvrir avec »', () => {
+  assert.equal(toOpenable('notes.txt', { cwd: CWD }).kind, 'file');
+  assert.equal(toOpenable('src/app.js', { cwd: CWD }).path, path.join(CWD, 'src/app.js'));
+  assert.equal(toOpenable('Dockerfile', { cwd: CWD }).kind, 'file');
 });
 
 test('toOpenable : les extensions de page sont insensibles à la casse', () => {

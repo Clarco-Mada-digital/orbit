@@ -330,6 +330,72 @@ test('isSafeKey : rejette les clefs de pollution et les valeurs non textuelles',
   assert.equal(isSafeKey(42), false);
 });
 
+// --- Dossiers d'applications ---------------------------------------------
+// Le rangement voyage (une app rangée sur le fixe doit l'être sur le portable),
+// mais les dossiers ont été AJOUTÉS après le format 1 : un fichier écrit par
+// une version antérieure ne les contient pas. Il doit rester exploitable, et
+// aucun dossier local ne doit disparaître à cette occasion.
+
+const folder = (id, over = {}) => ({
+  id, name: id, profileId: 'work', emoji: '📁', color: '#6366f1', order: 0, updatedAt: T0, ...over,
+});
+
+test('buildSnapshot : les dossiers voyagent, pas leur pliage', () => {
+  const snap = buildSnapshot(
+    state({ folders: [folder('f1', { collapsed: true, localOnly: 'x' })] }),
+    { now: T0 }
+  );
+  assert.equal(snap.folders[0].name, 'f1');
+  assert.equal(snap.folders[0].emoji, '📁');
+  assert.equal(snap.folders[0].collapsed, undefined, 'le pliage ne doit pas quitter la machine');
+  assert.equal(snap.folders[0].localOnly, undefined);
+});
+
+test('buildSnapshot : `folderId` accompagne l’app', () => {
+  const snap = buildSnapshot(state({ apps: [app('gmail', { folderId: 'f1' })] }), { now: T0 });
+  assert.equal(snap.apps[0].folderId, 'f1');
+});
+
+test('isValidSnapshot : un instantané d’avant les dossiers reste exploitable', () => {
+  const legacy = buildSnapshot(state(), { now: T0 });
+  delete legacy.folders;
+  assert.equal(isValidSnapshot(legacy), true, 'une collection ajoutée plus tard est optionnelle');
+  // …mais une collection connue et mal typée reste refusée
+  assert.equal(isValidSnapshot({ ...buildSnapshot(state(), { now: T0 }), folders: 'oups' }), false);
+});
+
+test('mergeSnapshots : les dossiers locaux survivent à un distant qui n’en a pas', () => {
+  const local = state({
+    apps: [app('gmail', { folderId: 'f1', updatedAt: T0 })],
+    folders: [folder('f1')],
+  });
+  const legacy = buildSnapshot(state(), { now: T0 });
+  delete legacy.folders;
+
+  const { snapshot } = mergeSnapshots(local, legacy, { now: T0 + 1000 });
+  assert.deepEqual(snapshot.folders.map((f) => f.id), ['f1'], 'dossier perdu à la fusion');
+  assert.equal(snapshot.apps[0].folderId, 'f1');
+});
+
+test('mergeSnapshots : un dossier distant plus récent gagne, et sa suppression se propage', () => {
+  const local = state({ folders: [folder('f1', { updatedAt: T0 })] });
+  const remote = buildSnapshot(
+    state({ folders: [folder('f1', { name: 'Renommé', updatedAt: T0 + 5000 })] }),
+    { now: T0 + 5000 }
+  );
+  let res = mergeSnapshots(local, remote, { now: T0 + 6000 });
+  assert.equal(res.snapshot.folders[0].name, 'Renommé');
+
+  const deleted = buildSnapshot(state(), { now: T0 + 7000 });
+  deleted.tombstones = { f1: T0 + 7000 };
+  res = mergeSnapshots(
+    state({ folders: [folder('f1', { updatedAt: T0 })] }),
+    deleted,
+    { now: T0 + 8000 }
+  );
+  assert.deepEqual(res.snapshot.folders, [], 'la suppression distante doit se propager');
+});
+
 test('summarize : agrège toutes les collections', () => {
   const local = state({ apps: [app('a')], containers: [] });
   const remote = buildSnapshot(

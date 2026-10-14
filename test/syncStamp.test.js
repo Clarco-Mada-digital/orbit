@@ -31,6 +31,9 @@ test('syncedFieldsChanged : détecte une vraie modification', () => {
   assert.equal(syncedFieldsChanged(a, { ...a, order: 3 }, APP), true);
   assert.equal(syncedFieldsChanged(a, { ...a, profileId: 'perso' }, APP), true);
   assert.equal(syncedFieldsChanged(a, { ...a, zoom: 1.2 }, APP), true);
+  // Ranger une app dans un dossier est une vraie modification : sans cet
+  // horodatage, la machine d'en face ramènerait l'app hors du dossier.
+  assert.equal(syncedFieldsChanged(a, { ...a, folderId: 'fld-1' }, APP), true);
 });
 
 test('stampCollection : une navigation ne réhorodate PAS', () => {

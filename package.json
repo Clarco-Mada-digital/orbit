@@ -82,6 +82,11 @@
       "electron/**/*",
       "src/lib/shortcuts.js",
       "src/lib/rules.js",
+    "src/lib/fileTypes.js",
+    "src/lib/documents.js",
+    "src/lib/markdown.js",
+    "src/lib/urls.js",
+    "src/lib/downloadPath.js",
       "build/icon.png",
       "package.json"
     ],
@@ -107,6 +112,16 @@
       "icon": "build/icons",
       "mimeTypes": [
         "text/html",
+        "text/plain",
+        "text/markdown",
+        "text/csv",
+        "text/xml",
+        "application/json",
+        "application/pdf",
+        "image/png",
+        "image/jpeg",
+        "image/gif",
+        "image/webp",
         "x-scheme-handler/http",
         "x-scheme-handler/https"
       ],
@@ -140,6 +155,26 @@
             "xhtml"
           ],
           "name": "HTML document",
+          "role": "Viewer"
+        },
+        {
+          "ext": [
+            "md",
+            "markdown",
+            "txt",
+            "json",
+            "csv",
+            "tsv",
+            "log",
+            "xml",
+            "yaml",
+            "yml",
+            "toml",
+            "ini",
+            "diff",
+            "patch"
+          ],
+          "name": "Text document",
           "role": "Viewer"
         }
       ],

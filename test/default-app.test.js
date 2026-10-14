@@ -35,10 +35,17 @@ function tempCtx(over = {}) {
   };
 }
 
-test('desktopEntryText : déclare les trois types MIME et se marque comme nôtre', () => {
+test('desktopEntryText : déclare nos types MIME et se marque comme nôtre', () => {
   const text = desktopEntryText({ appName: 'Orbit', execPath: '/opt/orbit/orbit' });
   for (const mime of LINUX_MIME_TYPES) assert.ok(text.includes(mime), `${mime} manquant`);
-  assert.match(text, /^MimeType=text\/html;x-scheme-handler\/http;x-scheme-handler\/https;$/m);
+  // La liste est construite depuis LINUX_MIME_TYPES (source unique) : on
+  // vérifie qu'elle est écrite en entier dans le fichier .desktop.
+  assert.match(text, new RegExp(`^MimeType=${LINUX_MIME_TYPES.join(';')};$`, 'm'));
+  // Les documents texte sont déclarés : c'est ce qui rend « Ouvrir avec » utile
+  // pour un .md ou un .json, pas seulement pour un .html.
+  for (const mime of ['text/markdown', 'application/json', 'text/csv', 'application/pdf']) {
+    assert.ok(LINUX_MIME_TYPES.includes(mime), `${mime} devrait être déclaré`);
+  }
   assert.ok(text.includes('X-Orbit-Managed=true'));
   assert.ok(text.includes('StartupWMClass=orbit'));
   // %U = liste d'URL : couvre les liens web ET les fichiers.
@@ -105,7 +112,7 @@ test('status : une version installée qui déclare les types suffit', () => {
   const sys = fs.mkdtempSync(path.join(os.tmpdir(), 'orbit-sys-'));
   fs.writeFileSync(
     path.join(sys, 'appimagekit_1234-orbit.desktop'),
-    '[Desktop Entry]\nName=Orbit\nMimeType=text/html;x-scheme-handler/http;x-scheme-handler/https;\n'
+    `[Desktop Entry]\nName=Orbit\nMimeType=${LINUX_MIME_TYPES.join(';')};\n`
   );
   const ctx = tempCtx({ systemApplicationsDirs: [sys] });
   const st = status(ctx);

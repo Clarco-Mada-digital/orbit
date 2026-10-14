@@ -1,14 +1,31 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useStore } from '../stores/useStore';
-import { ChevronLeft, ChevronRight, Plus, Settings, Grid, User, Moon, BellOff, Lock, Volume2, VolumeX, LogIn, Globe, X, EyeOff } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronDown, Plus, Settings, Grid, User, Moon, BellOff, Lock, Volume2, VolumeX, LogIn, Globe, X, EyeOff, FolderPlus, Check } from 'lucide-react';
 import AppContextMenu from './AppContextMenu';
+import MultiSelectionMenu from './MultiSelectionMenu';
+import AppFolderMenu from './AppFolderMenu';
 import AppIcon from './AppIcon';
 import { useSecurityStore } from '../lib/securityStore';
 import { useMediaStore } from '../lib/mediaStore';
 import { getWebview, getRegisteredWebviews } from '../lib/webviewRegistry';
 import { useT } from '../lib/i18n';
 import { useZoneHold, REVEALED_BAR_Z } from '../lib/autoHide';
+import { useDismiss } from '../lib/useDismiss';
+import {
+  groupByFolder,
+  foldersFor,
+  folderAppIds,
+  toggleId,
+  selectRange,
+  isToggleClick,
+  countUnread,
+} from '../lib/appGroups';
+
+// Sélection vide partagée : une référence STABLE, pour que « pas de sélection »
+// ne fasse pas re-rendre la liste à chaque rendu (un `[]` littéral en
+// déclencherait un nouveau à chaque fois).
+const EMPTY_SELECTION = [];
 
 export default function Sidebar({
   collapsed,
@@ -24,11 +41,37 @@ export default function Sidebar({
   revealed = true,
   revealHandlers = {},
 }) {
-  const { profiles, activeProfile, setActiveProfile, getProfileApps, activeApp, settings, reorderApps, containers, flyPages, closeFlyPage, closeAllFlyPages, apps: storedApps } = useStore();
+  const {
+    profiles,
+    activeProfile,
+    setActiveProfile,
+    getProfileApps,
+    activeApp,
+    settings,
+    reorderApps,
+    containers,
+    flyPages,
+    closeFlyPage,
+    closeAllFlyPages,
+    apps: storedApps,
+    folders,
+    sidebarProfilesOpen,
+    setSidebarProfilesOpen,
+    createFolderWithApps,
+    setAppFolder,
+    toggleFolderCollapsed,
+  } = useStore();
   const { lockedProfileIds, unlockedProfileIds } = useSecurityStore();
   const t = useT();
   const media = useMediaStore((s) => s.media);
   const setMedia = useMediaStore((s) => s.setMedia);
+
+  // Liste des profils dépliée (une seule ligne tant qu'elle est repliée) : on
+  // la referme au clic ailleurs, à Échap, au redimensionnement… Règle commune
+  // de lib/useDismiss, partagée avec tous les autres menus flottants.
+  const profilesRef = useRef(null);
+  const closeProfiles = useCallback(() => setSidebarProfilesOpen(false), [setSidebarProfilesOpen]);
+  useDismiss(profilesRef, sidebarProfilesOpen, closeProfiles);
 
   // Coupe / réactive le son d'une app précise (comme un onglet de navigateur).
   const toggleAppAudio = (appId) => {
@@ -58,6 +101,93 @@ export default function Sidebar({
   const isPinned = (a) => a.isFavorite || a.scope === 'all';
   const pinned = apps.filter(isPinned);
   const unpinned = apps.filter((a) => !isPinned(a));
+
+  // --- Dossiers ------------------------------------------------------------
+  // Les épinglés remontent en haut et sortent de la liste : ils ne sont donc
+  // jamais comptés deux fois. Conséquence assumée : un dossier dont toutes les
+  // apps sont épinglées disparaît de la liste (elles sont juste au-dessus).
+  const profileFolders = foldersFor(folders, activeProfile);
+  const { groups, loose } = groupByFolder(unpinned, profileFolders);
+  // Ordre AFFICHÉ à plat : sert au réordonnancement et à la sélection de plage
+  // (Maj+clic), qui doit traverser les dossiers comme une seule liste.
+  const flatApps = [...pinned, ...groups.flatMap((g) => g.apps), ...loose];
+
+  // --- Sélection multiple (Ctrl/Cmd+clic, Maj+clic) -----------------------
+  //
+  // La sélection appartient au profil courant : on mémorise AVEC QUEL profil
+  // elle a été faite. Changer de profil la vide donc par simple calcul, sans
+  // effet ni état intermédiaire — un `useEffect` qui remet l'état à zéro
+  // provoquerait ici un second rendu à chaque bascule de profil.
+  const [selectionState, setSelectionState] = useState({ profileId: null, ids: [] });
+  const selection = selectionState.profileId === activeProfile ? selectionState.ids : EMPTY_SELECTION;
+  const setSelection = useCallback(
+    (value) => {
+      setSelectionState((prev) => {
+        const current = prev.profileId === activeProfile ? prev.ids : EMPTY_SELECTION;
+        const next = typeof value === 'function' ? value(current) : value;
+        // Rien ne change (re-cliquer sur une sélection vide…) : on ne re-rend pas.
+        if (prev.profileId === activeProfile && prev.ids === next) return prev;
+        return { profileId: activeProfile, ids: next };
+      });
+    },
+    [activeProfile]
+  );
+  // Ancre de la sélection de plage : la dernière ligne cliquée sans Maj.
+  const selectionAnchor = useRef(null);
+  const selectedSet = useMemo(() => new Set(selection), [selection]);
+  // Une app sélectionnée qui disparaît (désinstallée, déplacée de profil) ne
+  // doit pas rester « fantôme » dans la sélection : on la filtre à l'affichage.
+  const selectedApps = apps.filter((a) => selectedSet.has(a.id));
+  const [multiMenu, setMultiMenu] = useState(null); // { ids, x, y }
+  const [folderMenu, setFolderMenu] = useState(null); // { folderId, x, y }
+  // Regroupement lancé depuis le bandeau de sélection : saisie du nom en place.
+  // Le profil de départ est mémorisé — changer de profil abandonne la saisie
+  // (même raison que pour la sélection : plus d'effet de remise à zéro).
+  const [naming, setNaming] = useState({ profileId: null, open: false, name: '' });
+  const namingOpen = naming.open && naming.profileId === activeProfile;
+
+  const clearSelection = useCallback(() => {
+    selectionAnchor.current = null;
+    setSelection(EMPTY_SELECTION);
+  }, [setSelection]);
+
+  // Échap annule la sélection (le geste attendu quand on s'est trompé de cible).
+  useEffect(() => {
+    if (!selection.length) return undefined;
+    const onKey = (e) => {
+      if (e.key !== 'Escape') return;
+      selectionAnchor.current = null;
+      setSelection(EMPTY_SELECTION);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [selection.length, setSelection]);
+
+  const handleAppClick = (app, e) => {
+    if (isToggleClick(e)) {
+      e.preventDefault();
+      selectionAnchor.current = app.id;
+      setSelection((prev) => toggleId(prev, app.id));
+      return;
+    }
+    if (e.shiftKey) {
+      e.preventDefault();
+      const anchor = selectionAnchor.current || selection[selection.length - 1];
+      setSelection(selectRange(flatApps.map((a) => a.id), anchor, app.id));
+      return;
+    }
+    // Clic simple : on ouvre l'app et on oublie la sélection.
+    if (selection.length) clearSelection();
+    onSelectApp(app.id);
+  };
+
+  const createGroupFromSelection = () => {
+    const ids = selectedApps.map((a) => a.id);
+    if (!ids.length) return;
+    createFolderWithApps(naming.name, ids, { fallbackName: t('fold.untitled') });
+    setNaming({ profileId: activeProfile, open: false, name: '' });
+    clearSelection();
+  };
 
   // --- Mémoire par app (bulle au survol) ----------------------------------
   // Au survol d'une ligne (app installée ou page volante), on lit le processus
@@ -140,18 +270,42 @@ export default function Sidebar({
 
   // Menu contextuel (clic droit) : { appId, x, y } | null
   const [menu, setMenu] = useState(null);
-  // Ce menu est rendu dans un PORTAIL : il n'est pas descendant de la barre,
-  // donc la souris qui y entre déclencherait la fermeture en mode épuré. On
-  // maintient explicitement la zone ouverte tant qu'il est affiché.
-  useZoneHold('left', 'app-menu', Boolean(menu));
+  // Ces menus sont rendus dans un PORTAIL : ils ne sont pas descendants de la
+  // barre, donc la souris qui y entre déclencherait la fermeture en mode épuré.
+  // On maintient explicitement la zone ouverte tant que l'un est affiché.
+  useZoneHold('left', 'app-menu', Boolean(menu || multiMenu || folderMenu));
 
-  // Glisser-déposer : id de l'app déplacée + id survolé (cible de dépôt)
+  // Glisser-déposer : id de l'app déplacée + cible survolée (app, dossier, fin)
   const [dragId, setDragId] = useState(null);
   const [overId, setOverId] = useState(null);
+  // Dossier survolé : déposer sur son en-tête range l'app dedans.
+  const [overFolder, setOverFolder] = useState(null);
 
-  const openContextMenu = (e, appId) => {
+  const openContextMenu = (e, app) => {
     e.preventDefault();
-    setMenu({ appId, x: e.clientX, y: e.clientY });
+    // Clic droit SUR une sélection de plusieurs apps → menu de groupe. Sur une
+    // app hors sélection, on repart d'une sélection propre : le menu ne doit
+    // jamais agir sur des apps qu'on ne voit plus sélectionnées.
+    if (selectedSet.has(app.id) && selectedApps.length > 1) {
+      setMultiMenu({ ids: selectedApps.map((a) => a.id), x: e.clientX, y: e.clientY });
+      return;
+    }
+    if (selection.length) clearSelection();
+    setMenu({ appId: app.id, x: e.clientX, y: e.clientY });
+  };
+
+  const openFolderMenu = (e, folder) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (selection.length) clearSelection();
+    setFolderMenu({ folderId: folder.id, x: e.clientX, y: e.clientY });
+  };
+
+  // Sélectionne d'un coup toutes les apps d'un dossier (depuis son menu).
+  const selectFolderApps = (id) => {
+    const ids = folderAppIds(storedApps, id);
+    selectionAnchor.current = ids[0] || null;
+    setSelection(ids);
   };
 
   // --- Réordonner par glisser-déposer -------------------------------------
@@ -169,30 +323,63 @@ export default function Sidebar({
   const handleDragOver = (e, targetId) => {
     if (!dragId) return;
     e.preventDefault();
+    e.stopPropagation();
     e.dataTransfer.dropEffect = 'move';
-    // 'end' = déposer tout en bas de la liste (espace sous la dernière app)
-    setOverId(e.target === e.currentTarget ? '__end__' : targetId);
+    setOverFolder(null);
+    setOverId(targetId);
   };
 
-  const handleDrop = (e, targetId) => {
+  const handleDragOverFolder = (e, id) => {
     if (!dragId) return;
     e.preventDefault();
-    const next = apps.map((a) => a.id).filter((id) => id !== dragId);
-    if (targetId !== '__end__') {
-      const to = apps.findIndex((a) => a.id === targetId);
-      if (to !== -1) next.splice(to, 0, dragId);
-      else next.push(dragId);
-    } else {
-      next.push(dragId); // tout en bas
-    }
+    e.stopPropagation();
+    e.dataTransfer.dropEffect = 'move';
+    setOverId(null);
+    setOverFolder(id);
+  };
+
+  // Dépose l'app en cours de glisser `beforeId` (ou à la fin) et la range dans
+  // `folderId` (vide = hors dossier). Ordre et rangement sont deux écritures
+  // distinctes du store : l'interface se recompose une fois pour les deux.
+  const applyDrop = (beforeId, folderId) => {
+    const next = flatApps.map((a) => a.id).filter((id) => id !== dragId);
+    const at = beforeId ? next.indexOf(beforeId) : -1;
+    if (at === -1) next.push(dragId);
+    else next.splice(at, 0, dragId);
     reorderApps(activeProfile, next);
+    setAppFolder(dragId, folderId);
     setDragId(null);
     setOverId(null);
+    setOverFolder(null);
+  };
+
+  const handleDrop = (e, targetApp) => {
+    if (!dragId) return;
+    e.preventDefault();
+    e.stopPropagation();
+    // Déposer SUR une app range l'app glissée dans le même dossier que la
+    // cible (ou l'en sort si la cible est libre) : le geste « à côté de ».
+    applyDrop(targetApp.id, targetApp.folderId);
+  };
+
+  const handleDropOnFolder = (e, folder) => {
+    if (!dragId) return;
+    e.preventDefault();
+    e.stopPropagation();
+    applyDrop(null, folder.id);
+  };
+
+  const handleDropAtEnd = (e) => {
+    if (!dragId) return;
+    e.preventDefault();
+    // Tout en bas ET hors dossier : le geste pour sortir une app d'un dossier.
+    applyDrop(null, undefined);
   };
 
   const handleDragEnd = () => {
     setDragId(null);
     setOverId(null);
+    setOverFolder(null);
   };
   // -------------------------------------------------------------------------
 
@@ -213,14 +400,15 @@ export default function Sidebar({
   });
 
 
-  // Une ligne d'app. Extraite en fonction parce qu'elle est rendue DEUX fois :
-  // une fois pour les apps épinglées, une fois pour les autres. `list` sert au
-  // repère de dépôt « tout en bas » du groupe.
-  const renderApp = (app, list) => (
+  // Une ligne d'app. Extraite en fonction parce qu'elle est rendue trois fois :
+  // apps épinglées, apps rangées dans un dossier, apps libres.
+  const renderApp = (app) => {
+    const isSelected = selectedSet.has(app.id);
+    return (
     <button
       key={app.id}
-      onClick={() => onSelectApp(app.id)}
-      onContextMenu={(e) => openContextMenu(e, app.id)}
+      onClick={(e) => handleAppClick(app, e)}
+      onContextMenu={(e) => openContextMenu(e, app)}
       draggable
       onDragStart={(e) => handleDragStart(e, app.id)}
       onDragOver={(e) => handleDragOver(e, app.id)}
@@ -231,16 +419,16 @@ export default function Sidebar({
       className={`w-full flex items-center ${collapsed ? 'justify-center' : 'gap-3'} ${
         settings.compactMode ? 'px-2 py-1.5' : 'px-3 py-2'
       } rounded-lg transition-all group relative cursor-pointer active:cursor-grabbing ${
-        app.id === activeApp
-          ? 'bg-accent-primary/10 text-accent-primary'
-          : 'hover:bg-bg-hover text-text-secondary'
+        // Sélection multiple : elle prime visuellement sur l'app active, sinon
+        // on ne saurait plus ce qui est coché.
+        isSelected
+          ? 'bg-accent-primary/20 ring-1 ring-inset ring-accent-primary/60 text-text-primary'
+          : app.id === activeApp
+            ? 'bg-accent-primary/10 text-accent-primary'
+            : 'hover:bg-bg-hover text-text-secondary'
       } ${app.sleeping ? 'opacity-50' : ''} ${
         dragId === app.id ? 'opacity-50' : ''
-      } ${overId === app.id ? 'ring-2 ring-accent-primary ring-inset' : ''} ${
-        overId === '__end__' && app.id === list[list.length - 1]?.id
-          ? 'ring-2 ring-accent-primary ring-inset'
-          : ''
-      }`}
+      } ${overId === app.id ? 'ring-2 ring-accent-primary ring-inset' : ''}`}
       title={collapsed ? app.name : undefined}
     >
       {/* Icône : image téléversée → favicon (repli auto) → emoji. Grisée si en veille */}
@@ -336,7 +524,78 @@ export default function Sidebar({
         ></div>
       )}
     </button>
-  );
+    );
+  };
+
+  // En-tête d'un dossier : cliquer dessus PLIE/déplie (le geste le plus
+  // fréquent), clic droit pour le menu (renommer, icône, dissocier…). Déposer
+  // une app dessus l'y range.
+  const renderFolder = ({ folder, apps: folderApps }) => {
+    const unread = countUnread(folderApps);
+    const hidden = collapsed || folder.collapsed;
+    return (
+      <div key={folder.id}>
+        <button
+          onClick={() => {
+            if (selection.length) clearSelection();
+            toggleFolderCollapsed(folder.id);
+          }}
+          onContextMenu={(e) => openFolderMenu(e, folder)}
+          onDragOver={(e) => handleDragOverFolder(e, folder.id)}
+          onDrop={(e) => handleDropOnFolder(e, folder)}
+          title={folder.collapsed ? t('fold.expand') : t('fold.collapse')}
+          className={`w-full flex items-center relative ${
+            collapsed ? 'justify-center' : 'gap-2'
+          } ${settings.compactMode ? 'px-2 py-1.5' : 'px-3 py-2'} rounded-lg transition-colors ${
+            overFolder === folder.id
+              ? 'ring-2 ring-accent-primary ring-inset'
+              : 'hover:bg-bg-hover text-text-secondary'
+          }`}
+        >
+          <span className="w-4 flex-shrink-0 flex items-center justify-center">
+            {folder.collapsed ? (
+              <ChevronRight size={14} className="text-text-muted" />
+            ) : (
+              <ChevronDown size={14} className="text-text-muted" />
+            )}
+          </span>
+          <span className="text-base leading-none flex-shrink-0">{folder.emoji}</span>
+          {!collapsed && (
+            <>
+              <span className="flex-1 text-left text-sm font-medium truncate">{folder.name}</span>
+              {hidden && unread > 0 && (
+                <span className="badge flex-shrink-0" title={t('sb.folderUnread', { count: unread })}>
+                  {unread > 99 ? '99+' : unread}
+                </span>
+              )}
+              {!hidden && (
+                <span className="text-[10px] tabular-nums text-text-muted flex-shrink-0">
+                  {folderApps.length}
+                </span>
+              )}
+            </>
+          )}
+          {collapsed && unread > 0 && (
+            <span
+              className="absolute -right-0.5 -top-0.5 w-2.5 h-2.5 rounded-full bg-accent-primary border-2 border-bg-secondary"
+              title={t('sb.folderUnread', { count: unread })}
+            />
+          )}
+        </button>
+        {!folder.collapsed && (
+          <div
+            className={
+              collapsed
+                ? 'space-y-1 mt-1'
+                : 'mt-1 ml-3 pl-2 border-l border-border space-y-1'
+            }
+          >
+            {folderApps.map((app) => renderApp(app))}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
     <aside
@@ -362,89 +621,180 @@ export default function Sidebar({
       }}
       {...revealHandlers}
     >
-      {/* Header avec toggle */}
-      <div className={`h-14 flex items-center ${collapsed ? 'px-2' : 'px-4'} border-b border-border gap-1`}>
-        {!collapsed && (
+      {/* Header : profil actif + dépliage de la liste.
+          UNE SEULE LIGNE tant que la liste est repliée : avec plusieurs
+          profils, la liste complète occupait une dizaine de lignes en
+          permanence. Cliquer sur le profil déplie la liste DANS LE FLUX
+          (pas en surimpression) → les apps descendent au lieu d'être
+          recouvertes. Les raccourcis (Alt+Maj+Page ↑/↓, Alt+Maj+P) ne
+          dépendent pas de ce pliage : ils restent disponibles. */}
+      <div ref={profilesRef} className="border-b border-border">
+        <div className={`h-14 flex items-center ${collapsed ? 'px-2' : 'px-4'} gap-1`}>
           <button
-            onClick={onOpenProfileManager}
-            className="flex items-center gap-3 flex-1 min-w-0 hover:opacity-80 transition-opacity"
-            title={t('sb.manageProfiles')}
+            onClick={() => setSidebarProfilesOpen(!sidebarProfilesOpen)}
+            className={`flex items-center min-w-0 hover:opacity-80 transition-opacity ${
+              collapsed ? 'flex-1 justify-center py-1' : 'gap-3 flex-1'
+            }`}
+            title={t('sb.switchProfile')}
+            aria-expanded={Boolean(sidebarProfilesOpen)}
           >
-            <div className="text-2xl flex-shrink-0">{currentProfile?.emoji}</div>
-            <div className="flex-1 text-left min-w-0">
-              <h2 className="font-semibold text-sm truncate">{currentProfile?.name}</h2>
-              <p className="text-xs text-text-muted">{apps.length} apps</p>
+            <div className={`${collapsed ? 'text-xl' : 'text-2xl'} flex-shrink-0`}>
+              {currentProfile?.emoji}
             </div>
+            {!collapsed && (
+              <>
+                <div className="flex-1 text-left min-w-0">
+                  <h2 className="font-semibold text-sm truncate">{currentProfile?.name}</h2>
+                  <p className="text-xs text-text-muted">{apps.length} apps</p>
+                </div>
+                {currentProfile && profileShowsLock(currentProfile.id) && (
+                  <Lock size={13} className="text-text-muted flex-shrink-0" title={t('sb.profileLocked')} />
+                )}
+                <ChevronDown
+                  size={16}
+                  className={`flex-shrink-0 text-text-muted transition-transform ${
+                    sidebarProfilesOpen ? 'rotate-180' : ''
+                  }`}
+                />
+              </>
+            )}
           </button>
-        )}
-        {collapsed && (
           <button
-            onClick={onOpenProfileManager}
-            className="flex-1 flex justify-center py-1 hover:opacity-80 transition-opacity"
-            title={t('sb.manageProfiles')}
+            onClick={onToggle}
+            className={`btn-icon ${collapsed ? 'w-8 h-8' : ''}`}
+            title={collapsed ? t('sb.expand') : t('sb.collapse')}
           >
-            <div className="text-xl">{currentProfile?.emoji}</div>
+            {collapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
           </button>
-        )}
-        <button
-          onClick={onToggle}
-          className={`btn-icon ${collapsed ? 'w-8 h-8' : ''}`}
-          title={collapsed ? t('sb.expand') : t('sb.collapse')}
-        >
-          {collapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
-        </button>
-      </div>
+        </div>
 
-      {/* Profils - TOUJOURS VISIBLE */}
-      <div className={`${padding} border-b border-border`}>
-        {!collapsed && (
-          <div className="flex items-center justify-between mb-2 px-2">
-            <div className="text-xs font-semibold text-text-muted uppercase">{t('sb.profiles')}</div>
+        {sidebarProfilesOpen && (
+          <div className={`${padding} pb-2 animate-fade-in`}>
+            <div className={`space-y-1 ${spacing}`}>
+              {profiles.map((profile) => (
+                <button
+                  key={profile.id}
+                  onClick={() => {
+                    setActiveProfile(profile.id);
+                    closeProfiles();
+                  }}
+                  className={`relative w-full flex items-center ${
+                    collapsed ? 'justify-center' : 'gap-3'
+                  } ${settings.compactMode ? 'px-2 py-1.5' : 'px-3 py-2'} rounded-lg transition-all ${
+                    profile.id === activeProfile
+                      ? 'bg-accent-primary/10 text-accent-primary'
+                      : 'hover:bg-bg-hover text-text-secondary'
+                  }`}
+                  title={collapsed ? profile.name : undefined}
+                >
+                  <span className="text-xl flex-shrink-0">{profile.emoji}</span>
+                  {!collapsed && (
+                    <>
+                      <span className="font-medium text-sm flex-1 text-left truncate">
+                        {profile.name}
+                      </span>
+                      {profileShowsLock(profile.id) && (
+                        <Lock
+                          size={13}
+                          className="text-text-muted flex-shrink-0"
+                          title={t('sb.profileLocked')}
+                        />
+                      )}
+                      {profile.id === activeProfile && !profileShowsLock(profile.id) && (
+                        <div className="w-2 h-2 rounded-full bg-accent-primary flex-shrink-0"></div>
+                      )}
+                    </>
+                  )}
+                  {collapsed && profileShowsLock(profile.id) && (
+                    <Lock size={11} className="absolute right-1 top-1 text-text-muted" />
+                  )}
+                </button>
+              ))}
+            </div>
+            {/* Gérer les profils : reste accessible sans quitter la liste
+                (le raccourci Alt+Maj+P et le pied de la barre le font aussi). */}
             <button
               onClick={onOpenProfileManager}
-              className="text-xs text-accent-primary hover:text-accent-hover"
+              className={`w-full flex items-center ${
+                collapsed ? 'justify-center' : 'gap-2'
+              } mt-2 px-2 py-1.5 rounded-lg text-xs text-text-secondary hover:bg-bg-hover hover:text-text-primary transition-colors`}
               title={t('sb.manageProfiles')}
             >
               <User size={14} />
+              {!collapsed && <span className="truncate">{t('sb.manageProfiles')}</span>}
             </button>
           </div>
         )}
-        <div className={`space-y-1 ${spacing}`}>
-          {profiles.map((profile) => (
-            <button
-              key={profile.id}
-              onClick={() => setActiveProfile(profile.id)}
-              className={`relative w-full flex items-center ${collapsed ? 'justify-center' : 'gap-3'} ${
-                settings.compactMode ? 'px-2 py-1.5' : 'px-3 py-2'
-              } rounded-lg transition-all ${
-                profile.id === activeProfile
-                  ? 'bg-accent-primary/10 text-accent-primary'
-                  : 'hover:bg-bg-hover text-text-secondary'
-              }`}
-              title={collapsed ? profile.name : undefined}
-            >
-              <span className="text-xl flex-shrink-0">{profile.emoji}</span>
-              {!collapsed && (
-                <>
-                  <span className="font-medium text-sm flex-1 text-left truncate">{profile.name}</span>
-                  {profileShowsLock(profile.id) && (
-                    <Lock size={13} className="text-text-muted flex-shrink-0" title={t('sb.profileLocked')} />
-                  )}
-                  {profile.id === activeProfile && !profileShowsLock(profile.id) && (
-                    <div className="w-2 h-2 rounded-full bg-accent-primary flex-shrink-0"></div>
-                  )}
-                </>
-              )}
-              {collapsed && profileShowsLock(profile.id) && (
-                <Lock size={11} className="absolute right-1 top-1 text-text-muted" />
-              )}
-            </button>
-          ))}
-        </div>
       </div>
 
       {/* Applications */}
-      <div className={`flex-1 overflow-y-auto ${padding}`}>
+      <div
+        className={`flex-1 overflow-y-auto ${padding}`}
+        // Clic dans le vide de la liste : on abandonne la sélection.
+        onMouseDown={(e) => {
+          if (e.target === e.currentTarget && selection.length) clearSelection();
+        }}
+      >
+        {/* Bandeau de sélection multiple (Ctrl/Cmd+clic). Il reste COLLÉ en
+            haut pendant qu'on fait défiler : on garde toujours sous les yeux
+            ce qui est coché et ce qu'on peut en faire. */}
+        {!collapsed && selectedApps.length > 0 && (
+          <div className="sticky top-0 z-[1] mb-2 rounded-lg border border-accent-primary/40 bg-bg-elevated/95 backdrop-blur px-2 py-1.5 text-xs shadow-lg">
+            {namingOpen ? (
+              <div className="flex items-center gap-1.5">
+                <input
+                  autoFocus
+                  value={naming.name}
+                  onChange={(e) => setNaming((n) => ({ ...n, name: e.target.value }))}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') createGroupFromSelection();
+                    if (e.key === 'Escape') setNaming((n) => ({ ...n, open: false }));
+                  }}
+                  placeholder={t('fold.namePlaceholder')}
+                  maxLength={60}
+                  className="input !py-1 !px-2 text-xs flex-1 min-w-0"
+                />
+                <button
+                  onClick={createGroupFromSelection}
+                  className="btn btn-primary btn-sm !px-2 !py-1"
+                  title={t('fold.create')}
+                >
+                  <Check size={13} />
+                </button>
+                <button
+                  onClick={() => setNaming((n) => ({ ...n, open: false }))}
+                  className="btn btn-secondary btn-sm !px-2 !py-1"
+                  title={t('common.cancel')}
+                >
+                  <X size={13} />
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2">
+                <span className="flex-1 min-w-0 truncate font-medium text-accent-primary">
+                  {t('sb.selected', { count: selectedApps.length })}
+                </span>
+                <button
+                  onClick={() =>
+                    setNaming({ profileId: activeProfile, open: true, name: '' })
+                  }
+                  className="flex items-center gap-1 px-1.5 py-0.5 rounded-md bg-accent-primary/15 text-accent-primary hover:bg-accent-primary/25 transition-colors"
+                  title={t('sb.groupSelected')}
+                >
+                  <FolderPlus size={13} />
+                </button>
+                <button
+                  onClick={clearSelection}
+                  className="px-1.5 py-0.5 rounded-md hover:bg-bg-hover text-text-muted transition-colors"
+                  title={t('sb.deselect')}
+                >
+                  <X size={13} />
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Épinglés : mêmes lignes que les autres apps (nom, badges, pastille
             de non-lus), simplement remontées en haut et retirées de la liste
             ci-dessous. Un séparateur marque la frontière plutôt qu'un second
@@ -457,13 +807,18 @@ export default function Sidebar({
               </div>
             )}
             <div className={`space-y-1 ${spacing}`}>
-              {pinned.map((app) => renderApp(app, pinned))}
+              {pinned.map((app) => renderApp(app))}
             </div>
             {collapsed && <div className="mt-3 mx-2 border-t border-border"></div>}
           </div>
         )}
-        {!collapsed && unpinned.length > 0 && (
-          <div className="text-xs font-semibold text-text-muted uppercase mb-2 px-2">{t('sb.applications')}</div>
+        {!collapsed && (groups.length > 0 || loose.length > 0) && (
+          <div
+            className="text-xs font-semibold text-text-muted uppercase mb-2 px-2"
+            title={t('sb.multiHint')}
+          >
+            {t('sb.applications')}
+          </div>
         )}
         {apps.length === 0 ? (
           !collapsed && (
@@ -477,20 +832,34 @@ export default function Sidebar({
             </div>
           )
         ) : (
-          <div
-            className={`space-y-1 ${spacing} ${dragId ? 'pb-1' : ''}`}
-            // « __end__ » = zone vide sous la dernière app (déposer tout en bas).
-            // Ne réagit que si la cible est le conteneur lui-même (pas un bouton
-            // d'app : les événements remontent et déclencheraient un double drop).
-            onDragOver={(e) => {
-              if (e.target === e.currentTarget) handleDragOver(e, '__end__');
-            }}
-            onDrop={(e) => {
-              if (e.target === e.currentTarget) handleDrop(e, '__end__');
-            }}
-          >
-            {unpinned.map((app) => renderApp(app, unpinned))}
-          </div>
+          <>
+            {/* Dossiers : un en-tête pliable + ses apps encadrées. Le rangement
+                se fait par glisser-déposer (sur l'en-tête ou sur une app du
+                dossier) ou depuis le menu de sélection multiple. */}
+            <div className="space-y-2">{groups.map((group) => renderFolder(group))}</div>
+
+            {/* Apps hors dossier. En mode réduit, ce conteneur sert aussi de
+                zone de dépôt « tout en bas » — y déposer une app la SORT de
+                son dossier. */}
+            <div
+              className={`space-y-1 ${spacing} ${groups.length ? 'mt-2' : ''} ${
+                dragId ? 'min-h-6 pb-1' : ''
+              } ${
+                overId === '__end__' ? 'ring-2 ring-accent-primary ring-inset rounded-lg' : ''
+              }`}
+              // « __end__ » = zone vide sous la dernière app (déposer tout en bas).
+              // Ne réagit que si la cible est le conteneur lui-même (pas un bouton
+              // d'app : les événements remontent et déclencheraient un double drop).
+              onDragOver={(e) => {
+                if (e.target === e.currentTarget) handleDragOver(e, '__end__');
+              }}
+              onDrop={(e) => {
+                if (e.target === e.currentTarget) handleDropAtEnd(e);
+              }}
+            >
+              {loose.map((app) => renderApp(app))}
+            </div>
+          </>
         )}
 
         {/* Pages volantes : des URL ouvertes à la volée depuis Alt+K. Section
@@ -626,6 +995,36 @@ export default function Sidebar({
             x={menu.x}
             y={menu.y}
             onClose={() => setMenu(null)}
+          />,
+          document.body
+        )}
+
+      {/* Menu d'une SÉLECTION MULTIPLE. Le fermer abandonne la sélection : on
+          ne laisse jamais des apps cochées derrière un menu disparu (sans quoi
+          le prochain clic droit agirait sur des apps qu'on ne vise plus). */}
+      {multiMenu &&
+        createPortal(
+          <MultiSelectionMenu
+            ids={multiMenu.ids}
+            x={multiMenu.x}
+            y={multiMenu.y}
+            onClose={() => {
+              setMultiMenu(null);
+              clearSelection();
+            }}
+          />,
+          document.body
+        )}
+
+      {/* Menu d'un DOSSIER (clic droit sur son en-tête). */}
+      {folderMenu &&
+        createPortal(
+          <AppFolderMenu
+            folderId={folderMenu.folderId}
+            x={folderMenu.x}
+            y={folderMenu.y}
+            onSelectApps={selectFolderApps}
+            onClose={() => setFolderMenu(null)}
           />,
           document.body
         )}

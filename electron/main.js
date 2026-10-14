@@ -20,6 +20,9 @@ import * as downloader from './downloader.js';
 import electronUpdater from 'electron-updater';
 import { matchShortcutInput } from '../src/lib/shortcuts.js';
 import { matchLinkRule } from '../src/lib/rules.js';
+import { hasBinaryContent } from '../src/lib/documents.js';
+import { PLAIN_WEB_URL } from '../src/lib/urls.js';
+import { safeFileName, savePlan } from '../src/lib/downloadPath.js';
 import { getDomain } from 'tldts-experimental';
 import { fileURLToPath } from 'url';
 
@@ -94,6 +97,9 @@ function deliverOpenLinks(items) {
     return;
   }
   for (const item of items) {
+    // On retient les fichiers ouverts PAR L'UTILISATEUR : la visionneuse ne
+    // pourra lire que ceux-là (voir documents:read).
+    if (item.kind === 'file' && item.path) rememberOpenedFile(item.path);
     try {
       mainWindow.webContents.send('orbit:open-link', item);
     } catch {
@@ -101,6 +107,209 @@ function deliverOpenLinks(items) {
     }
   }
 }
+
+// ---------------------------------------------------------------------------
+// Documents : lecture des fichiers pour la visionneuse d'Orbit
+// ---------------------------------------------------------------------------
+//
+// Chromium n'affiche PAS un .md, un .json ou un .csv : selon le Content-Type
+// et le Content-Disposition du serveur, il affiche du texte brut — ou déclenche
+// un TÉLÉCHARGEMENT silencieux, ce qui laissait un cadre BLANC dans la page
+// volante. Orbit lit donc ces documents lui-même et les met en forme.
+//
+// DEUX GARDE-FOUS, parce que l'interface partage son processus avec du contenu
+// web (webviews) :
+//   1. `documents:read` ne lit QUE les chemins que l'utilisateur a ouverts
+//      lui-même (arguments du système, « Ouvrir avec », double-clic). Sans
+//      cette liste, le pont IPC serait une porte ouverte sur tout le disque.
+//   2. `documents:fetch` n'accepte que http(s) et ne se sert QUE des partitions
+//      de pages volantes (session jetable) : on ne va jamais chercher un
+//      document avec les cookies d'un compte connecté.
+const openedLocalFiles = new Set();
+// Au-delà, on tronque : afficher 100 Mo de journal ne rend service à personne,
+// et la limite évite de faire transiter des mégaoctets par le pont IPC.
+const MAX_DOCUMENT_BYTES = 4 * 1024 * 1024;
+const FETCH_TIMEOUT_MS = 20000;
+// Partitions autorisées pour un document distant : celles des pages volantes.
+const FLY_PARTITION = /^(persist:)?(fly|priv):/;
+
+function rememberOpenedFile(filePath) {
+  try {
+    openedLocalFiles.add(path.resolve(String(filePath)));
+  } catch {
+    /* chemin illisible : simplement pas retenu */
+  }
+}
+
+// Chemin absolu normalisé d'un chemin venu de l'interface. On accepte aussi la
+// forme qu'Electron donne dans `pathname` sous Windows (« /C:/dossier/f.md »).
+function normalizeLocalPath(filePath) {
+  try {
+    let p = String(filePath || '');
+    if (!p) return null;
+    if (/^\/[A-Za-z]:[\\/]/.test(p)) p = p.slice(1);
+    return path.resolve(p);
+  } catch {
+    return null;
+  }
+}
+
+// Lit un flux HTTP en s'arrêtant à la limite : on ne télécharge jamais un
+// fichier entier pour n'en afficher que le début.
+async function readCapped(res, max) {
+  if (!res.body) {
+    const whole = Buffer.from(await res.arrayBuffer());
+    return { buf: whole.subarray(0, max), truncated: whole.length > max };
+  }
+  const reader = res.body.getReader();
+  const chunks = [];
+  let total = 0;
+  let truncated = false;
+  for (;;) {
+    // eslint-disable-next-line no-await-in-loop -- lecture séquentielle du flux
+    const { done, value } = await reader.read();
+    if (done) break;
+    const chunk = Buffer.from(value);
+    if (total + chunk.length > max) {
+      chunks.push(chunk.subarray(0, max - total));
+      truncated = true;
+      try {
+        await reader.cancel();
+      } catch {
+        /* flux déjà terminé */
+      }
+      break;
+    }
+    chunks.push(chunk);
+    total += chunk.length;
+  }
+  return { buf: Buffer.concat(chunks), truncated };
+}
+
+// Décodage texte : respecte le jeu de caractères annoncé (un vieux .txt en
+// windows-1252 s'affiche correctement), avec repli UTF-8 tolérant.
+function decodeText(buf, contentType) {
+  let charset = (String(contentType || '').match(/charset=\s*"?([\w-]+)/i) || [])[1];
+  if (!charset) charset = 'utf-8';
+  try {
+    return new TextDecoder(charset, { fatal: false }).decode(buf);
+  } catch {
+    return new TextDecoder('utf-8', { fatal: false }).decode(buf);
+  }
+}
+
+const stripBom = (text) => (text.charCodeAt(0) === 0xfeff ? text.slice(1) : text);
+
+ipcMain.handle('documents:read', async (_event, payload = {}) => {
+  const resolved = normalizeLocalPath(payload.path);
+  if (!resolved) return { ok: false, reason: 'bad-path' };
+  if (!openedLocalFiles.has(resolved)) return { ok: false, reason: 'not-allowed' };
+
+  let stat;
+  try {
+    stat = await fs.promises.stat(resolved);
+  } catch {
+    return { ok: false, reason: 'missing' };
+  }
+  if (!stat.isFile()) return { ok: false, reason: 'not-a-file' };
+
+  let buf;
+  try {
+    // On lit au plus la limite + 1 octet : inutile de charger le fichier entier
+    // en mémoire pour n'en montrer que le début.
+    const handle = await fs.promises.open(resolved, 'r');
+    try {
+      const size = Math.min(stat.size, MAX_DOCUMENT_BYTES + 1);
+      buf = Buffer.alloc(size);
+      const { bytesRead } = await handle.read(buf, 0, size, 0);
+      buf = buf.subarray(0, bytesRead);
+    } finally {
+      await handle.close();
+    }
+  } catch (err) {
+    return { ok: false, reason: 'read-failed', detail: String(err?.message || err) };
+  }
+
+  const truncated = stat.size > MAX_DOCUMENT_BYTES;
+  const text = stripBom(decodeText(buf.subarray(0, Math.min(buf.length, MAX_DOCUMENT_BYTES)), ''));
+  if (hasBinaryContent(text)) {
+    return { ok: false, reason: 'binary', bytes: stat.size };
+  }
+  return { ok: true, text, bytes: stat.size, truncated, name: path.basename(resolved) };
+});
+
+ipcMain.handle('documents:fetch', async (_event, payload = {}) => {
+  const url = String(payload.url || '');
+  const partition = String(payload.partition || '');
+  if (!/^https?:\/\//i.test(url)) return { ok: false, reason: 'bad-url' };
+  // On refuse toute partition qui n'est pas celle d'une page volante : un
+  // document distant ne doit jamais être récupéré avec les cookies d'un compte.
+  if (!FLY_PARTITION.test(partition)) return { ok: false, reason: 'bad-partition' };
+
+  let res;
+  try {
+    const ses = session.fromPartition(partition);
+    res = await ses.fetch(url, {
+      redirect: 'follow',
+      signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
+      headers: { accept: 'text/*, application/json;q=0.9, */*;q=0.5' },
+    });
+  } catch (err) {
+    const aborted = /abort/i.test(String(err?.name || err?.message || ''));
+    return { ok: false, reason: aborted ? 'timeout' : 'network' };
+  }
+  if (!res.ok) return { ok: false, reason: 'http', status: res.status };
+
+  const contentType = res.headers.get('content-type') || '';
+  const declared = Number(res.headers.get('content-length') || 0);
+  let read;
+  try {
+    read = await readCapped(res, MAX_DOCUMENT_BYTES + 1);
+  } catch {
+    return { ok: false, reason: 'read-failed' };
+  }
+
+  const truncated = read.truncated || read.buf.length > MAX_DOCUMENT_BYTES;
+  const text = stripBom(decodeText(read.buf.subarray(0, MAX_DOCUMENT_BYTES), contentType));
+  if (hasBinaryContent(text)) {
+    return { ok: false, reason: 'binary', contentType, bytes: declared || read.buf.length };
+  }
+  return {
+    ok: true,
+    text,
+    bytes: declared || read.buf.length,
+    truncated,
+    contentType,
+  };
+});
+
+// JAMAIS SILENCIEUX : quand Orbit refuse un document (.docx, .zip, .exe…
+// n'ont aucun rendu ici), on rend la main au navigateur du système plutôt que
+// de ne rien faire — sinon l'utilisateur croit à un lien mort.
+//
+// Garde-fou strict : http(s) SEULEMENT. Cet appel vient de l'interface, qui
+// partage son processus avec du contenu web ; y laisser passer un schéma
+// arbitraire reviendrait à donner à n'importe quelle page le moyen de lancer
+// un programme local via shell.openExternal. Le motif est celui de
+// src/lib/urls.js (PLAIN_WEB_URL), partagé pour ne pas diverger.
+ipcMain.handle('document:openOutside', (_event, url) => {
+  const u = String(url || '').trim();
+  if (!PLAIN_WEB_URL.test(u)) return { success: false, reason: 'bad-url' };
+  try {
+    shell.openExternal(u);
+    return { success: true };
+  } catch (err) {
+    return { success: false, reason: String(err?.message || err) };
+  }
+});
+
+// Révèle un fichier local ouvert dans le gestionnaire de fichiers du système.
+ipcMain.handle('documents:reveal', (_event, payload = {}) => {
+  const resolved = normalizeLocalPath(payload.path);
+  if (!resolved || !openedLocalFiles.has(resolved)) return { success: false };
+  shell.showItemInFolder(resolved);
+  return { success: true };
+});
 
 // Le serveur de dev ne doit jamais être ouvert comme une page volante : en
 // développement, il est déjà l'interface elle-même.
@@ -839,36 +1048,103 @@ function refreshDownloadPowerBlocker() {
   }
 }
 
+// Réglages de téléchargement, poussés par l'interface (voir App.jsx).
+// `dir` : '' = dossier Téléchargements du système. `ask` : ouvrir la boîte
+// d'enregistrement du système à chaque fois.
+let downloadPrefs = { dir: '', ask: false };
+
+// Le dossier de l'utilisateur a pu être supprimé depuis le dernier lancement :
+// on le recrée plutôt que d'échouer sur le premier téléchargement.
+function ensureDownloadDir(dir) {
+  try {
+    fs.mkdirSync(dir, { recursive: true });
+    return dir;
+  } catch {
+    // Dossier inaccessible (disque détaché, droits…) : on se replie sur le
+    // dossier système — mieux vaut enregistrer quelque part que d'échouer.
+    return app.getPath('downloads');
+  }
+}
+
+function systemDownloadsDir() {
+  try {
+    return app.getPath('downloads');
+  } catch {
+    return app.getPath('home');
+  }
+}
+
 function setupDownloads(ses) {
   if (!ses || downloadSessions.has(ses)) return;
   downloadSessions.add(ses);
-  ses.on('will-download', (_event, item) => {
+  ses.on('will-download', (event, item) => {
     const id = `dl-${Date.now()}-${(downloadSeq += 1)}`;
-    const savePath = uniquePath(path.join(app.getPath('downloads'), item.getFilename()));
-    item.setSavePath(savePath);
-    downloads.set(id, { item, savePath, url: item.getURL(), filename: path.basename(savePath) });
-
-    const snapshot = (state) => ({
-      id,
-      filename: path.basename(savePath),
-      savePath,
-      url: item.getURL(),
-      totalBytes: item.getTotalBytes(),
-      receivedBytes: item.getReceivedBytes(),
-      state: state || item.getState(),
+    const plan = savePlan({
+      configuredDir: downloadPrefs.dir,
+      systemDir: systemDownloadsDir(),
+      filename: item.getFilename(),
+      ask: downloadPrefs.ask,
+      exists: fs.existsSync,
+      sep: path.sep,
     });
+    const dir = ensureDownloadDir(plan.dir);
 
-    broadcastDownload({ ...snapshot('progressing'), event: 'started' });
-    refreshDownloadPowerBlocker();
-    item.on('updated', (_e, state) => broadcastDownload({ ...snapshot(state), event: 'updated' }));
-    item.once('done', (_e, state) => {
-      broadcastDownload({ ...snapshot(state), event: 'done' });
+    // Lancement une fois le chemin DÉCIDÉ. On ne diffuse rien avant : le panneau
+    // Téléchargements ne doit pas afficher un fichier dont le nom et le dossier
+    // peuvent encore changer (ou disparaître si l'utilisateur annule).
+    const start = (savePath) => {
+      item.setSavePath(savePath);
+      const filename = path.basename(savePath);
+      downloads.set(id, { item, savePath, url: item.getURL(), filename });
+
+      const snapshot = (state) => ({
+        id,
+        filename,
+        savePath,
+        url: item.getURL(),
+        totalBytes: item.getTotalBytes(),
+        receivedBytes: item.getReceivedBytes(),
+        state: state || item.getState(),
+      });
+
+      broadcastDownload({ ...snapshot('progressing'), event: 'started' });
       refreshDownloadPowerBlocker();
-      // On garde le chemin un moment (ouvrir / afficher) puis on nettoie.
-      const rec = downloads.get(id);
-      if (rec) rec.item = null;
-      setTimeout(() => downloads.delete(id), 10 * 60 * 1000);
-    });
+      item.on('updated', (_e, state) => broadcastDownload({ ...snapshot(state), event: 'updated' }));
+      item.once('done', (_e, state) => {
+        broadcastDownload({ ...snapshot(state), event: 'done' });
+        refreshDownloadPowerBlocker();
+        // On garde le chemin un moment (ouvrir / afficher) puis on nettoie.
+        const rec = downloads.get(id);
+        if (rec) rec.item = null;
+        setTimeout(() => downloads.delete(id), 10 * 60 * 1000);
+      });
+    };
+
+    if (plan.mustAsk) {
+      // On empêche d'abord le comportement par défaut : sinon Electron afficherait
+      // SA propre boîte de sauvegarde en plus de la nôtre. On ne relance le
+      // téléchargement (setSavePath) qu'une fois le choix fait.
+      event.preventDefault();
+      const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined;
+      dialog
+        .showSaveDialog(win, {
+          title: 'Enregistrer le téléchargement',
+          defaultPath: path.join(dir, plan.filename),
+          buttonLabel: 'Enregistrer',
+        })
+        .then(({ canceled, filePath }) => {
+          if (canceled || !filePath) {
+            // Annulé : rien n'est écrit et rien n'apparaît dans le panneau —
+            // c'est le comportement attendu d'un « Annuler ».
+            return;
+          }
+          start(filePath);
+        })
+        .catch(() => start(path.join(dir, plan.filename)));
+      return;
+    }
+
+    start(plan.savePath);
   });
 }
 
@@ -3871,10 +4147,37 @@ ipcMain.handle('downloads:cancel', (_event, id) => {
   return { success: Boolean(rec) };
 });
 
-// Ouvre le dossier Téléchargements de l'OS
+// Ouvre le dossier des téléchargements : celui réglé par l'utilisateur s'il
+// existe encore, sinon celui du système.
 ipcMain.handle('downloads:openFolder', () => {
-  shell.openPath(app.getPath('downloads'));
-  return { success: true };
+  const configured = String(downloadPrefs.dir || '').trim();
+  const target = configured && fs.existsSync(configured) ? configured : systemDownloadsDir();
+  shell.openPath(target);
+  return { success: true, path: target };
+});
+
+// Réglages de téléchargement poussés par l'interface (dossier + « demander »).
+ipcMain.handle('downloads:setPrefs', (_event, prefs = {}) => {
+  downloadPrefs = {
+    dir: String(prefs.dir || '').trim(),
+    ask: Boolean(prefs.ask),
+  };
+  return { success: true, prefs: downloadPrefs };
+});
+
+// Choisir un dossier d'enregistrement : c'est le SEUL endroit où l'on accepte
+// un chemin venant de l'interface, et il n'est utilisé que pour y écrire des
+// téléchargements — jamais lu. Annulé → null (l'interface garde le réglage).
+ipcMain.handle('downloads:pickFolder', async () => {
+  const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined;
+  const res = await dialog.showOpenDialog(win, {
+    title: 'Choisir le dossier de téléchargement',
+    defaultPath: downloadPrefs.dir || systemDownloadsDir(),
+    properties: ['openDirectory', 'createDirectory'],
+    buttonLabel: 'Choisir',
+  });
+  if (res.canceled || !res.filePaths.length) return { success: false, canceled: true };
+  return { success: true, path: res.filePaths[0] };
 });
 
 // Téléchargement vidéo/audio via yt-dlp — la progression alimente le MÊME

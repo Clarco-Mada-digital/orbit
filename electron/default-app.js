@@ -26,6 +26,7 @@
 // ---------------------------------------------------------------------------
 import fs from 'node:fs';
 import path from 'node:path';
+import { OPENABLE_MIME_TYPES } from '../src/lib/fileTypes.js';
 
 // Nom du fichier que nous déposons (dans le dossier utilisateur).
 export const DESKTOP_FILE = 'orbit.desktop';
@@ -34,10 +35,21 @@ export const DESKTOP_FILE = 'orbit.desktop';
 // paquet installé : on n'écrase jamais un fichier qu'on n'a pas écrit.
 const MARKER = 'X-Orbit-Managed=true';
 
-// Ce qu'Orbit sait ouvrir : une page HTML locale, et un lien web.
+// Ce qu'Orbit sait ouvrir : des liens web, des pages HTML locales, des images,
+// des PDF, des médias — et, depuis la visionneuse, tous les documents texte
+// (markdown, JSON, CSV, code…). La liste vient de src/lib/fileTypes.js, partagée
+// avec la visionneuse : une seule source de vérité pour « ce qu'on sait lire ».
 // `x-scheme-handler/*` est la convention freedesktop pour les schémas d'URL.
 export const LINUX_MIME_TYPES = [
   'text/html',
+  ...OPENABLE_MIME_TYPES,
+  'image/png',
+  'image/jpeg',
+  'image/gif',
+  'image/webp',
+  'video/mp4',
+  'video/webm',
+  'audio/mpeg',
   'x-scheme-handler/http',
   'x-scheme-handler/https',
 ];
@@ -63,7 +75,7 @@ export function desktopEntryText(ctx = {}) {
       'Type=Application',
       'Version=1.0',
       `Name=${ctx.appName || 'Orbit'}`,
-      'Comment=Ouvrir des liens et des pages HTML dans Orbit',
+      'Comment=Ouvrir des liens et des documents (pages, PDF, texte, images) dans Orbit',
       `Exec=${exec} %U`,
       'Terminal=false',
       'Categories=Network;WebBrowser;Utility;',

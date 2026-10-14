@@ -1,3 +1,5 @@
+import { KIND, kindForUrl, kindForPath, basenameOf, isSupportedPath } from './fileTypes.js';
+
 // Aides URL : une app ne doit JAMAIS redémarrer sur une page de connexion.
 //
 // Deux cas bien distincts :
@@ -133,40 +135,71 @@ export function computeStartUrl(app, recipes) {
   return isLoginPageUrl(app.url) ? home : app.url;
 }
 
-// Extensions qu'on accepte d'ouvrir comme une page. Le pendant côté process
-// principal est PAGE_EXTENSIONS (electron/open-links.js) : les deux doivent
-// rester d'accord, sinon le système nous passe un lien qu'on refuse d'ouvrir.
-const PAGE_EXTENSIONS = new Set(['html', 'htm', 'xhtml']);
+// Adresse web « nue », sans autre détail. Existe en constante partagée parce
+// que la décision est prise EN DEUX ENDROITS : ici (page volante) et dans le
+// processus principal (garde de l'IPC qui confie un lien au navigateur).
+// Répéter ce motif reviendrait à le faire diverger, c'est-à-dire à perdre la
+// garde au bout de quelques mois.
+export const PLAIN_WEB_URL = /^https?:\/\/\S+$/i;
 
-// Cible d'une PAGE VOLANTE (« lien libre ») : une adresse web, ou une page HTML
-// locale — c'est le cas d'un fichier .html qu'on choisit d'ouvrir avec Orbit
-// depuis son système (double-clic, « Ouvrir avec »). Renvoie null pour tout le
-// reste : une page volante n'est pas une visionneuse de fichiers quelconques.
+// Cible d'une PAGE VOLANTE (« lien libre »). Deux entrées possibles :
+//   • une adresse web — l'immense majorité des liens ;
+//   • un fichier local, quand le système nous lance avec « Ouvrir avec »
+//     (double-clic sur un .md, un .json, un .pdf…).
+//
+// La NATURE du document est renvoyée avec la cible (voir lib/fileTypes.js) :
+// les types texte sont lus et mis en forme par Orbit (la visionneuse), les
+// autres sont confiés au moteur (<webview>). Renvoyer null = « on n'ouvre
+// pas ça » — un .zip ou un .docx en page volante donnerait un cadre BLANC,
+// puisque le moteur en fait un téléchargement silencieux.
 export function flyPageTarget(rawUrl) {
   const url = String(rawUrl || '').trim();
   if (!url) return null;
 
-  if (/^https?:\/\/\S+$/i.test(url)) {
-    let name = url;
+  if (PLAIN_WEB_URL.test(url)) {
+    const kind = kindForUrl(url);
+    if (kind === KIND.unknown) return null;
+    let host = url;
     try {
-      name = new URL(url).hostname.replace(/^www\./, '') || url;
+      host = new URL(url).hostname.replace(/^www\./, '') || url;
     } catch {
       /* URL déjà validée : on garde l'adresse comme nom */
     }
-    return { url, name, local: false };
+    // Document identifié : on titre avec le NOM DU FICHIER (« readme.md »),
+    // plus parlant que le domaine quand on ouvre une pièce jointe.
+    const name = kind === KIND.page ? host : basenameOf(url) || host;
+    return { url, name, local: false, kind };
   }
 
   if (/^file:\/\/\S+$/i.test(url)) {
     try {
       const u = new URL(url);
       const file = decodeURIComponent(u.pathname.split('/').pop() || '');
-      const ext = (file.split('.').pop() || '').toLowerCase();
-      if (!PAGE_EXTENSIONS.has(ext)) return null;
-      return { url, name: file || url, local: true };
+      if (!isSupportedPath(file)) return null;
+      return { url, name: file || url, local: true, kind: kindForPath(file) };
     } catch {
       return null;
     }
   }
 
   return null;
+}
+
+// Un lien qu'Orbit ne sait PAS afficher (.docx, .zip, .exe…) doit-il partir
+// dans le navigateur du système ?
+//
+// Ce module sert de filet au principe « JAMAIS SILENCIEUX » : refuser
+// d'ouvrir un document, c'est parfaitement justifié (le moteur en ferait une
+// page blanche) — mais ne rien faire LÀ, c'est le même symptôme pour
+// l'utilisateur, qui croit à un lien mort. On préfère rendre la main au
+// navigateur, qui télécharge le fichier comme toujours.
+//
+// Retourne 'browser' seulement quand l'entrée est une vraie adresse web
+// qu'on refuse : le reste (javascript:, mailto:, un chemin local) n'a aucune
+// ouverture extérieure sensée — on n'invente pas une action à la place d'une
+// autre.
+export function outsideFallbackFor(rawUrl) {
+  const url = String(rawUrl || '').trim();
+  if (!PLAIN_WEB_URL.test(url)) return null;
+  return flyPageTarget(url) ? null : 'browser';
 }

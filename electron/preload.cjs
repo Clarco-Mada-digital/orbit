@@ -66,6 +66,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
   revealDownload: (id) => ipcRenderer.invoke('downloads:reveal', id),
   cancelDownload: (id) => ipcRenderer.invoke('downloads:cancel', id),
   openDownloadsFolder: () => ipcRenderer.invoke('downloads:openFolder'),
+  // Réglages de téléchargement : dossier d'enregistrement et « demander à
+  // chaque fois ». `pickFolder` ouvre le sélecteur de dossiers du système.
+  setDownloadPrefs: (prefs) => ipcRenderer.invoke('downloads:setPrefs', prefs),
+  pickDownloadFolder: () => ipcRenderer.invoke('downloads:pickFolder'),
+  // Documents (visionneuse) : lire un fichier que l'utilisateur a ouvert, ou
+  // récupérer un document distant via la session JETABLE d'une page volante
+  // (jamais avec les cookies d'un compte connecté). Le processus principal
+  // refuse tout ce qui n'entre pas dans ces deux cas.
+  documents: {
+    read: (payload) => ipcRenderer.invoke('documents:read', payload),
+    fetch: (payload) => ipcRenderer.invoke('documents:fetch', payload),
+    reveal: (payload) => ipcRenderer.invoke('documents:reveal', payload),
+  },
+  // JAMAIS SILENCIEUX : un document qu'Orbit ne sait pas afficher (bureautique,
+  // archive…) est confié au navigateur du système, qui le téléchargera. Le
+  // processus principal n'accepte que des adresses http(s).
+  openOutside: (url) => ipcRenderer.invoke('document:openOutside', url),
   // Téléchargement vidéo/audio (yt-dlp) — mode: 'video' | 'audio'
   downloadMedia: (url, mode) => ipcRenderer.invoke('media:download', { url, mode }),
   // Ouvrir une app dans une fenêtre détachée (même session)

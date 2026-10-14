@@ -29,10 +29,13 @@ export const SYNC_FORMAT = 1;
 const APP_FIELDS = [
   'id', 'profileId', 'sessionKey', 'recipeId', 'name', 'homeUrl', 'icon',
   'color', 'favicon', 'order', 'zoom', 'scope', 'containerId', 'proxy',
-  'userAgent', 'notifications', 'favorite',
+  'userAgent', 'notifications', 'favorite', 'folderId',
 ];
 const PROFILE_FIELDS = ['id', 'name', 'emoji', 'color', 'proxy'];
 const CONTAINER_FIELDS = ['id', 'name', 'color'];
+// `collapsed` (plié/déplié) reste LOCAL : plier un dossier sur le portable ne
+// doit pas le plier sur le fixe.
+const FOLDER_FIELDS = ['id', 'name', 'profileId', 'emoji', 'color', 'order'];
 const WORKSPACE_FIELDS = ['id', 'name', 'profileId', 'activeApp', 'splitView'];
 const RULE_FIELDS = [
   'id', 'enabled', 'trigger', 'pattern', 'action', 'targetAppId', 'fromAppId',
@@ -43,11 +46,22 @@ export const SYNC_COLLECTIONS = {
   profiles: PROFILE_FIELDS,
   apps: APP_FIELDS,
   containers: CONTAINER_FIELDS,
+  // Les dossiers voyagent (c'est du rangement, pas un état d'affichage) : une
+  // app rangée sur le fixe doit l'être aussi sur le portable.
+  folders: FOLDER_FIELDS,
   workspaces: WORKSPACE_FIELDS,
   // Les automatisations voyagent : une règle de routage de liens a autant de
   // sens sur le portable que sur le fixe.
   rules: RULE_FIELDS,
 };
+
+// Collections présentes DEPUIS le format 1 : leur absence trahit un fichier
+// tronqué (synchro cloud interrompue) et on refuse l'instantané. Une
+// collection ajoutée PLUS TARD (les dossiers) reste optionnelle : un fichier
+// écrit par une version antérieure doit rester exploitable — il est alors lu
+// comme « aucun dossier », et aucun dossier local n'est jamais perdu puisque
+// la fusion part toujours de l'état local.
+const REQUIRED_COLLECTIONS = ['profiles', 'apps', 'containers', 'workspaces', 'rules'];
 
 // Les pierres tombales sont purgées au-delà de ce délai : passé un mois, toutes
 // les machines ont forcément vu la suppression. Sans purge, le fichier de
@@ -104,7 +118,9 @@ export function isValidSnapshot(snap) {
   return Boolean(
     isObj(snap) &&
       snap.orbitSync === SYNC_FORMAT &&
-      Object.keys(SYNC_COLLECTIONS).every((k) => Array.isArray(snap[k]))
+      REQUIRED_COLLECTIONS.every((k) => Array.isArray(snap[k])) &&
+      // Une collection connue mais mal typée (chaîne, objet…) reste refusée.
+      Object.keys(SYNC_COLLECTIONS).every((k) => snap[k] === undefined || Array.isArray(snap[k]))
   );
 }
 
@@ -187,7 +203,9 @@ export function mergeSnapshots(local, remote, { now = Date.now() } = {}) {
   const collections = {};
 
   for (const [key, fields] of Object.entries(SYNC_COLLECTIONS)) {
-    const { list, stats } = mergeList(base[key], remote[key], fields, tombstones, now);
+    // Collection absente du distant (fichier d'une version antérieure) : on la
+    // lit comme vide → les entités locales sont conservées telles quelles.
+    const { list, stats } = mergeList(base[key], remote[key] || [], fields, tombstones, now);
     merged[key] = list;
     collections[key] = stats;
   }

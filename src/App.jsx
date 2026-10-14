@@ -1,6 +1,8 @@
 import { Fragment, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Moon, Play, X, Columns2, Rows2, Wifi, KeyRound, Plus, Copy, ExternalLink, Globe, EyeOff } from 'lucide-react';
 import Sidebar from './components/Sidebar';
+import DocumentViewer from './components/DocumentViewer';
+import { isViewerKind } from './lib/fileTypes';
 import Topbar from './components/Topbar';
 import Bottombar from './components/Bottombar';
 import { useAutoHide, RevealStrip, REVEALED_BAR_Z, useAutoHideStore } from './lib/autoHide';
@@ -161,12 +163,15 @@ const [editUrlFor, setEditUrlFor] = useState(null); // { id, url } — boîte «
   }, []);
 
   // Liens venus de l'EXTÉRIEUR : le système a lancé (ou rappelé) Orbit avec une
-  // URL ou un fichier .html — parce que l'utilisateur a choisi Orbit dans
-  // « Ouvrir avec », ou double-cliqué une page associée. On l'ouvre en PAGE
+  // URL ou le chemin d'un fichier — parce que l'utilisateur a choisi Orbit dans
+  // « Ouvrir avec », ou double-cliqué un document associé. On l'ouvre en PAGE
   // VOLANTE : un « lien libre », jamais un compte déjà connecté.
+  // `path` est transmis au store : c'est lui qui autorise la lecture du fichier
+  // par la visionneuse (le processus principal ne lit que les fichiers ouverts
+  // ainsi — voir documents:read).
   useEffect(() => {
-    const off = window.electronAPI?.onOpenLink?.(({ url } = {}) => {
-      if (url) useStore.getState().openFlyPage(url);
+    const off = window.electronAPI?.onOpenLink?.(({ url, path: filePath } = {}) => {
+      if (url) useStore.getState().openFlyPage(url, { filePath });
     });
     // On prévient le processus principal qu'on écoute : il livre alors ce qui
     // est arrivé pendant le démarrage (sinon le lien serait perdu).
@@ -201,6 +206,16 @@ const [editUrlFor, setEditUrlFor] = useState(null); // { id, url } — boîte «
   useEffect(() => {
     window.electronAPI?.setFakeData?.(settings.fakeData || {});
   }, [settings.fakeData]);
+
+  // Réglages de téléchargement. C'est le PROCESSUS PRINCIPAL qui décide où
+  // écrire (il seul touche au disque et ouvre les boîtes de dialogue du
+  // système) : on lui pousse simplement les deux réglages à chaque changement.
+  useEffect(() => {
+    window.electronAPI?.setDownloadPrefs?.({
+      dir: settings.downloadDir || '',
+      ask: settings.askDownloadPath === true,
+    });
+  }, [settings.downloadDir, settings.askDownloadPath]);
 
   // Média : pour synchroniser le mini-lecteur flottant
   const media = useMediaStore((s) => s.media);
@@ -1116,12 +1131,25 @@ const openEditUrl = useCallback((id) => {
                         }
                         style={paneStyle}
                       >
-                        <WebView
-                          app={a}
-                          active={inActive && a.id === activeApp}
-                          visible={inSplit || (inActive && a.id === activeApp)}
-                          flexLayout={inSplit}
-                        />
+                        {/* Document texte (page volante .md, .json, .csv…) :
+                            c'est la VISIONNEUSE d'Orbit qui l'affiche. Un
+                            <webview> resterait blanc — le moteur n'a aucun
+                            rendu pour ces formats et, selon le Content-Type
+                            du serveur, en fait même un téléchargement. */}
+                        {isViewerKind(a.kind) ? (
+                          <DocumentViewer
+                            app={a}
+                            visible={inSplit || (inActive && a.id === activeApp)}
+                            flexLayout={inSplit}
+                          />
+                        ) : (
+                          <WebView
+                            app={a}
+                            active={inActive && a.id === activeApp}
+                            visible={inSplit || (inActive && a.id === activeApp)}
+                            flexLayout={inSplit}
+                          />
+                        )}
                       </div>
                     </Fragment>
                   );

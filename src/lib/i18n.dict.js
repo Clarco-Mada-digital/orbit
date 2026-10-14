@@ -174,6 +174,36 @@ export const fr = {
   'sb.storeShort': 'Boutique',
   'sb.profilesShort': 'Profils',
   'sb.settingsShort': 'Réglages',
+  // Barre latérale : liste des profils repliée, dossiers d’apps, sélection multiple
+  'sb.switchProfile': 'Changer de profil (Alt+Maj+Page ↑ / ↓)',
+  'sb.multiHint':
+    'Astuce : Ctrl+clic pour sélectionner plusieurs applications, clic droit pour les actions groupées',
+  'sb.selected': '{count} application(s) sélectionnée(s)',
+  'sb.deselect': 'Tout désélectionner',
+  'sb.groupSelected': 'Regrouper dans un dossier…',
+  'sb.folderUnread': '{count} non lues',
+  'fold.untitled': 'Nouveau dossier',
+  'fold.namePlaceholder': 'Nom du dossier…',
+  'fold.create': 'Créer le dossier',
+  'fold.rename': 'Renommer le dossier',
+  'fold.renameOf': 'Renommer « {name} »',
+  'fold.collapse': 'Plier le dossier (masquer ses apps)',
+  'fold.expand': 'Déplier le dossier',
+  'fold.icon': 'Icône',
+  'fold.color': 'Couleur',
+  'fold.selectApps': 'Sélectionner les applications du dossier',
+  'fold.dissolve': 'Dissocier le dossier',
+  'fold.dissolveHint': 'Les applications restent installées, simplement plus rangées',
+  'fold.deleteAll': 'Supprimer le dossier et ses applications',
+  'fold.deleteAllConfirm':
+    'Supprimer « {name} » et ses {count} application(s) ? Elles iront dans la corbeille.',
+  'multi.title': '{count} applications sélectionnées',
+  'multi.addToFolder': 'Ajouter à un dossier',
+  'multi.removeFromFolder': 'Retirer du dossier « {name} »',
+  'multi.noFolder': 'Aucun dossier',
+  'multi.uninstall': 'Désinstaller ({count})',
+  'multi.uninstallConfirm':
+    'Désinstaller {count} application(s) ? Elles iront dans la corbeille, avec leur session.',
 
   // Palette de commandes (QuickSwitcher)
   'qs.help': 'Aide & raccourcis',
@@ -280,6 +310,36 @@ export const fr = {
   'fly.editUrlTitle': "Modifier l'adresse",
   'fly.editUrlGo': 'Ouvrir',
   'fly.editUrlInvalid': "L'adresse doit commencer par http:// ou https://",
+
+  // Visionneuse de documents (pages volantes .md, .txt, .json, .csv, code…)
+  'doc.loading': 'Lecture du document…',
+  'doc.lines': 'lignes',
+  'doc.copy': 'Copier tout le texte',
+  'doc.wrap': 'Retour à la ligne automatique',
+  'doc.source': 'Voir la source',
+  'doc.rendered': 'Voir le rendu',
+  'doc.reload': 'Relire le document',
+  'doc.reveal': 'Afficher dans le dossier',
+  'doc.browser': 'Ouvrir dans le navigateur',
+  'doc.retry': 'Réessayer',
+  'doc.truncated': 'Document volumineux : affichage limité aux premiers {size}.',
+  'doc.csvLimit': 'Affichage limité aux {count} premières lignes.',
+  'doc.jsonError': 'JSON invalide ({error}) : le contenu est affiché tel quel.',
+  'doc.err.no-bridge': "La lecture de fichiers n'est pas disponible dans cette fenêtre.",
+  'doc.err.not-allowed':
+    'Par sécurité, Orbit ne lit un fichier que s’il vient de votre système (« Ouvrir avec » ou double-clic).',
+  'doc.err.binary': "Ce fichier n'est pas du texte : impossible de l'afficher ici.",
+  'doc.err.missing': 'Fichier introuvable (déplacé ou supprimé ?).',
+  'doc.err.not-a-file': 'Ce chemin ne mène pas à un fichier.',
+  'doc.err.bad-path': 'Chemin de fichier invalide.',
+  'doc.err.bad-url': 'Adresse de document invalide.',
+  'doc.err.bad-partition':
+    'Document distant non lisible : sa session ne vient pas d’une page volante.',
+  'doc.err.network': 'Impossible de récupérer ce document (réseau ou serveur injoignable).',
+  'doc.err.timeout': "Le serveur n'a pas répondu à temps.",
+  'doc.err.http': 'Le serveur a refusé la requête (code {status}).',
+  'doc.err.read-failed': 'Lecture interrompue par le système.',
+  'doc.err.generic': "Impossible d'afficher ce document. Vous pouvez l'ouvrir dans le navigateur.",
   'qs.hintCalc': 'calcul, conversions, couleurs…',
   'qs.helpTitle': 'Aide & raccourcis clavier',
   'qs.helpSubtitle': 'Tout ce qu’il faut savoir pour aller vite dans Orbit',
@@ -439,6 +499,7 @@ export const fr = {
 
   // Réglages — onglets
   'st.tab.general': 'Général',
+  'st.tab.downloads': 'Téléchargements',
   'st.tab.appearance': 'Apparence',
   'st.tab.display': 'Affichage',
   'st.tab.profiles': 'Profils',
@@ -1195,6 +1256,20 @@ export const fr = {
   'st.homeWidgetApps': 'Accès rapide aux apps',
 
   // --- « Ouvrir avec » (intégration système) ---
+  // Téléchargements
+  'st.dl.title': 'Où enregistrer les téléchargements',
+  'st.dl.desc':
+    'Par défaut, les fichiers vont dans le dossier Téléchargements de votre système. Vous pouvez choisir un autre dossier, ou demander où enregistrer à chaque fois.',
+  'st.dl.folder': 'Dossier d’enregistrement',
+  'st.dl.folderSystem': 'Dossier Téléchargements du système (par défaut)',
+  'st.dl.choose': 'Choisir un dossier…',
+  'st.dl.reset': 'Rétablir le dossier par défaut',
+  'st.dl.open': 'Ouvrir le dossier',
+  'st.dl.ask': 'Demander où enregistrer à chaque téléchargement',
+  'st.dl.askHint': 'La boîte d’enregistrement du système s’ouvre, pré-remplie avec le dossier ci-dessus.',
+  'st.dl.askFallback':
+    'Si vous annulez, rien n’est enregistré. Si aucun dossier n’est réglé, la boîte s’ouvre sur le dossier Téléchargements du système.',
+
   'st.sysint.title': 'Ouvrir des liens avec Orbit',
   'st.sysint.desc':
     'Orbit peut figurer dans la liste « Ouvrir avec » du système, pour les liens web et les fichiers .html. Rien ne change tant que vous ne l’activez pas ici : on ne PREND rien par défaut, et un lien reçu s’ouvre en page volante — un lien libre, jamais dans un de vos comptes.',
@@ -1391,6 +1466,35 @@ export const en = {
   'sb.storeShort': 'Store',
   'sb.profilesShort': 'Profiles',
   'sb.settingsShort': 'Settings',
+  // Sidebar: collapsed profile list, app folders, multi-selection
+  'sb.switchProfile': 'Switch profile (Alt+Shift+Page ↑ / ↓)',
+  'sb.multiHint':
+    'Tip: Ctrl+click to select several apps, right-click for group actions',
+  'sb.selected': '{count} app(s) selected',
+  'sb.deselect': 'Deselect all',
+  'sb.groupSelected': 'Group into a folder…',
+  'sb.folderUnread': '{count} unread',
+  'fold.untitled': 'New folder',
+  'fold.namePlaceholder': 'Folder name…',
+  'fold.create': 'Create folder',
+  'fold.rename': 'Rename folder',
+  'fold.renameOf': 'Rename “{name}”',
+  'fold.collapse': 'Collapse folder (hide its apps)',
+  'fold.expand': 'Expand folder',
+  'fold.icon': 'Icon',
+  'fold.color': 'Color',
+  'fold.selectApps': 'Select the apps in this folder',
+  'fold.dissolve': 'Ungroup folder',
+  'fold.dissolveHint': 'Apps stay installed, they are just no longer grouped',
+  'fold.deleteAll': 'Delete folder and its apps',
+  'fold.deleteAllConfirm': 'Delete “{name}” and its {count} app(s)? They will go to the trash.',
+  'multi.title': '{count} apps selected',
+  'multi.addToFolder': 'Add to a folder',
+  'multi.removeFromFolder': 'Remove from folder “{name}”',
+  'multi.noFolder': 'No folder',
+  'multi.uninstall': 'Uninstall ({count})',
+  'multi.uninstallConfirm':
+    'Uninstall {count} app(s)? They will go to the trash, with their session.',
 
   // Command palette (QuickSwitcher)
   'qs.help': 'Help & shortcuts',
@@ -1497,6 +1601,36 @@ export const en = {
   'fly.editUrlTitle': 'Edit address',
   'fly.editUrlGo': 'Open',
   'fly.editUrlInvalid': 'The address must start with http:// or https://',
+
+  // Document viewer (scratch pages: .md, .txt, .json, .csv, code…)
+  'doc.loading': 'Reading document…',
+  'doc.lines': 'lines',
+  'doc.copy': 'Copy all text',
+  'doc.wrap': 'Soft wrap lines',
+  'doc.source': 'View source',
+  'doc.rendered': 'View rendered',
+  'doc.reload': 'Reload document',
+  'doc.reveal': 'Show in folder',
+  'doc.browser': 'Open in browser',
+  'doc.retry': 'Retry',
+  'doc.truncated': 'Large document: showing the first {size} only.',
+  'doc.csvLimit': 'Showing the first {count} rows only.',
+  'doc.jsonError': 'Invalid JSON ({error}): content shown as-is.',
+  'doc.err.no-bridge': 'File reading is not available in this window.',
+  'doc.err.not-allowed':
+    'For safety, Orbit only reads a file that came from your system (“Open with” or double-click).',
+  'doc.err.binary': 'This file is not text: it cannot be displayed here.',
+  'doc.err.missing': 'File not found (moved or deleted?).',
+  'doc.err.not-a-file': 'That path does not point to a file.',
+  'doc.err.bad-path': 'Invalid file path.',
+  'doc.err.bad-url': 'Invalid document address.',
+  'doc.err.bad-partition':
+    'Remote document not readable: its session does not come from a scratch page.',
+  'doc.err.network': 'Could not fetch this document (network or unreachable server).',
+  'doc.err.timeout': 'The server did not answer in time.',
+  'doc.err.http': 'The server refused the request (code {status}).',
+  'doc.err.read-failed': 'Reading was interrupted by the system.',
+  'doc.err.generic': 'This document cannot be displayed. You can open it in the browser.',
   'qs.hintCalc': 'math, conversions, colors…',
   'qs.helpTitle': 'Help & keyboard shortcuts',
   'qs.helpSubtitle': 'Everything you need to move fast in Orbit',
@@ -1656,6 +1790,7 @@ export const en = {
 
   // Settings — tabs
   'st.tab.general': 'General',
+  'st.tab.downloads': 'Downloads',
   'st.tab.appearance': 'Appearance',
   'st.tab.display': 'Display',
   'st.tab.profiles': 'Profiles',
@@ -2411,6 +2546,20 @@ export const en = {
   'st.homeWidgetApps': 'Quick app access',
 
   // --- "Open with" (system integration) ---
+  // Downloads
+  'st.dl.title': 'Where to save downloads',
+  'st.dl.desc':
+    'By default files go to your system Downloads folder. You can pick another folder, or be asked where to save each time.',
+  'st.dl.folder': 'Save folder',
+  'st.dl.folderSystem': 'System Downloads folder (default)',
+  'st.dl.choose': 'Choose a folder…',
+  'st.dl.reset': 'Restore default folder',
+  'st.dl.open': 'Open folder',
+  'st.dl.ask': 'Ask where to save each download',
+  'st.dl.askHint': 'The system save dialog opens, pre-filled with the folder above.',
+  'st.dl.askFallback':
+    'Cancelling saves nothing. If no folder is set, the dialog opens on the system Downloads folder.',
+
   'st.sysint.title': 'Open links with Orbit',
   'st.sysint.desc':
     'Orbit can appear in your system’s “Open with” list, for web links and .html files. Nothing changes until you enable it here: Orbit takes NOTHING by default, and a link handed to it opens as a free page — never inside one of your accounts.',

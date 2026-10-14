@@ -20,6 +20,7 @@ import {
   Home,
   Upload,
   Link2,
+  Download,
 } from 'lucide-react';
 import { useStore } from '../stores/useStore';
 import ProfileManager from './ProfileManager';
@@ -129,6 +130,14 @@ export default function Settings({ onClose }) {
     e.target.value = '';
   };
 
+  // Téléchargements : choisir le dossier d'enregistrement. Le sélecteur est
+  // ouvert par le PROCESSUS PRINCIPAL (seul qui parle au système) ; on ne garde
+  // le chemin que s'il a vraiment été choisi — annulé = réglage inchangé.
+  const pickDownloadFolder = async () => {
+    const res = await window.electronAPI?.pickDownloadFolder?.();
+    if (res?.success && res.path) updateSettings({ downloadDir: res.path });
+  };
+
   // « Ouvrir avec » : on lit l'état réel auprès du processus principal (lui
   // seul sait quel fichier .desktop existe et qui ouvre quoi aujourd'hui).
   const [sysint, setSysint] = useState(null);
@@ -172,6 +181,7 @@ export default function Settings({ onClose }) {
 
   const tabs = [
     { id: 'general', name: t('st.tab.general'), icon: Zap },
+    { id: 'downloads', name: t('st.tab.downloads'), icon: Download },
     { id: 'appearance', name: t('st.tab.appearance'), icon: Palette },
     { id: 'display', name: t('st.tab.display'), icon: Palette },
     { id: 'profiles', name: t('st.tab.profiles'), icon: User },
@@ -237,6 +247,60 @@ export default function Settings({ onClose }) {
             </div>
 
             <div className="flex-1 overflow-y-auto p-6">
+              {/* Téléchargements : où enregistrer, et si l'on demande à chaque
+                  fois. Le dossier reste facultatif — rien de réglé = le dossier
+                  Téléchargements du système, comme avant. */}
+              {activeTab === 'downloads' && (
+                <div className="space-y-6">
+                  <div className="card">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Download size={18} className="text-accent-primary" />
+                      <h4 className="font-semibold">{t('st.dl.title')}</h4>
+                    </div>
+                    <p className="text-sm text-text-muted mb-4">{t('st.dl.desc')}</p>
+
+                    <div className="text-sm mb-1 font-medium">{t('st.dl.folder')}</div>
+                    <p className="text-xs text-text-muted font-mono break-all mb-3">
+                      {settings.downloadDir || t('st.dl.folderSystem')}
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      <button onClick={pickDownloadFolder} className="btn btn-primary btn-sm">
+                        {t('st.dl.choose')}
+                      </button>
+                      {settings.downloadDir ? (
+                        <button
+                          onClick={() => updateSettings({ downloadDir: '' })}
+                          className="btn btn-secondary btn-sm"
+                        >
+                          {t('st.dl.reset')}
+                        </button>
+                      ) : null}
+                      <button
+                        onClick={() => window.electronAPI?.openDownloadsFolder?.()}
+                        className="btn btn-ghost btn-sm"
+                      >
+                        {t('st.dl.open')}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="card">
+                    <label className="flex items-start justify-between gap-3">
+                      <span>
+                        <span className="font-medium block mb-1">{t('st.dl.ask')}</span>
+                        <span className="text-sm text-text-muted">{t('st.dl.askHint')}</span>
+                      </span>
+                      <input
+                        type="checkbox"
+                        checked={!!settings.askDownloadPath}
+                        onChange={(e) => updateSettings({ askDownloadPath: e.target.checked })}
+                        className="w-12 h-6 mt-0.5 bg-bg-hover rounded-full relative cursor-pointer appearance-none checked:bg-accent-primary transition-colors after:content-[''] after:absolute after:top-1 after:left-1 after:w-4 after:h-4 after:bg-white after:rounded-full after:transition-transform checked:after:translate-x-6 flex-shrink-0"
+                      />
+                    </label>
+                    <p className="text-xs text-text-muted mt-3">{t('st.dl.askFallback')}</p>
+                  </div>
+                </div>
+              )}
               {activeTab === 'general' && (
                 <div className="space-y-6">
                   <div className="card">
