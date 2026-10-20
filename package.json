@@ -80,19 +80,24 @@
     "files": [
       "dist/**/*",
       "electron/**/*",
+      "!electron/extensions/**/*",
+      "extensions-dist/*.zip",
+      "extensions-dist/catalog.json",
       "src/lib/shortcuts.js",
       "src/lib/rules.js",
-    "src/lib/fileTypes.js",
-    "src/lib/documents.js",
-    "src/lib/markdown.js",
-    "src/lib/urls.js",
-    "src/lib/downloadPath.js",
+      "src/lib/fileTypes.js",
+      "src/lib/documents.js",
+      "src/lib/markdown.js",
+      "src/lib/urls.js",
+      "src/lib/downloadPath.js",
+      "src/lib/phone.js",
       "build/icon.png",
       "package.json"
     ],
     "asarUnpack": [
       "dist/icons/**",
-      "build/icon.png"
+      "build/icon.png",
+      "extensions-dist/**"
     ],
     "electronFuses": {
       "runAsNode": false,

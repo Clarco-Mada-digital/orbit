@@ -1,0 +1,61 @@
+{
+  "version": 1,
+  "extensions": [
+    {
+      "file": "color-picker.zip",
+      "name": "Color Picker",
+      "version": "1.1.0",
+      "description": "Pipette de couleur intégrée : bouton 🎨 flottant, survolez pour voir la couleur, cliquez pour copier (Alt+C). Ne touche pas au menu contextuel.",
+      "nativeApp": null,
+      "size": 28592
+    },
+    {
+      "file": "fake-data-filler-orbit.zip",
+      "name": "Fake Data Filler (Orbit)",
+      "version": "1.4.0",
+      "description": "Remplit les champs de formulaires non de connexion avec des données réalistes (email, nom, téléphone, ville, date, etc.). Inspiré des extensions Fake Filler / Fill Millier.",
+      "nativeApp": null,
+      "size": 24805
+    },
+    {
+      "file": "orbit-phone.zip",
+      "name": "Téléphone Orbit",
+      "version": "1.2.0",
+      "description": "Ajoute le Téléphone à Orbit : bouton dans la barre, applications en écran virtuel plein cadre, notifications du mobile dans Orbit, pilotage via adb/scrcpy. Sans cette extension, rien de tout cela n'existe.",
+      "nativeApp": "phone",
+      "size": 10139
+    },
+    {
+      "file": "page-to-markdown.zip",
+      "name": "Page to Markdown",
+      "version": "1.1.0",
+      "description": "Ajoute « Convertir la page en Markdown » au menu clic droit d'Orbit, et télécharge le .md (raccourci Alt+M).",
+      "nativeApp": null,
+      "size": 21375
+    },
+    {
+      "file": "qr-code-generator.zip",
+      "name": "QR Code Generator",
+      "version": "1.0.0",
+      "description": "Génère un QR code de la page ou de tout texte/lien : bouton flottant ou Alt+Q. 100% local (aucune requête réseau), personnalisable (⚙️).",
+      "nativeApp": null,
+      "size": 17521
+    },
+    {
+      "file": "sticky-notes.zip",
+      "name": "Sticky Notes",
+      "version": "1.0.0",
+      "description": "Notes collantes par site : le bouton 📝 ouvre un bloc-notes attaché au domaine courant. Les notes se rouvrent automatiquement à chaque visite. Aucune donnée ne quitte la machine.",
+      "nativeApp": null,
+      "size": 14267
+    },
+    {
+      "file": "text-snippets.zip",
+      "name": "Text Snippets",
+      "version": "1.0.0",
+      "description": "Abréviations extensibles : tapez ;email, ;addr, ;sig… dans n'importe quel champ et ils se transforment en votre texte complet. Configurable (⚙️).",
+      "nativeApp": null,
+      "size": 14711
+    }
+  ]
+}

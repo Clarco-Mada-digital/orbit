@@ -166,6 +166,20 @@ const SERVER_SCRIPT_EXT = new Set([
   'shtml', 'phtml',
 ]);
 
+// Extensions qui, sur une adresse web, désignent un TÉLÉCHARGEMENT et non une
+// page. La liste est volontairement fermée : tout le reste (y compris `.git`,
+// `.com` d'un domaine saisi sans barre oblique, ou une extension inconnue) est
+// une PAGE. Avant, la règle était inverse — « extension inconnue = refus » —
+// et un lien aussi courant que `https://github.com/x/aura.git` finissait dans
+// le navigateur système au lieu de s'ouvrir dans Orbit.
+const DOWNLOAD_EXT = new Set([
+  'zip', 'rar', '7z', 'tar', 'gz', 'tgz', 'bz2', 'xz', 'zst', 'dmg', 'iso',
+  'img', 'exe', 'msi', 'msix', 'deb', 'rpm', 'apk', 'aab', 'appimage', 'bin',
+  'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'odt', 'ods', 'odp', 'epub',
+  'torrent', 'pkg', 'cab', 'crx', 'xpi', 'jar', 'war', 'class', 'dll', 'so',
+  'dylib', 'wasm', 'db', 'sqlite', 'bak', 'dat', 'pak', 'vhd', 'vmdk',
+]);
+
 // Nature d'une ADRESSE WEB. Différences assumées avec un chemin local :
 //   • pas d'extension → PAGE (c'est le cas de la quasi-totalité des liens ; on
 //     ne refuse pas un site parce que son URL ne finit pas par « .html ») ;
@@ -180,7 +194,10 @@ export function kindForUrl(rawUrl) {
   const ext = extensionOf(s);
   if (SERVER_SCRIPT_EXT.has(ext)) return KIND.page;
   if (kind !== KIND.unknown) return kind;
-  return ext ? KIND.unknown : KIND.page;
+  // Une extension inconnue n'est PAS une raison de refuser : beaucoup de sites
+  // ont des URL qui ressemblent à des fichiers sans en être (`.git`, `.env`,
+  // `.php/…`). Seuls les formats de téléchargement patents sont écartés.
+  return DOWNLOAD_EXT.has(ext) ? KIND.unknown : KIND.page;
 }
 
 // Étiquette lisible pour l'en-tête de la visionneuse (badge de format).

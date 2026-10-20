@@ -15,6 +15,10 @@ import QuickSwitcher from './components/QuickSwitcher';
 const Settings = lazy(() => import('./components/Settings'));
 const ProfileManager = lazy(() => import('./components/ProfileManager'));
 const AppStore = lazy(() => import('./components/AppStore'));
+// L'app Téléphone vient d'une extension : son interface (grille d'apps, aperçu
+// tactile, réglages) n'a aucune raison d'être évaluée au démarrage quand elle
+// n'est pas installée. Elle est donc chargée à la première ouverture.
+const PhoneOverlay = lazy(() => import('./components/PhoneOverlay'));
 import WebView from './components/WebView';
 import GuestContextMenu from './components/GuestContextMenu';
 import WebDialogHost from './components/WebDialogHost';
@@ -26,6 +30,7 @@ import Welcome from './components/Welcome';
 import HomeDashboard from './components/HomeDashboard';
 import PasswordVault from './components/PasswordVault';
 import { useStore, appVisibleIn } from './stores/useStore';
+import { usePhoneStore } from './lib/phoneStore';
 import { useSecurityStore } from './lib/securityStore';
 import { useMediaStore } from './lib/mediaStore';
 import { mediaToggle, mediaPrev, mediaNext, mediaSeek, pickNowPlaying } from './lib/mediaControls';
@@ -568,9 +573,44 @@ const [editUrlFor, setEditUrlFor] = useState(null); // { id, url } — boîte «
     window.electronAPI?.setBadgeCount?.(total);
   }, [apps]);
 
+  // Notifications du téléphone : le processus principal sonde l'appareil et
+  // pousse la liste ; l'interface la garde hors du store persisté. Abonnement
+  // unique, même si l'extension n'est pas installée (aucun événement alors).
+  useEffect(() => {
+    const api = window.electronAPI?.phone;
+    const off = api?.onNotifications?.((payload) => usePhoneStore.getState().setNotifications(payload));
+    const pending = api?.notifications?.();
+    if (pending?.then) {
+      pending
+        .then((res) => {
+          if (res?.success) usePhoneStore.getState().setNotifications(res);
+        })
+        .catch(() => {});
+    }
+    // Clic sur une alerte système : Orbit s'ouvre sur le téléphone et lance
+    // l'application concernée.
+    const offOpen = api?.onOpenRequest?.(({ package: pkg } = {}) => {
+      // Le panneau décide lui-même comment ouvrir l'app (écran virtuel), quitte
+      // à retomber sur l'écran principal. On ne lance donc rien ici.
+      usePhoneStore.getState().requestOpen(pkg || null);
+    });
+    return () => {
+      if (typeof off === 'function') off();
+      if (typeof offOpen === 'function') offOpen();
+    };
+  }, []);
+
   // Synchroniser les extensions Chrome avec le main process (chargées par session)
   useEffect(() => {
-    window.electronAPI?.syncExtensions?.(extensions);
+    const pending = window.electronAPI?.syncExtensions?.(extensions);
+    if (!pending?.then) return;
+    pending
+      .then((res) => {
+        // Les apps natives (`orbit.nativeApp`) suivent l'état RÉEL des
+        // extensions : installées → l'app apparaît, sinon elle disparaît.
+        if (res?.nativeApps) useStore.getState().syncNativeApps(res.nativeApps);
+      })
+      .catch(() => {});
   }, [extensions]);
 
   // Synchroniser les sources d'identifiants proposées dans les pages. Le
@@ -767,13 +807,17 @@ const openEditUrl = useCallback((id) => {
     if (action === 'store') return setShowAppStore((v) => !v);
     if (action === 'profiles') return setShowProfileManager((v) => !v);
     if (action === 'find') {
-      if (useStore.getState().activeApp) setShowFind(true);
+      // Une app native n'a pas de DOM à fouiller : le raccourci resterait
+      // sans effet visible, barre de recherche comprise.
+      const app = useStore.getState().apps.find((x) => x.id === useStore.getState().activeApp);
+      if (app && !app.native) setShowFind(true);
       return;
     }
     // Ctrl+R / F5 — même comportement que le bouton « Actualiser »
     if (action === 'reload' || action === 'reload-hard') {
       const { activeApp: a, apps: all } = useStore.getState();
-      if (a) reloadApp(a, all.find((x) => x.id === a)?.url, action === 'reload-hard');
+      const app = all.find((x) => x.id === a);
+      if (a && !app?.native) reloadApp(a, app?.url, action === 'reload-hard');
       return;
     }
     // Mode épuré : appelle (ou renvoie) toutes les barres masquées. Sans ce
@@ -1314,6 +1358,9 @@ const openEditUrl = useCallback((id) => {
           et le chargement est local (quelques millisecondes) — afficher un
           indicateur ferait clignoter l'interface plus qu'il n'informerait. */}
       <Suspense fallback={null}>
+        {/* Panneau Téléphone : ouvert depuis le bouton de la barre, pas depuis
+            le sidebar — il n'existe que si l'extension est installée. */}
+        <PhoneOverlay />
         {showSettings && <Settings onClose={() => setShowSettings(false)} />}
         {showProfileManager && <ProfileManager onClose={() => setShowProfileManager(false)} />}
         {showAppStore && (

@@ -18,15 +18,20 @@ import {
   Unplug,
   Moon,
   LayoutGrid,
+  Smartphone,
   Home as HomeIcon,
   Plus,
   Trash2,
+  ExternalLink,
+  X,
   KeyRound,
   ShieldCheck,
   ShieldOff,
 } from 'lucide-react';
 import { useStore, appVisibleIn } from '../../stores/useStore';
 import { layoutsFor, layoutFor, areaLetter } from '../../lib/splitLayouts';
+import { loadExtensionInfo } from '../../lib/extensionInfo';
+import { usePhoneStore } from '../../lib/phoneStore';
 import { useT } from '../../lib/i18n';
 import { useZoneHold } from '../../lib/autoHide';
 import { useGuestDismiss } from '../../lib/useDismiss';
@@ -155,18 +160,16 @@ function ShieldsButton({ appId, webContentsId, url, menuAlign, menuPos, t }) {
 
 // Icône d'une extension dans une barre (comme la barre d'extensions d'un
 // navigateur). Les infos (nom, icône, page d'options) sont chargées une fois
-// via le main process.
+// via le main process, puis servies par le cache partagé : la barre, la liste
+// repliée et la page Extensions se partagent la même lecture de manifeste.
 function ExtensionIcon({ ext, onOpenMenu }) {
   const [info, setInfo] = useState(null);
 
   useEffect(() => {
     let mounted = true;
-    const p = window.electronAPI?.getExtensionInfo?.({ id: ext.id, path: ext.path });
-    if (p && typeof p.then === 'function') {
-      p.then((res) => {
-        if (mounted && res?.success) setInfo(res.info);
-      }).catch(() => {});
-    }
+    loadExtensionInfo(ext).then((res) => {
+      if (mounted && res) setInfo(res);
+    });
     return () => {
       mounted = false;
     };
@@ -201,12 +204,9 @@ function ExtPopoverIcon({ ext }) {
 
   useEffect(() => {
     let mounted = true;
-    const p = window.electronAPI?.getExtensionInfo?.({ id: ext.id, path: ext.path });
-    if (p && typeof p.then === 'function') {
-      p.then((res) => {
-        if (mounted && res?.success) setInfo(res.info);
-      }).catch(() => {});
-    }
+    loadExtensionInfo(ext).then((res) => {
+      if (mounted && res) setInfo(res);
+    });
     return () => {
       mounted = false;
     };
@@ -244,6 +244,7 @@ export function useTopbarModules({ onOpenQuickSwitcher, onOpenVault, placement =
     apps,
     flyPages,
     extensions,
+    nativeApps,
     updateExtensions,
     updateApp,
     setActiveApp,
@@ -264,6 +265,12 @@ export function useTopbarModules({ onOpenQuickSwitcher, onOpenVault, placement =
   } = useStore();
   const t = useT();
   const [showNotifPanel, setShowNotifPanel] = useState(false);
+  // Le bouton Téléphone n'existe que si son extension est installée, et son
+  // badge compte les notifications du mobile poussées par le main process.
+  const phoneNotifications = usePhoneStore((s) => s.notifications);
+  const phoneOpen = usePhoneStore((s) => s.open);
+  const phoneSerial = usePhoneStore((s) => s.serial);
+  const phoneAvailable = Array.isArray(nativeApps) && nativeApps.includes('phone');
   const notifRef = useRef(null);
   const [extMenu, setExtMenu] = useState(null); // { ext, info } | null
   const extMenuRef = useRef(null);
@@ -428,14 +435,9 @@ const app = apps.find((a) => a.id === activeApp)
   const openExtMenu = (ext) => {
     setShowExtsPopover(false);
     setExtMenu({ ext, info: null });
-    const p = window.electronAPI?.getExtensionInfo?.({ id: ext.id, path: ext.path });
-    if (p && typeof p.then === 'function') {
-      p.then((res) => {
-        if (res?.success && res.info) {
-          setExtMenu((cur) => (cur?.ext.id === ext.id ? { ext, info: res.info } : cur));
-        }
-      }).catch(() => {});
-    }
+    loadExtensionInfo(ext).then((info) => {
+      if (info) setExtMenu((cur) => (cur?.ext.id === ext.id ? { ext, info } : cur));
+    });
   };
 
   // Fermer les menus (extension + partage) en cliquant à l'extérieur
@@ -481,6 +483,32 @@ const app = apps.find((a) => a.id === activeApp)
     .filter((a) => a.unread > 0 && !a.sleeping)
     .sort((a, b) => b.unread - a.unread);
   const totalUnread = unreadApps.reduce((sum, a) => sum + a.unread, 0);
+
+  // Actions sur les notifications du mobile, depuis le panneau d'Orbit :
+  // ouvrir l'app concernée sur le téléphone, écarter une notification (Android
+  // n'expose que « snooze » en ADB — voir electron/phone.js), tout écarter.
+  const openPhoneNotification = (item) => {
+    setShowNotifPanel(false);
+    // Ouvre le panneau ET l'app sur son écran virtuel (même chemin qu'un
+    // lancement depuis la grille).
+    usePhoneStore.getState().requestOpen(item?.package || null);
+  };
+  const dismissPhoneNotification = async (item) => {
+    usePhoneStore.getState().removeNotification(item.key);
+    if (!phoneSerial) return;
+    await window.electronAPI?.phone
+      ?.dismissNotification?.({ serial: phoneSerial, key: item.key })
+      .catch(() => {});
+  };
+  const dismissAllPhoneNotifications = async () => {
+    const keys = usePhoneStore.getState().notifications.map((n) => n.key);
+    if (!keys.length) return;
+    usePhoneStore.getState().setNotifications([]);
+    if (!phoneSerial) return;
+    await window.electronAPI?.phone
+      ?.dismissNotifications?.({ serial: phoneSerial, keys })
+      .catch(() => {});
+  };
 
   // Fermer le panneau en cliquant à l'extérieur
   useEffect(() => {
@@ -1121,6 +1149,27 @@ const app = apps.find((a) => a.id === activeApp)
             <Downloads placement={placement} align={menuAlign} />
           </Fragment>
         );
+      case 'phone': {
+        // Sans extension : aucun bouton, aucun espace réservé.
+        if (!Array.isArray(nativeApps) || !nativeApps.includes('phone')) return null;
+        const phoneCount = phoneNotifications.length;
+        return (
+          <Fragment key={key}>
+            <button
+              onClick={() => usePhoneStore.getState().toggle()}
+              className={`btn-icon relative ${phoneOpen ? 'bg-bg-hover' : ''}`}
+              title={t('tbm.phoneTitle')}
+            >
+              <Smartphone size={18} />
+              {phoneCount > 0 && (
+                <span className="absolute top-0.5 right-0.5 min-w-4 h-4 px-1 rounded-full bg-accent-primary text-white text-[10px] font-bold flex items-center justify-center">
+                  {phoneCount > 99 ? '99+' : phoneCount}
+                </span>
+              )}
+            </button>
+          </Fragment>
+        );
+      }
       case 'notifications':
         return (
           <Fragment key={key}>
@@ -1167,6 +1216,96 @@ const app = apps.find((a) => a.id === activeApp)
                       )}
                     </div>
                   </div>
+
+                  {/* Notifications du téléphone (extension Téléphone Orbit).
+                      Toujours en tête : elles viennent d'un autre appareil et
+                      demandent souvent une action immédiate. */}
+                  {phoneAvailable ? (
+                    <div className="border-b border-border">
+                      <div className="flex items-center gap-2 px-4 py-2 text-xs text-text-muted">
+                        <Smartphone size={12} className="text-accent-primary" />
+                        <span className="font-medium">{t('tb.phone')}</span>
+                        <span className="rounded-full bg-bg-hover px-1.5 py-0.5 text-[10px] tabular-nums">
+                          {phoneNotifications.length}
+                        </span>
+                        <div className="ml-auto flex items-center gap-2">
+                          {phoneNotifications.length > 0 && (
+                            <>
+                              <button
+                                onClick={async () => {
+                                  // Ouvre le volet Android sur le téléphone, puis
+                                  // le panneau pour le voir en grand.
+                                  if (phoneSerial) {
+                                    await window.electronAPI?.phone
+                                      ?.expandShade?.({ serial: phoneSerial })
+                                      .catch(() => {});
+                                  }
+                                  usePhoneStore.getState().setOpen(true);
+                                  setShowNotifPanel(false);
+                                }}
+                                className="hover:text-text-primary"
+                                title={t('tb.phoneShade')}
+                              >
+                                <ExternalLink size={12} />
+                              </button>
+                              <button
+                                onClick={dismissAllPhoneNotifications}
+                                className="hover:text-text-primary"
+                                title={t('tb.phoneDismissAll')}
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            </>
+                          )}
+                          <button
+                            onClick={() => {
+                              usePhoneStore.getState().setOpen(true);
+                              setShowNotifPanel(false);
+                            }}
+                            className="text-accent-primary hover:text-accent-hover font-medium"
+                          >
+                            {t('tb.phoneOpen')}
+                          </button>
+                        </div>
+                      </div>
+                      {phoneNotifications.length === 0 ? (
+                        <p className="px-4 pb-3 text-[11px] text-text-muted">{t('tb.phoneEmpty')}</p>
+                      ) : (
+                        <div className="max-h-44 overflow-y-auto">
+                          {phoneNotifications.map((n) => (
+                            <div
+                              key={n.key}
+                              className="group flex items-start gap-2 px-4 py-2 hover:bg-bg-hover"
+                            >
+                              <button
+                                type="button"
+                                onClick={() => openPhoneNotification(n)}
+                                className="min-w-0 flex-1 text-left"
+                                title={`${n.title || n.package} — ${n.package}`}
+                              >
+                                <div className="truncate text-xs font-medium text-text-primary">
+                                  {n.title || n.package}
+                                </div>
+                                {n.text ? (
+                                  <div className="line-clamp-2 text-[11px] text-text-muted">
+                                    {n.text}
+                                  </div>
+                                ) : null}
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => dismissPhoneNotification(n)}
+                                className="mt-0.5 rounded p-1 text-text-muted opacity-0 transition-opacity hover:bg-bg-elevated hover:text-text-primary group-hover:opacity-100"
+                                title={t('tb.phoneDismiss')}
+                              >
+                                <X size={12} />
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ) : null}
 
                   <div className="max-h-72 overflow-y-auto">
                     {unreadApps.length === 0 ? (

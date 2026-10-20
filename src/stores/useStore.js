@@ -12,6 +12,7 @@ import {
   withoutFolderId,
 } from '../lib/appGroups.js';
 import { KIND } from '../lib/fileTypes.js';
+import { stripNativeApps, withPhoneModule } from '../lib/phone.js';
 
 // Compteur d'identifiants de pages volantes (voir `openFlyPage`).
 let flySeq = 0;
@@ -200,7 +201,12 @@ export const useStore = create(
       ],
       activeProfile: 'work',
 
-      // Applications installées
+      // Capacités natives fournies par les extensions installées (ex. 'phone').
+      // Ce n'est PAS une app de la barre latérale : le Téléphone s'ouvre depuis
+      // un bouton de barre, et rien n'existe sans son extension.
+      nativeApps: [],
+
+      // Applications installées (aucune app native ici).
       apps: [
         // Exemples pré-installés pour le profil "work"
         {
@@ -364,6 +370,41 @@ export const useStore = create(
               },
             ],
           };
+        }),
+
+      // Réconcilie les capacités natives avec les extensions RÉELLEMENT
+      // actives. `kinds` vient du processus principal après `syncExtensions`
+      // (il lit les manifestes) : c'est la seule source fiable, un ancien état
+      // persisté peut encore contenir l'app alors que l'extension est partie.
+      syncNativeApps: (kinds) =>
+        set((state) => {
+          const next = [...new Set((Array.isArray(kinds) ? kinds : []).filter((k) => k === 'phone'))];
+          const patch = {};
+          const current = Array.isArray(state.nativeApps) ? state.nativeApps : [];
+          if (current.length !== next.length || current.some((k, i) => k !== next[i])) {
+            patch.nativeApps = next;
+          }
+
+          // L'ancienne app « Téléphone » de la barre latérale est retirée une
+          // bonne fois pour toutes (y compris si elle était ouverte).
+          const stripped = stripNativeApps(state.apps);
+          if (stripped) {
+            patch.apps = stripped.apps;
+            if (stripped.removedIds.includes(state.activeApp)) patch.activeApp = null;
+            if (state.splitView?.appIds?.some((id) => stripped.removedIds.includes(id))) {
+              patch.splitView = null;
+            }
+          }
+
+          // Extension présente → le bouton rejoint la barre du haut s'il n'y a
+          // jamais été placé. Retirée → le bouton disparaît de lui-même (il ne
+          // s'affiche que si la capacité existe).
+          if (next.includes('phone')) {
+            const topbar = withPhoneModule(state.settings?.topbar);
+            if (topbar) patch.settings = { ...state.settings, topbar };
+          }
+
+          return patch;
         }),
 
       // Met à jour une app OU une page volante : <WebView> appelle cette
@@ -964,7 +1005,11 @@ export const useStore = create(
       // v14 : dossiers d'applications (`folders`) + pliage de la liste des
       // profils. Rien à convertir : une installation existante n'a simplement
       // aucun dossier, et la liste des profils démarre repliée.
-      version: 14,
+      // v15 : app native « Téléphone ». Rien à convertir non plus — on l'ajoute
+      // si elle manque, avec `scope: 'all'` pour qu'elle suive dans tous les
+      // profils. L'appartenir au profil actif évite qu'une installation neuve
+      // la crée dans un profil verrouillé.
+      version: 15,
       migrate: (persistedState, version) => {
         // Fusionne les anciennes données avec les paramètres par défaut
         // (évite les champs manquants → bug "input non contrôlé")
@@ -1092,6 +1137,17 @@ export const useStore = create(
             apps: (next.apps || []).map((a) =>
               a.folderId && !known.has(a.folderId) ? withoutFolderId(a) : a
             ),
+          };
+        }
+        // v15 : le Téléphone n'est plus une app du sidebar. On retire toute
+        // app native restée d'un état antérieur ; `nativeApps` (capacités des
+        // extensions) est réconcilié au démarrage par `syncNativeApps`.
+        if (version < 15) {
+          const stripped = stripNativeApps(next.apps);
+          next = {
+            ...next,
+            apps: stripped ? stripped.apps : next.apps || [],
+            nativeApps: [],
           };
         }
         return next;

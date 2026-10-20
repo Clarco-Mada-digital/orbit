@@ -38,10 +38,68 @@ contextBridge.exposeInMainWorld('electronAPI', {
   installExtension: (payload) => ipcRenderer.invoke('extensions:install', payload),
   uninstallExtension: (payload) => ipcRenderer.invoke('extensions:uninstall', payload),
   exportFakeDataExtension: () => ipcRenderer.invoke('extensions:exportFakeData'),
+  listBundledExtensions: () => ipcRenderer.invoke('extensions:listBundled'),
   // KeePassXC (auto-remplissage des identifiants)
   keepassStatus: () => ipcRenderer.invoke('keepass:status'),
   keepassAssociate: () => ipcRenderer.invoke('keepass:associate'),
   keepassSetEnabled: (enabled) => ipcRenderer.invoke('keepass:setEnabled', enabled),
+  // Téléphone (adb + scrcpy) : tout passe par le processus principal.
+  phone: {
+    status: () => ipcRenderer.invoke('phone:status'),
+    refreshDevices: () => ipcRenderer.invoke('phone:refreshDevices'),
+    connect: (address) => ipcRenderer.invoke('phone:connect', { address }),
+    pair: (payload) => ipcRenderer.invoke('phone:pair', payload),
+    disconnect: (serial) => ipcRenderer.invoke('phone:disconnect', { serial }),
+    listApps: (payload) => ipcRenderer.invoke('phone:listApps', payload),
+    getIcon: (payload) => ipcRenderer.invoke('phone:getIcon', payload),
+    clearCache: (serial) => ipcRenderer.invoke('phone:clearCache', { serial }),
+    launch: (payload) => ipcRenderer.invoke('phone:launch', payload),
+    // Paquet au premier plan (sert au bouton Retour : ne pas retomber sur
+    // l'accueil du téléphone). Sans cette ligne, l'appel côté UI échouait
+    // silencieusement.
+    foreground: (payload) => ipcRenderer.invoke('phone:foreground', payload),
+    openUrl: (payload) => ipcRenderer.invoke('phone:openUrl', payload),
+    screen: (payload) => ipcRenderer.invoke('phone:screen', payload),
+    tap: (payload) => ipcRenderer.invoke('phone:tap', payload),
+    swipe: (payload) => ipcRenderer.invoke('phone:swipe', payload),
+    key: (payload) => ipcRenderer.invoke('phone:key', payload),
+    text: (payload) => ipcRenderer.invoke('phone:text', payload),
+    startMirror: (payload) => ipcRenderer.invoke('phone:startMirror', payload),
+    stopMirror: () => ipcRenderer.invoke('phone:stopMirror'),
+    // Écran virtuel par application (l'app remplit la zone d'Orbit)
+    startApp: (payload) => ipcRenderer.invoke('phone:startApp', payload),
+    stopApp: () => ipcRenderer.invoke('phone:stopApp'),
+    appSession: () => ipcRenderer.invoke('phone:appSession'),
+    engineStatus: (checkUpdate) => ipcRenderer.invoke('phone:engineStatus', { checkUpdate }),
+    installEngine: () => ipcRenderer.invoke('phone:installEngine'),
+    getSettings: () => ipcRenderer.invoke('phone:getSettings'),
+    setSettings: (settings) => ipcRenderer.invoke('phone:setSettings', settings),
+    // Notifications du mobile (panneau de notifications d'Orbit)
+    notifications: () => ipcRenderer.invoke('phone:notifications'),
+    dismissNotification: (payload) => ipcRenderer.invoke('phone:dismissNotification', payload),
+    dismissNotifications: (payload) => ipcRenderer.invoke('phone:dismissNotifications', payload),
+    expandShade: (payload) => ipcRenderer.invoke('phone:expandShade', payload),
+    onNotifications: (callback) => {
+      const listener = (_event, payload) => callback(payload);
+      ipcRenderer.on('phone:notifications', listener);
+      return () => ipcRenderer.removeListener('phone:notifications', listener);
+    },
+    onOpenRequest: (callback) => {
+      const listener = (_event, payload) => callback(payload);
+      ipcRenderer.on('phone:open-request', listener);
+      return () => ipcRenderer.removeListener('phone:open-request', listener);
+    },
+    onEngineProgress: (callback) => {
+      const listener = (_event, payload) => callback(payload);
+      ipcRenderer.on('phone:engine-progress', listener);
+      return () => ipcRenderer.removeListener('phone:engine-progress', listener);
+    },
+    onMirrorStopped: (callback) => {
+      const listener = (_event, payload) => callback(payload);
+      ipcRenderer.on('phone:mirror-stopped', listener);
+      return () => ipcRenderer.removeListener('phone:mirror-stopped', listener);
+    },
+  },
   // Source des identifiants proposés dans les pages : 'both' | 'keepass' | 'vault' | 'none'
   credentialsSetSource: (source) => ipcRenderer.invoke('credentials:setSource', source),
   // Raccourcis globaux interceptés par le main process (même dans les apps)

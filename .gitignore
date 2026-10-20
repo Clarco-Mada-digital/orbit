@@ -1,7 +1,12 @@
 node_modules
 dist
 dist-electron
-electron/extensions/
+# Extensions optionnelles : sources des extensions livrées (l'app Téléphone)
+# suivie en git ; les autres dossiers restent des copies de travail.
+electron/extensions/*
+!electron/extensions/orbit-phone/
+!electron/extensions/orbit-phone/**
+extensions-src/*
 
 # Extensions distribuables (ZIPs) — dossier dédié, suivi en git
 # (pas dans dist/ car dist est ignoré, donc dossier séparé pour les ZIPs)
@@ -33,6 +38,8 @@ coverage
 !vite.config.mjs
 # …mais les preloads Electron (.cjs) DOIVENT être suivis
 !electron/*.cjs
+# …et les scripts d'outillage (export des extensions, etc.)
+!scripts/*.cjs
 # dist/extensions/ est suivi en git pour les ZIPs d'extensions distribuables
 # Ces ZIPs sont partagés avec les utilisateurs pour installation manuelle
 # Mais ils ne sont PAS inclus dans le build de l'application (release)

@@ -1983,6 +1983,44 @@ const knownPartitions = new Set(EXT_PARTITIONS);
 let enabledExtensions = []; // [{ id, name, version, path, managed }]
 const loadedPerPartition = new Map(); // partition -> Set(extensionId)
 
+// Apps natives demandées par les extensions ACTIVES (`orbit.nativeApp`).
+// C'est la seule source de vérité pour savoir si le pont Téléphone doit
+// exister : sans l'extension, aucune commande adb/scrcpy n'est acceptée et le
+// module natif n'est même pas chargé en mémoire.
+let nativeAppKinds = new Set();
+// `false` tant que le renderer n'a pas envoyé sa liste d'extensions. Au tout
+// premier appel (app Téléphone restaurée avant la synchro), on ne peut pas
+// encore savoir : on laisse passer plutôt que de casser l'app au démarrage.
+let nativeAppsKnown = false;
+// Module natif (adb/scrcpy), importé à la première commande — jamais au
+// démarrage sur une installation sans l'extension.
+let phoneRuntime = null;
+
+// Notifications du téléphone : sondage des clés (léger) et publication vers
+// l'interface. Le détail (dump > 1 Mo) n'est demandé que si l'ensemble change.
+let phoneNotifTimer = null;
+let phoneNotifKnown = new Set();
+let phoneNotifPrimed = false;
+let phoneNotifSerial = null;
+let phoneNotifCache = { serial: null, items: [] };
+function readNativeAppKind(extPath) {
+  try {
+    const manifest = JSON.parse(fs.readFileSync(path.join(extPath, 'manifest.json'), 'utf8'));
+    return manifest.orbit?.nativeApp || null;
+  } catch {
+    return null;
+  }
+}
+
+async function computeNativeAppKinds(list) {
+  const kinds = new Set();
+  for (const ext of list) {
+    const kind = ext?.path ? readNativeAppKind(ext.path) : null;
+    if (kind) kinds.add(kind);
+  }
+  return kinds;
+}
+
 function getSessionForPartition(partition) {
   return partition === 'default'
     ? session.defaultSession
@@ -2062,7 +2100,19 @@ async function syncExtensions(list) {
     loadedPerPartition.delete(partition);
     await ensureExtensionsForPartition(partition);
   }
-  return { success: true };
+  const previous = nativeAppKinds;
+  nativeAppKinds = await computeNativeAppKinds(enabledExtensions);
+  nativeAppsKnown = true;
+  // Extension retirée ou désactivée pendant qu'un miroir tournait : on ferme
+  // la fenêtre scrcpy plutôt que de laisser un processus orphelin.
+  if (previous.has('phone') && !nativeAppKinds.has('phone')) {
+      phoneRuntime?.stopMirror?.();
+      phoneRuntime?.stopAppSession?.();
+      stopPhoneNotifications();
+    } else if (!previous.has('phone') && nativeAppKinds.has('phone')) {
+      startPhoneNotifications();
+    }
+  return { success: true, nativeApps: [...nativeAppKinds] };
 }
 
 function removeExtensionFromAll(id, managedPath) {
@@ -4356,6 +4406,25 @@ ipcMain.handle('extensions:exportFakeData', async () => {
   }
 });
 
+// Extensions OPTIONNELLES livrées avec Orbit (archives non installées). Le
+// catalogue est écrit par `scripts/export-extensions.cjs` ; son absence (build
+// ancien) n'est pas une erreur, juste une liste vide.
+ipcMain.handle('extensions:listBundled', () => {
+  try {
+    const catalogPath = resourcePath(path.join('extensions-dist', 'catalog.json'));
+    if (!fs.existsSync(catalogPath)) return { success: true, extensions: [] };
+    const catalog = JSON.parse(fs.readFileSync(catalogPath, 'utf8'));
+    const dir = path.dirname(catalogPath);
+    const extensions = (Array.isArray(catalog.extensions) ? catalog.extensions : [])
+      .filter((e) => e?.file)
+      .map((e) => ({ ...e, zipPath: path.join(dir, e.file) }))
+      .filter((e) => fs.existsSync(e.zipPath));
+    return { success: true, extensions };
+  } catch (err) {
+    return { success: false, error: String(err?.message || err) };
+  }
+});
+
 // Installation depuis un fichier ZIP (extrait puis chargé comme extension)
 ipcMain.handle('extensions:installFromZip', async (_event, zipPath) => {
   try {
@@ -4628,6 +4697,10 @@ ipcMain.handle('extensions:getInfo', (_event, { id, path: extPath } = {}) => {
         hasOptions: Boolean(manifest.options_ui?.page || manifest.options_page),
         iconUrl,
         warnings,
+        // Une extension peut déclarer qu'elle active une app NATIVE d'Orbit
+        // (`orbit.nativeApp`). Elle ne fournit pas le code (il est dans Orbit),
+        // elle sert de paquet d'installation/activation partageable.
+        nativeApp: manifest.orbit?.nativeApp || null,
       },
     };
   } catch (err) {
@@ -4694,6 +4767,234 @@ ipcMain.handle('extensions:openOptions', async (_event, { id, path: extPath, par
     return { success: false, error: String(err.message || err) };
   }
 });
+
+// ---------------------------------------------------------------------------
+// IPC — Téléphone (pont natif : adb + scrcpy pour l'app « Téléphone »)
+//
+// Le module natif pèse lourd (adb, scrcpy, extraction d'icônes dans les APK) et
+// n'a aucune raison d'être chargé sur une installation qui n'a pas l'extension
+// « Téléphone Orbit » : il est importé à la PREMIÈRE commande, et seulement si
+// une extension active déclare `orbit.nativeApp: "phone"`.
+//
+// Chaque réponse suit le même contrat `{ success, ... }` : le renderer n'a
+// jamais à interpréter une exception, seulement un champ `error` lisible.
+// ---------------------------------------------------------------------------
+async function loadPhone() {
+  if (nativeAppsKnown && !nativeAppKinds.has('phone')) {
+    throw new Error(
+      "L'app Téléphone est fournie par l'extension « Téléphone Orbit » : installez-la pour l'utiliser."
+    );
+  }
+  if (!phoneRuntime) phoneRuntime = await import('./phone.js');
+  return phoneRuntime;
+}
+
+function phoneGuard(handler) {
+  return async (_event, payload) => {
+    try {
+      const phone = await loadPhone();
+      return (await handler(payload || {}, phone)) ?? { success: true };
+    } catch (err) {
+      return { success: false, error: String(err?.message || err) };
+    }
+  };
+}
+
+function publishPhoneNotifications(payload) {
+  const safe = {
+    serial: payload?.serial || null,
+    items: Array.isArray(payload?.items) ? payload.items : [],
+  };
+  phoneNotifCache = safe;
+  for (const win of BrowserWindow.getAllWindows()) {
+    try {
+      if (!win.isDestroyed()) win.webContents.send('phone:notifications', safe);
+    } catch {
+      /* fenêtre en cours de fermeture */
+    }
+  }
+}
+
+async function pollPhoneNotifications() {
+  if (!nativeAppKinds.has('phone')) return;
+  const phone = await loadPhone();
+  if (!phoneNotifSerial) {
+    const devices = await phone.listDevices().catch(() => []);
+    phoneNotifSerial = devices.find((d) => d.state === 'device')?.serial || null;
+  }
+  if (!phoneNotifSerial) {
+    if (phoneNotifCache.items.length) publishPhoneNotifications({ serial: null, items: [] });
+    return;
+  }
+
+  const keys = await phone.listNotificationKeys({ serial: phoneNotifSerial });
+  const known = new Set(keys);
+  const added = keys.filter((k) => !phoneNotifKnown.has(k));
+  if (!added.length && known.size === phoneNotifKnown.size) return;
+  phoneNotifKnown = known;
+
+  const res = await phone.listNotifications({ serial: phoneNotifSerial });
+  if (!res.success) {
+    // Appareil débranché ou verrouillé : on ne garde pas des notifications
+    // fantômes, et on redétectera l'appareil au prochain tour.
+    if (!keys.length) {
+      phoneNotifSerial = null;
+      if (phoneNotifCache.items.length) publishPhoneNotifications({ serial: null, items: [] });
+    }
+    return;
+  }
+  publishPhoneNotifications({ serial: phoneNotifSerial, items: res.items });
+
+  // Au premier passage, tout est « nouveau » : annoncer l'arriéré au démarrage
+  // n'aurait aucun sens.
+  if (!phoneNotifPrimed) {
+    phoneNotifPrimed = true;
+    return;
+  }
+  if (phone.getSettings().desktopNotifications === false) return;
+  for (const item of res.items) {
+    if (added.includes(item.key)) announcePhoneNotification(phoneNotifSerial, item);
+  }
+}
+
+// Alerte du bureau : cliquer dessus ouvre Orbit ET l'app concernée.
+function announcePhoneNotification(serial, item) {
+  try {
+    if (!Notification.isSupported()) return;
+    const call = item.category === 'call';
+    const notification = new Notification({
+      title: call ? `Appel — ${item.title || item.package}` : item.title || item.package,
+      body: item.text || (call ? 'Appel en cours' : item.package),
+      urgency: call ? 'critical' : 'normal',
+      icon: resourcePath(path.join('build', 'icon.png')),
+    });
+    notification.on('click', () => {
+      if (!mainWindow || mainWindow.isDestroyed()) return;
+      mainWindow.show();
+      mainWindow.focus();
+      mainWindow.webContents.send('phone:open-request', { serial, package: item.package });
+    });
+    notification.show();
+  } catch {
+    /* système sans notifications */
+  }
+}
+
+function startPhoneNotifications() {
+  stopPhoneNotifications();
+  phoneNotifTimer = setInterval(() => {
+    pollPhoneNotifications().catch(() => {});
+  }, 12000);
+  pollPhoneNotifications().catch(() => {});
+}
+
+function stopPhoneNotifications() {
+  if (phoneNotifTimer) clearInterval(phoneNotifTimer);
+  phoneNotifTimer = null;
+  phoneNotifKnown = new Set();
+  phoneNotifPrimed = false;
+  phoneNotifSerial = null;
+  if (phoneNotifCache.items.length) publishPhoneNotifications({ serial: null, items: [] });
+}
+
+ipcMain.handle('phone:status', phoneGuard(async (_p, phone) => {
+  const [engine, devices] = await Promise.all([
+    phone.engineStatus(),
+    phone.listDevices().catch(() => []),
+  ]);
+  const settings = phone.getSettings();
+  const ready = (d) => d.state === 'device';
+  const preferred = devices.find((d) => d.serial === settings.serial && ready(d));
+  const serial = preferred?.serial || devices.find(ready)?.serial || null;
+  const selected = devices.find((d) => d.serial === serial) || null;
+  return {
+    success: true,
+    engine,
+    devices,
+    serial,
+    device: selected,
+    settings,
+    mirror: phone.mirrorStatus(),
+    platform: process.platform,
+  };
+}));
+
+ipcMain.handle('phone:refreshDevices', phoneGuard(async (_p, phone) => ({
+  success: true,
+  devices: await phone.listDevices(),
+})));
+ipcMain.handle('phone:connect', phoneGuard((p, phone) => phone.connectDevice(p.address)));
+ipcMain.handle('phone:pair', phoneGuard((p, phone) => phone.pairDevice(p)));
+ipcMain.handle('phone:disconnect', phoneGuard((p, phone) => phone.disconnectDevice(p.serial)));
+ipcMain.handle('phone:listApps', phoneGuard((p, phone) => phone.listApps(p)));
+ipcMain.handle('phone:getIcon', phoneGuard((p, phone) => phone.getIcon(p)));
+ipcMain.handle('phone:clearCache', phoneGuard((p, phone) => {
+  phone.clearIconCache(p.serial);
+  return { success: true };
+}));
+ipcMain.handle('phone:launch', phoneGuard((p, phone) => phone.launchApp(p)));
+ipcMain.handle('phone:foreground', phoneGuard((p, phone) => phone.foregroundPackage(p)));
+ipcMain.handle('phone:openUrl', phoneGuard((p, phone) => phone.openUrlOnDevice(p)));
+ipcMain.handle('phone:screen', phoneGuard((p, phone) => phone.captureScreen(p)));
+ipcMain.handle('phone:tap', phoneGuard((p, phone) => phone.sendTap(p)));
+ipcMain.handle('phone:swipe', phoneGuard((p, phone) => phone.sendSwipe(p)));
+ipcMain.handle('phone:key', phoneGuard((p, phone) => phone.sendKey(p)));
+ipcMain.handle('phone:text', phoneGuard((p, phone) => phone.sendText(p)));
+ipcMain.handle('phone:startMirror', phoneGuard((p, phone) => phone.startMirror(p)));
+ipcMain.handle('phone:stopMirror', phoneGuard((_p, phone) => phone.stopMirror()));
+// Écran virtuel par application : l'app remplit la zone d'Orbit et reçoit les
+// gestes/clavier par `input -d`. Retour `fallback: true` → l'interface ouvre
+// l'app sur l'écran principal (ancien comportement).
+ipcMain.handle('phone:startApp', phoneGuard((p, phone) => phone.startAppSession(p)));
+ipcMain.handle('phone:stopApp', phoneGuard((_p, phone) => phone.stopAppSession()));
+ipcMain.handle('phone:appSession', phoneGuard((_p, phone) => ({
+  success: true,
+  ...phone.appSessionStatus(),
+})));
+ipcMain.handle('phone:engineStatus', phoneGuard(async (p, phone) => ({
+  success: true,
+  ...(await phone.engineStatus({ checkUpdate: !!p.checkUpdate })),
+})));
+ipcMain.handle('phone:installEngine', phoneGuard((_p, phone) => phone.installEngine()));
+ipcMain.handle('phone:getSettings', phoneGuard((_p, phone) => ({ success: true, settings: phone.getSettings() })));
+ipcMain.handle('phone:setSettings', phoneGuard((p, phone) => ({ success: true, settings: phone.setSettings(p) })));
+
+// --- Notifications du téléphone --------------------------------------------
+ipcMain.handle('phone:notifications', phoneGuard(async () => ({
+  success: true,
+  serial: phoneNotifCache.serial,
+  items: phoneNotifCache.items,
+})));
+ipcMain.handle(
+  'phone:dismissNotification',
+  phoneGuard(async (p, phone) => {
+    const res = await phone.dismissNotification(p);
+    if (res.success) {
+      phoneNotifKnown.delete(String(p.key || ''));
+      publishPhoneNotifications({
+        serial: phoneNotifCache.serial,
+        items: phoneNotifCache.items.filter((item) => item.key !== p.key),
+      });
+    }
+    return res;
+  })
+);
+ipcMain.handle(
+  'phone:dismissNotifications',
+  phoneGuard(async (p, phone) => {
+    const res = await phone.dismissNotifications(p);
+    const keys = new Set(Array.isArray(p.keys) ? p.keys : []);
+    if (res.success) {
+      for (const key of keys) phoneNotifKnown.delete(String(key));
+      publishPhoneNotifications({
+        serial: phoneNotifCache.serial,
+        items: phoneNotifCache.items.filter((item) => !keys.has(item.key)),
+      });
+    }
+    return res;
+  })
+);
+ipcMain.handle('phone:expandShade', phoneGuard((p, phone) => phone.expandNotificationShade(p)));
 
 // ---------------------------------------------------------------------------
 // IPC — KeePassXC (pont natif : auto-remplissage des identifiants)
@@ -5523,6 +5824,11 @@ app.on('will-quit', () => {
     globalShortcut.unregisterAll();
   } catch {
     /* ignore */
+  }
+  try {
+    phoneRuntime?.cleanup?.();
+  } catch {
+    /* la fenêtre miroir est déjà fermée */
   }
 });
 

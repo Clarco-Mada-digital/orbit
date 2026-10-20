@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
-import { Puzzle, FolderOpen, Trash2, Loader2, Info, Globe, Download, Settings2, AlertTriangle, RotateCw, Dice6, Check, X, Upload } from 'lucide-react';
+import { Puzzle, FolderOpen, Trash2, Loader2, Info, Globe, Download, Settings2, AlertTriangle, RotateCw, Dice6, Check, X, Upload, Smartphone } from 'lucide-react';
 import { useStore } from '../stores/useStore';
 import { getRegisteredWebviews } from '../lib/webviewRegistry';
 import { appPartition } from '../lib/session';
 import { reloadUrlFor } from '../lib/urls';
 import { useT } from '../lib/i18n';
+import { loadExtensionInfo, clearExtensionInfoCache } from '../lib/extensionInfo';
+import { usePhoneStore } from '../lib/phoneStore';
 
 // Recharge toutes les apps ouvertes : indispensable après un changement
 // d'extensions, car les content scripts ne s'injectent que sur une navigation
@@ -24,6 +26,66 @@ function reloadAllApps() {
   }
 }
 
+// L'icône d'une extension est son vrai logo (manifeste `icons`), pas le même
+// puzzle pour tout le monde : le main process la renvoie en data URL. Les infos
+// sont partagées avec la barre d'extensions via `lib/extensionInfo`.
+function ExtIcon({ ext, enabled }) {
+  const [icon, setIcon] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    loadExtensionInfo(ext).then((info) => {
+      if (alive && info?.iconUrl) setIcon(info.iconUrl);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [ext.id, ext.path]);
+
+  if (icon) {
+    return (
+      <img
+        src={icon}
+        alt=""
+        className={`h-6 w-6 object-contain transition-opacity ${enabled ? '' : 'opacity-40'}`}
+        draggable={false}
+      />
+    );
+  }
+  return <Puzzle size={18} className={enabled ? 'text-accent-primary' : 'text-text-muted'} />;
+}
+
+// Une extension peut fournir une app native (`orbit.nativeApp`) : après
+// installation, l'app est créée dans le store — ce bouton l'ouvre directement,
+// sinon il faut la chercher dans la barre latérale.
+function NativeAppLauncher({ ext, enabled }) {
+  const [kind, setKind] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    loadExtensionInfo(ext).then((info) => {
+      if (alive) setKind(info?.nativeApp || null);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [ext.id, ext.path]);
+
+  if (kind !== 'phone' || !enabled) return null;
+  return (
+    <button
+      type="button"
+      onClick={() => {
+        // Le Téléphone s'ouvre depuis la barre : on l'ouvre directement, sans
+        // créer d'app dans le sidebar.
+        if (kind === 'phone') usePhoneStore.getState().setOpen(true);
+      }}
+      className="btn btn-secondary flex-shrink-0 text-xs"
+      title="Ouvrir l'app fournie par cette extension"
+    >
+      Ouvrir
+    </button>
+  );
+}
+
 // Infos d'une extension : version du manifeste (V2/V3) + avertissements
 // (fonctionnalités non supportées par Electron). Chargés via le main process.
 function ExtWarnings({ ext }) {
@@ -32,12 +94,9 @@ function ExtWarnings({ ext }) {
 
   useEffect(() => {
     let mounted = true;
-    const p = window.electronAPI?.getExtensionInfo?.({ id: ext.id, path: ext.path });
-    if (p && typeof p.then === 'function') {
-      p.then((res) => {
-        if (mounted && res?.success && res.info) setInfo(res.info);
-      }).catch(() => {});
-    }
+    loadExtensionInfo(ext).then((res) => {
+      if (mounted && res) setInfo(res);
+    });
     return () => {
       mounted = false;
     };
@@ -49,6 +108,13 @@ function ExtWarnings({ ext }) {
 
   return (
     <div className="mt-1.5 space-y-1">
+      {/* Une extension « native » ne contient pas de code : elle active une app
+          intégrée d'Orbit. Le badge évite de la croire inutile. */}
+      {info.nativeApp ? (
+        <span className="mr-1 inline-flex items-center rounded bg-accent-primary/15 px-1.5 py-0.5 text-[10px] font-semibold text-accent-primary">
+          App native
+        </span>
+      ) : null}
       {/* Badge de version du manifeste : indique tout de suite si c'est une
           extension « récente » (V3, souvent bridée dans Electron) ou « classique »
           (V2, la mieux supportée). */}
@@ -97,6 +163,11 @@ export default function Extensions() {
   const [fakeDataSettingsOpen, setFakeDataSettingsOpen] = useState(false);
   const [fakeDataSaved, setFakeDataSaved] = useState(false);
   const [nativeConfigOpen, setNativeConfigOpen] = useState(null); // id de l'extension dont le panneau inline est ouvert
+  const [extQuery, setExtQuery] = useState('');
+  // Archives optionnelles livrées avec Orbit (aucune n'est chargée avant
+  // installation) : elles évitent de chercher un ZIP sur le site pour avoir
+  // une app comme Téléphone.
+  const [bundled, setBundled] = useState([]);
 
   const fakeDataDisabled = settings.fakeDataDisabled || false;
   const fakeDataRemoved = settings.fakeDataRemoved || false;
@@ -105,6 +176,17 @@ export default function Extensions() {
   useEffect(() => {
     window.electronAPI?.setFakeDataEnabled?.(!fakeDataDisabled);
   }, [fakeDataDisabled]);
+
+  // Catalogue des extensions optionnelles embarquées (lecture unique au montage)
+  useEffect(() => {
+    const pending = window.electronAPI?.listBundledExtensions?.();
+    if (!pending?.then) return;
+    pending
+      .then((res) => {
+        if (res?.success) setBundled(Array.isArray(res.extensions) ? res.extensions : []);
+      })
+      .catch(() => {});
+  }, []);
 
   // Ouvrir le sélecteur de fichier via Electron dialog
   const selectZipFile = async () => {
@@ -203,8 +285,14 @@ export default function Extensions() {
   // immédiat (sinon « l'extension ne fait rien » tant qu'on n'a pas rechargé).
   const applyExtensions = async (nextList, { reload } = {}) => {
     updateExtensions(nextList);
+    // Le manifeste a pu changer (réinstallation ZIP, autre dossier) : on
+    // repart d'un cache vide pour l'icône, le badge et les avertissements.
+    clearExtensionInfoCache();
     try {
-      await window.electronAPI?.syncExtensions?.(nextList);
+      const res = await window.electronAPI?.syncExtensions?.(nextList);
+      // Apps natives (`orbit.nativeApp`) : présentes seulement si l'extension
+      // qui les déclare est active — installation ET désinstallation passent ici.
+      if (res?.nativeApps) useStore.getState().syncNativeApps(res.nativeApps);
     } catch {
       /* ignore */
     }
@@ -328,6 +416,13 @@ export default function Extensions() {
     ? extensions
     : [{ ...FAKE_DATA_EXT, enabled: !fakeDataDisabled }, ...extensions];
 
+  // Filtre local : avec une dizaine d'extensions, retrouver « Téléphone » ou un
+  // bloqueur demandait de tout relire. Le tri reste l'ordre du store.
+  const needle = extQuery.trim().toLowerCase();
+  const shownExtensions = needle
+    ? visibleExtensions.filter((ext) => String(ext.name || '').toLowerCase().includes(needle))
+    : visibleExtensions;
+
   return (
     <div className="space-y-6">
       {/* Erreurs globales visibles */}
@@ -383,12 +478,73 @@ export default function Extensions() {
         </div>
       </div>
 
+      {/* Extensions Orbit optionnelles : présentes dans l'app, INERTES tant
+          qu'elles ne sont pas installées. */}
+      {bundled.length ? (
+        <div className="card">
+          <div className="flex items-center gap-2 mb-2">
+            <Puzzle size={18} className="text-accent-primary" />
+            <h4 className="font-semibold">Extensions Orbit</h4>
+          </div>
+          <p className="text-sm text-text-muted mb-3">
+            Optionnelles : Orbit ne charge ni leur code ni leurs fonctionnalités avant que vous
+            les installiez.
+          </p>
+          <div className="space-y-2">
+            {bundled.map((item) => {
+              const installed = extensions.some((e) => e.name === item.name);
+              return (
+                <div
+                  key={item.file}
+                  className="flex items-center gap-3 rounded-lg border border-border bg-bg-secondary p-3"
+                >
+                  <div className="w-9 h-9 rounded-lg bg-bg-elevated border border-border flex items-center justify-center flex-shrink-0">
+                    {item.nativeApp === 'phone' ? (
+                      <Smartphone size={17} className="text-accent-primary" />
+                    ) : (
+                      <Puzzle size={17} className="text-text-muted" />
+                    )}
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 text-sm font-medium">
+                      <span className="truncate">{item.name}</span>
+                      {item.nativeApp ? (
+                        <span className="flex-shrink-0 rounded bg-accent-primary/15 px-1.5 py-0.5 text-[10px] font-semibold text-accent-primary">
+                          App native
+                        </span>
+                      ) : null}
+                    </div>
+                    {item.description ? (
+                      <p className="line-clamp-2 text-xs text-text-muted">{item.description}</p>
+                    ) : null}
+                  </div>
+                  <span className="flex-shrink-0 text-xs text-text-muted">v{item.version}</span>
+                  <button
+                    type="button"
+                    onClick={() => handleInstallFromZip(item.zipPath)}
+                    disabled={installed || !!busy}
+                    className="btn btn-secondary flex-shrink-0 text-xs"
+                  >
+                    {busy === 'zip' && !installed ? (
+                      <Loader2 size={13} className="animate-spin" />
+                    ) : (
+                      <Download size={13} />
+                    )}
+                    {installed ? 'Installée' : 'Installer'}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      ) : null}
+
       {/* Liste des extensions installées (y compris Fake Data natif) */}
       <div className="card">
         <div className="flex items-center gap-2 mb-4">
           <Puzzle size={18} className="text-accent-primary" />
           <h4 className="font-semibold">{t('ex.installedTitle')}</h4>
-          <span className="text-xs text-text-muted">({visibleExtensions.length})</span>
+          <span className="text-xs text-text-muted">({shownExtensions.length})</span>
           {visibleExtensions.length > 0 && (
             <button
               onClick={reloadAllApps}
@@ -400,14 +556,31 @@ export default function Extensions() {
           )}
         </div>
 
+        {visibleExtensions.length > 4 ? (
+          <div className="relative mb-3">
+            <Puzzle size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
+            <input
+              type="search"
+              value={extQuery}
+              onChange={(e) => setExtQuery(e.target.value)}
+              placeholder="Rechercher une extension…"
+              className="input pl-9 text-sm"
+            />
+          </div>
+        ) : null}
+
         {visibleExtensions.length === 0 ? (
           <div className="text-center py-8 text-text-muted text-sm">
             <div className="text-3xl mb-2">🧩</div>
             <p>{t('ex.none')}</p>
           </div>
+        ) : shownExtensions.length === 0 ? (
+          <p className="py-8 text-center text-sm text-text-muted">
+            Aucune extension ne correspond à « {extQuery.trim()} ».
+          </p>
         ) : (
           <div className="space-y-3">
-            {visibleExtensions.map((ext) => (
+            {shownExtensions.map((ext) => (
               <div
                 key={ext.id}
                 className={`rounded-lg border transition-all ${
@@ -419,7 +592,7 @@ export default function Extensions() {
                     {isFakeDataExt(ext) ? (
                       <Dice6 size={18} className={ext.enabled ? 'text-indigo-500' : 'text-text-muted'} />
                     ) : (
-                      <Puzzle size={18} className={ext.enabled ? 'text-accent-primary' : 'text-text-muted'} />
+                      <ExtIcon ext={ext} enabled={ext.enabled} />
                     )}
                   </div>
                   <div className="flex-1 min-w-0">
@@ -431,6 +604,7 @@ export default function Extensions() {
                     </div>
                     {!ext.native && <ExtWarnings ext={ext} />}
                   </div>
+                  <NativeAppLauncher ext={ext} enabled={ext.enabled} />
                   <button
                     onClick={() => openOptions(ext)}
                     className="btn-icon flex-shrink-0"

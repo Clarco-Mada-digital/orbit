@@ -234,6 +234,18 @@ test('flyPageTarget : les fichiers locaux lisibles sont acceptés, avec leur nat
   }
 });
 
+test('flyPageTarget : une extension inconnue reste une PAGE', () => {
+  // Régression : `https://github.com/x/aura.git` était refusé (extension `.git`
+  // inconnue), donc « ouvrir dans Orbit » finissait dans le navigateur système.
+  // Une extension inconnue n'est PAS un téléchargement : c'est une page.
+  const git = flyPageTarget('https://github.com/Clarco-Mada-digital/aura.git');
+  assert.equal(git?.kind, 'page');
+  assert.equal(git?.name, 'github.com');
+  // Domaine saisi sans barre oblique : l'ancien code lisait `.com` comme une
+  // extension inconnue et le refusait aussi.
+  assert.equal(flyPageTarget('https://github.com')?.kind, 'page');
+});
+
 test('flyPageTarget : un .zip ou un .docx ne s’ouvre pas (cadre blanc garanti)', () => {
   // Le moteur en ferait un téléchargement, donc aucune page à afficher.
   for (const bad of ['file:///tmp/pack.zip', 'file:///tmp/rapport.docx', 'file:///tmp/setup.exe']) {
