@@ -4942,11 +4942,9 @@ ipcMain.handle('phone:key', phoneGuard((p, phone) => phone.sendKey(p)));
 ipcMain.handle('phone:text', phoneGuard((p, phone) => phone.sendText(p)));
 ipcMain.handle('phone:startMirror', phoneGuard((p, phone) => phone.startMirror(p)));
 ipcMain.handle('phone:stopMirror', phoneGuard((_p, phone) => phone.stopMirror()));
-// Écran virtuel par application : l'app remplit la zone d'Orbit et reçoit les
-// gestes/clavier par `input -d`. Retour `fallback: true` → l'interface ouvre
-// l'app sur l'écran principal (ancien comportement).
+// Chaque app Android ouvre sa fenêtre scrcpy native indépendante du miroir.
 ipcMain.handle('phone:startApp', phoneGuard((p, phone) => phone.startAppSession(p)));
-ipcMain.handle('phone:stopApp', phoneGuard((_p, phone) => phone.stopAppSession()));
+ipcMain.handle('phone:stopApp', phoneGuard((p, phone) => phone.stopAppSession(p)));
 ipcMain.handle('phone:appSession', phoneGuard((_p, phone) => ({
   success: true,
   ...phone.appSessionStatus(),

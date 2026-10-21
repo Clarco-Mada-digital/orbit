@@ -192,6 +192,8 @@ export const DEFAULT_PHONE_SETTINGS = {
   iconConcurrency: 3, // extractions d'icônes simultanées
   iconSize: 'medium', // small | medium | large
   gridMin: 132, // largeur minimale d'une tuile (px)
+  appGridColumns: 6,
+  appGridRows: 4,
   sortMode: 'name', // name | recent | package
   mirrorFps: 60,
   mirrorBitrate: '8M',
@@ -199,7 +201,13 @@ export const DEFAULT_PHONE_SETTINGS = {
   mirrorAlwaysOnTop: true,
   // Écran virtuel par application (l'app remplit la zone d'Orbit).
   appDisplayWidth: 1280,
-  appDisplayHeight: 720,
+  appDisplayHeight: 800,
+  appDisplayDpi: 160,
+  appDisplayOrientation: 'landscape',
+  appWindowScale: 55,
+  appFollowWindow: true,
+  homeBackground: 'aurora',
+  homeWidgets: { clock: true, device: true, favorites: true, recent: true, notifications: true },
   // Alerte système à chaque nouvelle notification du téléphone.
   desktopNotifications: true,
   autoUpdateEngine: true,
@@ -226,6 +234,8 @@ export function normalizePhoneSettings(raw) {
     iconConcurrency: clampInt(s.iconConcurrency, 1, 8, DEFAULT_PHONE_SETTINGS.iconConcurrency),
     iconSize: ICON_SIZES.has(s.iconSize) ? s.iconSize : DEFAULT_PHONE_SETTINGS.iconSize,
     gridMin: clampInt(s.gridMin, 88, 240, DEFAULT_PHONE_SETTINGS.gridMin),
+    appGridColumns: clampInt(s.appGridColumns, 3, 12, DEFAULT_PHONE_SETTINGS.appGridColumns),
+    appGridRows: clampInt(s.appGridRows, 2, 8, DEFAULT_PHONE_SETTINGS.appGridRows),
     sortMode: SORT_MODES.has(s.sortMode) ? s.sortMode : DEFAULT_PHONE_SETTINGS.sortMode,
     mirrorFps: clampInt(s.mirrorFps, 15, 240, DEFAULT_PHONE_SETTINGS.mirrorFps),
     mirrorBitrate: BITRATES.has(s.mirrorBitrate)
@@ -235,6 +245,21 @@ export function normalizePhoneSettings(raw) {
     mirrorAlwaysOnTop: bool(s.mirrorAlwaysOnTop, DEFAULT_PHONE_SETTINGS.mirrorAlwaysOnTop),
     appDisplayWidth: clampInt(s.appDisplayWidth, 800, 1920, DEFAULT_PHONE_SETTINGS.appDisplayWidth),
     appDisplayHeight: clampInt(s.appDisplayHeight, 480, 1400, DEFAULT_PHONE_SETTINGS.appDisplayHeight),
+    appDisplayDpi: clampInt(s.appDisplayDpi, 72, 320, DEFAULT_PHONE_SETTINGS.appDisplayDpi),
+    appDisplayOrientation: ['landscape', 'portrait'].includes(s.appDisplayOrientation)
+      ? s.appDisplayOrientation
+      : DEFAULT_PHONE_SETTINGS.appDisplayOrientation,
+    appWindowScale: clampInt(s.appWindowScale, 35, 85, DEFAULT_PHONE_SETTINGS.appWindowScale),
+    appFollowWindow: bool(s.appFollowWindow, DEFAULT_PHONE_SETTINGS.appFollowWindow),
+    homeBackground: ['aurora', 'ocean', 'sunset', 'midnight'].includes(s.homeBackground)
+      ? s.homeBackground
+      : DEFAULT_PHONE_SETTINGS.homeBackground,
+    homeWidgets: Object.fromEntries(
+      Object.keys(DEFAULT_PHONE_SETTINGS.homeWidgets).map((key) => [
+        key,
+        bool(s.homeWidgets?.[key], DEFAULT_PHONE_SETTINGS.homeWidgets[key]),
+      ])
+    ),
     desktopNotifications: bool(s.desktopNotifications, DEFAULT_PHONE_SETTINGS.desktopNotifications),
     autoUpdateEngine: bool(s.autoUpdateEngine, DEFAULT_PHONE_SETTINGS.autoUpdateEngine),
     enginePath: typeof s.enginePath === 'string' && s.enginePath ? s.enginePath : null,

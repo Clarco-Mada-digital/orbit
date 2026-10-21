@@ -33,22 +33,25 @@ Sans elle :
   n'est monté tant que le panneau n'est pas ouvert.
 - **Accueil** : recherche d'applications (nom, paquet, initiales) et de liens,
   favoris, récents.
-- **Ouverture d'une app** : Orbit crée un **écran virtuel Android** à l'aspect
-  de la zone d'Orbit (`scrcpy --new-display --start-app`, scrcpy 3.0+ /
-  Android 11+). L'application recompose son interface à cette taille et remplit
-  la vue ; souris (clic, glisser), molette et clavier (texte, flèches, Tab,
-  Page↑/↓…) agissent sur cet écran via `adb shell input -d`.
-  Si l'appareil refuse l'écran virtuel, l'app s'ouvre sur l'écran principal du
-  téléphone et le panneau affiche cet écran.
-- **Fermer l'app** détruit son écran virtuel (le processus scrcpy s'arrête) et
-  revient à la grille.
+- **Ouverture d'une app** : chaque app ouvre sa **propre fenêtre de bureau** par
+  un processus scrcpy (`--new-display --start-app`, scrcpy 3.0+ / Android 11+).
+  scrcpy transporte directement la vidéo et le clavier ; Orbit ne simule plus
+  la fenêtre avec des captures d'écran répétées. Le mode Paysage fournit par
+  défaut un écran virtuel large, et scrcpy 4+ peut suivre le redimensionnement
+  de la fenêtre tout en conservant une densité lisible.
+- **Miroir** : le bouton Fenêtre miroir reste une session séparée qui affiche
+  l'écran physique du téléphone. Ouvrir une application ne remplace pas et ne
+  détourne pas le miroir.
+- **Fermer l'app** ferme sa fenêtre scrcpy. Fermer l'espace Téléphone dans Orbit
+  laisse ouvertes les fenêtres d'applications déjà lancées.
 - **Notifications** : Orbit sonde le téléphone toutes les 12 s (liste des clés
   seule), affiche les notifications dans sa propre cloche (section Téléphone)
   et peut alerter le bureau. Actions : ouvrir l'app concernée sur le téléphone,
   écarter (sommeil 24 h côté Android — seule action permise par ADB), voir le
   volet sur le mobile.
-- **Réglages** : moteur scrcpy, résolution de capture, intervalle, icônes,
-  alertes de bureau, connexion USB/sans fil.
+- **Réglages** : moteur scrcpy, résolution et fréquence de l'aperçu, taille des
+  icônes, orientation et densité des fenêtres d'applications, adaptation au
+  redimensionnement, alertes de bureau, connexion USB/sans fil.
 
 ## Désinstallation
 

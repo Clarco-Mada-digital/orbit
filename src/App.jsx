@@ -15,9 +15,8 @@ import QuickSwitcher from './components/QuickSwitcher';
 const Settings = lazy(() => import('./components/Settings'));
 const ProfileManager = lazy(() => import('./components/ProfileManager'));
 const AppStore = lazy(() => import('./components/AppStore'));
-// L'app Téléphone vient d'une extension : son interface (grille d'apps, aperçu
-// tactile, réglages) n'a aucune raison d'être évaluée au démarrage quand elle
-// n'est pas installée. Elle est donc chargée à la première ouverture.
+// L'espace Téléphone vient d'une extension : bureau, aperçu et réglages ne
+// sont chargés qu'à la première ouverture, si l'extension est installée.
 const PhoneOverlay = lazy(() => import('./components/PhoneOverlay'));
 import WebView from './components/WebView';
 import GuestContextMenu from './components/GuestContextMenu';
@@ -78,6 +77,7 @@ function mixWithWhite(rgb, amount) {
 
 export default function App() {
   const [showQuickSwitcher, setShowQuickSwitcher] = useState(false);
+  const phoneOpen = usePhoneStore((s) => s.open);
   const [showSettings, setShowSettings] = useState(false);
   const [showProfileManager, setShowProfileManager] = useState(false);
   const [showAppStore, setShowAppStore] = useState(false);
@@ -590,8 +590,7 @@ const [editUrlFor, setEditUrlFor] = useState(null); // { id, url } — boîte «
     // Clic sur une alerte système : Orbit s'ouvre sur le téléphone et lance
     // l'application concernée.
     const offOpen = api?.onOpenRequest?.(({ package: pkg } = {}) => {
-      // Le panneau décide lui-même comment ouvrir l'app (écran virtuel), quitte
-      // à retomber sur l'écran principal. On ne lance donc rien ici.
+      // L'espace Téléphone ouvre l'app dans une fenêtre scrcpy native dédiée.
       usePhoneStore.getState().requestOpen(pkg || null);
     });
     return () => {
@@ -696,6 +695,7 @@ const [editUrlFor, setEditUrlFor] = useState(null); // { id, url } — boîte «
   ]);
 
   const handleSetActiveApp = useCallback((appId) => {
+    usePhoneStore.getState().setOpen(false);
     setActiveApp(appId);
   }, [setActiveApp]);
 
@@ -1073,7 +1073,7 @@ const openEditUrl = useCallback((id) => {
 
         {/* Zone principale — marge = largeur sidebar (rem) */}
         <div
-          className="flex-1 flex flex-col min-w-0 transition-[margin-left] duration-300"
+          className="relative flex-1 flex flex-col min-w-0 transition-[margin-left] duration-300"
           style={{ marginLeft: sidebarOffset }}
         >
           {/* Apps embarquées : un <webview> par app, reste vivant en arrière-plan.
@@ -1095,7 +1095,7 @@ const openEditUrl = useCallback((id) => {
               // le fond d'écran derrière la palette de recherche. Les webviews
               // montées mais inactives se masquent déjà elles-mêmes (voir
               // WebView.jsx).
-              visibility: overlayOpen && !showHome ? 'hidden' : 'visible',
+              visibility: (overlayOpen || phoneOpen) && !showHome ? 'hidden' : 'visible',
               ...(splitLayout
                 ? {
                     gridTemplateColumns: gridCols.map((f) => `${f}fr`).join(' '),
@@ -1306,6 +1306,9 @@ const openEditUrl = useCallback((id) => {
               />
             )}
           </div>
+          <Suspense fallback={null}>
+            <PhoneOverlay />
+          </Suspense>
         </div>
       </div>
 
@@ -1358,9 +1361,6 @@ const openEditUrl = useCallback((id) => {
           et le chargement est local (quelques millisecondes) — afficher un
           indicateur ferait clignoter l'interface plus qu'il n'informerait. */}
       <Suspense fallback={null}>
-        {/* Panneau Téléphone : ouvert depuis le bouton de la barre, pas depuis
-            le sidebar — il n'existe que si l'extension est installée. */}
-        <PhoneOverlay />
         {showSettings && <Settings onClose={() => setShowSettings(false)} />}
         {showProfileManager && <ProfileManager onClose={() => setShowProfileManager(false)} />}
         {showAppStore && (

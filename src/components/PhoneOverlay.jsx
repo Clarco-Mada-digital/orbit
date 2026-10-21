@@ -4,10 +4,8 @@ import { useStore } from '../stores/useStore';
 
 const PhoneApp = lazy(() => import('./PhoneApp'));
 
-// Panneau Téléphone : l'extension fournit un bouton de barre, pas une app du
-// sidebar. Le panneau recouvre la zone de travail (l'écran du téléphone prend
-// toute la place disponible) et se ferme par Échap, par sa croix, ou en
-// cliquant à l'extérieur du panneau.
+// Espace de travail Téléphone : il occupe la zone de contenu d'Orbit sous les
+// barres et à côté de la sidebar. Le miroir natif reste une fenêtre distincte.
 export default function PhoneOverlay() {
   const close = () => usePhoneStore.getState().setOpen(false);
   const open = usePhoneStore((s) => s.open);
@@ -32,11 +30,11 @@ export default function PhoneOverlay() {
 
   return (
     <div
-      className="fixed inset-0 z-50 flex flex-col bg-black/70 backdrop-blur-sm"
-      role="dialog"
+      className="absolute inset-0 z-40 flex min-h-0 flex-col bg-bg-primary"
+      role="main"
       aria-label="Téléphone"
     >
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden border border-border bg-bg-primary m-2 rounded-2xl shadow-2xl sm:m-4">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
         <Suspense
           fallback={
             <div className="flex h-full items-center justify-center gap-2 text-sm text-text-muted">

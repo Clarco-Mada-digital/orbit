@@ -19,7 +19,7 @@
 // `adb shell` sont validées ou échappées (paquets, adresses, texte).
 // ---------------------------------------------------------------------------
 
-import { app, BrowserWindow, nativeImage } from 'electron';
+import { app, BrowserWindow, nativeImage, screen } from 'electron';
 import path from 'node:path';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -43,7 +43,6 @@ import {
   notificationSnoozeCommand,
   pngSize,
   scaledSize,
-  virtualDisplaySize,
 } from '../src/lib/phone.js';
 
 const require = createRequire(import.meta.url);
@@ -935,46 +934,42 @@ export async function sendText({ serial, text, displayId } = {}) {
   return { success: out.ok };
 }
 
-// --- Écran virtuel par application -----------------------------------------
+// --- Fenêtres d'applications Android ---------------------------------------
 //
-// Afficher un écran de téléphone en portrait dans une fenêtre large laisse
-// forcément des bandes noires. Pour qu'une app REMPLISSE la zone d'Orbit, on
-// lui donne un écran virtuel à l'aspect de cette zone (scrcpy ≥ 3.0,
-// Android 11+). scrcpy ne sert ici qu'à maintenir l'écran en vie : `--no-playback`
-// évite sa propre fenêtre, et les gestes passent par `adb shell input -d`.
-//
-// Si l'appareil refuse (surcouche, écran verrouillé, scrcpy ancien), on
-// retombe proprement sur l'écran principal avec `launchApp`.
-let appSession = null;
+// Chaque app a un écran virtuel et une fenêtre scrcpy native, comme dans Aura.
+// scrcpy transporte directement la vidéo et le clavier ; Orbit ne prend plus
+// de captures périodiques pour simuler la fenêtre.
+const appSessions = new Map();
 
-function killAppSession() {
-  if (appSession?.child && appSession.child.exitCode === null) {
-    try {
-      appSession.child.kill();
-    } catch {
-      /* déjà mort */
+function appSessionKey(serial, pkg) {
+  return `${serial}\n${pkg}`;
+}
+
+export function stopAppSession({ serial, package: pkg } = {}) {
+  const targets = [...appSessions.entries()].filter(([, session]) =>
+    (!serial || session.serial === serial) && (!pkg || session.package === pkg)
+  );
+  for (const [key, session] of targets) {
+    appSessions.delete(key);
+    if (session.child && session.child.exitCode === null) {
+      try {
+        session.child.kill('SIGTERM');
+      } catch {
+        /* déjà fermé */
+      }
     }
   }
-  appSession = null;
+  return { success: true, closed: targets.length };
 }
 
 export function appSessionStatus() {
   return {
-    running: !!appSession,
-    package: appSession?.package || null,
-    displayId: appSession?.displayId ?? null,
-    width: appSession?.width || null,
-    height: appSession?.height || null,
+    running: appSessions.size > 0,
+    sessions: [...appSessions.values()].map(({ child: _child, ...session }) => session),
   };
 }
 
-export function stopAppSession() {
-  killAppSession();
-  return { success: true };
-}
-
-export async function startAppSession({ serial, package: pkg, width, height } = {}) {
-  killAppSession();
+export async function startAppSession({ serial, package: pkg, name } = {}) {
   if (!serial) return { success: false, error: 'aucun appareil' };
   if (!packageValid(pkg)) return { success: false, error: 'paquet invalide' };
   const engine = await resolveEngine();
@@ -988,29 +983,72 @@ export async function startAppSession({ serial, package: pkg, width, height } = 
       fallback: true,
     };
   }
+  const key = appSessionKey(serial, pkg);
+  const existing = appSessions.get(key);
+  if (existing && existing.child.exitCode === null) {
+    return { success: true, alreadyRunning: true, package: pkg };
+  }
 
-  const size = virtualDisplaySize(
-    width || getSettings().appDisplayWidth,
-    height || getSettings().appDisplayHeight
+  const settings = getSettings();
+  const landscape = settings.appDisplayOrientation === 'landscape';
+  const baseWidth = landscape
+    ? Math.max(settings.appDisplayWidth, settings.appDisplayHeight)
+    : Math.min(settings.appDisplayWidth, settings.appDisplayHeight);
+  const baseHeight = landscape
+    ? Math.min(settings.appDisplayWidth, settings.appDisplayHeight)
+    : Math.max(settings.appDisplayWidth, settings.appDisplayHeight);
+  const caps = scrcpyCapabilities(engine.version);
+  const mirrorHasAudio = !!(mirrorChild && mirrorChild.exitCode === null && mirrorAudioActive);
+  const anotherAppHasAudio = [...appSessions.values()].some(
+    (session) => session.package !== pkg && session.audio && session.child.exitCode === null
   );
+  const appHasAudio = settings.mirrorAudio && !mirrorHasAudio && !anotherAppHasAudio && caps.audio;
+  const work = screen.getPrimaryDisplay().workAreaSize;
+  const scale = settings.appWindowScale / 100;
+  const fit = Math.min(1, (work.width * scale) / baseWidth, (work.height * scale) / baseHeight);
+  const followsWindow = settings.appFollowWindow && caps.flexDisplay;
+  let width = baseWidth;
+  let height = baseHeight;
+  let dpi = settings.appDisplayDpi;
+  if (followsWindow) {
+    // Réduire l'écran et sa densité ensemble garde les mêmes dp : Android voit
+    // la même interface tablette, rendue dans une fenêtre plus petite. Ensuite
+    // flex-display suit aussi les redimensionnements faits par l'utilisateur.
+    const factor = Math.max(360 / Math.min(baseWidth, baseHeight), fit);
+    const even = (value) => Math.max(2, Math.round((value * factor) / 2) * 2);
+    width = even(baseWidth);
+    height = even(baseHeight);
+    dpi = Math.max(72, Math.round(settings.appDisplayDpi * factor));
+  }
   const args = [
     '--serial',
     serial,
-    `--new-display=${size.width}x${size.height}/${size.dpi}`,
+    `--new-display=${width}x${height}/${dpi}`,
     `--start-app=${pkg}`,
-    '--no-audio',
-    '--no-playback',
     '--video-codec=h264',
-    `--max-fps=${Math.min(30, getSettings().mirrorFps)}`,
+    `--max-fps=${Math.min(60, settings.mirrorFps)}`,
+    `--video-bit-rate=${settings.mirrorBitrate}`,
+    `--window-title=${String(name || pkg).slice(0, 100)}`,
   ];
-
+  if (!appHasAudio) args.push('--no-audio');
+  else args.push('--require-audio');
+  if (followsWindow) {
+    args.push('--flex-display');
+  } else if (fit < 0.98) {
+    if (width / work.width > height / work.height) {
+      args.push(`--window-width=${Math.max(360, Math.round(width * fit))}`);
+    } else {
+      args.push(`--window-height=${Math.max(360, Math.round(height * fit))}`);
+    }
+  }
   const child = spawn(engine.path, args, {
     stdio: ['ignore', 'pipe', 'pipe'],
     env: childEnv(),
     detached: false,
   });
 
-  const displayId = await new Promise((resolve) => {
+  let launchError = '';
+  const started = await new Promise((resolve) => {
     let output = '';
     let settled = false;
     const finish = (value) => {
@@ -1019,7 +1057,10 @@ export async function startAppSession({ serial, package: pkg, width, height } = 
       clearTimeout(timer);
       resolve(value);
     };
-    const timer = setTimeout(() => finish(null), 12000);
+    const timer = setTimeout(() => {
+      launchError = "scrcpy n'a ouvert aucune fenêtre dans le délai prévu.";
+      finish(null);
+    }, 45000);
     const onData = (chunk) => {
       output = (output + chunk).slice(-8000);
       const match = /\(id=(\d+)\)/.exec(output);
@@ -1027,17 +1068,26 @@ export async function startAppSession({ serial, package: pkg, width, height } = 
       // L'écran existe mais l'app n'a pas démarré : autant le dire tout de
       // suite et laisser l'interface basculer sur l'écran principal, plutôt
       // que d'afficher un écran virtuel noir.
-      if (/Activity not started|Unable to resolve|does not exist/i.test(output)) finish(null);
+      if (/Activity not started|Unable to resolve|does not exist/i.test(output)) {
+        launchError = output.slice(-1200).trim();
+        finish(null);
+      }
     };
     child.stdout?.setEncoding?.('utf8');
     child.stderr?.setEncoding?.('utf8');
     child.stdout?.on('data', onData);
     child.stderr?.on('data', onData);
-    child.on('error', () => finish(null));
-    child.on('exit', () => finish(null));
+    child.on('error', (err) => {
+      launchError = err.message;
+      finish(null);
+    });
+    child.on('exit', (code) => {
+      if (!launchError) launchError = `scrcpy s'est arrêté (code ${code}). ${output.slice(-1200).trim()}`;
+      finish(null);
+    });
   });
 
-  if (displayId === null) {
+  if (started === null || child.exitCode !== null) {
     try {
       child.kill();
     } catch {
@@ -1045,35 +1095,41 @@ export async function startAppSession({ serial, package: pkg, width, height } = 
     }
     return {
       success: false,
-      error:
-        "écran virtuel refusé par l'appareil (Android 11+ et écran déverrouillé requis)",
-      fallback: true,
+      error: launchError || "écran virtuel refusé par l'appareil (Android 11+ et écran déverrouillé requis)",
     };
   }
 
-  // L'écran est créé : on laisse les tuyaux se vider (un tampon plein
-  // bloquerait scrcpy) sans garder les lignes en mémoire.
+  // scrcpy garde la fenêtre et le flux vidéo natifs. Orbit ne capture plus
+  // l'écran en boucle et chaque app reste indépendante du miroir.
   child.stdout?.resume?.();
   child.stderr?.resume?.();
-
-  appSession = {
+  const session = {
     child,
     serial,
     package: pkg,
-    displayId,
-    width: size.width,
-    height: size.height,
+    name: String(name || pkg).slice(0, 100),
+    displayId: started,
+    width,
+    height,
+    startedAt: Date.now(),
+    audio: appHasAudio,
   };
+  appSessions.set(key, session);
   child.on('exit', () => {
-    if (appSession?.child === child) appSession = null;
+    if (appSessions.get(key)?.child === child) appSessions.delete(key);
+    broadcast('phone:app-stopped', { serial, package: pkg });
   });
-  return { success: true, displayId, width: size.width, height: size.height };
+  child.on('error', (err) => {
+    broadcast('phone:app-stopped', { serial, package: pkg, error: err.message });
+  });
+  return { success: true, displayId: started, width, height, package: pkg };
 }
 
 // --- Miroir (fenêtre scrcpy dédiée) ----------------------------------------
 
 let mirrorChild = null;
 let mirrorSerial = null;
+let mirrorAudioActive = false;
 
 export function mirrorStatus() {
   return {
@@ -1089,11 +1145,17 @@ export async function startMirror({ serial, title, package: pkg } = {}) {
     return { success: false, error: "scrcpy n'est pas installé. Installez le moteur depuis les réglages." };
   }
   stopMirror();
-  const args = buildMirrorArgs({ serial, title: title || 'Téléphone', packageName: pkg, settings: getSettings() });
+  const settings = getSettings();
+  const appOwnsAudio = [...appSessions.values()].some((session) => session.audio && session.child.exitCode === null);
+  const mirrorSettings = appOwnsAudio ? { ...settings, mirrorAudio: false } : settings;
+  mirrorAudioActive = !!mirrorSettings.mirrorAudio;
+  const args = buildMirrorArgs({ serial, title: title || 'Téléphone', packageName: pkg, settings: mirrorSettings });
   // Une 1.25 système ne connaît pas `--no-audio` : elle refuserait de démarrer.
   if (!scrcpyCapabilities(engine.version).audio) {
     const i = args.indexOf('--no-audio');
     if (i >= 0) args.splice(i, 1);
+  } else if (settings.mirrorAudio && !appOwnsAudio) {
+    args.push('--require-audio');
   }
   const child = spawn(engine.path, args, {
     stdio: ['ignore', 'ignore', 'pipe'],
@@ -1111,13 +1173,31 @@ export async function startMirror({ serial, title, package: pkg } = {}) {
     if (mirrorChild === child) {
       mirrorChild = null;
       mirrorSerial = null;
+      mirrorAudioActive = false;
     }
     broadcast('phone:mirror-stopped', { serial, code, detail: tail.trim() });
   });
   child.on('error', (err) => {
     broadcast('phone:mirror-stopped', { serial, code: -1, detail: err.message });
   });
-  return { success: true };
+  if (settings.mirrorAudio && !appOwnsAudio && scrcpyCapabilities(engine.version).audio) {
+    const earlyExit = await new Promise((resolve) => {
+      let settled = false;
+      const finish = (value) => {
+        if (settled) return;
+        settled = true;
+        clearTimeout(timer);
+        resolve(value);
+      };
+      const timer = setTimeout(() => finish(null), 1500);
+      child.once('exit', (code) => finish(code));
+      child.once('error', () => finish(-1));
+    });
+    if (earlyExit !== null) {
+      return { success: false, error: `scrcpy n'a pas pu transmettre le son (Android 11+ requis). ${tail.trim()}` };
+    }
+  }
+  return { success: true, audio: settings.mirrorAudio && !appOwnsAudio };
 }
 
 export function stopMirror() {
@@ -1130,10 +1210,11 @@ export function stopMirror() {
   }
   mirrorChild = null;
   mirrorSerial = null;
+  mirrorAudioActive = false;
   return { success: true };
 }
 
 export function cleanup() {
   stopMirror();
-  killAppSession();
+  stopAppSession();
 }

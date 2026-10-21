@@ -703,21 +703,29 @@ export const useStore = create(
 
       // Zoom d'affichage d'une app (0.5 → 3, pas de 0.1) — persisté
       adjustAppZoom: (appId, delta) =>
-        set((state) => ({
-          apps: state.apps.map((a) => {
+        set((state) => {
+          const adjust = (a) => {
             if (a.id !== appId) return a;
             const current = typeof a.zoom === 'number' ? a.zoom : 1;
             return {
               ...a,
               zoom: Math.min(3, Math.max(0.5, Math.round((current + delta) * 100) / 100)),
             };
-          }),
-        })),
+          };
+          return {
+            apps: state.apps.map(adjust),
+            flyPages: state.flyPages.map(adjust),
+          };
+        }),
 
       resetAppZoom: (appId) =>
-        set((state) => ({
-          apps: state.apps.map((a) => (a.id === appId ? { ...a, zoom: 1 } : a)),
-        })),
+        set((state) => {
+          const reset = (a) => (a.id === appId ? { ...a, zoom: 1 } : a);
+          return {
+            apps: state.apps.map(reset),
+            flyPages: state.flyPages.map(reset),
+          };
+        }),
 
       // Sidebar réduite / dépliée
       setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
@@ -920,9 +928,12 @@ export const useStore = create(
       reorderApps: (profileId, appIds) =>
         set((state) => ({
           apps: state.apps.map((app) => {
-            if (app.profileId === profileId) {
-              const newOrder = appIds.indexOf(app.id);
-              return { ...app, order: newOrder !== -1 ? newOrder : app.order };
+            // `getProfileApps` peut montrer ici des apps de portée globale
+            // venues d'un autre profil. Leur ordre visible doit donc suivre
+            // le dépôt lui aussi, même si leur profil propriétaire diffère.
+            const newOrder = appIds.indexOf(app.id);
+            if (newOrder !== -1 && (app.profileId === profileId || app.scope === 'all')) {
+              return { ...app, order: newOrder };
             }
             return app;
           }),

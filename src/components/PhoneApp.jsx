@@ -1,8 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft,
+  AppWindow,
+  Battery,
   Bell,
   Check,
+  Clock3,
   Download,
   Home,
   Keyboard,
@@ -11,6 +14,7 @@ import {
   Minimize2,
   Monitor,
   Power,
+  Palette,
   RefreshCw,
   Search,
   Settings,
@@ -27,24 +31,23 @@ import {
   compareVersions,
   filterPhoneApps,
   initialsOf,
-  isLauncherPackage,
   normalizePhoneSettings,
+  scrcpyCapabilities,
   sortPhoneApps,
 } from '../lib/phone';
 
 // ---------------------------------------------------------------------------
 // Téléphone — app NATIVE d'Orbit.
 //
-// Aucun webview : deux vues seulement.
+// Le bureau Orbit sert à choisir l'app ; chaque app s'ouvre dans sa propre
+// fenêtre scrcpy native. L'aperçu de l'écran physique reste facultatif.
 //   • Accueil  : favoris, récents, recherche d'applications (icônes réelles) ;
-//   • Écran    : aperçu intégré (captures adb) avec tap/glisser clavier ;
-//   • Réglages : moteur scrcpy, connexion, performances.
+//   • Écran    : aperçu ponctuel de l'écran physique et commandes ;
+//   • Réglages : moteur scrcpy, fenêtres d'apps, connexion, performances.
 //
-// Perf : les icônes sont extraites à la demande (jamais toutes d'un coup) via
-// une petite file à concurrence bornée, et l'aperçu ne capture QUE lorsque
-// l'onglet est visible. Une capture dure ~50-200 ms : on enchaîne avec un
-// setTimeout après la réponse au lieu d'un setInterval qui empilerait les
-// requêtes quand l'appareil ralentit.
+// Perf : les fenêtres d'applications utilisent le flux vidéo scrcpy direct.
+// Les icônes sont extraites à la demande et l'aperçu physique ne capture QUE
+// lorsque son onglet est visible.
 // ---------------------------------------------------------------------------
 
 const ICON_CACHE = new Map();
@@ -151,12 +154,13 @@ function PhoneIcon({ serial, pkg, name, size, limit }) {
   );
 }
 
-function Toggle({ checked, onChange, label, hint }) {
+function Toggle({ checked, onChange, label, hint, disabled = false }) {
   return (
     <button
       type="button"
       onClick={() => onChange(!checked)}
-      className="flex w-full items-center justify-between gap-3 py-2 text-left"
+      disabled={disabled}
+      className={`flex w-full items-center justify-between gap-3 py-2 text-left ${disabled ? 'cursor-not-allowed opacity-50' : ''}`}
     >
       <span className="min-w-0">
         <span className="block text-sm text-text-primary">{label}</span>
@@ -224,11 +228,15 @@ export default function PhoneApp({ visible, onClose }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [tab, setTab] = useState('home');
+  const [desktopNow, setDesktopNow] = useState(() => new Date());
+  const [notificationsExpanded, setNotificationsExpanded] = useState(false);
+  const phoneNotifications = usePhoneStore((s) => s.notifications);
 
   const [apps, setApps] = useState([]);
   const [appsLoading, setAppsLoading] = useState(false);
   const [appsToken, setAppsToken] = useState(0);
   const [query, setQuery] = useState('');
+  const [appDrawerOpen, setAppDrawerOpen] = useState(false);
   const [sortMode, setSortMode] = useState('name');
 
   const [favorites, setFavorites] = useState([]);
@@ -238,18 +246,9 @@ export default function PhoneApp({ visible, onClose }) {
   const [screenError, setScreenError] = useState('');
   const [paused, setPaused] = useState(false);
   const [mirrorRunning, setMirrorRunning] = useState(false);
-  // App du téléphone OUVERTE depuis Orbit (`{ package, name }`) : elle donne son
-  // titre à la vue plein écran et permet au bouton Retour de la relancer au
-  // lieu de laisser l'utilisateur sur l'accueil du mobile.
-  const [openApp, setOpenApp] = useState(null);
-  // Largeur CSS réellement occupée par l'image de l'écran : la capture est
-  // demandée à cette taille (× densité) pour rester nette ET légère.
+  // Largeur CSS réellement occupée par l'image de l'aperçu facultatif.
   const [viewWidth, setViewWidth] = useState(0);
   const [fullscreen, setFullscreen] = useState(false);
-  // Écran virtuel de l'app ouverte : `{ displayId, width, height }`. `null` =
-  // l'app tourne sur l'écran principal du téléphone (repli).
-  const [appDisplay, setAppDisplay] = useState(null);
-  const backTimer = useRef(null);
 
   const [keyboardOpen, setKeyboardOpen] = useState(false);
   const [typed, setTyped] = useState('');
@@ -269,6 +268,18 @@ export default function PhoneApp({ visible, onClose }) {
   const serial = status?.serial || null;
   const device = status?.device || null;
   const engine = status?.engine || null;
+  const desktopBackgrounds = {
+    aurora: 'from-[#11182b] via-[#1b2945] to-[#11131f]',
+    ocean: 'from-[#082f49] via-[#0f4961] to-[#111827]',
+    sunset: 'from-[#431407] via-[#7c2d36] to-[#1e1b4b]',
+    midnight: 'from-[#09090b] via-[#18181b] to-[#172554]',
+  };
+
+  useEffect(() => {
+    if (tab !== 'home') return undefined;
+    const timer = setInterval(() => setDesktopNow(new Date()), 15000);
+    return () => clearInterval(timer);
+  }, [tab]);
 
   const refreshStatus = useCallback(async () => {
     const api = apiRef.current;
@@ -398,7 +409,6 @@ export default function PhoneApp({ visible, onClose }) {
           maxWidth: captureMaxWidth,
           // L'app ouverte a son propre écran : on capture CE display, sinon
           // on verrait l'accueil du téléphone derrière elle.
-          displayId: appDisplay?.displayId,
         });
         if (!alive) return;
         if (res?.success) {
@@ -427,13 +437,7 @@ export default function PhoneApp({ visible, onClose }) {
       alive = false;
       if (timer) clearTimeout(timer);
     };
-  }, [serial, tab, visible, paused, captureMaxWidth, settings.refreshMs, refreshStatus, appDisplay?.displayId]);
-
-  // L'écran virtuel vit dans un processus scrcpy : il doit mourir avec le
-  // panneau (sinon une app continuerait à tourner sans personne pour la voir).
-  useEffect(() => () => {
-    apiRef.current?.stopApp?.();
-  }, []);
+  }, [serial, tab, visible, paused, captureMaxWidth, settings.refreshMs, refreshStatus]);
 
   // État réel du plein écran (le raccourci F11 d'Orbit le change aussi) : un
   // bouton qui afficherait l'inverse de l'écran serait plus gênant qu'utile.
@@ -487,43 +491,20 @@ export default function PhoneApp({ visible, onClose }) {
     async (target) => {
       const api = apiRef.current;
       if (!api || !serial || !target?.package) return;
-
-      // On retient l'app ouverte : la vue prend son nom et le bouton Retour
-      // sait quoi faire. L'écran virtuel est calé sur la zone d'Orbit : l'app
-      // recompose son interface à cette taille et remplit la vue.
-      setOpenApp({ package: target.package, name: target.name || target.package });
-      setTab('screen');
-      setAppDisplay(null);
-      api.stopApp?.().catch(() => {});
-
-      const availWidth = Math.max(800, Math.round(window.innerWidth - 96));
-      const availHeight = Math.max(480, Math.round(window.innerHeight - 96));
-      let res = null;
+      let res;
       try {
-        res = await api.startApp?.({
+        res = await api.startApp({
           serial,
           package: target.package,
-          width: availWidth,
-          height: availHeight,
+          name: target.name || target.package,
         });
-      } catch {
-        res = null;
+      } catch (err) {
+        setError(err?.message || `Impossible d'ouvrir ${target.name || target.package}.`);
+        return;
       }
-
       if (!res?.success) {
-        // Repli : app sur l'écran principal (Android ancien, surcouche
-        // récalcitrante, écran verrouillé…). Le reste de l'interface ne change
-        // pas : la capture vise simplement le display principal.
-        const fallback = await api.launch({ serial, package: target.package });
-        if (!fallback?.success) {
-          setError(fallback?.error || res?.error || `Impossible de lancer ${target.name}`);
-          setOpenApp(null);
-          setTab('home');
-          return;
-        }
-        setAppDisplay(null);
-      } else {
-        setAppDisplay({ displayId: res.displayId, width: res.width, height: res.height });
+        setError(res?.error || `Impossible d'ouvrir ${target.name || target.package} dans une fenêtre.`);
+        return;
       }
 
       const nextRecents = [target.package, ...recents.filter((p) => p !== target.package)].slice(0, 8);
@@ -533,6 +514,13 @@ export default function PhoneApp({ visible, onClose }) {
     },
     [serial, recents]
   );
+
+  const dismissPhoneNotification = useCallback(async (notification) => {
+    if (!serial || !notification?.key) return;
+    const result = await apiRef.current?.dismissNotification?.({ serial, key: notification.key });
+    if (result?.success) usePhoneStore.getState().removeNotification(notification.key);
+    else setError(result?.error || "Impossible d'écarter cette notification du téléphone.");
+  }, [serial]);
 
   // Demande venue d'ailleurs (alerte système, notification dans la cloche) :
   // on ouvre l'app demandée dès que l'appareil et la liste sont prêts.
@@ -544,58 +532,16 @@ export default function PhoneApp({ visible, onClose }) {
     launch({ package: requestedPackage, name: known?.name || requestedPackage });
   }, [requestedPackage, visible, loading, serial, apps, launch]);
 
-  // Retour Android SANS sortir de l'app ouverte. Un « back » sur l'écran
-  // d'accueil d'une app la quitte : Orbit regarde donc quel paquet est au
-  // premier plan juste après (le processus principal sait aussi si c'est le
-  // lanceur), et relance l'app le cas échéant. Le bouton « Accueil » du
-  // téléphone, lui, n'est jamais contredit.
+  // Commandes Android dans l'aperçu de l'écran physique.
   const goBack = useCallback(async () => {
     const api = apiRef.current;
     if (!api || !serial) return;
-    await api.key({ serial, key: 'back', displayId: appDisplay?.displayId });
-    // Sur un écran virtuel dédié à l'app, le retour reste dans l'app : rien à
-    // relancer (et l'accueil Android n'est même pas visible).
-    if (appDisplay?.displayId !== undefined && appDisplay !== null) return;
-    if (!openApp?.package) return;
-    if (backTimer.current) clearTimeout(backTimer.current);
-    backTimer.current = setTimeout(async () => {
-      backTimer.current = null;
-      try {
-        const res = await api.foreground({ serial });
-        if (!res?.success) return;
-        const pkg = res.package || '';
-        if (res.home === true || isLauncherPackage(pkg)) {
-          await api.launch({ serial, package: openApp.package });
-        }
-      } catch {
-        /* appareil débranché : rien à relancer */
-      }
-    }, 350);
-  }, [serial, openApp, appDisplay]);
+    await api.key({ serial, key: 'back' });
+  }, [serial]);
 
-  useEffect(() => () => {
-    if (backTimer.current) clearTimeout(backTimer.current);
-  }, []);
-
-  const closeApp = useCallback(() => {
-    // Fermer l'app = détruire son écran virtuel (le processus scrcpy s'arrête
-    // donc l'app n'est plus « ouverte »), puis revenir à la grille.
-    apiRef.current?.stopApp?.().catch(() => {});
-    setAppDisplay(null);
-    setOpenApp(null);
-    setKeyboardOpen(false);
-    setScreen(null);
-    setTab('home');
-  }, []);
-
-  // Quitter l'app ouverte pour revenir à l'accueil/récents DU TÉLÉPHONE :
-  // l'écran virtuel n'existe que pour une app, on le referme donc avant de
-  // piloter l'écran principal (sinon l'accueil ne s'afficherait jamais).
+  // Commandes de navigation pour l'écran physique affiché dans l'aperçu.
   const leaveApp = useCallback(
     async (deviceKey) => {
-      apiRef.current?.stopApp?.().catch(() => {});
-      setAppDisplay(null);
-      setOpenApp(null);
       setKeyboardOpen(false);
       setScreen(null);
       if (serial) await apiRef.current?.key({ serial, key: deviceKey });
@@ -617,6 +563,38 @@ export default function PhoneApp({ visible, onClose }) {
     if (!res?.success) setError(res?.error || "Le téléphone n'a pas ouvert ce lien.");
     else setQuery('');
   }, [query, serial]);
+
+  // L'aperçu est une image, donc Chromium ne peut pas y saisir les touches
+  // comme dans un champ de texte. On relaie explicitement clavier et caractères
+  // vers l'écran Android ciblé.
+  const handlePreviewKeyDown = useCallback((event) => {
+    if (!serial || event.ctrlKey || event.metaKey || event.altKey) return;
+    const keys = {
+      Escape: 'back',
+      Enter: 'enter',
+      Backspace: 'backspace',
+      Delete: 'delete',
+      Tab: 'tab',
+      ArrowUp: 'dpad_up',
+      ArrowDown: 'dpad_down',
+      ArrowLeft: 'dpad_left',
+      ArrowRight: 'dpad_right',
+      PageUp: 'page_up',
+      PageDown: 'page_down',
+      Home: 'move_home',
+      End: 'move_end',
+      ' ': 'space',
+    };
+    const key = keys[event.key];
+    if (!key && event.key.length !== 1) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (key) {
+      apiRef.current?.key({ serial, key });
+    } else {
+      apiRef.current?.text({ serial, text: event.key });
+    }
+  }, [serial]);
 
   const connect = useCallback(async () => {
     const api = apiRef.current;
@@ -659,7 +637,6 @@ export default function PhoneApp({ visible, onClose }) {
     await apiRef.current?.disconnect(serial);
     selectTab('home');
     setScreen(null);
-    setOpenApp(null);
     await refreshStatus();
   }, [serial, refreshStatus, selectTab]);
 
@@ -715,13 +692,11 @@ export default function PhoneApp({ visible, onClose }) {
   );
 
   const searchUrl = detectUrl(query);
-  const tileSize = settings.iconSize === 'small' ? 38 : settings.iconSize === 'large' ? 60 : 48;
+  const tileSize = settings.iconSize === 'small' ? 40 : settings.iconSize === 'large' ? 68 : 52;
   const iconLimitForGrid = settings.iconConcurrency;
   // Une app est ouverte : on retire la coquille Téléphone (en-tête + onglets)
   // pour que l'app occupe TOUTE la zone d'Orbit. Les commandes sont dans la
   // barre flottante de la vue, et la croix referme l'app.
-  const immersive = tab === 'screen' && !!openApp && !!device;
-
   // --- Rendu des tuiles ---------------------------------------------------
 
   const tile = (app) => (
@@ -777,8 +752,7 @@ export default function PhoneApp({ visible, onClose }) {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-bg-primary text-text-primary">
-      {immersive ? null : (
+    <div className={`flex h-full min-h-0 flex-col text-text-primary ${tab === 'home' ? `bg-gradient-to-br ${desktopBackgrounds[settings.homeBackground]}` : 'bg-bg-primary'}`}>
       <header className="flex shrink-0 items-center gap-3 border-b border-border px-4 py-2.5">
         <div className="flex items-center gap-2">
           <Smartphone size={18} className="text-accent-primary" />
@@ -825,7 +799,6 @@ export default function PhoneApp({ visible, onClose }) {
           ) : null}
         </div>
       </header>
-      )}
 
       {error ? (
         <div className="flex shrink-0 items-center gap-2 border-b border-border bg-red-500/10 px-4 py-1.5 text-xs text-red-300">
@@ -838,7 +811,6 @@ export default function PhoneApp({ visible, onClose }) {
         </div>
       ) : null}
 
-      {immersive ? null : (
       <nav className="flex shrink-0 items-center gap-1 border-b border-border px-3 py-1">
         {[
           ['home', 'Accueil'],
@@ -854,14 +826,13 @@ export default function PhoneApp({ visible, onClose }) {
                 ? 'bg-accent-primary/15 text-accent-primary'
                 : 'text-text-muted hover:bg-bg-hover hover:text-text-primary'
             }`}
-            title={id === 'screen' && openApp ? openApp.name : label}
+            title={label}
           >
-            {id === 'screen' && openApp ? openApp.name : label}
+            {label}
           </button>
         ))}
         {mirrorRunning ? <Pill tone="good">Miroir ouvert</Pill> : null}
       </nav>
-      )}
 
       {/* ------------------------------- ACCUEIL ------------------------------ */}
       {tab === 'home' ? (
@@ -971,6 +942,64 @@ export default function PhoneApp({ visible, onClose }) {
             </div>
           ) : (
             <div className="mx-auto max-w-5xl px-4 pb-10 pt-4">
+              {(settings.homeWidgets.clock || settings.homeWidgets.device) ? <section className="relative mb-5 overflow-hidden rounded-[1.75rem] border border-white/15 bg-gradient-to-br from-white/[0.13] via-white/[0.06] to-indigo-300/[0.08] p-5 text-white shadow-2xl shadow-black/20 backdrop-blur-2xl sm:p-7">
+                <div className="pointer-events-none absolute -right-12 -top-20 h-56 w-56 rounded-full bg-sky-300/10 blur-3xl" />
+                <div className="pointer-events-none absolute -bottom-24 left-1/3 h-48 w-48 rounded-full bg-violet-400/10 blur-3xl" />
+                <div className="relative flex flex-wrap items-end justify-between gap-5">
+                  {settings.homeWidgets.clock ? <div>
+                    <div className="mb-2 flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.2em] text-sky-100/65"><Clock3 size={14} /> Ton bureau</div>
+                    <div className="text-5xl font-light leading-none tabular-nums tracking-tight sm:text-6xl">{desktopNow.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}</div>
+                    <div className="mt-3 text-sm text-white/70">{desktopNow.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}</div>
+                  </div> : null}
+                  {settings.homeWidgets.device ? <div className="flex min-w-[210px] items-center gap-3 rounded-2xl border border-white/10 bg-black/15 px-4 py-3 shadow-inner backdrop-blur-xl">
+                    <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-sky-300/10 text-sky-200"><Smartphone size={18} /></span>
+                    <span className="min-w-0 flex-1"><span className="block truncate text-xs font-medium">{device?.model || 'Téléphone connecté'}</span><span className="mt-1 block text-[11px] text-white/45">{device ? 'Connecté à Orbit' : 'En attente de connexion'}</span></span>
+                    {typeof device?.battery === 'number' ? <span className="flex items-center gap-1 rounded-lg bg-white/[0.06] px-2 py-1 text-xs tabular-nums text-white/75"><Battery size={14} />{device.battery}%</span> : null}
+                  </div> : null}
+                </div>
+              </section> : null}
+
+              {settings.homeWidgets.notifications && phoneNotifications.length > 0 ? <section className="mb-5 overflow-hidden rounded-2xl border border-white/10 bg-slate-950/25 text-white shadow-xl shadow-black/10 backdrop-blur-xl">
+                <div className="flex items-center gap-2 border-b border-white/[0.07] px-4 py-3">
+                  <span className="grid h-7 w-7 place-items-center rounded-lg bg-sky-300/10 text-sky-200"><Bell size={14} /></span>
+                  <span className="text-xs font-semibold">Notifications</span>
+                  <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] tabular-nums text-white/70">{phoneNotifications.length}</span>
+                  <span className="ml-auto text-[10px] text-white/35">Du téléphone</span>
+                </div>
+                <div className="max-h-[360px] divide-y divide-white/[0.06] overflow-y-auto">
+                  {phoneNotifications.slice(0, notificationsExpanded ? phoneNotifications.length : 5).map((notification) => {
+                    const app = apps.find((item) => item.package === notification.package);
+                    return <div key={notification.key} className="group flex items-start gap-2 px-3 py-2.5 transition hover:bg-white/[0.04]">
+                      <button type="button" onClick={() => launch({ package: notification.package, name: app?.name || notification.title || notification.package })} className="min-w-0 flex-1 rounded-lg px-1 py-0.5 text-left" title={`${notification.title || notification.package} — ouvrir l’application`}>
+                        <span className="block truncate text-xs font-medium text-white/90">{notification.title || app?.name || 'Notification'}</span>
+                        {notification.text ? <span className="mt-1 block line-clamp-2 text-[11px] leading-relaxed text-white/55">{notification.text}</span> : null}
+                        <span className="mt-1.5 block truncate text-[10px] text-white/30">{app?.name || notification.package}</span>
+                      </button>
+                      <button type="button" onClick={() => dismissPhoneNotification(notification)} className="mt-0.5 rounded-lg p-1.5 text-white/35 opacity-60 transition hover:bg-white/10 hover:text-white sm:opacity-0 sm:group-hover:opacity-100" title="Écarter du téléphone (24 h)" aria-label="Écarter cette notification">
+                        <X size={13} />
+                      </button>
+                    </div>;
+                  })}
+                </div>
+                {phoneNotifications.length > 5 ? <button type="button" onClick={() => setNotificationsExpanded((expanded) => !expanded)} className="w-full border-t border-white/[0.07] px-3 py-2 text-[11px] font-medium text-sky-200/80 transition hover:bg-white/[0.04] hover:text-sky-100">{notificationsExpanded ? 'Afficher moins' : `Afficher les ${phoneNotifications.length - 5} autres notifications`}</button> : null}
+              </section> : null}
+
+              <div className="mb-3 flex justify-end">
+                <button type="button" onClick={() => selectTab('settings')} className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.05] px-2.5 py-1.5 text-xs text-white/70 hover:bg-white/10"><Settings size={13} /> Personnaliser le bureau</button>
+              </div>
+              {(settings.homeWidgets.favorites && favoriteApps.length > 0) ? <section className="mb-4 rounded-2xl border border-white/10 bg-white/[0.06] p-4 text-white shadow-lg backdrop-blur-xl">
+                <div className="mb-3 flex items-center gap-2 text-xs font-semibold text-white/70"><Star size={14} className="text-amber-300" /> Favoris</div>
+                <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${Math.min(settings.appGridColumns, 8)}, minmax(0, 1fr))` }}>{favoriteApps.slice(0, 8).map(tile)}</div>
+              </section> : null}
+              {(settings.homeWidgets.recent && recentApps.length > 0) ? <section className="mb-4 rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-white shadow-lg backdrop-blur-xl">
+                <div className="mb-3 flex items-center gap-2 text-xs font-semibold text-white/70"><RefreshCw size={13} className="text-sky-300" /> Récemment ouvertes</div>
+                <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${Math.min(settings.appGridColumns, 8)}, minmax(0, 1fr))` }}>{recentApps.slice(0, 8).map(tile)}</div>
+              </section> : null}
+              <button type="button" onClick={() => { setAppDrawerOpen((open) => !open); setQuery(''); }} className="mb-4 flex w-full items-center justify-center gap-2 rounded-2xl border border-sky-200/15 bg-gradient-to-r from-sky-400/15 to-indigo-400/15 px-4 py-3 text-sm font-medium text-white shadow-lg transition hover:from-sky-400/25 hover:to-indigo-400/25">
+                <AppWindow size={17} /> {appDrawerOpen ? 'Fermer les applications' : 'Toutes les applications'} <span className="rounded-full bg-white/10 px-2 py-0.5 text-xs tabular-nums">{apps.length}</span>
+              </button>
+              {appDrawerOpen ? <div className="rounded-2xl border border-white/10 bg-black/20 p-4 text-white shadow-xl backdrop-blur-xl">
+                <div className="mb-3 flex items-center justify-between gap-3"><div><h2 className="text-base font-semibold">Applications</h2><p className="text-xs text-white/50">Choisis une application pour l’ouvrir dans sa fenêtre.</p></div><button type="button" onClick={() => setAppDrawerOpen(false)} className="rounded-lg px-2.5 py-1.5 text-xs text-white/65 hover:bg-white/10">Fermer</button></div>
               <div className="relative">
                 <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
                 <input
@@ -1069,41 +1098,13 @@ export default function PhoneApp({ visible, onClose }) {
                 </div>
               </div>
 
-              {!query && favoriteApps.length ? (
-                <section className="mt-5">
-                  <h3 className="mb-1 flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wide text-text-muted">
-                    <Star size={12} /> Favoris
-                  </h3>
-                  <div
-                    className="grid gap-1"
-                    style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${settings.gridMin}px, 1fr))` }}
-                  >
-                    {favoriteApps.map(tile)}
-                  </div>
-                </section>
-              ) : null}
-
-              {!query && recentApps.length ? (
-                <section className="mt-5">
-                  <h3 className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-text-muted">
-                    Récents
-                  </h3>
-                  <div
-                    className="grid gap-1"
-                    style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${settings.gridMin}px, 1fr))` }}
-                  >
-                    {recentApps.map(tile)}
-                  </div>
-                </section>
-              ) : null}
-
               <section className="mt-5">
                 <h3 className="mb-1 flex items-center gap-2 text-[11px] font-semibold uppercase tracking-wide text-text-muted">
                   {query ? 'Résultats' : 'Toutes les applications'}
                   {appsLoading ? <Loader2 size={11} className="animate-spin" /> : null}
                 </h3>
                 {appsLoading && !filtered.length ? (
-                  <div className="grid gap-1" style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${settings.gridMin}px, 1fr))` }}>
+                  <div className="grid gap-1 overflow-y-auto pr-1" style={{ gridTemplateColumns: `repeat(${settings.appGridColumns}, minmax(0, 1fr))`, gridAutoRows: '96px', maxHeight: `${settings.appGridRows * 96}px` }}>
                     {Array.from({ length: 12 }).map((_, i) => (
                       <div key={i} className="flex flex-col items-center gap-2 py-2">
                         <div className="h-12 w-12 animate-pulse rounded-2xl bg-bg-hover" />
@@ -1114,7 +1115,7 @@ export default function PhoneApp({ visible, onClose }) {
                 ) : filtered.length ? (
                   <div
                     className="grid gap-1"
-                    style={{ gridTemplateColumns: `repeat(auto-fill, minmax(${settings.gridMin}px, 1fr))` }}
+                    style={{ gridTemplateColumns: `repeat(${settings.appGridColumns}, minmax(0, 1fr))`, gridAutoRows: '96px', maxHeight: `${settings.appGridRows * 96}px`, overflowY: 'auto' }}
                   >
                     {filtered.map(tile)}
                   </div>
@@ -1124,6 +1125,7 @@ export default function PhoneApp({ visible, onClose }) {
                   </p>
                 )}
               </section>
+              </div> : null}
             </div>
           )}
         </div>
@@ -1154,11 +1156,12 @@ export default function PhoneApp({ visible, onClose }) {
                     serial={serial}
                     onFit={setViewWidth}
                     onError={setScreenError}
+                    onKeyDown={handlePreviewKeyDown}
                     onGesture={(payload) =>
-                      apiRef.current?.swipe({ serial, displayId: appDisplay?.displayId, ...payload })
+                      apiRef.current?.swipe({ serial, ...payload })
                     }
                     onTap={(x, y) =>
-                      apiRef.current?.tap({ serial, x, y, displayId: appDisplay?.displayId })
+                      apiRef.current?.tap({ serial, x, y })
                     }
                   />
                 ) : (
@@ -1227,32 +1230,6 @@ export default function PhoneApp({ visible, onClose }) {
                   ) : null}
                 </div>
 
-                <div className="pointer-events-auto ml-auto flex max-w-[60%] items-center gap-1.5 rounded-full bg-black/60 px-2.5 py-1.5 text-[11px] text-white/70 shadow-lg backdrop-blur">
-                  {openApp ? (
-                    <>
-                      <span className="truncate font-medium text-white" title={openApp.package}>
-                        {openApp.name}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={closeApp}
-                        className="rounded-full p-0.5 text-white/60 hover:bg-white/10 hover:text-white"
-                        title="Fermer l'application"
-                      >
-                        <X size={13} />
-                      </button>
-                    </>
-                  ) : (
-                    <button
-                      type="button"
-                      onClick={closeApp}
-                      className="rounded-full px-1 py-0.5 text-white/70 hover:text-white"
-                      title="Revenir à la liste des applications"
-                    >
-                      Mes applications
-                    </button>
-                  )}
-                </div>
               </div>
 
               {keyboardOpen ? (
@@ -1280,12 +1257,12 @@ export default function PhoneApp({ visible, onClose }) {
                       }[e.key];
                       if (nav) {
                         e.preventDefault();
-                        apiRef.current?.key({ serial, key: nav, displayId: appDisplay?.displayId });
+                        apiRef.current?.key({ serial, key: nav });
                         return;
                       }
                       if (e.key === 'Enter') {
                         e.preventDefault();
-                        apiRef.current?.text({ serial, text: typed, displayId: appDisplay?.displayId });
+                        apiRef.current?.text({ serial, text: typed });
                         setTyped('');
                       }
                     }}
@@ -1295,7 +1272,7 @@ export default function PhoneApp({ visible, onClose }) {
                   <button
                     type="button"
                     onClick={() => {
-                      apiRef.current?.text({ serial, text: typed, displayId: appDisplay?.displayId });
+                      apiRef.current?.text({ serial, text: typed });
                       setTyped('');
                     }}
                     disabled={!typed}
@@ -1306,7 +1283,7 @@ export default function PhoneApp({ visible, onClose }) {
                   <button
                     type="button"
                     onClick={() =>
-                      apiRef.current?.key({ serial, key: 'enter', displayId: appDisplay?.displayId })
+                      apiRef.current?.key({ serial, key: 'enter' })
                     }
                     className="rounded-full border border-white/15 px-2.5 py-1.5 text-xs text-white/80 hover:bg-white/10"
                   >
@@ -1384,6 +1361,115 @@ export default function PhoneApp({ visible, onClose }) {
                 <p className="text-xs text-text-muted">Aucun appareil connecté.</p>
               )}
               {connectError ? <p className="mt-2 text-xs text-red-300">{connectError}</p> : null}
+            </section>
+
+            <section className="rounded-xl border border-border bg-bg-secondary p-4">
+              <h3 className="mb-1 flex items-center gap-2 text-sm font-medium">
+                <Palette size={15} className="text-accent-primary" /> Bureau du téléphone
+              </h3>
+              <p className="mb-3 text-xs text-text-muted">Choisis le fond et les widgets visibles sur l’accueil Orbit du téléphone.</p>
+              <div className="mb-3 flex flex-wrap gap-2">
+                {[
+                  ['aurora', 'Aurore'], ['ocean', 'Océan'], ['sunset', 'Crépuscule'], ['midnight', 'Nuit'],
+                ].map(([value, label]) => (
+                  <button key={value} type="button" onClick={() => saveSettings({ homeBackground: value })}
+                    className={`rounded-lg border px-3 py-1.5 text-xs transition-colors ${settings.homeBackground === value ? 'border-accent-primary bg-accent-primary/15 text-accent-primary' : 'border-border text-text-muted hover:bg-bg-hover'}`}>
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <p className="mb-3 text-[11px] leading-relaxed text-text-muted">
+                Scrcpy crée un nouvel écran Android avec ces dimensions. Ce réglage s’applique aux nouvelles fenêtres ; ferme les fenêtres déjà ouvertes ci-dessous avant de relancer une app. Une app peut toujours imposer sa propre orientation.
+              </p>
+              <Toggle label="Horloge et date" checked={settings.homeWidgets.clock} onChange={(v) => saveSettings({ homeWidgets: { ...settings.homeWidgets, clock: v } })} />
+              <Toggle label="Appareil et batterie" checked={settings.homeWidgets.device} onChange={(v) => saveSettings({ homeWidgets: { ...settings.homeWidgets, device: v } })} />
+              <Toggle label="Applications favorites" checked={settings.homeWidgets.favorites} onChange={(v) => saveSettings({ homeWidgets: { ...settings.homeWidgets, favorites: v } })} />
+              <Toggle label="Applications récentes" checked={settings.homeWidgets.recent} onChange={(v) => saveSettings({ homeWidgets: { ...settings.homeWidgets, recent: v } })} />
+              <Toggle label="Notifications du téléphone" hint="Affiche seulement les deux dernières alertes, avec leur texte raccourci. Cliquer ouvre l’application dans sa fenêtre." checked={settings.homeWidgets.notifications} onChange={(v) => saveSettings({ homeWidgets: { ...settings.homeWidgets, notifications: v } })} />
+              <div className="mt-4 border-t border-border pt-3">
+                <h4 className="mb-2 text-xs font-medium text-text-secondary">Tiroir d’applications</h4>
+                <Range label="Taille des icônes" value={settings.iconSize === 'small' ? 1 : settings.iconSize === 'large' ? 3 : 2} min={1} max={3} step={1} suffix="" onChange={(v) => saveSettings({ iconSize: v === 1 ? 'small' : v === 3 ? 'large' : 'medium' })} />
+                <Range label="Colonnes par ligne" value={settings.appGridColumns} min={3} max={12} step={1} onChange={(v) => saveSettings({ appGridColumns: v })} />
+                <Range label="Lignes visibles avant défilement" value={settings.appGridRows} min={2} max={8} step={1} onChange={(v) => saveSettings({ appGridRows: v })} />
+              </div>
+            </section>
+
+            <section className="rounded-xl border border-border bg-bg-secondary p-4">
+              <h3 className="mb-1 flex items-center gap-2 text-sm font-medium">
+                <Monitor size={15} className="text-accent-primary" /> Fenêtres des applications
+              </h3>
+              <p className="mb-3 text-xs leading-relaxed text-text-muted">
+                Chaque application s'ouvre dans sa propre fenêtre scrcpy, avec un flux vidéo direct.
+                Le miroir reste une fenêtre séparée pour l'écran physique du téléphone.
+              </p>
+              <div className="mb-3 flex flex-wrap gap-2">
+                {[
+                  ['landscape', 'Paysage'],
+                  ['portrait', 'Portrait'],
+                ].map(([value, label]) => (
+                  <button
+                    key={value}
+                    type="button"
+                    onClick={() => saveSettings({ appDisplayOrientation: value })}
+                    className={`rounded-lg border px-3 py-1.5 text-xs transition-colors ${
+                      settings.appDisplayOrientation === value
+                        ? 'border-accent-primary bg-accent-primary/15 text-accent-primary'
+                        : 'border-border text-text-muted hover:bg-bg-hover'
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+              <Range
+                label="Largeur de l'écran Android virtuel"
+                value={settings.appDisplayWidth}
+                min={800}
+                max={1920}
+                step={80}
+                suffix=" px"
+                onChange={(v) => saveSettings({ appDisplayWidth: v })}
+              />
+              <Range
+                label="Hauteur de l'écran Android virtuel"
+                value={settings.appDisplayHeight}
+                min={480}
+                max={1400}
+                step={40}
+                suffix=" px"
+                onChange={(v) => saveSettings({ appDisplayHeight: v })}
+              />
+              <Range
+                label="Densité Android"
+                value={settings.appDisplayDpi}
+                min={72}
+                max={320}
+                step={8}
+                suffix=" dpi"
+                onChange={(v) => saveSettings({ appDisplayDpi: v })}
+              />
+              <Range
+                label="Taille initiale de la fenêtre"
+                value={settings.appWindowScale}
+                min={35}
+                max={85}
+                step={5}
+                suffix=" % du bureau"
+                onChange={(v) => saveSettings({ appWindowScale: v })}
+              />
+              <Toggle
+                label="Adapter l'écran Android au redimensionnement"
+                hint="Avec scrcpy 4+, Android recalcule son interface quand tu redimensionnes la fenêtre. La densité suit la taille pour garder des proportions lisibles."
+                checked={settings.appFollowWindow}
+                onChange={(v) => saveSettings({ appFollowWindow: v })}
+              />
+              <button type="button" onClick={async () => { await apiRef.current?.stopApp?.({}); setError(''); }} className="mt-2 rounded-lg border border-border px-3 py-1.5 text-xs text-text-secondary transition hover:bg-bg-hover">
+                Fermer les fenêtres d’applications pour appliquer les réglages
+              </button>
+              <p className="mt-1 text-[11px] leading-relaxed text-text-muted">
+                Certaines applications imposent le portrait. L'orientation Paysage leur fournit un écran large,
+                mais Android respecte toujours les choix d'orientation imposés par l'application.
+              </p>
             </section>
 
             <section className="rounded-xl border border-border bg-bg-secondary p-4">
@@ -1492,9 +1578,22 @@ export default function PhoneApp({ visible, onClose }) {
               </h3>
               <Toggle
                 label="Son du téléphone"
-                hint="Transmet l'audio du téléphone à l'ordinateur (scrcpy ≥ 1.25)."
+                hint="Transmet le son à l’ordinateur dans le miroir ou une fenêtre d’application. Scrcpy ≥ 2 et Android 11+ requis. Le miroir ouvert redémarre automatiquement ; ferme puis rouvre les fenêtres d’apps déjà ouvertes pour appliquer le choix."
                 checked={settings.mirrorAudio}
-                onChange={(v) => saveSettings({ mirrorAudio: v })}
+                disabled={!scrcpyCapabilities(engine?.found?.version).audio}
+                onChange={async (value) => {
+                  await saveSettings({ mirrorAudio: value });
+                  if (!mirrorRunning || !serial) return;
+                  try {
+                    const result = await apiRef.current?.startMirror({ serial, title: device?.model || 'Téléphone' });
+                    setMirrorRunning(!!result?.success);
+                    if (!result?.success) setError(result?.error || 'Le son ne peut pas être transmis par cet appareil.');
+                    else setError('');
+                  } catch (err) {
+                    setMirrorRunning(false);
+                    setError(err?.message || 'Impossible de redémarrer le miroir avec le son.');
+                  }
+                }}
               />
               <Toggle
                 label="Toujours au premier plan"
@@ -1653,7 +1752,7 @@ function EngineCard({ engine, latest, progress, busy, error, targetAvailable, pl
 // Aperçu tactile : la capture peut être réduite (540 px par défaut) alors que
 // l'écran du téléphone fait 1080 px. On convertit donc chaque geste avec les
 // dimensions RÉELLES (`deviceWidth`/`deviceHeight`) et non celles de l'image.
-function Preview({ screen, onTap, onGesture, onError, onFit }) {
+function Preview({ screen, onTap, onGesture, onError, onFit, onKeyDown }) {
   const gesture = useRef(null);
   const wrapRef = useRef(null);
   const imgRef = useRef(null);
@@ -1769,7 +1868,13 @@ function Preview({ screen, onTap, onGesture, onError, onFit }) {
   };
 
   return (
-    <div ref={wrapRef} className="flex h-full w-full items-center justify-center overflow-hidden">
+    <div
+      ref={wrapRef}
+      tabIndex={0}
+      onKeyDown={onKeyDown}
+      onPointerDown={() => wrapRef.current?.focus()}
+      className="flex h-full w-full items-center justify-center overflow-hidden outline-none focus-visible:ring-1 focus-visible:ring-inset focus-visible:ring-accent-primary/50"
+    >
       <img
         ref={imgRef}
         src={screen.dataUrl}

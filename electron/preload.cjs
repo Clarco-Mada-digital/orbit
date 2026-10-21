@@ -66,9 +66,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     text: (payload) => ipcRenderer.invoke('phone:text', payload),
     startMirror: (payload) => ipcRenderer.invoke('phone:startMirror', payload),
     stopMirror: () => ipcRenderer.invoke('phone:stopMirror'),
-    // Écran virtuel par application (l'app remplit la zone d'Orbit)
+    // Chaque app Android s'ouvre dans sa propre fenêtre scrcpy native.
     startApp: (payload) => ipcRenderer.invoke('phone:startApp', payload),
-    stopApp: () => ipcRenderer.invoke('phone:stopApp'),
+    stopApp: (payload) => ipcRenderer.invoke('phone:stopApp', payload || {}),
     appSession: () => ipcRenderer.invoke('phone:appSession'),
     engineStatus: (checkUpdate) => ipcRenderer.invoke('phone:engineStatus', { checkUpdate }),
     installEngine: () => ipcRenderer.invoke('phone:installEngine'),
