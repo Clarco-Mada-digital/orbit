@@ -4,6 +4,7 @@ import {
   AppWindow,
   Battery,
   Bell,
+  Bluetooth,
   Check,
   Clock3,
   Download,
@@ -23,6 +24,9 @@ import {
   Star,
   Usb,
   Wifi,
+  Volume1,
+  Volume2,
+  VolumeX,
   X,
 } from 'lucide-react';
 import { detectUrl } from '../lib/urls';
@@ -227,6 +231,7 @@ export default function PhoneApp({ visible, onClose }) {
   const [settings, setSettings] = useState(() => normalizePhoneSettings({}));
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [controlBusy, setControlBusy] = useState('');
   const [tab, setTab] = useState('home');
   const [desktopNow, setDesktopNow] = useState(() => new Date());
   const [notificationsExpanded, setNotificationsExpanded] = useState(false);
@@ -312,6 +317,73 @@ export default function PhoneApp({ visible, onClose }) {
     }
     return res;
   }, []);
+
+  const setPhoneRadio = useCallback(
+    async (radio, enabled) => {
+      if (!serial) return;
+      setControlBusy(radio);
+      try {
+        const result = await apiRef.current?.setRadio({ serial, radio, enabled });
+        if (!result?.success) {
+          setError(result?.error || `Impossible de modifier ${radio}.`);
+          return;
+        }
+        await refreshStatus();
+      } catch (err) {
+        setError(String(err.message || err));
+      } finally {
+        setControlBusy('');
+      }
+    },
+    [serial, refreshStatus]
+  );
+
+  const openDevicePanel = useCallback(
+    async (panel) => {
+      if (!serial) return;
+      try {
+        const result = await apiRef.current?.openSettings({ serial, panel });
+        if (!result?.success) {
+          setError(result?.error || 'Impossible d’ouvrir les réglages Android.');
+        }
+      } catch (err) {
+        setError(String(err.message || err));
+      }
+    },
+    [serial]
+  );
+
+  const deviceModel = device?.model;
+  const openPhoneMirror = useCallback(async () => {
+    if (!serial) return;
+    try {
+      const result = await apiRef.current?.startMirror({
+        serial,
+        title: deviceModel || 'Téléphone',
+      });
+      if (result?.success) {
+        setMirrorRunning(true);
+        setError('');
+      } else {
+        setError(result?.error || "Impossible d'ouvrir le miroir.");
+      }
+    } catch (err) {
+      setError(String(err.message || err));
+    }
+  }, [serial, deviceModel]);
+
+  const sendPhoneKey = useCallback(
+    async (key) => {
+      if (!serial) return;
+      try {
+        const result = await apiRef.current?.key({ serial, key });
+        if (!result?.success) setError(result?.error || 'La commande n’a pas été envoyée.');
+      } catch (err) {
+        setError(String(err.message || err));
+      }
+    },
+    [serial]
+  );
 
   useEffect(() => {
     if (visible) refreshStatus();
@@ -472,8 +544,13 @@ export default function PhoneApp({ visible, onClose }) {
     const api = apiRef.current;
     setSettings((prev) => normalizePhoneSettings({ ...prev, ...patch }));
     if (!api) return;
-    const res = await api.setSettings(patch);
-    if (res?.success && res.settings) setSettings(normalizePhoneSettings(res.settings));
+    try {
+      const res = await api.setSettings(patch);
+      if (res?.success && res.settings) setSettings(normalizePhoneSettings(res.settings));
+      else setError(res?.error || 'Impossible d’enregistrer ces réglages.');
+    } catch (err) {
+      setError(String(err.message || err));
+    }
   }, []);
 
   const toggleFavorite = useCallback(
@@ -482,7 +559,16 @@ export default function PhoneApp({ visible, onClose }) {
         ? favorites.filter((p) => p !== pkg)
         : [pkg, ...favorites.filter((p) => p !== pkg)].slice(0, 24);
       setFavorites(next);
-      await apiRef.current?.setSettings({ favoritePackages: next });
+      try {
+        const result = await apiRef.current?.setSettings({ favoritePackages: next });
+        if (!result?.success) {
+          setFavorites(favorites);
+          setError(result?.error || 'Impossible d’enregistrer les favoris.');
+        }
+      } catch (err) {
+        setFavorites(favorites);
+        setError(String(err.message || err));
+      }
     },
     [favorites]
   );
@@ -691,6 +777,10 @@ export default function PhoneApp({ visible, onClose }) {
     [recents, apps, favorites]
   );
 
+  const showHomeFavorites = settings.homeWidgets.favorites && favoriteApps.length > 0;
+  const showHomeRecent = settings.homeWidgets.recent && recentApps.length > 0;
+  const homeAppSections = Number(showHomeFavorites) + Number(showHomeRecent);
+
   const searchUrl = detectUrl(query);
   const tileSize = settings.iconSize === 'small' ? 40 : settings.iconSize === 'large' ? 68 : 52;
   const iconLimitForGrid = settings.iconConcurrency;
@@ -699,32 +789,36 @@ export default function PhoneApp({ visible, onClose }) {
   // barre flottante de la vue, et la croix referme l'app.
   // --- Rendu des tuiles ---------------------------------------------------
 
-  const tile = (app) => (
+  const tile = (app, compact = false) => (
     <div
       key={app.package}
-      className="group relative flex flex-col items-center gap-1.5 rounded-xl px-1 py-2 hover:bg-bg-hover"
+      className={`group relative flex ${
+        compact ? 'w-36 shrink-0 items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-2 py-2 text-white hover:bg-white/[0.09]' : 'flex-col items-center gap-1.5 rounded-xl px-1 py-2 hover:bg-bg-hover'
+      }`}
     >
       <button
         type="button"
         onClick={() => launch(app)}
-        className="flex w-full flex-col items-center gap-1.5"
+        className={`min-w-0 ${compact ? 'flex flex-1 items-center gap-2 text-left' : 'flex w-full flex-col items-center gap-1.5'}`}
         title={`${app.name} — ${app.package}`}
       >
         <PhoneIcon
           serial={serial}
           pkg={app.package}
           name={app.name}
-          size={tileSize}
+          size={compact ? 32 : tileSize}
           limit={iconLimitForGrid}
         />
-        <span className="line-clamp-2 w-full text-center text-[11px] leading-tight text-text-secondary">
+        <span className={`line-clamp-2 min-w-0 leading-tight ${
+          compact ? 'flex-1 text-left text-[11px] text-white/80' : 'w-full text-center text-[11px] text-text-secondary'
+        }`}>
           {app.name}
         </span>
       </button>
       <button
         type="button"
         onClick={() => toggleFavorite(app.package)}
-        className={`absolute right-0 top-0 rounded-full p-1 opacity-0 transition-opacity group-hover:opacity-100 ${
+        className={`${compact ? 'shrink-0 rounded-full p-1' : 'absolute right-0 top-0 rounded-full p-1 opacity-0 transition-opacity group-hover:opacity-100'} ${
           favorites.includes(app.package)
             ? 'text-amber-400 opacity-100'
             : 'text-text-muted hover:text-text-primary'
@@ -941,15 +1035,15 @@ export default function PhoneApp({ visible, onClose }) {
               />
             </div>
           ) : (
-            <div className="mx-auto max-w-5xl px-4 pb-10 pt-4">
-              {(settings.homeWidgets.clock || settings.homeWidgets.device) ? <section className="relative mb-5 overflow-hidden rounded-[1.75rem] border border-white/15 bg-gradient-to-br from-white/[0.13] via-white/[0.06] to-indigo-300/[0.08] p-5 text-white shadow-2xl shadow-black/20 backdrop-blur-2xl sm:p-7">
+            <div className="mx-auto grid w-full max-w-7xl grid-cols-1 gap-3 px-4 pb-10 pt-4 lg:grid-cols-12">
+              {(settings.homeWidgets.clock || settings.homeWidgets.device) ? <section className="relative overflow-hidden rounded-2xl border border-white/15 bg-gradient-to-br from-white/[0.13] via-white/[0.06] to-indigo-300/[0.08] p-4 text-white shadow-xl shadow-black/20 backdrop-blur-2xl sm:p-5 lg:col-span-12">
                 <div className="pointer-events-none absolute -right-12 -top-20 h-56 w-56 rounded-full bg-sky-300/10 blur-3xl" />
                 <div className="pointer-events-none absolute -bottom-24 left-1/3 h-48 w-48 rounded-full bg-violet-400/10 blur-3xl" />
                 <div className="relative flex flex-wrap items-end justify-between gap-5">
                   {settings.homeWidgets.clock ? <div>
                     <div className="mb-2 flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.2em] text-sky-100/65"><Clock3 size={14} /> Ton bureau</div>
-                    <div className="text-5xl font-light leading-none tabular-nums tracking-tight sm:text-6xl">{desktopNow.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}</div>
-                    <div className="mt-3 text-sm text-white/70">{desktopNow.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}</div>
+                    <div className="text-4xl font-light leading-none tabular-nums tracking-tight sm:text-5xl">{desktopNow.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}</div>
+                    <div className="mt-2 text-xs text-white/70">{desktopNow.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}</div>
                   </div> : null}
                   {settings.homeWidgets.device ? <div className="flex min-w-[210px] items-center gap-3 rounded-2xl border border-white/10 bg-black/15 px-4 py-3 shadow-inner backdrop-blur-xl">
                     <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-sky-300/10 text-sky-200"><Smartphone size={18} /></span>
@@ -959,7 +1053,115 @@ export default function PhoneApp({ visible, onClose }) {
                 </div>
               </section> : null}
 
-              {settings.homeWidgets.notifications && phoneNotifications.length > 0 ? <section className="mb-5 overflow-hidden rounded-2xl border border-white/10 bg-slate-950/25 text-white shadow-xl shadow-black/10 backdrop-blur-xl">
+              {device ? (
+                <section className="flex flex-wrap items-center gap-1.5 rounded-2xl border border-white/10 bg-slate-950/25 p-2 text-white shadow-lg backdrop-blur-xl lg:col-span-12">
+                  <button
+                    type="button"
+                    onClick={() => selectTab('screen')}
+                    className="flex items-center gap-2 rounded-xl bg-sky-300/10 px-3 py-2 text-xs font-medium text-sky-100 transition hover:bg-sky-300/20"
+                  >
+                    <Monitor size={15} /> Écran
+                  </button>
+                  <button
+                    type="button"
+                    onClick={openPhoneMirror}
+                    title={mirrorRunning ? 'Le miroir est ouvert' : 'Ouvrir le miroir'}
+                    aria-label={mirrorRunning ? 'Le miroir est ouvert' : 'Ouvrir le miroir'}
+                    className="flex items-center gap-2 rounded-xl px-3 py-2 text-xs text-white/75 transition hover:bg-white/10 hover:text-white"
+                  >
+                    <Smartphone size={15} /> {mirrorRunning ? 'Miroir ouvert' : 'Ouvrir le miroir'}
+                  </button>
+                  <span className="mx-1 h-5 w-px bg-white/10" />
+                  {[
+                    ['back', ArrowLeft, 'Retour'],
+                    ['home', Home, 'Accueil du téléphone'],
+                    ['recents', Square, 'Applications récentes'],
+                    ['wakeup', Power, 'Réveiller l’écran'],
+                  ].map(([key, Icon, label]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => sendPhoneKey(key)}
+                      title={label}
+                      aria-label={label}
+                      className="rounded-xl p-2 text-white/65 transition hover:bg-white/10 hover:text-white"
+                    >
+                      <Icon size={15} />
+                    </button>
+                  ))}
+                  {settings.homeWidgets.quickControls ? (
+                    <>
+                      <span className="mx-1 h-5 w-px bg-white/10" />
+                      {[
+                        {
+                          id: 'wifi',
+                          label: device.wifiEnabled === true ? 'Désactiver le Wi-Fi' : 'Activer le Wi-Fi',
+                          enabled: device.wifiEnabled,
+                          icon: Wifi,
+                        },
+                        {
+                          id: 'bluetooth',
+                          label: device.bluetoothEnabled === true ? 'Désactiver le Bluetooth' : 'Activer le Bluetooth',
+                          enabled: device.bluetoothEnabled,
+                          icon: Bluetooth,
+                        },
+                      ].map(({ id, label, enabled, icon: Icon }) => (
+                        <button
+                          key={id}
+                          type="button"
+                          aria-label={label}
+                          aria-pressed={enabled === true}
+                          title={controlBusy === id ? 'Mise à jour…' : `${label} · ${enabled === true ? 'activé' : enabled === false ? 'désactivé' : 'état inconnu'}`}
+                          disabled={Boolean(controlBusy)}
+                          onClick={() => setPhoneRadio(id, enabled !== true)}
+                          className={`rounded-xl p-2 transition disabled:opacity-50 ${
+                            enabled === true
+                              ? 'bg-sky-300/15 text-sky-100 hover:bg-sky-300/25'
+                              : 'text-white/65 hover:bg-white/10 hover:text-white'
+                          }`}
+                        >
+                          <Icon size={15} />
+                        </button>
+                      ))}
+                      {[
+                        ['volume_down', Volume1, 'Baisser le volume'],
+                        ['mute', VolumeX, 'Couper le son'],
+                        ['volume_up', Volume2, 'Augmenter le volume'],
+                      ].map(([key, Icon, label]) => (
+                        <button
+                          key={key}
+                          type="button"
+                          onClick={() => sendPhoneKey(key)}
+                          title={label}
+                          aria-label={label}
+                          className="rounded-xl p-2 text-white/65 transition hover:bg-white/10 hover:text-white"
+                        >
+                          <Icon size={15} />
+                        </button>
+                      ))}
+                      <span className="mx-1 h-5 w-px bg-white/10" />
+                      {[
+                        ['internet', Wifi, 'Réglages réseau'],
+                        ['sound', Volume2, 'Réglages du son'],
+                        ['settings', Settings, 'Réglages Android'],
+                      ].map(([panel, Icon, label]) => (
+                        <button
+                          key={panel}
+                          type="button"
+                          onClick={() => openDevicePanel(panel)}
+                          title={label}
+                          aria-label={label}
+                          className="rounded-xl p-2 text-white/65 transition hover:bg-white/10 hover:text-white"
+                        >
+                          <Icon size={15} />
+                        </button>
+                      ))}
+                    </>
+                  ) : null}
+                </section>
+              ) : null}
+
+              {settings.homeWidgets.notifications && phoneNotifications.length > 0 ? <section className="overflow-hidden rounded-2xl border border-white/10 bg-slate-950/25 text-white shadow-lg shadow-black/10 backdrop-blur-xl lg:col-span-12">
                 <div className="flex items-center gap-2 border-b border-white/[0.07] px-4 py-3">
                   <span className="grid h-7 w-7 place-items-center rounded-lg bg-sky-300/10 text-sky-200"><Bell size={14} /></span>
                   <span className="text-xs font-semibold">Notifications</span>
@@ -984,21 +1186,22 @@ export default function PhoneApp({ visible, onClose }) {
                 {phoneNotifications.length > 5 ? <button type="button" onClick={() => setNotificationsExpanded((expanded) => !expanded)} className="w-full border-t border-white/[0.07] px-3 py-2 text-[11px] font-medium text-sky-200/80 transition hover:bg-white/[0.04] hover:text-sky-100">{notificationsExpanded ? 'Afficher moins' : `Afficher les ${phoneNotifications.length - 5} autres notifications`}</button> : null}
               </section> : null}
 
-              <div className="mb-3 flex justify-end">
-                <button type="button" onClick={() => selectTab('settings')} className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.05] px-2.5 py-1.5 text-xs text-white/70 hover:bg-white/10"><Settings size={13} /> Personnaliser le bureau</button>
+              <div className="flex items-center justify-between gap-3 lg:col-span-12">
+                <div><h2 className="text-sm font-semibold text-white/90">Ton bureau</h2><p className="text-[11px] text-white/50">Favoris, raccourcis et activité récente</p></div>
+                <button type="button" onClick={() => selectTab('settings')} className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.05] px-2.5 py-1.5 text-xs text-white/70 hover:bg-white/10"><Settings size={13} /> Personnaliser</button>
               </div>
-              {(settings.homeWidgets.favorites && favoriteApps.length > 0) ? <section className="mb-4 rounded-2xl border border-white/10 bg-white/[0.06] p-4 text-white shadow-lg backdrop-blur-xl">
-                <div className="mb-3 flex items-center gap-2 text-xs font-semibold text-white/70"><Star size={14} className="text-amber-300" /> Favoris</div>
-                <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${Math.min(settings.appGridColumns, 8)}, minmax(0, 1fr))` }}>{favoriteApps.slice(0, 8).map(tile)}</div>
+              {showHomeFavorites ? <section className={`min-w-0 rounded-2xl border border-white/10 bg-white/[0.06] p-3 text-white shadow-lg backdrop-blur-xl ${homeAppSections > 1 ? 'lg:col-span-6' : 'lg:col-span-12'}`}>
+                <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-white/70"><Star size={14} className="text-amber-300" /> Favoris <span className="ml-auto text-[10px] font-normal text-white/40">{favoriteApps.length}</span></div>
+                <div className="flex gap-2 overflow-x-auto pb-1">{favoriteApps.slice(0, 12).map((app) => tile(app, true))}</div>
               </section> : null}
-              {(settings.homeWidgets.recent && recentApps.length > 0) ? <section className="mb-4 rounded-2xl border border-white/10 bg-white/[0.04] p-4 text-white shadow-lg backdrop-blur-xl">
-                <div className="mb-3 flex items-center gap-2 text-xs font-semibold text-white/70"><RefreshCw size={13} className="text-sky-300" /> Récemment ouvertes</div>
-                <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${Math.min(settings.appGridColumns, 8)}, minmax(0, 1fr))` }}>{recentApps.slice(0, 8).map(tile)}</div>
+              {showHomeRecent ? <section className={`min-w-0 rounded-2xl border border-white/10 bg-white/[0.04] p-3 text-white shadow-lg backdrop-blur-xl ${homeAppSections > 1 ? 'lg:col-span-6' : 'lg:col-span-12'}`}>
+                <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-white/70"><RefreshCw size={13} className="text-sky-300" /> Récemment ouvertes <span className="ml-auto text-[10px] font-normal text-white/40">{recentApps.length}</span></div>
+                <div className="flex gap-2 overflow-x-auto pb-1">{recentApps.map((app) => tile(app, true))}</div>
               </section> : null}
-              <button type="button" onClick={() => { setAppDrawerOpen((open) => !open); setQuery(''); }} className="mb-4 flex w-full items-center justify-center gap-2 rounded-2xl border border-sky-200/15 bg-gradient-to-r from-sky-400/15 to-indigo-400/15 px-4 py-3 text-sm font-medium text-white shadow-lg transition hover:from-sky-400/25 hover:to-indigo-400/25">
+              <button type="button" onClick={() => { setAppDrawerOpen((open) => !open); setQuery(''); }} className="flex w-full items-center justify-center gap-2 rounded-2xl border border-sky-200/15 bg-gradient-to-r from-sky-400/15 to-indigo-400/15 px-4 py-3 text-sm font-medium text-white shadow-lg transition hover:from-sky-400/25 hover:to-indigo-400/25 lg:col-span-12">
                 <AppWindow size={17} /> {appDrawerOpen ? 'Fermer les applications' : 'Toutes les applications'} <span className="rounded-full bg-white/10 px-2 py-0.5 text-xs tabular-nums">{apps.length}</span>
               </button>
-              {appDrawerOpen ? <div className="rounded-2xl border border-white/10 bg-black/20 p-4 text-white shadow-xl backdrop-blur-xl">
+              {appDrawerOpen ? <div className="rounded-2xl border border-white/10 bg-black/20 p-4 text-white shadow-xl backdrop-blur-xl lg:col-span-12">
                 <div className="mb-3 flex items-center justify-between gap-3"><div><h2 className="text-base font-semibold">Applications</h2><p className="text-xs text-white/50">Choisis une application pour l’ouvrir dans sa fenêtre.</p></div><button type="button" onClick={() => setAppDrawerOpen(false)} className="rounded-lg px-2.5 py-1.5 text-xs text-white/65 hover:bg-white/10">Fermer</button></div>
               <div className="relative">
                 <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
@@ -1386,6 +1589,7 @@ export default function PhoneApp({ visible, onClose }) {
               <Toggle label="Applications favorites" checked={settings.homeWidgets.favorites} onChange={(v) => saveSettings({ homeWidgets: { ...settings.homeWidgets, favorites: v } })} />
               <Toggle label="Applications récentes" checked={settings.homeWidgets.recent} onChange={(v) => saveSettings({ homeWidgets: { ...settings.homeWidgets, recent: v } })} />
               <Toggle label="Notifications du téléphone" hint="Affiche seulement les deux dernières alertes, avec leur texte raccourci. Cliquer ouvre l’application dans sa fenêtre." checked={settings.homeWidgets.notifications} onChange={(v) => saveSettings({ homeWidgets: { ...settings.homeWidgets, notifications: v } })} />
+              <Toggle label="Contrôles rapides" hint="Volume, Wi-Fi, Bluetooth et raccourcis vers les réglages Android." checked={settings.homeWidgets.quickControls} onChange={(v) => saveSettings({ homeWidgets: { ...settings.homeWidgets, quickControls: v } })} />
               <div className="mt-4 border-t border-border pt-3">
                 <h4 className="mb-2 text-xs font-medium text-text-secondary">Tiroir d’applications</h4>
                 <Range label="Taille des icônes" value={settings.iconSize === 'small' ? 1 : settings.iconSize === 'large' ? 3 : 2} min={1} max={3} step={1} suffix="" onChange={(v) => saveSettings({ iconSize: v === 1 ? 'small' : v === 3 ? 'large' : 'medium' })} />

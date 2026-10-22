@@ -91,6 +91,8 @@ export default function Settings({ onClose }) {
   const [appVersion, setAppVersion] = useState('');
   const [updateMsg, setUpdateMsg] = useState('');
   const [checking, setChecking] = useState(false);
+  const [downloadFolderError, setDownloadFolderError] = useState('');
+  const [pickingDownloadFolder, setPickingDownloadFolder] = useState(false);
 
   useEffect(() => {
     window.electronAPI?.getVersion?.().then((v) => v && setAppVersion(v));
@@ -134,8 +136,24 @@ export default function Settings({ onClose }) {
   // ouvert par le PROCESSUS PRINCIPAL (seul qui parle au système) ; on ne garde
   // le chemin que s'il a vraiment été choisi — annulé = réglage inchangé.
   const pickDownloadFolder = async () => {
-    const res = await window.electronAPI?.pickDownloadFolder?.();
-    if (res?.success && res.path) updateSettings({ downloadDir: res.path });
+    setPickingDownloadFolder(true);
+    setDownloadFolderError('');
+    try {
+      const pick = window.electronAPI?.pickDownloadFolder;
+      if (typeof pick !== 'function') {
+        setDownloadFolderError("Le sélecteur de dossier n'est disponible que dans l'application Orbit.");
+        return;
+      }
+      const res = await pick();
+      if (res?.success && res.path) updateSettings({ downloadDir: res.path });
+      else if (!res?.canceled) {
+        setDownloadFolderError(res?.error || 'Impossible de choisir le dossier de téléchargement.');
+      }
+    } catch (err) {
+      setDownloadFolderError(String(err.message || err));
+    } finally {
+      setPickingDownloadFolder(false);
+    }
   };
 
   // « Ouvrir avec » : on lit l'état réel auprès du processus principal (lui
@@ -264,8 +282,13 @@ export default function Settings({ onClose }) {
                       {settings.downloadDir || t('st.dl.folderSystem')}
                     </p>
                     <div className="flex flex-wrap gap-2">
-                      <button onClick={pickDownloadFolder} className="btn btn-primary btn-sm">
-                        {t('st.dl.choose')}
+                      <button
+                        type="button"
+                        onClick={pickDownloadFolder}
+                        disabled={pickingDownloadFolder}
+                        className="btn btn-primary btn-sm disabled:opacity-50"
+                      >
+                        {pickingDownloadFolder ? 'Ouverture…' : t('st.dl.choose')}
                       </button>
                       {settings.downloadDir ? (
                         <button
@@ -282,6 +305,9 @@ export default function Settings({ onClose }) {
                         {t('st.dl.open')}
                       </button>
                     </div>
+                    {downloadFolderError ? (
+                      <p role="alert" className="mt-3 text-sm text-error">{downloadFolderError}</p>
+                    ) : null}
                   </div>
 
                   <div className="card">

@@ -175,6 +175,7 @@ test('normalizePhoneSettings : bornes, types et listes propres', () => {
     iconSize: 'géant',
     sortMode: 'inconnu',
     showSystemApps: 'oui',
+    homeWidgets: { quickControls: false },
   });
   assert.equal(s.serial, '192.168.1.2:5555');
   assert.deepEqual(s.favoritePackages, ['com.whatsapp']);
@@ -185,6 +186,8 @@ test('normalizePhoneSettings : bornes, types et listes propres', () => {
   assert.equal(s.iconSize, 'medium');
   assert.equal(s.sortMode, 'name');
   assert.equal(s.showSystemApps, false);
+  assert.equal(s.homeWidgets.quickControls, false);
+  assert.equal(normalizePhoneSettings({}).homeWidgets.quickControls, true);
 });
 
 test('filterPhoneApps : nom, paquet, initiales', () => {

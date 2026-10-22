@@ -490,20 +490,74 @@ export async function listDevices() {
 }
 
 export async function deviceInfo(serial) {
-  const [model, android, battery] = await Promise.all([
+  const [model, android, battery, wifi, bluetooth] = await Promise.all([
     deviceShell(serial, 'getprop ro.product.model', { timeout: 8000 }),
     deviceShell(serial, 'getprop ro.build.version.release', { timeout: 8000 }),
     deviceShell(serial, 'dumpsys battery', { timeout: 8000 }),
+    deviceShell(serial, 'settings get global wifi_on', { timeout: 8000 }),
+    deviceShell(serial, 'settings get global bluetooth_on', { timeout: 8000 }),
   ]);
   const level = /^\s*level:\s*(\d+)/m.exec(battery.stdout);
   const status = /^\s*status:\s*(\d+)/m.exec(battery.stdout);
   const charging = status ? status[1] === '2' || status[1] === '5' : false;
+  const radioState = (result) => {
+    const value = result.ok ? result.stdout.trim() : '';
+    return value === '1' ? true : value === '0' ? false : null;
+  };
   return {
     serial,
     model: model.stdout.trim() || serial,
     android: android.stdout.trim(),
     battery: level ? Number(level[1]) : null,
     charging,
+    wifiEnabled: radioState(wifi),
+    bluetoothEnabled: radioState(bluetooth),
+  };
+}
+
+export async function setDeviceRadio({ serial, radio, enabled } = {}) {
+  if (!serial) return { success: false, error: 'aucun appareil' };
+  if (!['wifi', 'bluetooth'].includes(radio) || typeof enabled !== 'boolean') {
+    return { success: false, error: 'commande de connectivité invalide' };
+  }
+  const command =
+    radio === 'wifi'
+      ? `svc wifi ${enabled ? 'enable' : 'disable'}`
+      : `svc bluetooth ${enabled ? 'enable' : 'disable'}`;
+  const result = await deviceShell(serial, command, { timeout: 10000 });
+  if (!result.ok) {
+    return {
+      success: false,
+      error: (result.stderr || result.stdout).trim() || `Android n'a pas pu modifier ${radio}.`,
+    };
+  }
+  return { success: true };
+}
+
+const DEVICE_SETTINGS_ACTIONS = {
+  internet: [
+    'android.settings.panel.action.INTERNET_CONNECTIVITY',
+    'android.settings.WIFI_SETTINGS',
+  ],
+  bluetooth: ['android.settings.BLUETOOTH_SETTINGS'],
+  sound: ['android.settings.SOUND_SETTINGS'],
+  settings: ['android.settings.SETTINGS'],
+};
+
+export async function openDeviceSettings({ serial, panel } = {}) {
+  if (!serial) return { success: false, error: 'aucun appareil' };
+  const actions = DEVICE_SETTINGS_ACTIONS[panel];
+  if (!Array.isArray(actions)) return { success: false, error: 'panneau Android inconnu' };
+  let lastError = '';
+  for (const action of actions) {
+    const result = await deviceShell(serial, `am start -a ${action}`, { timeout: 10000 });
+    const output = `${result.stdout}\n${result.stderr}`;
+    if (result.ok && !/\bError:|Exception/i.test(output)) return { success: true };
+    lastError = output.trim();
+  }
+  return {
+    success: false,
+    error: lastError || 'Impossible d’ouvrir les réglages sur le téléphone.',
   };
 }
 

@@ -15,6 +15,7 @@ import {
   selectRange,
   isToggleClick,
   withoutFolderId,
+  reorderIdsByDrop,
 } from '../src/lib/appGroups.js';
 
 // Les dossiers se contentent d'un `folderId` posé sur l'app : le risque n'est
@@ -95,6 +96,14 @@ test('groupByFolder : entrées nulles traversées sans planter', () => {
   const { groups, loose } = groupByFolder([null, app('a')], [null, folder('f1')]);
   assert.deepEqual(groups, []);
   assert.deepEqual(loose.map((a) => a.id), ['a']);
+});
+
+test('reorderIdsByDrop : glisser avant/après la cible, y compris la ligne voisine', () => {
+  const order = ['a', 'b', 'c'];
+  assert.deepEqual(reorderIdsByDrop(order, 'a', 'b', 'after'), ['b', 'a', 'c']);
+  assert.deepEqual(reorderIdsByDrop(order, 'c', 'b', 'before'), ['a', 'c', 'b']);
+  assert.deepEqual(reorderIdsByDrop(order, 'b', 'b', 'after'), order);
+  assert.deepEqual(order, ['a', 'b', 'c']);
 });
 
 test('pruneEmptyFolders : retire les dossiers sans app', () => {

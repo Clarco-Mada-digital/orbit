@@ -31,8 +31,19 @@ Sans elle :
 
 - **Bouton de barre** → panneau Téléphone (Échap ou croix pour fermer). Rien
   n'est monté tant que le panneau n'est pas ouvert.
-- **Accueil** : recherche d'applications (nom, paquet, initiales) et de liens,
-  favoris, récents.
+- **Accueil personnalisable** : horloge, batterie, notifications, favoris,
+  applications récentes et contrôles rapides peuvent être affichés ou masqués.
+  Quatre ambiances sont disponibles. Les contrôles rapides ajustent le volume,
+  pilotent le Wi-Fi et le Bluetooth via ADB et ouvrent les réglages Android du
+  réseau, du son ou de l'appareil. Certains constructeurs peuvent restreindre
+  les commandes radio ; Orbit affiche alors l'erreur et laisse les réglages
+  Android accessibles.
+- Les raccourcis **Écran**, **Miroir**, **Retour**, **Accueil**, **Récents** et
+  **Volume** restent accessibles directement sur le bureau, sans ouvrir le
+  tiroir d'applications. Les favoris et les apps récentes y sont affichés en
+  cartes compactes et défilantes.
+- **Applications** : recherche par nom, paquet ou initiales, ouverture de liens,
+  favoris et récents.
 - **Ouverture d'une app** : chaque app ouvre sa **propre fenêtre de bureau** par
   un processus scrcpy (`--new-display --start-app`, scrcpy 3.0+ / Android 11+).
   scrcpy transporte directement la vidéo et le clavier ; Orbit ne simule plus
@@ -51,7 +62,8 @@ Sans elle :
   volet sur le mobile.
 - **Réglages** : moteur scrcpy, résolution et fréquence de l'aperçu, taille des
   icônes, orientation et densité des fenêtres d'applications, adaptation au
-  redimensionnement, alertes de bureau, connexion USB/sans fil.
+  redimensionnement, widgets et ambiance de l'accueil, alertes de bureau,
+  connexion USB/sans fil.
 
 ## Désinstallation
 

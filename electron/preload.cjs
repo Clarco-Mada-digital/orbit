@@ -63,6 +63,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     tap: (payload) => ipcRenderer.invoke('phone:tap', payload),
     swipe: (payload) => ipcRenderer.invoke('phone:swipe', payload),
     key: (payload) => ipcRenderer.invoke('phone:key', payload),
+    setRadio: (payload) => ipcRenderer.invoke('phone:setRadio', payload),
+    openSettings: (payload) => ipcRenderer.invoke('phone:openSettings', payload),
     text: (payload) => ipcRenderer.invoke('phone:text', payload),
     startMirror: (payload) => ipcRenderer.invoke('phone:startMirror', payload),
     stopMirror: () => ipcRenderer.invoke('phone:stopMirror'),

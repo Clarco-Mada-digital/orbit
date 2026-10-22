@@ -207,7 +207,14 @@ export const DEFAULT_PHONE_SETTINGS = {
   appWindowScale: 55,
   appFollowWindow: true,
   homeBackground: 'aurora',
-  homeWidgets: { clock: true, device: true, favorites: true, recent: true, notifications: true },
+  homeWidgets: {
+    clock: true,
+    device: true,
+    favorites: true,
+    recent: true,
+    notifications: true,
+    quickControls: true,
+  },
   // Alerte système à chaque nouvelle notification du téléphone.
   desktopNotifications: true,
   autoUpdateEngine: true,

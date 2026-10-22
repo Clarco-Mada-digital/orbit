@@ -8,6 +8,33 @@ Format : une section `## [X.Y.Z] — AAAA-MM-JJ` par version, puis des
 sous-sections `### Ajouté` / `### Modifié` / `### Corrigé` / `### Sécurité`.
 La plus récente en premier.
 
+## [1.15.0] — 2026-10-22
+
+### Ajouté
+- **Orbit Phone — bureau repensé** : favoris et applications récentes en
+  cartes compactes, avec une disposition qui utilise toute la largeur disponible.
+  Les commandes Écran, Miroir, Retour, Accueil, Récents et Volume sont accessibles
+  directement depuis l'accueil, sans ouvrir le tiroir d'applications.
+- **Contrôles Android** : bascule du Wi-Fi et du Bluetooth, commandes de volume
+  et raccourcis vers les réglages Android du réseau, du son et de l'appareil.
+  Les contrôles rapides peuvent être masqués dans les réglages du bureau Phone.
+
+### Corrigé
+- **Réorganisation des applications** : le glisser-déposer dans l'espace entre
+  deux applications les place maintenant près de la cible visée, au lieu de les
+  envoyer en fin de liste. Un repère indique l'insertion avant ou après la cible.
+- **Suggestions du correcteur** : les corrections orthographiques utilisent le
+  menu natif pour que Chromium conserve le champ actif et remplace effectivement
+  le mot sélectionné.
+- **Choix du dossier de téléchargement** : les erreurs d'ouverture du sélecteur
+  sont désormais signalées dans les réglages, et le dialogue démarre dans un
+  dossier valide.
+
+### Modifié
+- Les commandes rapides de Phone sont regroupées avec les raccourcis d'écran
+  dans une barre compacte ; les actions par icône affichent leur libellé au
+  survol et les sections Favoris/Récents s'étendent lorsqu'elles sont seules.
+
 ## [1.14.0] — 2026-10-13
 
 ### Ajouté

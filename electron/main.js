@@ -2956,8 +2956,11 @@ function cleanupPageCtx(wc) {
 // Affiche le menu : interface si possible, natif sinon. Renvoie true si
 // l'interface a été sollicitée.
 async function showGuestContextMenu(guestContents, params, ownerWindow) {
+  // Le menu HTML vole le contexte de focus dont Chromium a besoin pour
+  // remplacer le mot. Le menu natif conserve la frame et applique la suggestion.
   const custom =
     useCustomContextMenu &&
+    !params.misspelledWord &&
     ownerWindow === mainWindow &&
     mainWindow &&
     !mainWindow.isDestroyed();
@@ -4220,14 +4223,24 @@ ipcMain.handle('downloads:setPrefs', (_event, prefs = {}) => {
 // téléchargements — jamais lu. Annulé → null (l'interface garde le réglage).
 ipcMain.handle('downloads:pickFolder', async () => {
   const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined;
-  const res = await dialog.showOpenDialog(win, {
-    title: 'Choisir le dossier de téléchargement',
-    defaultPath: downloadPrefs.dir || systemDownloadsDir(),
-    properties: ['openDirectory', 'createDirectory'],
-    buttonLabel: 'Choisir',
-  });
-  if (res.canceled || !res.filePaths.length) return { success: false, canceled: true };
-  return { success: true, path: res.filePaths[0] };
+  const configured = String(downloadPrefs.dir || '').trim();
+  const defaultPath =
+    configured && fs.existsSync(configured) && fs.statSync(configured).isDirectory()
+      ? configured
+      : systemDownloadsDir();
+  try {
+    const res = await dialog.showOpenDialog(win, {
+      title: 'Choisir le dossier de téléchargement',
+      defaultPath,
+      properties: ['openDirectory', 'createDirectory'],
+      buttonLabel: 'Choisir',
+    });
+    if (res.canceled || !res.filePaths[0]) return { success: false, canceled: true };
+    return { success: true, path: res.filePaths[0] };
+  } catch (err) {
+    console.error('[orbit] sélection du dossier de téléchargement échouée:', err);
+    return { success: false, error: String(err.message || err) };
+  }
 });
 
 // Téléchargement vidéo/audio via yt-dlp — la progression alimente le MÊME
@@ -4939,6 +4952,8 @@ ipcMain.handle('phone:screen', phoneGuard((p, phone) => phone.captureScreen(p)))
 ipcMain.handle('phone:tap', phoneGuard((p, phone) => phone.sendTap(p)));
 ipcMain.handle('phone:swipe', phoneGuard((p, phone) => phone.sendSwipe(p)));
 ipcMain.handle('phone:key', phoneGuard((p, phone) => phone.sendKey(p)));
+ipcMain.handle('phone:setRadio', phoneGuard((p, phone) => phone.setDeviceRadio(p)));
+ipcMain.handle('phone:openSettings', phoneGuard((p, phone) => phone.openDeviceSettings(p)));
 ipcMain.handle('phone:text', phoneGuard((p, phone) => phone.sendText(p)));
 ipcMain.handle('phone:startMirror', phoneGuard((p, phone) => phone.startMirror(p)));
 ipcMain.handle('phone:stopMirror', phoneGuard((_p, phone) => phone.stopMirror()));

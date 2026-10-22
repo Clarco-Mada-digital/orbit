@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useStore } from '../stores/useStore';
-import { ChevronLeft, ChevronRight, ChevronDown, Plus, Settings, Grid, User, Moon, BellOff, Lock, Volume2, VolumeX, LogIn, Globe, X, EyeOff, FolderPlus, Check } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronDown, Plus, Settings, Grid, User, Moon, BellOff, Lock, Volume2, VolumeX, LogIn, Globe, X, EyeOff, FolderPlus, Check, GripVertical } from 'lucide-react';
 import AppContextMenu from './AppContextMenu';
 import MultiSelectionMenu from './MultiSelectionMenu';
 import AppFolderMenu from './AppFolderMenu';
@@ -20,6 +20,7 @@ import {
   selectRange,
   isToggleClick,
   countUnread,
+  reorderIdsByDrop,
 } from '../lib/appGroups';
 
 // Sélection vide partagée : une référence STABLE, pour que « pas de sélection »
@@ -277,7 +278,9 @@ export default function Sidebar({
 
   // Glisser-déposer : id de l'app déplacée + cible survolée (app, dossier, fin)
   const [dragId, setDragId] = useState(null);
+  const dragIdRef = useRef(null);
   const [overId, setOverId] = useState(null);
+  const [overPlacement, setOverPlacement] = useState('before');
   // Dossier survolé : déposer sur son en-tête range l'app dedans.
   const [overFolder, setOverFolder] = useState(null);
 
@@ -310,6 +313,7 @@ export default function Sidebar({
 
   // --- Réordonner par glisser-déposer -------------------------------------
   const handleDragStart = (e, appId) => {
+    dragIdRef.current = appId;
     setDragId(appId);
     e.dataTransfer.effectAllowed = 'move';
     // Nécessaire pour que le glisser démarre sur Firefox
@@ -321,16 +325,20 @@ export default function Sidebar({
   };
 
   const handleDragOver = (e, targetId) => {
-    if (!dragId) return;
+    if (!dragIdRef.current) return;
     e.preventDefault();
     e.stopPropagation();
     e.dataTransfer.dropEffect = 'move';
     setOverFolder(null);
     setOverId(targetId);
+    if (targetId !== '__end__' && targetId !== dragIdRef.current) {
+      const bounds = e.currentTarget.getBoundingClientRect();
+      setOverPlacement(e.clientY >= bounds.top + bounds.height / 2 ? 'after' : 'before');
+    }
   };
 
   const handleDragOverFolder = (e, id) => {
-    if (!dragId) return;
+    if (!dragIdRef.current) return;
     e.preventDefault();
     e.stopPropagation();
     e.dataTransfer.dropEffect = 'move';
@@ -341,44 +349,71 @@ export default function Sidebar({
   // Dépose l'app en cours de glisser `beforeId` (ou à la fin) et la range dans
   // `folderId` (vide = hors dossier). Ordre et rangement sont deux écritures
   // distinctes du store : l'interface se recompose une fois pour les deux.
-  const applyDrop = (beforeId, folderId) => {
-    const next = flatApps.map((a) => a.id).filter((id) => id !== dragId);
-    const at = beforeId ? next.indexOf(beforeId) : -1;
-    if (at === -1) next.push(dragId);
-    else next.splice(at, 0, dragId);
+  const applyDrop = (targetId, folderId, placement = 'before') => {
+    const movingId = dragIdRef.current;
+    if (!movingId) return;
+    const next = reorderIdsByDrop(flatApps.map((a) => a.id), movingId, targetId, placement);
     reorderApps(activeProfile, next);
-    setAppFolder(dragId, folderId);
+    setAppFolder(movingId, folderId);
+    dragIdRef.current = null;
     setDragId(null);
     setOverId(null);
+    setOverPlacement('before');
     setOverFolder(null);
   };
 
   const handleDrop = (e, targetApp) => {
-    if (!dragId) return;
+    const movingId = dragIdRef.current;
+    if (!movingId) return;
     e.preventDefault();
     e.stopPropagation();
-    // Déposer SUR une app range l'app glissée dans le même dossier que la
-    // cible (ou l'en sort si la cible est libre) : le geste « à côté de ».
-    applyDrop(targetApp.id, targetApp.folderId);
+    if (movingId === targetApp.id) return;
+    const bounds = e.currentTarget.getBoundingClientRect();
+    const placement = e.clientY >= bounds.top + bounds.height / 2 ? 'after' : 'before';
+    // La moitié supérieure insère avant, la moitié inférieure après : le
+    // déplacement vers une app voisine ne retombe donc pas à sa place initiale.
+    applyDrop(targetApp.id, targetApp.folderId, placement);
   };
 
   const handleDropOnFolder = (e, folder) => {
-    if (!dragId) return;
+    if (!dragIdRef.current) return;
     e.preventDefault();
     e.stopPropagation();
     applyDrop(null, folder.id);
   };
 
-  const handleDropAtEnd = (e) => {
-    if (!dragId) return;
+  const handleDropInAppGroup = (e) => {
+    const movingId = dragIdRef.current;
+    if (!movingId) return;
     e.preventDefault();
-    // Tout en bas ET hors dossier : le geste pour sortir une app d'un dossier.
-    applyDrop(null, undefined);
+    e.stopPropagation();
+    const candidates = [...e.currentTarget.querySelectorAll('[data-app-id]')]
+      .filter((element) => element.dataset.appId !== movingId)
+      .map((element) => {
+        const bounds = element.getBoundingClientRect();
+        return { id: element.dataset.appId, center: bounds.top + bounds.height / 2 };
+      });
+    const nearest = candidates.reduce(
+      (best, candidate) =>
+        !best || Math.abs(candidate.center - e.clientY) < Math.abs(best.center - e.clientY)
+          ? candidate
+          : best,
+      null
+    );
+    if (!nearest) {
+      applyDrop(null, undefined);
+      return;
+    }
+    const targetApp = apps.find((app) => app.id === nearest.id);
+    const placement = e.clientY >= nearest.center ? 'after' : 'before';
+    applyDrop(nearest.id, targetApp?.folderId, placement);
   };
 
   const handleDragEnd = () => {
+    dragIdRef.current = null;
     setDragId(null);
     setOverId(null);
+    setOverPlacement('before');
     setOverFolder(null);
   };
   // -------------------------------------------------------------------------
@@ -407,6 +442,7 @@ export default function Sidebar({
     return (
     <button
       key={app.id}
+      data-app-id={app.id}
       onClick={(e) => handleAppClick(app, e)}
       onContextMenu={(e) => openContextMenu(e, app)}
       draggable
@@ -428,8 +464,14 @@ export default function Sidebar({
             : 'hover:bg-bg-hover text-text-secondary'
       } ${app.sleeping ? 'opacity-50' : ''} ${
         dragId === app.id ? 'opacity-50' : ''
-      } ${overId === app.id ? 'ring-2 ring-accent-primary ring-inset' : ''}`}
-      title={collapsed ? app.name : undefined}
+      } ${
+        overId === app.id
+          ? overPlacement === 'after'
+            ? 'border-b-2 border-accent-primary'
+            : 'border-t-2 border-accent-primary'
+          : ''
+      }`}
+      title={`${app.name} — glisser-déposer pour réorganiser`}
     >
       {/* Icône : image téléversée → favicon (repli auto) → emoji. Grisée si en veille */}
       <div
@@ -473,6 +515,11 @@ export default function Sidebar({
       {!collapsed && (
         <>
           <span className="font-medium text-sm flex-1 text-left truncate">{app.name}</span>
+          <GripVertical
+            size={14}
+            className="flex-shrink-0 text-text-muted opacity-0 transition-opacity group-hover:opacity-60"
+            aria-hidden="true"
+          />
           {/* Son : apparaît quand l'app joue un média ou qu'elle est
               coupée → clic pour couper/réactiver (comme un onglet). */}
           {(media[app.id]?.playing || media[app.id]?.audioMuted) && (
@@ -589,6 +636,15 @@ export default function Sidebar({
                 ? 'space-y-1 mt-1'
                 : 'mt-1 ml-3 pl-2 border-l border-border space-y-1'
             }
+            onDragOver={(e) => {
+              if (e.target === e.currentTarget && dragIdRef.current) {
+                e.preventDefault();
+                e.dataTransfer.dropEffect = 'move';
+              }
+            }}
+            onDrop={(e) => {
+              if (e.target === e.currentTarget) handleDropInAppGroup(e);
+            }}
           >
             {folderApps.map((app) => renderApp(app))}
           </div>
@@ -670,7 +726,18 @@ export default function Sidebar({
 
         {sidebarProfilesOpen && (
           <div className={`${padding} pb-2 animate-fade-in`}>
-            <div className={`space-y-1 ${spacing}`}>
+            <div
+              className={`space-y-1 ${spacing}`}
+              onDragOver={(e) => {
+                if (e.target === e.currentTarget && dragIdRef.current) {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = 'move';
+                }
+              }}
+              onDrop={(e) => {
+                if (e.target === e.currentTarget) handleDropInAppGroup(e);
+              }}
+            >
               {profiles.map((profile) => (
                 <button
                   key={profile.id}
@@ -854,7 +921,7 @@ export default function Sidebar({
                 if (e.target === e.currentTarget) handleDragOver(e, '__end__');
               }}
               onDrop={(e) => {
-                if (e.target === e.currentTarget) handleDropAtEnd(e);
+                if (e.target === e.currentTarget) handleDropInAppGroup(e);
               }}
             >
               {loose.map((app) => renderApp(app))}

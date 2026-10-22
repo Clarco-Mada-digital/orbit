@@ -23,7 +23,7 @@
       "version": "1.3.0",
       "description": "Ajoute le Téléphone à Orbit : fenêtres de bureau indépendantes pour les applications Android, miroir séparé, notifications du mobile et pilotage via adb/scrcpy.",
       "nativeApp": "phone",
-      "size": 10220
+      "size": 10549
     },
     {
       "file": "page-to-markdown.zip",

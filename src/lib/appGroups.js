@@ -96,6 +96,17 @@ export function groupByFolder(apps, folders) {
   return { groups: [...buckets.values()].filter((g) => g.apps.length > 0), loose };
 }
 
+export function reorderIdsByDrop(ids, draggedId, targetId, placement = 'before') {
+  const next = (ids || []).filter((id) => id !== draggedId);
+  if (!draggedId) return next;
+  if (draggedId === targetId) return [...ids];
+  const targetIndex = targetId ? next.indexOf(targetId) : -1;
+  const index =
+    targetIndex === -1 ? next.length : targetIndex + (placement === 'after' ? 1 : 0);
+  next.splice(index, 0, draggedId);
+  return next;
+}
+
 // Retire les dossiers que plus aucune app ne référence. Renvoie la MÊME
 // référence si rien ne change : inutile de faire re-rendre la liste pour rien.
 export function pruneEmptyFolders(folders, apps) {
