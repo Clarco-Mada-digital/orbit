@@ -39,6 +39,30 @@ Récupérez la dernière version sur la page des **[Releases](https://github.com
 - 🪟 **Fenêtres secondaires habillées** — les pop-ups (connexion Google, liens
   externes) s'ouvrent aux couleurs d'Orbit, coins arrondis et en-tête épuré
 - 🔎 **Recherche dans la page** (`Ctrl/Cmd + F`)
+- ✍️ **Relecture locale Orbit** — clic droit sur un texte sélectionné dans un champ
+  pour repérer des fautes fréquentes en français ou en anglais ; les suggestions
+  sont modifiables avant application et le texte reste sur l’appareil
+- 📚 **LanguageTool local facultatif** — moteur de grammaire français/anglais
+  téléchargeable à la demande depuis les réglages du correcteur ; nécessite Java 17+
+  et plusieurs centaines de Mo d’espace disque. Le moteur s’arrête après une période
+  d’inactivité ; les règles rapides d’Orbit restent disponibles en repli
+- ⌨️ **Raccourcis de relecture** — `Alt + Maj + E` (ou `⌘ + Maj + E` sur macOS)
+  pour relire le champ actif sans IA ; `Alt + Maj + I` (ou `⌘ + Maj + I`) pour
+  ouvrir la relecture IA avec la sélection courante ou le contenu du champ
+- 💬 **Discussion IA dédiée** — `Alt + Maj + A` (ou `⌘ + Maj + A` sur macOS)
+  ouvre une fenêtre de conversation indépendante du correcteur ; activation,
+  raccourci et touche personnalisables dans Paramètres → Assistant IA
+- 🤖 **Assistant IA local facultatif** — modèles Qwen3 0,6B ou 1,7B téléchargeables
+  ou SmolLM2 360M téléchargeables depuis les paramètres, pour corriger, reformuler,
+  résumer ou discuter ; le texte reste sur l’appareil. Orbit estime les modèles
+  adaptés selon la mémoire détectée et WebGPU ; le 1,7B nécessite un GPU compatible.
+- 🌐 **Fournisseurs IA au choix** — Ollama, LM Studio, OpenRouter, Groq, Gemini,
+  xAI, OpenAI, Anthropic, Mistral, DeepSeek et d’autres services compatibles OpenAI.
+  Orbit local reste le choix par défaut ; les clés sont chiffrées par le stockage
+  sécurisé du système, et l’envoi à un fournisseur externe exige un consentement explicite.
+  Les paramètres permettent de tester la clé/connexion et de lancer un essai sur le modèle
+  choisi ; pour les serveurs compatibles OpenAI, un identifiant de modèle peut être saisi
+  manuellement si l’endpoint de découverte n’est pas disponible.
 - 🔎 **Zoom par app**, **veille** des apps inactives, **favoris**
 - 🔐 **Verrouillage** (global + par profil) et **verrouillage auto** après inactivité
 - 💾 **Sauvegarde/restauration chiffrée** de la configuration
@@ -81,6 +105,7 @@ commits.
 - **Frontend** : React 18 + Vite + TailwindCSS + Zustand (persisté)
 - **Desktop** : Electron 43, `<webview>` embarquées (partitions par profil/app)
 - **Mises à jour** : electron-updater (feed GitHub Releases)
+- **Assistant local** : Transformers.js + ONNX Runtime, modèles installés à la demande
 - **Icons** : Lucide React
 
 ### 🧩 Extensions (Fake Data Filler et autres)

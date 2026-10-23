@@ -229,11 +229,55 @@ contextBridge.exposeInMainWorld('electronAPI', {
   contextMenu: {
     setMode: (custom) => ipcRenderer.invoke('ctx:setMode', { custom }),
     run: (wcId, action, value) => ipcRenderer.invoke('ctx:action', { wcId, action, value }),
+    onProofread: (callback) => {
+      const listener = (_event, payload) => callback(payload);
+      ipcRenderer.on('orbit:proofreader:open', listener);
+      return () => ipcRenderer.removeListener('orbit:proofreader:open', listener);
+    },
     onShow: (callback) => {
       const listener = (_event, state) => callback(state);
       ipcRenderer.on('orbit:context-menu', listener);
       return () => ipcRenderer.removeListener('orbit:context-menu', listener);
     },
+  },
+  assistant: {
+    state: () => ipcRenderer.invoke('assistant:state'),
+    setChatShortcut: (key) => ipcRenderer.invoke('assistant:set-chat-shortcut', key),
+    installModel: (modelKey) => ipcRenderer.invoke('assistant:installModel', { modelKey }),
+    removeModel: (modelKey) => ipcRenderer.invoke('assistant:removeModel', { modelKey }),
+    modelBaseUrl: (modelKey) => ipcRenderer.invoke('assistant:modelBaseUrl', { modelKey }),
+    getDocument: (wcId) => ipcRenderer.invoke('assistant:getDocument', { wcId }),
+    copyText: (text) => ipcRenderer.invoke('assistant:copyText', text),
+    onSelection: (callback) => {
+      const listener = (_event, payload) => callback(payload);
+      ipcRenderer.on('orbit:assistant:selection', listener);
+      return () => ipcRenderer.removeListener('orbit:assistant:selection', listener);
+    },
+    onProgress: (callback) => {
+      const listener = (_event, payload) => callback(payload);
+      ipcRenderer.on('orbit:assistant:progress', listener);
+      return () => ipcRenderer.removeListener('orbit:assistant:progress', listener);
+    },
+  },
+  grammar: {
+    state: () => ipcRenderer.invoke('grammar:state'),
+    install: () => ipcRenderer.invoke('grammar:install'),
+    remove: () => ipcRenderer.invoke('grammar:remove'),
+    check: (text, language) => ipcRenderer.invoke('grammar:check', { text, language }),
+    onProgress: (callback) => {
+      const listener = (_event, payload) => callback(payload);
+      ipcRenderer.on('orbit:grammar:progress', listener);
+      return () => ipcRenderer.removeListener('orbit:grammar:progress', listener);
+    },
+  },
+  aiProviders: {
+    state: () => ipcRenderer.invoke('ai-provider:state'),
+    configure: (providerId, config) => ipcRenderer.invoke('ai-provider:configure', { providerId, config }),
+    clearKey: (providerId) => ipcRenderer.invoke('ai-provider:clear-key', { providerId }),
+    listModels: (providerId, config) => ipcRenderer.invoke('ai-provider:list-models', { providerId, config }),
+    testKey: (providerId, config) => ipcRenderer.invoke('ai-provider:test-key', { providerId, config }),
+    testModel: (providerId, model, config) => ipcRenderer.invoke('ai-provider:test-model', { providerId, model, config }),
+    complete: (request) => ipcRenderer.invoke('ai-provider:complete', request),
   },
   // Questions posées par le contenu des apps : dialogues JS
   // (alert/confirm/prompt) et demandes d'autorisation (caméra, micro…)

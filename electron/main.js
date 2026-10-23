@@ -30,6 +30,7 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 let mainWindow;
+let assistantChatShortcutKey = 'a';
 
 // Résout un chemin de ressource vers le VRAI fichier sur disque. En packagé,
 // les ressources sont dans app.asar (illisible par nativeImage / la couche
@@ -106,6 +107,7 @@ function deliverOpenLinks(items) {
       pendingOpenLinks.push(item);
     }
   }
+
 }
 
 // ---------------------------------------------------------------------------
@@ -1665,6 +1667,17 @@ function buildGuestContextMenu(wc, params) {
   }
 
   if (params.isEditable) {
+    if (params.selectionText && params.selectionText.trim() && params.inputFieldType !== 'password') {
+      t.push({
+        label: 'Relire la sélection avec Orbit',
+        click: () => requestProofread(wc, params),
+      });
+      t.push({
+        label: 'Demander à l’assistant Orbit',
+        click: () => requestAssistantSelection(wc, params),
+      });
+      t.push({ type: 'separator' });
+    }
     t.push({ label: 'Annuler', enabled: can('canUndo'), click: () => wc.undo() });
     t.push({ label: 'Rétablir', enabled: can('canRedo'), click: () => wc.redo() });
     t.push({ type: 'separator' });
@@ -1715,6 +1728,11 @@ function buildGuestContextMenu(wc, params) {
     }
   } else if (params.selectionText && params.selectionText.trim()) {
     const sel = params.selectionText.trim();
+    t.push({
+      label: 'Demander à l’assistant Orbit',
+      click: () => requestAssistantSelection(wc, params),
+    });
+    t.push({ type: 'separator' });
     t.push({ label: 'Copier', click: () => wc.copy() });
     t.push({
       label: `Traduire la sélection (→ ${translateConfig.target})`,
@@ -2690,9 +2708,15 @@ function createWindow() {
     });
 
     guestContents.on('before-input-event', (event, input) => {
-      const action = matchShortcutInput(input);
+      const action = matchShortcutInput(input, assistantChatShortcutKey);
       if (action) {
         event.preventDefault();
+        if (action === 'proofread-editor' || action === 'assistant-editor') {
+          openActiveEditorCorrection(guestContents, action).catch((error) => {
+            console.error('[orbit] ouverture de la relecture du champ actif échouée:', error);
+          });
+          return;
+        }
         mainWindow.webContents.send('orbit:shortcut', action);
       }
     });
@@ -2900,6 +2924,10 @@ function contextMenuState(wc, params) {
     canCut: Boolean(params.editFlags?.canCut),
     canPaste: Boolean(params.editFlags?.canPaste),
     hasSelection: selection.length > 0,
+    canProofread:
+      Boolean(params.isEditable) &&
+      params.inputFieldType !== 'password' &&
+      Boolean(String(params.selectionText || '').trim()),
     selectionPreview: preview(selection, 40),
     hasLink: Boolean(params.linkURL),
     linkPreview: preview(params.linkURL, 50),
@@ -2914,6 +2942,184 @@ function contextMenuState(wc, params) {
     isDev,
     isPasswordField: params.inputFieldType === 'password',
   };
+}
+
+async function captureProofreadSelection(wc, params) {
+  const expected = String(params.selectionText || '');
+  if (!expected || expected.length > 20000) return null;
+
+  const frame = wc.focusedFrame;
+  if (!frame || frame.isDestroyed()) return null;
+
+  const token = crypto.randomUUID();
+  const bookmarkKey = `__orbitProofreadSelection_${token}`;
+  try {
+    const captured = await frame.executeJavaScript(`(() => {
+      const expected = ${JSON.stringify(expected)};
+      const token = ${JSON.stringify(token)};
+      const bookmarkKey = ${JSON.stringify(bookmarkKey)};
+      const active = document.activeElement;
+      if (
+        active &&
+        (active instanceof HTMLTextAreaElement ||
+          (active instanceof HTMLInputElement && ['text', 'search', 'url', 'tel'].includes(active.type))) &&
+        Number.isInteger(active.selectionStart) &&
+        Number.isInteger(active.selectionEnd) &&
+        active.selectionEnd > active.selectionStart
+      ) {
+        const start = active.selectionStart;
+        const end = active.selectionEnd;
+        if (String(active.value || '').slice(start, end) !== expected) return false;
+        window[bookmarkKey] = {
+          token,
+          kind: 'input',
+          element: active,
+          value: String(active.value || ''),
+          start,
+          end,
+        };
+        return true;
+      }
+
+      const selection = window.getSelection();
+      if (!selection || selection.isCollapsed || selection.toString() !== expected) return false;
+      let element = selection.getRangeAt(0).commonAncestorContainer;
+      if (element.nodeType !== Node.ELEMENT_NODE) element = element.parentElement;
+      while (element && !element.isContentEditable) element = element.parentElement;
+      if (!element) return false;
+      window[bookmarkKey] = {
+        token,
+        kind: 'contenteditable',
+        element,
+        range: selection.getRangeAt(0).cloneRange(),
+      };
+      return true;
+    })()`);
+    return captured ? { frame, token } : null;
+  } catch (error) {
+    console.error('[orbit] mémorisation de la sélection pour la relecture échouée:', error);
+    return null;
+  }
+}
+
+async function openActiveEditorCorrection(wc, action) {
+  if (!mainWindow || mainWindow.isDestroyed() || wc.isDestroyed()) return;
+  const reportMissingEditor = () => {
+    if (action === 'proofread-editor') {
+      mainWindow.webContents.send('orbit:proofreader:open', {
+        wcId: wc.id,
+        error: 'selection-capture-failed',
+      });
+    } else {
+      mainWindow.webContents.send('orbit:assistant:selection', {
+        wcId: wc.id,
+        text: '',
+        editable: true,
+        error: 'no-editable-context',
+      });
+    }
+  };
+  let frame;
+  try {
+    frame = wc.focusedFrame;
+  } catch (error) {
+    console.error('[orbit] détection du champ actif échouée:', error);
+    reportMissingEditor();
+    return;
+  }
+  if (!frame || frame.isDestroyed()) {
+    reportMissingEditor();
+    return;
+  }
+
+  const token = crypto.randomUUID();
+  const bookmarkKey = `__orbitProofreadSelection_${token}`;
+  let captured;
+  try {
+    captured = await frame.executeJavaScript(`(() => {
+      const token = ${JSON.stringify(token)};
+      const bookmarkKey = ${JSON.stringify(bookmarkKey)};
+      let active = document.activeElement;
+      while (active?.shadowRoot?.activeElement) active = active.shadowRoot.activeElement;
+      const isTextInput = active instanceof HTMLTextAreaElement ||
+        (active instanceof HTMLInputElement &&
+          ['text', 'search', 'url', 'tel'].includes(active.type));
+
+      if (active instanceof HTMLInputElement && active.type === 'password') {
+        return { error: 'no-editable-context' };
+      }
+      if (isTextInput) {
+        const value = String(active.value || '');
+        if (!value.trim()) return { error: 'no-editable-context' };
+        const selectionStart = active.selectionStart ?? 0;
+        const selectionEnd = active.selectionEnd ?? 0;
+        const hasSelection = selectionEnd > selectionStart;
+        const start = hasSelection ? selectionStart : 0;
+        const end = hasSelection ? selectionEnd : value.length;
+        window[bookmarkKey] = {
+          token,
+          kind: 'input',
+          element: active,
+          value,
+          start,
+          end,
+        };
+        active.setSelectionRange(start, end);
+        return { text: value };
+      }
+
+      let editor = active;
+      while (editor && !editor.isContentEditable) {
+        editor = editor.parentElement || editor.getRootNode()?.host || null;
+      }
+      if (!editor) return { error: 'no-editable-context' };
+      const selection = window.getSelection();
+      if (!selection) return { error: 'no-editable-context' };
+      const hasSelection =
+        !selection.isCollapsed &&
+        editor.contains(selection.getRangeAt(0).commonAncestorContainer);
+      const range = hasSelection
+        ? selection.getRangeAt(0).cloneRange()
+        : document.createRange();
+      if (!hasSelection) range.selectNodeContents(editor);
+      const text = range.toString();
+      if (!text.trim()) return { error: 'no-editable-context' };
+      window[bookmarkKey] = {
+        token,
+        kind: 'contenteditable',
+        element: editor,
+        range: range.cloneRange(),
+      };
+      selection.removeAllRanges();
+      selection.addRange(range);
+      return { text };
+    })()`);
+  } catch (error) {
+    console.error('[orbit] lecture du champ actif pour relecture échouée:', error);
+    reportMissingEditor();
+    return;
+  }
+
+  if (captured?.error || typeof captured?.text !== 'string') {
+    reportMissingEditor();
+    await frame.executeJavaScript(`delete window[${JSON.stringify(bookmarkKey)}]`).catch(() => {});
+    return;
+  }
+
+  const params = {
+    isEditable: true,
+    inputFieldType: '',
+    selectionText: captured.text,
+    pageURL: wc.getURL(),
+    proofreadBookmark: { frame, token },
+  };
+  lastContextParams.set(wc.id, params);
+
+  if (action === 'proofread-editor') {
+    requestProofread(wc, params);
+  } else {
+    requestAssistantSelection(wc, params);
+  }
 }
 
 // Lecture des items de menu contextuel proposés par les extensions installées
@@ -2964,9 +3170,12 @@ async function showGuestContextMenu(guestContents, params, ownerWindow) {
     ownerWindow === mainWindow &&
     mainWindow &&
     !mainWindow.isDestroyed();
+  if (custom && params.isEditable && params.inputFieldType !== 'password') {
+    params.proofreadBookmark = await captureProofreadSelection(guestContents, params);
+  }
+  lastContextParams.set(guestContents.id, params);
   if (custom) {
     try {
-      lastContextParams.set(guestContents.id, params);
       const state = contextMenuState(guestContents, params);
       // Options ajoutées par les extensions installées (color picker, etc.)
       const extItems = await readPageCtxItems(guestContents);
@@ -2985,7 +3194,79 @@ async function showGuestContextMenu(guestContents, params, ownerWindow) {
   return false;
 }
 
-handleFromUi('ctx:action', (_event, { wcId, action, value } = {}) => {
+function requestProofread(wc, params) {
+  const text = String(params.selectionText || '');
+  if (!params.isEditable || params.inputFieldType === 'password' || !text.trim()) {
+    return { success: false, error: 'no-editable-selection' };
+  }
+  if (!mainWindow || mainWindow.isDestroyed()) return { success: false, error: 'window-unavailable' };
+  if (text.length > 20000) {
+    mainWindow.webContents.send('orbit:proofreader:open', {
+      wcId: wc.id,
+      bookmarkToken: params.proofreadBookmark?.token,
+      error: 'selection-too-long',
+    });
+    return { success: false, error: 'selection-too-long' };
+  }
+  if (!params.proofreadBookmark) {
+    mainWindow.webContents.send('orbit:proofreader:open', {
+      wcId: wc.id,
+      error: 'selection-capture-failed',
+    });
+    return { success: false, error: 'selection-capture-failed' };
+  }
+  mainWindow.webContents.send('orbit:proofreader:open', {
+    wcId: wc.id,
+    text,
+    bookmarkToken: params.proofreadBookmark.token,
+  });
+  return { success: true };
+}
+
+function requestAssistantSelection(wc, params) {
+  const text = String(params.selectionText || '');
+  if (!text.trim() || params.inputFieldType === 'password') {
+    return { success: false, error: 'no-editable-selection' };
+  }
+  if (!mainWindow || mainWindow.isDestroyed()) return { success: false, error: 'window-unavailable' };
+  mainWindow.webContents.send('orbit:assistant:selection', {
+    wcId: wc.id,
+    text,
+    editable: Boolean(params.isEditable),
+    bookmarkToken: params.proofreadBookmark?.token,
+    error: text.length > 12000 ? 'context-too-long' : '',
+  });
+  return { success: true };
+}
+
+function focusGuestContents(wc) {
+  return new Promise((resolve) => {
+    let tries = 0;
+    const checkFocus = () => {
+      if (wc.isDestroyed()) {
+        resolve(false);
+        return;
+      }
+      if (wc.isFocused()) {
+        setTimeout(() => resolve(!wc.isDestroyed()), 30);
+        return;
+      }
+      if (tries++ >= 12) {
+        resolve(false);
+        return;
+      }
+      setTimeout(checkFocus, 20);
+    };
+    try {
+      wc.focus();
+      checkFocus();
+    } catch {
+      resolve(false);
+    }
+  });
+}
+
+handleFromUi('ctx:action', async (_event, { wcId, action, value } = {}) => {
   const wc = webContents.fromId(Number(wcId));
   const params = lastContextParams.get(Number(wcId));
   if (!wc || wc.isDestroyed() || !params) return { success: false, error: 'stale' };
@@ -3025,6 +3306,99 @@ handleFromUi('ctx:action', (_event, { wcId, action, value } = {}) => {
       wc.focus();
       wc.selectAll();
       break;
+    case 'proofread':
+      return requestProofread(wc, params);
+    case 'assistant':
+      return requestAssistantSelection(wc, params);
+    case 'proofread:replace': {
+      const { expected, replacement } = value || {};
+      if (
+        !params.isEditable ||
+        params.inputFieldType === 'password' ||
+        typeof expected !== 'string' ||
+        typeof replacement !== 'string' ||
+        !expected ||
+        expected.length > 20000 ||
+        replacement.length > 20000 ||
+        params.selectionText !== expected ||
+        !params.proofreadBookmark
+      ) {
+        return { success: false, error: 'stale-selection' };
+      }
+      if (params.pageURL && wc.getURL() !== params.pageURL) {
+        return { success: false, error: 'stale-page' };
+      }
+      if (!(await focusGuestContents(wc))) {
+        return { success: false, error: 'focus-failed' };
+      }
+      try {
+        const { frame, token } = params.proofreadBookmark;
+        const bookmarkKey = `__orbitProofreadSelection_${token}`;
+        if (!frame || frame.isDestroyed()) return { success: false, error: 'stale-selection' };
+        const result = await frame.executeJavaScript(`(() => {
+          const bookmarkKey = ${JSON.stringify(bookmarkKey)};
+          const saved = window[bookmarkKey];
+          if (!saved || saved.token !== ${JSON.stringify(token)} || !saved.element?.isConnected) {
+            return 'stale-selection';
+          }
+          const expected = ${JSON.stringify(expected)};
+          const replacement = ${JSON.stringify(replacement)};
+          const element = saved.element;
+          if (saved.kind === 'input') {
+            if (
+              String(element.value || '') !== saved.value ||
+              String(element.value || '').slice(saved.start, saved.end) !== expected
+            ) return 'stale-selection';
+            element.focus({ preventScroll: true });
+            element.setRangeText(replacement, saved.start, saved.end, 'end');
+            element.dispatchEvent(new InputEvent('input', {
+              bubbles: true,
+              inputType: 'insertReplacementText',
+              data: replacement,
+            }));
+            delete window[bookmarkKey];
+            return 'success';
+          }
+          if (saved.kind === 'contenteditable' && saved.range?.toString() === expected) {
+            element.focus({ preventScroll: true });
+            const range = saved.range;
+            range.deleteContents();
+            const inserted = document.createTextNode(replacement);
+            range.insertNode(inserted);
+            range.setStartAfter(inserted);
+            range.collapse(true);
+            const selection = window.getSelection();
+            selection.removeAllRanges();
+            selection.addRange(range);
+            element.dispatchEvent(new InputEvent('input', {
+              bubbles: true,
+              inputType: 'insertReplacementText',
+              data: replacement,
+            }));
+            delete window[bookmarkKey];
+            return 'success';
+          }
+          return 'stale-selection';
+        })()`);
+        if (result !== 'success') return { success: false, error: result };
+        return { success: true };
+      } catch (err) {
+        console.error('[orbit] application de la correction locale échouée:', err);
+        return { success: false, error: 'replace-failed' };
+      }
+    }
+    case 'proofread:cancel': {
+      const bookmark = params.proofreadBookmark;
+      if (bookmark && bookmark.token === value && !bookmark.frame.isDestroyed()) {
+        const bookmarkKey = `__orbitProofreadSelection_${bookmark.token}`;
+        await bookmark.frame.executeJavaScript(
+          `delete window[${JSON.stringify(bookmarkKey)}]`
+        ).catch((error) => {
+          console.error('[orbit] nettoyage de la sélection mémorisée échoué:', error);
+        });
+      }
+      return { success: true };
+    }
     case 'replaceMisspelling': {
       // On n'accepte que les suggestions que le correcteur a lui-même fournies.
       if ((params.dictionarySuggestions || []).includes(value)) {
@@ -3191,6 +3565,145 @@ handleFromUi('ctx:action', (_event, { wcId, action, value } = {}) => {
     default:
       return { success: false, error: 'unknown-action' };
   }
+  return { success: true };
+});
+
+let assistantModule = null;
+async function loadAssistant() {
+  if (!assistantModule) {
+    assistantModule = await import('./assistant.js');
+    assistantModule.setAssistantProgressReporter((payload) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('orbit:assistant:progress', payload);
+      }
+    });
+  }
+  return assistantModule;
+}
+
+handleFromUi('assistant:state', async () => (await loadAssistant()).getAssistantState());
+handleFromUi('assistant:installModel', async (_event, { modelKey } = {}) =>
+  (await loadAssistant()).installAssistantModel(modelKey)
+);
+handleFromUi('assistant:removeModel', async (_event, { modelKey } = {}) =>
+  (await loadAssistant()).removeAssistantModel(modelKey)
+);
+handleFromUi('assistant:modelBaseUrl', async (_event, { modelKey } = {}) =>
+  (await loadAssistant()).getAssistantModelBaseUrl(modelKey)
+);
+handleFromUi('assistant:copyText', (_event, text) => {
+  if (typeof text !== 'string' || text.length > 12000) {
+    return { success: false, error: 'invalid-text' };
+  }
+  clipboard.writeText(text);
+  return { success: true };
+});
+handleFromUi('assistant:getDocument', async (_event, { wcId } = {}) => {
+  const id = Number(wcId);
+  const wc = webContents.fromId(id);
+  const params = lastContextParams.get(id);
+  if (
+    !wc ||
+    wc.isDestroyed() ||
+    !params ||
+    !params.isEditable ||
+    params.inputFieldType === 'password'
+  ) {
+    return { success: false, error: 'no-editable-context' };
+  }
+  if (params.pageURL && wc.getURL() !== params.pageURL) {
+    return { success: false, error: 'stale-page' };
+  }
+  try {
+    const frame = wc.focusedFrame;
+    if (!frame || frame.isDestroyed()) return { success: false, error: 'stale-page' };
+    const x = Number(params.x);
+    const y = Number(params.y);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) {
+      return { success: false, error: 'no-editable-context' };
+    }
+    const result = await frame.executeJavaScript(`(() => {
+      const point = document.elementFromPoint(${x}, ${y});
+      const active = document.activeElement;
+      let field = point;
+      for (let i = 0; i < 10 && field; i++) {
+        if (field.matches?.('input, textarea, [contenteditable="true"], [role="textbox"]')) break;
+        field = field.parentElement;
+      }
+      if (!field || !field.matches?.('input, textarea, [contenteditable="true"], [role="textbox"]')) {
+        field = active;
+      }
+      if (!field || field.matches?.('input[type="password"]')) return null;
+      if (field.matches?.('input, textarea')) return String(field.value || '');
+      if (field.isContentEditable || field.matches?.('[contenteditable="true"], [role="textbox"]')) {
+        return String(field.innerText || field.textContent || '');
+      }
+      return null;
+    })()`);
+    if (typeof result !== 'string' || !result.trim()) {
+      return { success: false, error: 'no-editable-context' };
+    }
+    if (result.length > 12000) return { success: false, error: 'context-too-long' };
+    return { success: true, text: result };
+  } catch (error) {
+    console.error('[orbit] lecture du champ de texte actif échouée:', error);
+    return { success: false, error: 'context-read-failed' };
+  }
+});
+
+let grammarModule = null;
+async function loadGrammar() {
+  if (!grammarModule) {
+    grammarModule = await import('./grammar.js');
+    grammarModule.setGrammarProgressReporter((payload) => {
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        mainWindow.webContents.send('orbit:grammar:progress', payload);
+      }
+    });
+  }
+  return grammarModule;
+}
+
+handleFromUi('grammar:state', async () => (await loadGrammar()).getGrammarState());
+handleFromUi('grammar:install', async () => (await loadGrammar()).installLanguageTool());
+handleFromUi('grammar:remove', async () => (await loadGrammar()).removeLanguageTool());
+handleFromUi('grammar:check', async (_event, { text, language } = {}) =>
+  (await loadGrammar()).checkWithLanguageTool(text, language)
+);
+
+let aiProvidersModule = null;
+async function loadAiProviders() {
+  if (!aiProvidersModule) aiProvidersModule = await import('./ai-providers.js');
+  return aiProvidersModule;
+}
+
+handleFromUi('ai-provider:state', async () =>
+  (await loadAiProviders()).getAiProvidersState()
+);
+handleFromUi('ai-provider:configure', async (_event, { providerId, config } = {}) =>
+  (await loadAiProviders()).configureAiProvider(providerId, config)
+);
+handleFromUi('ai-provider:clear-key', async (_event, { providerId } = {}) =>
+  (await loadAiProviders()).clearAiProviderKey(providerId)
+);
+handleFromUi('ai-provider:list-models', async (_event, { providerId, config } = {}) =>
+  (await loadAiProviders()).listAiProviderModels(providerId, config)
+);
+handleFromUi('ai-provider:test-key', async (_event, { providerId, config } = {}) =>
+  (await loadAiProviders()).testAiProviderKey(providerId, config)
+);
+handleFromUi('ai-provider:test-model', async (_event, { providerId, model, config } = {}) =>
+  (await loadAiProviders()).testAiProviderModel(providerId, model, config)
+);
+handleFromUi('ai-provider:complete', async (_event, request = {}) =>
+  (await loadAiProviders()).completeWithAiProvider(request)
+);
+handleFromUi('assistant:set-chat-shortcut', (_event, key) => {
+  const normalized = typeof key === 'string' ? key.toLowerCase() : null;
+  if (normalized !== null && !['a', 'j', 'u', 'y'].includes(normalized)) {
+    return { success: false, error: 'invalid-shortcut' };
+  }
+  assistantChatShortcutKey = normalized;
   return { success: true };
 });
 

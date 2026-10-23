@@ -20,6 +20,8 @@ const AppStore = lazy(() => import('./components/AppStore'));
 const PhoneOverlay = lazy(() => import('./components/PhoneOverlay'));
 import WebView from './components/WebView';
 import GuestContextMenu from './components/GuestContextMenu';
+import OfflineProofreader from './components/OfflineProofreader';
+import OrbitAssistant from './components/OrbitAssistant';
 import WebDialogHost from './components/WebDialogHost';
 import EditUrlDialog from './components/EditUrlDialog';
 import LockScreen from './components/LockScreen';
@@ -34,7 +36,7 @@ import { useSecurityStore } from './lib/securityStore';
 import { useMediaStore } from './lib/mediaStore';
 import { mediaToggle, mediaPrev, mediaNext, mediaSeek, pickNowPlaying } from './lib/mediaControls';
 import { appViewKey, appPartition, resolveProxy } from './lib/session';
-import { matchShortcut } from './lib/shortcuts';
+import { matchShortcut, normalizeAssistantChatShortcutKey } from './lib/shortcuts';
 import { dueTimeRules } from './lib/rules';
 import { layoutFor, areaLetter, parseTracks } from './lib/splitLayouts';
 import { reloadApp, navigateApp } from './lib/webviewRegistry';
@@ -88,6 +90,11 @@ const [editUrlFor, setEditUrlFor] = useState(null); // { id, url } — boîte «
   const t = useT();
   const [captive, setCaptive] = useState(null); // { detected, url } | null
   const [showFind, setShowFind] = useState(false);
+  useEffect(() => {
+    const openSettings = () => setShowSettings(true);
+    window.addEventListener('orbit:assistant-open-settings', openSettings);
+    return () => window.removeEventListener('orbit:assistant-open-settings', openSettings);
+  }, []);
   const {
     activeProfile,
     activeApp,
@@ -798,6 +805,12 @@ const openEditUrl = useCallback((id) => {
 
   // Exécute une action de raccourci (nom centralisé dans lib/shortcuts.js)
   const runShortcut = useCallback((action) => {
+    if (action === 'assistant-chat') {
+      if (useStore.getState().settings.assistantChatEnabled !== false) {
+        window.dispatchEvent(new Event('orbit:assistant-chat-open'));
+      }
+      return;
+    }
     if (action === 'search') return setShowQuickSwitcher((v) => !v);
     if (action === 'settings') return setShowSettings((v) => !v);
     // Modifier l'adresse de la page courante : indispensable sur une page
@@ -882,7 +895,11 @@ const openEditUrl = useCallback((id) => {
   // Raccourcis clavier quand le focus est dans l'interface (sidebar, topbar…)
   useEffect(() => {
     const handleKeyDown = (e) => {
-      const action = matchShortcut(e);
+      const configuredKey = settings.assistantChatEnabled !== false &&
+        settings.assistantChatShortcutEnabled !== false
+        ? normalizeAssistantChatShortcutKey(settings.assistantChatShortcutKey) || 'a'
+        : null;
+      const action = matchShortcut(e, configuredKey);
       if (action) {
         e.preventDefault();
         runShortcut(action);
@@ -900,7 +917,7 @@ const openEditUrl = useCallback((id) => {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [runShortcut]);
+  }, [runShortcut, settings.assistantChatEnabled, settings.assistantChatShortcutEnabled, settings.assistantChatShortcutKey]);
 
   // Raccourcis GLOBAUX : interceptés par le main process même quand le focus
   // est DANS une app embarquée (Gmail, Slack…) — les apps gardent leurs Ctrl.
@@ -910,6 +927,22 @@ const openEditUrl = useCallback((id) => {
       if (typeof off === 'function') off();
     };
   }, [runShortcut]);
+
+  useEffect(() => {
+    const configuredKey = settings.assistantChatEnabled !== false &&
+      settings.assistantChatShortcutEnabled !== false
+      ? normalizeAssistantChatShortcutKey(settings.assistantChatShortcutKey) || 'a'
+      : null;
+    const setChatShortcut = window.electronAPI?.assistant?.setChatShortcut;
+    if (typeof setChatShortcut !== 'function') return;
+    setChatShortcut(configuredKey).then((result) => {
+      if (result?.success === false) {
+        console.error('[orbit] raccourci de discussion IA refusé:', result.error);
+      }
+    }).catch((error) => {
+      console.error('[orbit] synchronisation du raccourci de discussion IA échouée:', error);
+    });
+  }, [settings.assistantChatEnabled, settings.assistantChatShortcutEnabled, settings.assistantChatShortcutKey]);
 
   // Clic sur une notification système → ouvrir l'app concernée : on bascule
   // sur son profil si besoin, on la réveille si elle dormait, et on l'active.
@@ -1352,6 +1385,8 @@ const openEditUrl = useCallback((id) => {
       )}
       {/* Menu contextuel des apps embarquées (remplace le menu natif) */}
       <GuestContextMenu />
+      <OfflineProofreader />
+      <OrbitAssistant />
 
       {/* Questions posées par les apps : alert/confirm/prompt et demandes
           d'autorisation (caméra, micro, position…) */}

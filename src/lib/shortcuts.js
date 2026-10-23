@@ -16,8 +16,16 @@ export function isMac() {
   );
 }
 
+const ASSISTANT_CHAT_SHORTCUT_KEYS = ['a', 'j', 'u', 'y'];
+
+export function normalizeAssistantChatShortcutKey(value) {
+  if (typeof value !== 'string') return null;
+  const normalized = value.toLowerCase();
+  return ASSISTANT_CHAT_SHORTCUT_KEYS.includes(normalized) ? normalized : null;
+}
+
 // La combinaison est-elle un raccourci d'Orbit ? (événement keydown du DOM)
-export function matchShortcut(e) {
+export function matchShortcut(e, assistantChatShortcutKey = 'a') {
   const mac = isMac();
   // Rechercher dans la page : Ctrl+F (Win/Linux) ou ⌘F (mac) — remplace la
   // recherche de l'app embarquée par celle d'Orbit.
@@ -45,6 +53,12 @@ export function matchShortcut(e) {
   if (!mod || e.ctrlKey || (mac ? e.altKey : e.metaKey)) return null;
   const k = (e.key || '').toLowerCase();
   const shift = !!e.shiftKey;
+  const chatKey = normalizeAssistantChatShortcutKey(assistantChatShortcutKey);
+  if (shift && chatKey && k === chatKey) {
+    return 'assistant-chat';
+  }
+  if (shift && k === 'e') return 'proofread-editor';
+  if (shift && k === 'i') return 'assistant-editor';
   if (k === 'k') return 'search';
   if (k === ',') return 'settings';
   // Modifier l'URL de la page courante — surtout utile sur une page VOLANTE :
@@ -71,7 +85,7 @@ export function matchShortcut(e) {
 }
 
 // Même logique pour l'objet `input` du main process (before-input-event)
-export function matchShortcutInput(input) {
+export function matchShortcutInput(input, assistantChatShortcutKey = 'a') {
   if (!input || input.type !== 'keyDown') return null;
   const mac = typeof process !== 'undefined' && process.platform === 'darwin';
   // Rechercher dans la page : Ctrl+F (Win/Linux) ou ⌘F (mac)
@@ -96,6 +110,12 @@ export function matchShortcutInput(input) {
   if (!mod || input.control || (mac ? input.alt : input.meta)) return null;
   const k = String(input.key || '').toLowerCase();
   const shift = !!input.shift;
+  const chatKey = normalizeAssistantChatShortcutKey(assistantChatShortcutKey);
+  if (shift && chatKey && k === chatKey) {
+    return 'assistant-chat';
+  }
+  if (shift && k === 'e') return 'proofread-editor';
+  if (shift && k === 'i') return 'assistant-editor';
   if (k === 'k') return 'search';
   if (k === ',') return 'settings';
   // Même geste que côté renderer : Alt+L / ⌘L.
@@ -122,11 +142,13 @@ export function matchShortcutInput(input) {
 
 // Liste d'affichage (panneau « help ») — adaptée à la plateforme.
 // Accepte une fonction de traduction `t` (i18n) ; sans elle, retombe sur le FR.
-export function shortcutKeys(t) {
+export function shortcutKeys(t, assistantOptions = {}) {
   const d = (key, fr) => (typeof t === 'function' ? t(key) : fr);
   const mac = isMac();
   const M = mac ? '⌘' : 'Alt';
-  return [
+  const shortcuts = [
+    { keys: [M, '⇧', 'E'], desc: d('sc.proofreadEditor', 'Relire le texte du champ actif (sans IA)') },
+    { keys: [M, '⇧', 'I'], desc: d('sc.assistantEditor', 'Relire le texte du champ actif avec l’IA') },
     { keys: [M, 'K'], desc: d('sc.search', 'Rechercher partout (ce panneau)') },
     {
       keys: [mac ? '⌘' : 'Ctrl', 'R'],
@@ -158,4 +180,12 @@ export function shortcutKeys(t) {
     { keys: [M, '0'], desc: d('sc.zoomReset', 'Réinitialiser le zoom') },
     { keys: [d('sc.escKey', 'Échap')], desc: d('sc.escape', 'Fermer / annuler') },
   ];
+  if (assistantOptions.assistantChatEnabled !== false && assistantOptions.assistantChatShortcutEnabled !== false) {
+    const key = (normalizeAssistantChatShortcutKey(assistantOptions.assistantChatShortcutKey) || 'a').toUpperCase();
+    shortcuts.splice(2, 0, {
+      keys: [M, '⇧', key],
+      desc: d('sc.assistantChat', 'Ouvrir la discussion avec l’assistant IA Orbit'),
+    });
+  }
+  return shortcuts;
 }

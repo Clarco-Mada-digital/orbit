@@ -21,6 +21,7 @@ import {
   Upload,
   Link2,
   Download,
+  Bot,
 } from 'lucide-react';
 import { useStore } from '../stores/useStore';
 import ProfileManager from './ProfileManager';
@@ -33,6 +34,7 @@ import Diagnostics from './Diagnostics';
 import PasswordVault from './PasswordVault';
 import ReleaseNotes from './ReleaseNotes';
 import VoiceSettings from './VoiceSettings';
+import AssistantSettings from './AssistantSettings';
 import TopbarSettings from './TopbarSettings';
 import { shortcutKeys } from '../lib/shortcuts';
 import { useT } from '../lib/i18n';
@@ -213,12 +215,17 @@ export default function Settings({ onClose }) {
     { id: 'backup', name: t('st.tab.backup'), icon: Archive },
     { id: 'notifications', name: t('st.tab.notifications'), icon: Bell },
     { id: 'voice', name: t('st.tab.voice'), icon: Volume2 },
+    { id: 'assistant', name: t('st.tab.assistant'), icon: Bot },
     { id: 'diagnostics', name: t('st.tab.diagnostics'), icon: Stethoscope },
     { id: 'about', name: t('st.tab.about'), icon: Info },
   ];
 
   // Source unique des raccourcis (adaptés à la plateforme)
-  const shortcuts = shortcutKeys(t).map((s) => ({
+  const shortcuts = shortcutKeys(t, {
+    assistantChatEnabled: settings.assistantChatEnabled !== false,
+    assistantChatShortcutEnabled: settings.assistantChatShortcutEnabled !== false,
+    assistantChatShortcutKey: settings.assistantChatShortcutKey,
+  }).map((s) => ({
     name: s.desc,
     keys: s.keys.join(' + '),
   }));
@@ -1341,6 +1348,7 @@ export default function Settings({ onClose }) {
               )}
 
               {activeTab === 'voice' && <VoiceSettings />}
+              {activeTab === 'assistant' && <AssistantSettings />}
 
               {activeTab === 'diagnostics' && <Diagnostics />}
 

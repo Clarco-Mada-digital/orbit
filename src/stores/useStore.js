@@ -50,6 +50,14 @@ export function appVisibleIn(app, profileId) {
 
 // Paramètres par défaut — utilisés pour la migration des anciennes données
 export const defaultSettings = {
+  // Fournisseur actif de l’assistant : l’IA locale reste le choix initial.
+  assistantProvider: 'local',
+  assistantProviderModels: {},
+  assistantCloudConsent: {},
+  assistantChatEnabled: true,
+  assistantChatShortcutEnabled: true,
+  assistantChatShortcutKey: 'a',
+  proofreaderEngine: 'local',
   theme: 'dark', // dark | light | auto
   language: 'auto', // auto | fr | en
   accentColor: '#6366f1',
