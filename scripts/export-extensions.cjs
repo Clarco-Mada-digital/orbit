@@ -118,7 +118,7 @@ function writeCatalog() {
 
 function main() {
   if (!fs.existsSync(SRC)) {
-    console.error(`Aucun dossier de sources : ${SRC_CANDIDATES.map((d) => path.relative(ROOT, d)).join(' ou ')}`);
+    console.error(`Aucun dossier de sources : ${path.relative(ROOT, SRC)}`);
     process.exit(1);
   }
   fs.mkdirSync(OUT, { recursive: true });

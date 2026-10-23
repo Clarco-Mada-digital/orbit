@@ -21,8 +21,7 @@ import electronUpdater from 'electron-updater';
 import { matchShortcutInput } from '../src/lib/shortcuts.js';
 import { matchLinkRule } from '../src/lib/rules.js';
 import { hasBinaryContent } from '../src/lib/documents.js';
-import { PLAIN_WEB_URL } from '../src/lib/urls.js';
-import { safeFileName, savePlan } from '../src/lib/downloadPath.js';
+import { savePlan } from '../src/lib/downloadPath.js';
 import { getDomain } from 'tldts-experimental';
 import { fileURLToPath } from 'url';
 
@@ -168,7 +167,6 @@ async function readCapped(res, max) {
   let total = 0;
   let truncated = false;
   for (;;) {
-    // eslint-disable-next-line no-await-in-loop -- lecture séquentielle du flux
     const { done, value } = await reader.read();
     if (done) break;
     const chunk = Buffer.from(value);
@@ -292,13 +290,15 @@ ipcMain.handle('documents:fetch', async (_event, payload = {}) => {
 // Garde-fou strict : http(s) SEULEMENT. Cet appel vient de l'interface, qui
 // partage son processus avec du contenu web ; y laisser passer un schéma
 // arbitraire reviendrait à donner à n'importe quelle page le moyen de lancer
-// un programme local via shell.openExternal. Le motif est celui de
-// src/lib/urls.js (PLAIN_WEB_URL), partagé pour ne pas diverger.
+// un programme local via shell.openExternal. Seuls les liens HTTP(S) sont admis.
 ipcMain.handle('document:openOutside', (_event, url) => {
   const u = String(url || '').trim();
-  if (!PLAIN_WEB_URL.test(u)) return { success: false, reason: 'bad-url' };
   try {
-    shell.openExternal(u);
+    const externalUrl = new URL(u);
+    if (externalUrl.protocol !== 'https:' && externalUrl.protocol !== 'http:') {
+      return { success: false, reason: 'bad-url' };
+    }
+    shell.openExternal(externalUrl.href);
     return { success: true };
   } catch (err) {
     return { success: false, reason: String(err?.message || err) };
@@ -2050,7 +2050,7 @@ function getSessionForPartition(partition) {
 function extractExtensionId(input) {
   const s = String(input || '').trim();
   if (!s) return null;
-  const urlMatch = s.match(/\/([a-p]{32})[\/?#]?$/i);
+  const urlMatch = s.match(/\/([a-p]{32})[/?#]?$/i);
   if (urlMatch) return urlMatch[1];
   if (/^[a-p]{32}$/i.test(s)) return s;
   return null;
@@ -3740,7 +3740,6 @@ function idleSlice(ms) {
 }
 
 const POLL_SLICE_MS = 30;
-const DIALOG_TIMEOUT_MS = 3 * 60 * 1000; // garde-fou : une page ne gèle pas pour toujours
 
 // Demandes en cours : id → { kind, wcId, done, value, resolve }
 const pendingPrompts = new Map();
@@ -4891,7 +4890,7 @@ async function exportExtensionToZip(extDir, zipPath) {
   const archiver = await import('archiver');
   const out = fs2.createWriteStream(zipPath);
   const archive = archiver.create('zip', { zlib: { level: 9 } });
-  const stream = archive.pipe(out);
+  archive.pipe(out);
 
   // Parcours récursif du dossier source
   const walk = (dir) => {
@@ -5158,7 +5157,7 @@ ipcMain.handle('extensions:uninstall', (_event, { id, path: extPath, managed } =
 // L'icône est lue depuis le disque et renvoyée en data URL : les ressources
 // chrome-extension:// non listées dans web_accessible_resources sont bloquées
 // par Chromium (ERR_BLOCKED_BY_CLIENT) depuis la page React.
-ipcMain.handle('extensions:getInfo', (_event, { id, path: extPath } = {}) => {
+ipcMain.handle('extensions:getInfo', (_event, { path: extPath } = {}) => {
   try {
     const manifest = JSON.parse(fs.readFileSync(path.join(extPath, 'manifest.json'), 'utf8'));
     const icons = manifest.icons || {};
