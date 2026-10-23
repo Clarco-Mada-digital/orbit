@@ -26,6 +26,7 @@ import {
   Check,
   PanelsTopLeft,
   History,
+  Bot,
 } from 'lucide-react';
 import { useStore } from '../stores/useStore';
 import AppIcon from './AppIcon';
@@ -54,6 +55,9 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
   const inputRef = useRef(null);
   const t = useT();
   const lang = resolveLang(useStore((s) => s.settings?.language));
+  const assistantChatEnabled = useStore((s) => s.settings?.assistantChatEnabled !== false);
+  const assistantChatShortcutEnabled = useStore((s) => s.settings?.assistantChatShortcutEnabled !== false);
+  const assistantChatShortcutKey = useStore((s) => s.settings?.assistantChatShortcutKey);
   const locale = lang === 'en' ? 'en-US' : 'fr-FR';
   const {
     apps,
@@ -110,6 +114,15 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
         keywords: ['parametre', 'settings', 'reglage', 'theme', 'police'],
         run: onOpenSettings,
       },
+      ...(assistantChatEnabled ? [{
+        id: 'assistant-chat',
+        name: t('assistant.chat.open'),
+        subtitle: t('assistant.chat.paletteHint'),
+        icon: <Bot size={22} />,
+        color: '#8b5cf6',
+        keywords: ['assistant', 'ia', 'ai', 'discussion', 'chat', 'rédaction'],
+        run: () => window.dispatchEvent(new Event('orbit:assistant-chat-open')),
+      }] : []),
       {
         id: 'store',
         name: t('sb.store'),
@@ -228,6 +241,7 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
     onOpenSettings,
     onOpenStore,
     onOpenProfileManager,
+    assistantChatEnabled,
   ]);
 
   // Résultats instantanés (calcul, conversions, couleurs, dates, devises)
@@ -458,7 +472,11 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
                   {t('qs.shortcutsLabel')}
                 </h4>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                  {shortcutKeys(t).map((s, i) => (
+                  {shortcutKeys(t, {
+                    assistantChatEnabled,
+                    assistantChatShortcutEnabled,
+                    assistantChatShortcutKey,
+                  }).map((s, i) => (
                     <div
                       key={i}
                       className="flex items-center justify-between gap-3 bg-bg-secondary border border-border rounded-lg px-3 py-2"

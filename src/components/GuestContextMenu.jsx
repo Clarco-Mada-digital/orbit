@@ -3,6 +3,7 @@ import {
   ArrowLeft,
   ArrowRight,
   RotateCw,
+  Bot,
   Link2,
   Copy,
   Scissors,
@@ -141,6 +142,32 @@ export default function GuestContextMenu() {
       menu.suggestions.forEach((word) =>
         push({ key: 'sp-' + word, icon: SpellCheck, label: word, bold: true, action: 'replaceMisspelling', value: word })
       );
+      sep();
+    }
+
+    if (menu.isEditable && menu.hasSelection && !menu.isPasswordField) {
+      if (menu.canProofread) {
+        push({
+          key: 'proofread',
+          icon: SpellCheck,
+          label: t('cm.proofread'),
+          action: 'proofread',
+        });
+      }
+      push({
+        key: 'assistant',
+        icon: Bot,
+        label: t('assistant.selection'),
+        action: 'assistant',
+      });
+      sep();
+    } else if (menu.hasSelection && !menu.isPasswordField) {
+      push({
+        key: 'assistant',
+        icon: Bot,
+        label: t('assistant.selection'),
+        action: 'assistant',
+      });
       sep();
     }
 
