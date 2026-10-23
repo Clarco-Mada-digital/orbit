@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import { createServer } from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
+import { assistantModelCorsHeaders } from './assistant-cors.js';
 
 const MODEL_FILES = [
   'added_tokens.json',
@@ -138,6 +139,7 @@ function serveModelFile(request, response) {
     'Access-Control-Allow-Headers': 'Range, Content-Type',
     'Cache-Control': 'private, max-age=31536000, immutable',
     'Accept-Ranges': 'bytes',
+    ...assistantModelCorsHeaders(request.headers.origin),
   };
   if (request.method === 'OPTIONS') {
     response.writeHead(204, headers).end();
