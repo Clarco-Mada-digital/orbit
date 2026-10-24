@@ -49,9 +49,29 @@ test('buildSnapshot : ne retient que les champs synchronisables', () => {
   assert.equal(snap.orbitSync, SYNC_FORMAT);
 });
 
+test('buildSnapshot : conserve le tri et les dossiers propres à chaque profil', () => {
+  const shared = app('shared', {
+    scope: 'all',
+    folderByProfile: { personal: 'folder-personal' },
+    orderByProfile: { personal: 3 },
+  });
+  const snap = buildSnapshot(state({ apps: [shared] }), { now: T0 });
+  assert.deepEqual(snap.apps[0].folderByProfile, { personal: 'folder-personal' });
+  assert.deepEqual(snap.apps[0].orderByProfile, { personal: 3 });
+});
+
 test('buildSnapshot : horodate les entités qui n’en ont pas', () => {
   const snap = buildSnapshot(state({ apps: [{ id: 'x', name: 'X' }] }), { now: T0 });
   assert.equal(snap.apps[0].updatedAt, T0);
+});
+
+test('buildSnapshot : synchronise les préférences de page d’accueil du profil', () => {
+  const home = { background: 'ocean', imageUrl: 'https://example.test/wallpaper.jpg' };
+  const snap = buildSnapshot(
+    state({ profiles: [{ ...state().profiles[0], home }] }),
+    { now: T0 }
+  );
+  assert.deepEqual(snap.profiles[0].home, home);
 });
 
 test('isValidSnapshot : rejette tout ce qui n’est pas un instantané exploitable', () => {

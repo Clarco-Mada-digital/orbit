@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { KeyRound, RefreshCw, ShieldCheck, ShieldAlert, Loader2, Link } from 'lucide-react';
+import { RefreshCw, ShieldCheck, ShieldAlert, Loader2, Link } from 'lucide-react';
 import { useT } from '../lib/i18n';
 import CredentialSource from './CredentialSource';
 
@@ -24,7 +24,6 @@ export default function KeepassSettings() {
 
   useEffect(() => {
     refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const doAssociate = async () => {

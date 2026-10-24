@@ -5,6 +5,10 @@ import { createServer } from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { assistantModelCorsHeaders } from './assistant-cors.js';
+import {
+  assistantModelIntegrityMatches,
+  hasValidAssistantModelIntegrityMetadata,
+} from './assistant-model-integrity.js';
 
 const MODEL_FILES = [
   'added_tokens.json',
@@ -35,9 +39,21 @@ export const ASSISTANT_MODELS = {
       'tokenizer_config.json',
       'vocab.json',
     ],
-    minRamGb: 4,
-    recommendedRamGb: 5.5,
-    minFreeRamGb: 1.5,
+    minRamGb: 0.5,
+    recommendedRamGb: 1,
+    minFreeRamGb: 0.3,
+    requiresWebGPU: false,
+  },
+  'smollm2-135m': {
+    id: 'onnx-community/SmolLM2-135M-Instruct-ONNX',
+    revision: 'b8a5c0f183b78c55955a5364f610c36668b5e681',
+    weight: 'onnx/model_q4.onnx',
+    size: 180581125,
+    sha256: 'eb0d67c7e3b7d40f42d681b5f2eff4cef78968afe3f76c954f987dd870327a2a',
+    label: 'SmolLM2 135M',
+    minRamGb: 0.3,
+    recommendedRamGb: 0.6,
+    minFreeRamGb: 0.2,
     requiresWebGPU: false,
   },
   'qwen3-0.6b': {
@@ -47,22 +63,22 @@ export const ASSISTANT_MODELS = {
     size: 919096585,
     sha256: 'd43d836fc5e240df9013733ccd214972c5d21bd9ec47e574e4f1e359cf90aed0',
     label: 'Qwen3 0.6B',
-    minRamGb: 6,
-    recommendedRamGb: 7.2,
-    minFreeRamGb: 3,
+    minRamGb: 0.8,
+    recommendedRamGb: 1.5,
+    minFreeRamGb: 0.5,
     requiresWebGPU: false,
   },
-  'qwen3-1.7b': {
-    id: 'onnx-community/Qwen3-1.7B-ONNX',
-    revision: 'e1da89f753284b95bd0971c64524f52edc5eb6e3',
-    weight: 'onnx/model_q4f16.onnx',
-    size: 1426069098,
-    sha256: 'fb85b44defdf43ace50c7a4937127e889b9f8a0483eb87a6c4151a815c5da3b5',
-    label: 'Qwen3 1.7B',
-    minRamGb: 24,
-    recommendedRamGb: 32,
-    minFreeRamGb: 12,
-    requiresWebGPU: true,
+  'qwen2.5-0.5b': {
+    id: 'onnx-community/Qwen2.5-0.5B-Instruct-ONNX',
+    revision: 'aaabb83c90b732de9a0b4408002d099d92969cd1',
+    weight: 'onnx/model_q4.onnx',
+    size: 786156820,
+    sha256: '02dac8a9a02d49b97c81cc12e90c27e56efae218bfa01513a21fa892a2bdefd3',
+    label: 'Qwen2.5 0.5B',
+    minRamGb: 1,
+    recommendedRamGb: 1.5,
+    minFreeRamGb: 0.3,
+    requiresWebGPU: false,
   },
 };
 
@@ -295,10 +311,20 @@ async function downloadFile(modelKey, model, file, fileIndex, fileCount) {
   fs.mkdirSync(path.dirname(destination), { recursive: true });
 
   const response = await net.fetch(url, { redirect: 'follow' });
-  if (!response.ok || !response.body) throw new Error(`HTTP ${response.status} — ${file}`);
+  if (!response.ok || !response.body) {
+    // Pour les fichiers non-critiques, on ignore les erreurs 401/404
+    if (file !== model.weight && (response.status === 401 || response.status === 404)) {
+      if (fs.existsSync(temporary)) fs.unlinkSync(temporary);
+      return;
+    }
+    throw new Error(`HTTP ${response.status} — ${file}`);
+  }
   const contentLength = Number(response.headers.get('content-length')) || 0;
   if (file === model.weight && contentLength && contentLength !== model.size) {
     throw new Error(`Unexpected model size for ${model.label}`);
+  }
+  if (file === model.weight && !hasValidAssistantModelIntegrityMetadata(model)) {
+    throw new Error(`Invalid model integrity metadata for ${model.label}`);
   }
 
   const output = fs.createWriteStream(temporary);
@@ -311,6 +337,9 @@ async function downloadFile(modelKey, model, file, fileIndex, fileCount) {
       if (done) break;
       const chunk = Buffer.from(value);
       received += chunk.length;
+      if (file === model.weight && received > model.size) {
+        throw new Error(`Unexpected model size for ${model.label}`);
+      }
       hash?.update(chunk);
       if (!output.write(chunk)) await new Promise((resolve, reject) => {
         output.once('drain', resolve);
@@ -323,8 +352,10 @@ async function downloadFile(modelKey, model, file, fileIndex, fileCount) {
       output.end(resolve);
     });
 
-    if (file === model.weight && (received !== model.size || hash.digest('hex') !== model.sha256)) {
-      throw new Error(`Model integrity check failed for ${model.label}`);
+    if (file === model.weight) {
+      if (!assistantModelIntegrityMatches(model, received, hash.digest('hex'))) {
+        throw new Error(`Model integrity check failed for ${model.label}`);
+      }
     }
     fs.renameSync(temporary, destination);
   } catch (error) {

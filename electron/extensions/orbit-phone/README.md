@@ -33,11 +33,17 @@ Sans elle :
   n'est monté tant que le panneau n'est pas ouvert.
 - **Accueil personnalisable** : horloge, batterie, notifications, favoris,
   applications récentes et contrôles rapides peuvent être affichés ou masqués.
-  Quatre ambiances sont disponibles. Les contrôles rapides ajustent le volume,
-  pilotent le Wi-Fi et le Bluetooth via ADB et ouvrent les réglages Android du
-  réseau, du son ou de l'appareil. Certains constructeurs peuvent restreindre
-  les commandes radio ; Orbit affiche alors l'erreur et laisse les réglages
-  Android accessibles.
+  Quatre dégradés et quatre photos sont proposés ; une image locale (PNG, JPEG,
+  WebP ou GIF, jusqu'à 4 Mo) ou une URL d'image peut aussi servir de fond.
+  « Tout effacer » écarte les notifications du téléphone (mise en sommeil
+  Android de 24 h, comme l'action individuelle). Les contrôles rapides ajustent
+  le volume, pilotent le Wi-Fi et le Bluetooth via ADB et ouvrent les réglages
+  Android du réseau, du son ou de l'appareil. Certains constructeurs peuvent
+  restreindre les commandes radio ; Orbit affiche alors l'erreur et laisse les
+  réglages Android accessibles.
+  Les cartes de cet accueil sont des widgets Orbit : les widgets Android
+  publiés par des applications installées ne sont pas hébergés ici, car cela
+  nécessite un hôte de widgets Android natif.
 - Les raccourcis **Écran**, **Miroir**, **Retour**, **Accueil**, **Récents** et
   **Volume** restent accessibles directement sur le bureau, sans ouvrir le
   tiroir d'applications. Les favoris et les apps récentes y sont affichés en

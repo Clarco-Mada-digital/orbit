@@ -6,11 +6,12 @@ import { assessAssistantModel, getBestAssistantModel } from '../lib/assistantRec
 import { AI_PROVIDERS, getAiProvider } from '../lib/aiProviders';
 import { normalizeAssistantChatShortcutKey } from '../lib/shortcuts';
 
-const MODEL_ORDER = ['smollm2-360m', 'qwen3-0.6b', 'qwen3-1.7b'];
+const MODEL_ORDER = ['smollm2-135m', 'qwen2.5-0.5b', 'smollm2-360m', 'qwen3-0.6b'];
 const MODEL_LABELS = {
+  'smollm2-135m': 'assistant.model.smollm135',
   'smollm2-360m': 'assistant.model.smollm',
+  'qwen2.5-0.5b': 'assistant.model.qwen25',
   'qwen3-0.6b': 'assistant.model.small',
-  'qwen3-1.7b': 'assistant.model.large',
 };
 const GB = 1024 ** 3;
 const bytes = (count) => `${(count / (1024 ** 3)).toFixed(count >= 1024 ** 3 ? 1 : 2)} Go`;
@@ -46,7 +47,9 @@ export default function AssistantSettings() {
   const [providerError, setProviderError] = useState('');
   const [providerMessage, setProviderMessage] = useState('');
   const [providerTestReply, setProviderTestReply] = useState('');
-  const selectedModel = settings.assistantModel || 'qwen3-0.6b';
+  const selectedModel = settings.assistantModel === 'llama-1b'
+    ? 'qwen3-0.6b'
+    : settings.assistantModel || 'qwen3-0.6b';
   const dictionary = Array.isArray(settings.assistantDictionary) ? settings.assistantDictionary : [];
   const selectedProvider = getAiProvider(providerId);
   const savedProvider = providerState?.providers?.[providerId];
@@ -366,6 +369,21 @@ export default function AssistantSettings() {
               <span>
                 <span className="block text-sm font-medium">{t('assistant.chat.enable')}</span>
                 <span className="mt-0.5 block text-xs text-text-muted">{t('assistant.chat.enableHint')}</span>
+              </span>
+            </label>
+            <label className={`flex items-start gap-3 border-t border-border/60 pt-3 ${
+              settings.assistantChatEnabled === false ? 'opacity-50' : ''
+            }`}>
+              <input
+                type="checkbox"
+                checked={settings.assistantChatSidebarEnabled !== false}
+                onChange={(event) => updateSettings({ assistantChatSidebarEnabled: event.target.checked })}
+                disabled={settings.assistantChatEnabled === false}
+                className="mt-1"
+              />
+              <span>
+                <span className="block text-sm font-medium">{t('assistant.chat.sidebarEnable')}</span>
+                <span className="mt-0.5 block text-xs text-text-muted">{t('assistant.chat.sidebarHint')}</span>
               </span>
             </label>
             <div className={`flex flex-col gap-3 border-t border-border/60 pt-3 sm:flex-row sm:items-center sm:justify-between ${
@@ -718,10 +736,7 @@ export default function AssistantSettings() {
                     )}
                   </div>
                   <p className="mt-1 text-xs text-text-muted">
-                    {t('assistant.settings.modelSize', { size: bytes(model?.size || (
-                      modelKey === 'smollm2-360m' ? 386495938 :
-                        modelKey === 'qwen3-0.6b' ? 919096585 : 1426069098
-                    )) })}
+                    {t('assistant.settings.modelSize', { size: bytes(model?.size || 0) })}
                   </p>
                   {model && (
                     <p className={`mt-2 text-xs ${fit === 'unsupported' ? 'text-error' : 'text-text-muted'}`}>

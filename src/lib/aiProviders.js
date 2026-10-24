@@ -54,7 +54,7 @@ export function validateAiProviderUrl(providerId, value) {
 }
 
 export function validateAiMessages(messages) {
-  if (!Array.isArray(messages) || messages.length < 1 || messages.length > 12) return false;
+  if (!Array.isArray(messages) || messages.length < 1 || messages.length > 24) return false;
   let totalLength = 0;
   for (const message of messages) {
     if (
@@ -67,7 +67,7 @@ export function validateAiMessages(messages) {
     }
     totalLength += message.content.length;
   }
-  return totalLength <= 50_000;
+  return totalLength <= 100_000;
 }
 
 export function normalizeAiProviderText(data, kind) {

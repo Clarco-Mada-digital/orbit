@@ -188,6 +188,13 @@ test('normalizePhoneSettings : bornes, types et listes propres', () => {
   assert.equal(s.showSystemApps, false);
   assert.equal(s.homeWidgets.quickControls, false);
   assert.equal(normalizePhoneSettings({}).homeWidgets.quickControls, true);
+  assert.equal(normalizePhoneSettings({ homeBackground: 'mountains' }).homeBackground, 'mountains');
+  assert.equal(normalizePhoneSettings({ homeBackground: 'invalid' }).homeBackground, 'aurora');
+  assert.equal(
+    normalizePhoneSettings({ homeBackgroundImage: 'https://example.com/wallpaper.jpg' }).homeBackgroundImage,
+    'https://example.com/wallpaper.jpg'
+  );
+  assert.equal(normalizePhoneSettings({ homeBackgroundImage: 'javascript:alert(1)' }).homeBackgroundImage, '');
 });
 
 test('filterPhoneApps : nom, paquet, initiales', () => {

@@ -1,5 +1,4 @@
 import { useStore } from '../stores/useStore';
-import { useT } from '../lib/i18n';
 import { normalizeTopbar, DEFAULT_BOTTOMBAR } from '../lib/topbarLayout';
 import { useTopbarModules } from './topbar/useTopbarModules';
 
@@ -7,7 +6,6 @@ import { useTopbarModules } from './topbar/useTopbarModules';
 // (Paramètres → Apparence → Barre du bas). Les menus s'ouvrent vers le haut.
 export default function Bottombar({ onOpenQuickSwitcher, onOpenVault }) {
   const settings = useStore((s) => s.settings);
-  const t = useT();
   const renderModule = useTopbarModules({ onOpenQuickSwitcher, onOpenVault, placement: 'bottom' });
 
   const layout = normalizeTopbar(settings?.bottombar, DEFAULT_BOTTOMBAR);

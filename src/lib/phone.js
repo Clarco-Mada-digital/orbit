@@ -207,6 +207,7 @@ export const DEFAULT_PHONE_SETTINGS = {
   appWindowScale: 55,
   appFollowWindow: true,
   homeBackground: 'aurora',
+  homeBackgroundImage: '',
   homeWidgets: {
     clock: true,
     device: true,
@@ -221,10 +222,54 @@ export const DEFAULT_PHONE_SETTINGS = {
   enginePath: null, // moteur choisi (renseigné après installation)
 };
 
+export const PHONE_HOME_BACKGROUNDS = [
+  {
+    id: 'aurora',
+    label: 'Aurore',
+    css: 'linear-gradient(135deg, #11182b 0%, #1b2945 52%, #11131f 100%)',
+  },
+  {
+    id: 'ocean',
+    label: 'Océan',
+    css: 'linear-gradient(135deg, #082f49 0%, #0f4961 52%, #111827 100%)',
+  },
+  {
+    id: 'sunset',
+    label: 'Crépuscule',
+    css: 'linear-gradient(135deg, #431407 0%, #7c2d36 52%, #1e1b4b 100%)',
+  },
+  {
+    id: 'midnight',
+    label: 'Nuit',
+    css: 'linear-gradient(135deg, #09090b 0%, #18181b 52%, #172554 100%)',
+  },
+  {
+    id: 'mountains',
+    label: 'Montagnes',
+    css: 'url("https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=1600&q=80")',
+  },
+  {
+    id: 'forest',
+    label: 'Forêt',
+    css: 'url("https://images.unsplash.com/photo-1448375240586-882707db888b?auto=format&fit=crop&w=1600&q=80")',
+  },
+  {
+    id: 'coast',
+    label: 'Côte',
+    css: 'url("https://images.unsplash.com/photo-1500375592092-40eb2168fd21?auto=format&fit=crop&w=1600&q=80")',
+  },
+  {
+    id: 'desert',
+    label: 'Désert',
+    css: 'url("https://images.unsplash.com/photo-1509316785289-025f5b846b35?auto=format&fit=crop&w=1600&q=80")',
+  },
+];
+
 const BITRATES = new Set(['2M', '4M', '6M', '8M', '12M', '16M', '24M']);
 const ICON_SIZES = new Set(['small', 'medium', 'large']);
 const SORT_MODES = new Set(['name', 'recent', 'package']);
 const OPEN_MODES = new Set(['integrated', 'mirror']);
+const HOME_BACKGROUNDS = new Set(PHONE_HOME_BACKGROUNDS.map((background) => background.id));
 
 export function normalizePhoneSettings(raw) {
   const s = raw && typeof raw === 'object' ? raw : {};
@@ -258,9 +303,15 @@ export function normalizePhoneSettings(raw) {
       : DEFAULT_PHONE_SETTINGS.appDisplayOrientation,
     appWindowScale: clampInt(s.appWindowScale, 35, 85, DEFAULT_PHONE_SETTINGS.appWindowScale),
     appFollowWindow: bool(s.appFollowWindow, DEFAULT_PHONE_SETTINGS.appFollowWindow),
-    homeBackground: ['aurora', 'ocean', 'sunset', 'midnight'].includes(s.homeBackground)
+    homeBackground: HOME_BACKGROUNDS.has(s.homeBackground)
       ? s.homeBackground
       : DEFAULT_PHONE_SETTINGS.homeBackground,
+    homeBackgroundImage:
+      typeof s.homeBackgroundImage === 'string' &&
+      s.homeBackgroundImage.length <= 6 * 1024 * 1024 &&
+      /^(https?:\/\/|data:image\/(?:png|jpeg|webp|gif);base64,)/i.test(s.homeBackgroundImage)
+        ? s.homeBackgroundImage
+        : '',
     homeWidgets: Object.fromEntries(
       Object.keys(DEFAULT_PHONE_SETTINGS.homeWidgets).map((key) => [
         key,

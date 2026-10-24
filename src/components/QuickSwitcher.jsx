@@ -433,7 +433,7 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 flex items-start justify-center pt-24 animate-fade-in">
-      <div className="w-full max-w-2xl bg-bg-elevated border border-border rounded-2xl shadow-2xl overflow-hidden animate-scale-in">
+      <div className="w-[min(92vw,64rem)] max-w-5xl bg-bg-elevated border border-border rounded-2xl shadow-2xl overflow-hidden animate-scale-in">
         {/* Recherche */}
         <div className="p-4 border-b border-border flex items-center gap-3">
           <Search size={20} className="text-text-muted" />

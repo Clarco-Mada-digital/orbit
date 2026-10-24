@@ -29,9 +29,10 @@ export default function HomeDashboard({ apps = [], onOpenSearch, onOpenStore, on
   const profiles = useStore((s) => s.profiles);
   const activeProfile = useStore((s) => s.activeProfile);
 
-  const home = useMemo(() => normalizeHome(settings?.home), [settings?.home]);
-  const bg = useMemo(() => resolveBackground(settings?.home), [settings?.home]);
   const profile = profiles.find((p) => p.id === activeProfile);
+  const homeSettings = profile?.home || settings?.home;
+  const home = useMemo(() => normalizeHome(homeSettings), [homeSettings]);
+  const bg = useMemo(() => resolveBackground(homeSettings), [homeSettings]);
 
   // L'heure sert au message (« Bonjour » / « Bonsoir ») et à l'horloge.
   const [now, setNow] = useState(() => new Date());

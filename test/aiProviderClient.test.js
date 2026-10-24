@@ -48,6 +48,33 @@ test('OpenAI-compatible model test sends a real chat completion request', async 
   });
 });
 
+test('long chat requests keep their output budget and full recent history', async () => {
+  let request;
+  const client = createAiProviderClient(async (url, options) => {
+    request = { url, options };
+    return jsonResponse({ choices: [{ message: { content: 'OK' } }] });
+  });
+  const messages = [
+    { role: 'system', content: 'You are Orbit.' },
+    ...Array.from({ length: 12 }, (_, index) => ({
+      role: index % 2 === 0 ? 'user' : 'assistant',
+      content: `message ${index}`,
+    })),
+    { role: 'user', content: 'Continue.' },
+  ];
+
+  await client.complete(getAiProvider('openai'), 'https://api.openai.com/v1', 'test-key', {
+    model: 'gpt-test',
+    messages,
+    maxTokens: 2048,
+  });
+
+  const body = JSON.parse(request.options.body);
+  assert.equal(body.max_tokens, 2048);
+  assert.equal(body.messages.length, messages.length);
+  assert.equal(body.messages.at(-1).content, 'Continue.');
+});
+
 test('Gemini uses its native key header for model discovery and hides non-generation models', async () => {
   let request;
   const client = createAiProviderClient(async (url, options) => {

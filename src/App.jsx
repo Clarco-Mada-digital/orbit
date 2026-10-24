@@ -21,7 +21,6 @@ const PhoneOverlay = lazy(() => import('./components/PhoneOverlay'));
 import WebView from './components/WebView';
 import GuestContextMenu from './components/GuestContextMenu';
 import OfflineProofreader from './components/OfflineProofreader';
-import OrbitAssistant from './components/OrbitAssistant';
 import WebDialogHost from './components/WebDialogHost';
 import EditUrlDialog from './components/EditUrlDialog';
 import LockScreen from './components/LockScreen';
@@ -43,6 +42,80 @@ import { reloadApp, navigateApp } from './lib/webviewRegistry';
 import { logDiagnostic } from './lib/diagnosticsStore';
 import { useT } from './lib/i18n';
 import { attachTtsPlayer, setVolume as setTtsVolume } from './lib/ttsPlayer';
+
+function AssistantHost() {
+  const [Assistant, setAssistant] = useState(null);
+  const [pendingEvent, setPendingEvent] = useState(null);
+  const [loadError, setLoadError] = useState(false);
+  const importPromise = useRef(null);
+  const assistantReady = useRef(false);
+
+  const loadAssistant = useCallback((eventName, detail, fromIpc = false) => {
+    if (assistantReady.current) {
+      if (fromIpc) {
+        window.dispatchEvent(new CustomEvent(eventName, { detail }));
+      }
+      return;
+    }
+    setPendingEvent({ eventName, detail });
+    setLoadError(false);
+    if (importPromise.current) return;
+    importPromise.current = import('./components/OrbitAssistant')
+      .then((module) => setAssistant(() => module.default))
+      .catch((error) => {
+        importPromise.current = null;
+        setLoadError(true);
+        console.error('[orbit] chargement de l’assistant impossible:', error);
+      });
+  }, []);
+
+  useEffect(() => {
+    const openAssistant = () => loadAssistant('orbit:assistant-open');
+    const openChatAssistant = () => loadAssistant('orbit:assistant-chat-open');
+    const openSelection = (payload) =>
+      loadAssistant('orbit:assistant-selection', payload, true);
+    const openConversation = (event) =>
+      loadAssistant('orbit:assistant-load-conversation', event.detail, true);
+    const offSelection = window.electronAPI?.assistant?.onSelection?.(openSelection);
+    window.addEventListener('orbit:assistant-open', openAssistant);
+    window.addEventListener('orbit:assistant-chat-open', openChatAssistant);
+    window.addEventListener('orbit:assistant-conversation-open', openConversation);
+    return () => {
+      if (typeof offSelection === 'function') offSelection();
+      window.removeEventListener('orbit:assistant-open', openAssistant);
+      window.removeEventListener('orbit:assistant-chat-open', openChatAssistant);
+      window.removeEventListener('orbit:assistant-conversation-open', openConversation);
+    };
+  }, [loadAssistant]);
+
+  const markAssistantReady = useCallback(() => {
+    assistantReady.current = true;
+  }, []);
+
+  useEffect(() => {
+    if (!Assistant || !pendingEvent) return undefined;
+    const frame = requestAnimationFrame(() => {
+      window.dispatchEvent(
+        pendingEvent.detail === undefined
+          ? new Event(pendingEvent.eventName)
+          : new CustomEvent(pendingEvent.eventName, { detail: pendingEvent.detail })
+      );
+      setPendingEvent(null);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [Assistant, pendingEvent]);
+
+  return (
+    <>
+      {Assistant && <Assistant onReady={markAssistantReady} />}
+      {loadError && (
+        <div role="alert" className="fixed bottom-4 right-4 z-[10000] rounded-lg bg-red-950 px-4 py-3 text-sm text-red-100 shadow-lg">
+          Impossible de charger l’assistant. Redémarrez Orbit et réessayez.
+        </div>
+      )}
+    </>
+  );
+}
 
 // Construit l'état à afficher dans le mini-lecteur flottant (ou null)
 function buildMiniPlayerState() {
@@ -136,7 +209,7 @@ const [editUrlFor, setEditUrlFor] = useState(null); // { id, url } — boîte «
       st.setActiveProfile(target.profileId);
       st.setActiveApp(target.id);
     }
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []);
 
   // --- Automatisations ---------------------------------------------------
   // Le processus principal décide du sort d'un lien AU MOMENT DU CLIC, et son
@@ -1386,7 +1459,7 @@ const openEditUrl = useCallback((id) => {
       {/* Menu contextuel des apps embarquées (remplace le menu natif) */}
       <GuestContextMenu />
       <OfflineProofreader />
-      <OrbitAssistant />
+      <AssistantHost />
 
       {/* Questions posées par les apps : alert/confirm/prompt et demandes
           d'autorisation (caméra, micro, position…) */}

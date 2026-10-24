@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useStore } from '../stores/useStore';
-import { ChevronLeft, ChevronRight, ChevronDown, Plus, Settings, Grid, User, Moon, BellOff, Lock, Volume2, VolumeX, LogIn, Globe, X, EyeOff, FolderPlus, Check, GripVertical } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronDown, Plus, Settings, Grid, User, Moon, BellOff, Lock, Volume2, VolumeX, LogIn, Globe, X, EyeOff, FolderPlus, Check, GripVertical, MessageCircle } from 'lucide-react';
 import AppContextMenu from './AppContextMenu';
 import MultiSelectionMenu from './MultiSelectionMenu';
 import AppFolderMenu from './AppFolderMenu';
@@ -62,6 +62,7 @@ export default function Sidebar({
     setAppFolder,
     toggleFolderCollapsed,
   } = useStore();
+  const assistantSessions = useStore((state) => state.assistantSessions || []);
   const { lockedProfileIds, unlockedProfileIds } = useSecurityStore();
   const t = useT();
   const media = useMediaStore((s) => s.media);
@@ -89,6 +90,8 @@ export default function Sidebar({
   const profileShowsLock = (id) =>
     lockedProfileIds.includes(id) && !unlockedProfileIds.includes(id);
   const currentProfile = profiles.find((p) => p.id === activeProfile);
+  const assistantChatEnabled = settings.assistantChatEnabled !== false;
+  const assistantChatSidebarEnabled = settings.assistantChatSidebarEnabled !== false;
   // Les apps « tous profils » venues d'un profil VERROUILLÉ sont écartées :
   // la portée globale ne doit pas contourner le verrou de profil.
   const apps = getProfileApps(activeProfile).filter(
@@ -141,6 +144,8 @@ export default function Sidebar({
   const selectedApps = apps.filter((a) => selectedSet.has(a.id));
   const [multiMenu, setMultiMenu] = useState(null); // { ids, x, y }
   const [folderMenu, setFolderMenu] = useState(null); // { folderId, x, y }
+  const [assistantFlyout, setAssistantFlyout] = useState(false);
+  const assistantFlyoutTimer = useRef(null);
   // Regroupement lancé depuis le bandeau de sélection : saisie du nom en place.
   // Le profil de départ est mémorisé — changer de profil abandonne la saisie
   // (même raison que pour la sélection : plus d'effet de remise à zéro).
@@ -151,6 +156,20 @@ export default function Sidebar({
     selectionAnchor.current = null;
     setSelection(EMPTY_SELECTION);
   }, [setSelection]);
+
+  const openAssistantConversation = (sessionId) => {
+    window.dispatchEvent(new CustomEvent('orbit:assistant-conversation-open', {
+      detail: { sessionId },
+    }));
+    setAssistantFlyout(false);
+  };
+
+  const scheduleAssistantFlyoutClose = () => {
+    clearTimeout(assistantFlyoutTimer.current);
+    assistantFlyoutTimer.current = setTimeout(() => setAssistantFlyout(false), 260);
+  };
+
+  useEffect(() => () => clearTimeout(assistantFlyoutTimer.current), []);
 
   // Échap annule la sélection (le geste attendu quand on s'est trompé de cible).
   useEffect(() => {
@@ -185,7 +204,10 @@ export default function Sidebar({
   const createGroupFromSelection = () => {
     const ids = selectedApps.map((a) => a.id);
     if (!ids.length) return;
-    createFolderWithApps(naming.name, ids, { fallbackName: t('fold.untitled') });
+    createFolderWithApps(naming.name, ids, {
+      fallbackName: t('fold.untitled'),
+      profileId: activeProfile,
+    });
     setNaming({ profileId: activeProfile, open: false, name: '' });
     clearSelection();
   };
@@ -279,6 +301,7 @@ export default function Sidebar({
   // Glisser-déposer : id de l'app déplacée + cible survolée (app, dossier, fin)
   const [dragId, setDragId] = useState(null);
   const dragIdRef = useRef(null);
+  const dragProfileRef = useRef(null);
   const [overId, setOverId] = useState(null);
   const [overPlacement, setOverPlacement] = useState('before');
   // Dossier survolé : déposer sur son en-tête range l'app dedans.
@@ -314,6 +337,7 @@ export default function Sidebar({
   // --- Réordonner par glisser-déposer -------------------------------------
   const handleDragStart = (e, appId) => {
     dragIdRef.current = appId;
+    dragProfileRef.current = activeProfile;
     setDragId(appId);
     e.dataTransfer.effectAllowed = 'move';
     // Nécessaire pour que le glisser démarre sur Firefox
@@ -351,11 +375,19 @@ export default function Sidebar({
   // distinctes du store : l'interface se recompose une fois pour les deux.
   const applyDrop = (targetId, folderId, placement = 'before') => {
     const movingId = dragIdRef.current;
-    if (!movingId) return;
+    if (
+      !movingId ||
+      dragProfileRef.current !== activeProfile ||
+      !flatApps.some((app) => app.id === movingId)
+    ) {
+      handleDragEnd();
+      return;
+    }
     const next = reorderIdsByDrop(flatApps.map((a) => a.id), movingId, targetId, placement);
     reorderApps(activeProfile, next);
-    setAppFolder(movingId, folderId);
+    setAppFolder(movingId, folderId, activeProfile);
     dragIdRef.current = null;
+    dragProfileRef.current = null;
     setDragId(null);
     setOverId(null);
     setOverPlacement('before');
@@ -372,7 +404,13 @@ export default function Sidebar({
     const placement = e.clientY >= bounds.top + bounds.height / 2 ? 'after' : 'before';
     // La moitié supérieure insère avant, la moitié inférieure après : le
     // déplacement vers une app voisine ne retombe donc pas à sa place initiale.
-    applyDrop(targetApp.id, targetApp.folderId, placement);
+    // Une app épinglée peut garder un folderId alors qu'elle est affichée en
+    // haut. Ne pas ranger l'autre app dans ce dossier invisible par accident.
+    const movingApp = apps.find((app) => app.id === movingId);
+    const targetFolderId = isPinned(targetApp) || isPinned(movingApp)
+      ? movingApp?.folderId
+      : targetApp.folderId;
+    applyDrop(targetApp.id, targetFolderId, placement);
   };
 
   const handleDropOnFolder = (e, folder) => {
@@ -411,6 +449,7 @@ export default function Sidebar({
 
   const handleDragEnd = () => {
     dragIdRef.current = null;
+    dragProfileRef.current = null;
     setDragId(null);
     setOverId(null);
     setOverPlacement('before');
@@ -448,7 +487,7 @@ export default function Sidebar({
       draggable
       onDragStart={(e) => handleDragStart(e, app.id)}
       onDragOver={(e) => handleDragOver(e, app.id)}
-      onDrop={(e) => handleDrop(e, app.id)}
+      onDrop={(e) => handleDrop(e, app)}
       onDragEnd={handleDragEnd}
       onMouseEnter={(e) => showMemPopup(app, e)}
       onMouseLeave={hideMemPopup}
@@ -793,6 +832,91 @@ export default function Sidebar({
           </div>
         )}
       </div>
+
+      {assistantChatEnabled && assistantChatSidebarEnabled && <div
+        className={`relative border-b border-border ${collapsed ? 'px-2 py-2' : 'px-3 py-2'}`}
+        onMouseEnter={() => {
+          clearTimeout(assistantFlyoutTimer.current);
+          if (collapsed) setAssistantFlyout(true);
+        }}
+        onMouseLeave={scheduleAssistantFlyoutClose}
+      >
+        <button
+          type="button"
+          onClick={() => {
+            if (collapsed) {
+              setAssistantFlyout(false);
+            }
+            window.dispatchEvent(new Event('orbit:assistant-chat-open'));
+          }}
+          onFocus={() => collapsed && setAssistantFlyout(true)}
+          aria-label={t('assistant.chat.title')}
+          aria-expanded={collapsed ? assistantFlyout : undefined}
+          title={collapsed ? t('assistant.chat.title') : undefined}
+          className={`flex w-full items-center rounded-lg py-2 text-sm transition-colors ${
+            collapsed ? 'justify-center' : 'gap-3 px-3'
+          } ${
+            assistantFlyout
+              ? 'bg-accent-primary/10 text-accent-primary'
+              : 'text-text-secondary hover:bg-bg-hover hover:text-text-primary'
+          }`}
+        >
+          <MessageCircle size={collapsed ? 19 : 17} />
+          {!collapsed && <span className="truncate">{t('assistant.chat.title')}</span>}
+        </button>
+
+        {collapsed && assistantFlyout && (
+          <section
+            aria-label={t('assistant.history.title')}
+            className="absolute left-full top-0 z-[100] ml-2 flex max-h-[min(70vh,520px)] w-80 flex-col overflow-hidden rounded-xl border border-border bg-bg-elevated shadow-2xl"
+            onMouseEnter={() => clearTimeout(assistantFlyoutTimer.current)}
+            onMouseLeave={scheduleAssistantFlyoutClose}
+          >
+            <header className="flex items-center justify-between border-b border-border px-3 py-2.5">
+              <span className="flex items-center gap-2 text-xs font-semibold text-text-primary">
+                <MessageCircle size={14} className="text-accent-primary" />
+                {t('assistant.history.title')}
+              </span>
+              <button
+                type="button"
+                onClick={() => {
+                  window.dispatchEvent(new Event('orbit:assistant-chat-open'));
+                  setAssistantFlyout(false);
+                }}
+                className="rounded-md px-2 py-1 text-[11px] text-accent-primary hover:bg-accent-primary/10"
+              >
+                {t('assistant.history.new')}
+              </button>
+            </header>
+            <div className="min-h-0 overflow-y-auto p-2">
+              {assistantSessions.length === 0 ? (
+                <p className="px-2 py-5 text-center text-xs text-text-muted">
+                  {t('assistant.history.empty')}
+                </p>
+              ) : assistantSessions.slice(0, 10).map((session) => (
+                <button
+                  key={session.id}
+                  type="button"
+                  onClick={() => openAssistantConversation(session.id)}
+                  className="flex w-full flex-col gap-1 rounded-lg px-2.5 py-2 text-left transition-colors hover:bg-bg-hover"
+                >
+                  <span className="w-full truncate text-xs font-medium text-text-primary">
+                    {session.title || t('assistant.history.untitled')}
+                  </span>
+                  <span className="flex w-full items-center justify-between gap-2 text-[10px] text-text-muted">
+                    <span className="truncate">
+                      {t(`assistant.history.category.${session.category || 'discussion'}`)}
+                    </span>
+                    <span className="shrink-0">
+                      {Array.isArray(session.messages) ? session.messages.length : 0}
+                    </span>
+                  </span>
+                </button>
+              ))}
+            </div>
+          </section>
+        )}
+      </div>}
 
       {/* Applications */}
       <div

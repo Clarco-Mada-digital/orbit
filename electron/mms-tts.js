@@ -80,9 +80,7 @@ async function ensureInstalled(onProgress) {
   fs.mkdirSync(d.root, { recursive: true });
 
   onProgress?.({ phase: 'download', received: 0, total: 0 });
-  let p = 0;
   await download(`${MODEL_BASE}/model.onnx`, d.model, (prog) => {
-    p = prog.received;
     onProgress?.({ phase: 'download', received: prog.received, total: prog.total });
   });
   await download(`${MODEL_BASE}/tokens.txt`, d.tokens);

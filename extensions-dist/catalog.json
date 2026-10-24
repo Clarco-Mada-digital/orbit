@@ -15,15 +15,15 @@
       "version": "1.4.0",
       "description": "Remplit les champs de formulaires non de connexion avec des données réalistes (email, nom, téléphone, ville, date, etc.). Inspiré des extensions Fake Filler / Fill Millier.",
       "nativeApp": null,
-      "size": 24805
+      "size": 24991
     },
     {
       "file": "orbit-phone.zip",
       "name": "Téléphone Orbit",
-      "version": "1.3.0",
+      "version": "1.4.0",
       "description": "Ajoute le Téléphone à Orbit : fenêtres de bureau indépendantes pour les applications Android, miroir séparé, notifications du mobile et pilotage via adb/scrcpy.",
       "nativeApp": "phone",
-      "size": 10549
+      "size": 10762
     },
     {
       "file": "page-to-markdown.zip",

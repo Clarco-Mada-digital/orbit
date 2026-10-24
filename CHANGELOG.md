@@ -8,6 +8,38 @@ Format : une section `## [X.Y.Z] — AAAA-MM-JJ` par version, puis des
 sous-sections `### Ajouté` / `### Modifié` / `### Corrigé` / `### Sécurité`.
 La plus récente en premier.
 
+## [1.16.0] — 2026-10-24
+
+### Ajouté
+- **Discussions IA enrichies** : réponses et messages affichent le Markdown
+  (titres, listes, tableaux, code et liens) ainsi que les formules LaTeX,
+  intégrées ou sur plusieurs lignes.
+- **Espace de travail IA** : discussions et agents sont accessibles depuis une
+  barre latérale repliable. Les agents sont classés par catégorie, leurs
+  commandes `/` sont propres à l'agent actif, et les réponses comme les
+  conversations peuvent être copiées, supprimées ou exportées en Markdown,
+  seules ou en groupe.
+- **Accueil Orbit Phone** : « Tout effacer » écarte les notifications du
+  téléphone ; le fond peut être choisi parmi des dégradés ou photos, une image
+  locale ou une URL. Les widgets Orbit de l'accueil restent personnalisables.
+- **Personnalisation de l'espace de travail** : dossiers et liens partagés entre
+  profils complètent la réorganisation des applications dans la barre latérale.
+
+### Corrigé
+- Les téléchargements de modèles locaux utilisent désormais des révisions
+  immuables, une taille attendue et une empreinte SHA-256 vérifiée. Les choix
+  SmolLM2 135M et Qwen2.5 0.5B correspondent à leurs vrais fichiers publiés ;
+  le modèle Llama 1B incomplet n'est plus proposé.
+- Les règles de permissions demandent une décision explicite pour les accès
+  sensibles et refusent par défaut quand aucune interface de confirmation n'est
+  disponible.
+
+### Sécurité
+- Mise à jour d'Electron et des dépendances vulnérables ; l'audit npm ne relève
+  plus de vulnérabilité connue.
+- Le rendu Markdown de l'assistant n'exécute pas le HTML fourni et neutralise
+  les liens non sûrs ; les images distantes ne sont pas chargées.
+
 ## [1.15.0] — 2026-10-22
 
 ### Ajouté

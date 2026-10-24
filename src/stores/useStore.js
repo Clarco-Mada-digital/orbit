@@ -10,8 +10,16 @@ import {
   pruneEmptyFolders,
   normalizeFolderName,
   withoutFolderId,
+  folderForProfile,
+  orderForProfile,
+  withFolderForProfile,
 } from '../lib/appGroups.js';
 import { KIND } from '../lib/fileTypes.js';
+import {
+  upsertAssistantSession,
+  removeAssistantSession,
+  setSessionTitle,
+} from '../lib/assistantSessions.js';
 import { stripNativeApps, withPhoneModule } from '../lib/phone.js';
 
 // Compteur d'identifiants de pages volantes (voir `openFlyPage`).
@@ -55,8 +63,11 @@ export const defaultSettings = {
   assistantProviderModels: {},
   assistantCloudConsent: {},
   assistantChatEnabled: true,
+  assistantChatSidebarEnabled: true,
   assistantChatShortcutEnabled: true,
   assistantChatShortcutKey: 'a',
+  assistantAgentId: 'writer',
+  assistantAgentFavorites: [],
   proofreaderEngine: 'local',
   theme: 'dark', // dark | light | auto
   language: 'auto', // auto | fr | en
@@ -309,6 +320,13 @@ export const useStore = create(
       // Onboarding : écran de bienvenue au tout premier lancement
       onboarded: false,
 
+      // Historique des conversations de l’assistant : une entrée par
+      // discussion ou action rapide (voir lib/assistantSessions.js).
+      // PUREMENT LOCAL — les sessions ne partent pas dans la synchronisation
+      // entre machines : elles contiennent des textes personnels et grossissent
+      // vite, contrairement aux réglages.
+      assistantSessions: [],
+
       // Settings
       settings: { ...defaultSettings },
 
@@ -342,7 +360,17 @@ export const useStore = create(
           window.electronAPI?.security?.dropProfile?.(profileId);
           return {
             profiles: state.profiles.filter((p) => p.id !== profileId),
-            apps: state.apps.filter((a) => a.profileId !== profileId),
+            apps: state.apps
+              .filter((a) => a.profileId !== profileId)
+              .map((app) => {
+                if (app.scope !== 'all') return app;
+                const hasOrder = Object.hasOwn(app.orderByProfile || {}, profileId);
+                const hasFolder = Object.hasOwn(app.folderByProfile || {}, profileId);
+                if (!hasOrder && !hasFolder) return app;
+                const { [profileId]: _removedOrder, ...orderByProfile } = app.orderByProfile || {};
+                const { [profileId]: _removedFolder, ...folderByProfile } = app.folderByProfile || {};
+                return { ...app, orderByProfile, folderByProfile };
+              }),
             // Les dossiers du profil partent avec lui : sans ça, ils
             // resteraient en base et réapparaîtraient à la reconnexion d'un
             // dossier de sauvegarde.
@@ -584,19 +612,19 @@ export const useStore = create(
         })),
 
       // --- Dossiers -------------------------------------------------------
-      // Crée un dossier (dans le profil des apps visées) et y range les apps
+      // Crée un dossier dans le profil courant et y range les apps sélectionnées
       // d'un coup. Le dossier et l'affectation sont écrits en UN seul `set` :
       // deux écritures laisseraient entrevoir une ligne vide le temps d'un rendu.
-      createFolderWithApps: (name, appIds, { emoji, color, fallbackName } = {}) =>
+      createFolderWithApps: (name, appIds, { emoji, color, fallbackName, profileId } = {}) =>
         set((state) => {
           const ids = new Set(appIds || []);
           const selected = state.apps.filter((a) => ids.has(a.id));
           if (!selected.length) return state;
-          const profileId = selected[0].profileId || state.activeProfile;
-          const order = state.folders.filter((f) => f.profileId === profileId).length;
+          const targetProfileId = profileId || state.activeProfile;
+          const order = state.folders.filter((f) => f.profileId === targetProfileId).length;
           const folder = makeFolder({
             name,
-            profileId,
+            profileId: targetProfileId,
             emoji,
             color,
             order,
@@ -604,33 +632,41 @@ export const useStore = create(
           });
           return {
             folders: [...state.folders, folder],
-            apps: state.apps.map((a) => (ids.has(a.id) ? { ...a, folderId: folder.id } : a)),
+            apps: state.apps.map((app) =>
+              ids.has(app.id) ? withFolderForProfile(app, targetProfileId, folder.id) : app
+            ),
           };
         }),
 
       // Range des apps dans un dossier existant — ou les en sort (`folderId`
       // vide, on retire aussi le champ pour ne pas laisser de résidu).
-      assignAppsToFolder: (appIds, folderId) =>
+      assignAppsToFolder: (appIds, folderId, profileId = get().activeProfile) =>
         set((state) => {
           const ids = new Set(appIds || []);
           if (!ids.size) return state;
           const target =
-            folderId && state.folders.some((f) => f.id === folderId) ? folderId : undefined;
+            folderId &&
+            state.folders.some((folder) => folder.id === folderId && folder.profileId === profileId)
+              ? folderId
+              : undefined;
           const apps = state.apps.map((a) => {
             if (!ids.has(a.id)) return a;
-            return target ? { ...a, folderId: target } : withoutFolderId(a);
+            return withFolderForProfile(a, profileId, target);
           });
           return { apps, folders: pruneEmptyFolders(state.folders, apps) };
         }),
 
       // Range UNE app (glisser-déposer) — même contrat que ci-dessus.
-      setAppFolder: (appId, folderId) =>
+      setAppFolder: (appId, folderId, profileId = get().activeProfile) =>
         set((state) => {
           const target =
-            folderId && state.folders.some((f) => f.id === folderId) ? folderId : undefined;
+            folderId &&
+            state.folders.some((folder) => folder.id === folderId && folder.profileId === profileId)
+              ? folderId
+              : undefined;
           const apps = state.apps.map((a) => {
             if (a.id !== appId) return a;
-            return target ? { ...a, folderId: target } : withoutFolderId(a);
+            return withFolderForProfile(a, profileId, target);
           });
           return { apps, folders: pruneEmptyFolders(state.folders, apps) };
         }),
@@ -662,10 +698,29 @@ export const useStore = create(
 
       // Supprime LE DOSSIER (pas les apps) : elles redeviennent libres.
       deleteFolder: (id) =>
-        set((state) => ({
-          folders: state.folders.filter((f) => f.id !== id),
-          apps: state.apps.map((a) => withoutFolderId(a)),
-        })),
+        set((state) => {
+          const folder = state.folders.find((item) => item.id === id);
+          if (!folder) return state;
+          return {
+            folders: state.folders.filter((item) => item.id !== id),
+            apps: state.apps.map((app) => {
+              if (app.scope !== 'all') {
+                return app.folderId === id ? withoutFolderId(app) : app;
+              }
+              const folderByProfile = { ...(app.folderByProfile || {}) };
+              let changed = app.folderId === id;
+              for (const [profileId, folderId] of Object.entries(folderByProfile)) {
+                if (folderId === id) {
+                  folderByProfile[profileId] = null;
+                  changed = true;
+                }
+              }
+              if (!changed) return app;
+              const next = app.folderId === id ? withoutFolderId(app) : app;
+              return { ...next, folderByProfile };
+            }),
+          };
+        }),
 
       // Déplie / replie la liste des profils de la barre latérale.
       setSidebarProfilesOpen: (open) => set({ sidebarProfilesOpen: open !== false }),
@@ -936,11 +991,14 @@ export const useStore = create(
       reorderApps: (profileId, appIds) =>
         set((state) => ({
           apps: state.apps.map((app) => {
-            // `getProfileApps` peut montrer ici des apps de portée globale
-            // venues d'un autre profil. Leur ordre visible doit donc suivre
-            // le dépôt lui aussi, même si leur profil propriétaire diffère.
             const newOrder = appIds.indexOf(app.id);
-            if (newOrder !== -1 && (app.profileId === profileId || app.scope === 'all')) {
+            if (newOrder !== -1 && app.scope === 'all') {
+              return {
+                ...app,
+                orderByProfile: { ...(app.orderByProfile || {}), [profileId]: newOrder },
+              };
+            }
+            if (newOrder !== -1 && app.profileId === profileId) {
               return { ...app, order: newOrder };
             }
             return app;
@@ -952,10 +1010,32 @@ export const useStore = create(
           settings: { ...state.settings, ...updates },
         })),
 
+      // --- Historique de l’assistant ---------------------------------------
+      saveAssistantSession: (session) =>
+        set((state) => ({
+          assistantSessions: upsertAssistantSession(state.assistantSessions, session),
+        })),
+      renameAssistantSession: (id, title) =>
+        set((state) => ({
+          assistantSessions: state.assistantSessions.map((session) =>
+            session.id === id ? setSessionTitle(session, title) : session
+          ),
+        })),
+      deleteAssistantSession: (id) =>
+        set((state) => ({
+          assistantSessions: removeAssistantSession(state.assistantSessions, id),
+        })),
+      clearAssistantSessions: () => set({ assistantSessions: [] }),
+
       // Helpers
       getProfileApps: (profileId) => {
         return get()
           .apps.filter((a) => appVisibleIn(a, profileId))
+          .map((app) => ({
+            ...app,
+            order: orderForProfile(app, profileId),
+            folderId: folderForProfile(app, profileId),
+          }))
           .sort((a, b) => a.order - b.order);
       },
 
@@ -1028,7 +1108,9 @@ export const useStore = create(
       // si elle manque, avec `scope: 'all'` pour qu'elle suive dans tous les
       // profils. L'appartenir au profil actif évite qu'une installation neuve
       // la crée dans un profil verrouillé.
-      version: 15,
+      // v16 : historique des conversations de l’assistant (`assistantSessions`).
+      // Une installation existante démarre simplement avec un historique vide.
+      version: 16,
       migrate: (persistedState, version) => {
         // Fusionne les anciennes données avec les paramètres par défaut
         // (évite les champs manquants → bug "input non contrôlé")
@@ -1167,6 +1249,16 @@ export const useStore = create(
             ...next,
             apps: stripped ? stripped.apps : next.apps || [],
             nativeApps: [],
+          };
+        }
+        // v16 : une session aux données abîmées ne doit pas faire planter la
+        // fenêtre de discussion au démarrage — on garantit un tableau.
+        if (version < 16) {
+          next = {
+            ...next,
+            assistantSessions: Array.isArray(next.assistantSessions)
+              ? next.assistantSessions
+              : [],
           };
         }
         return next;

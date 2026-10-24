@@ -4,6 +4,8 @@ import {
 } from '../src/lib/aiProviders.js';
 
 const MAX_RESPONSE_BYTES = 8_000_000;
+const REQUEST_TIMEOUT_MS = 300_000;
+const MAX_OUTPUT_TOKENS = 4096;
 
 function requestHeaders(provider, apiKey, { geminiNative = false } = {}) {
   const headers = { 'Content-Type': 'application/json' };
@@ -56,7 +58,7 @@ export function createAiProviderClient(fetch) {
     try {
       response = await fetch(url, {
         ...options,
-        signal: AbortSignal.timeout(120_000),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       });
     } catch (error) {
       throw new Error(error?.name === 'TimeoutError' ? 'provider-timeout' : 'provider-unreachable');
@@ -99,7 +101,7 @@ export function createAiProviderClient(fetch) {
       !validateAiMessages(messages) ||
       !Number.isInteger(maxTokens) ||
       maxTokens < 16 ||
-      maxTokens > 1024
+      maxTokens > MAX_OUTPUT_TOKENS
     ) {
       throw new Error('invalid-request');
     }

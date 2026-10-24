@@ -72,7 +72,6 @@ export default function AppStore({ onClose, prefill = null }) {
 
   // Apps installées dans le profil actif (recette OU personnalisée)
   const installedApps = apps.filter((a) => a.profileId === activeProfile);
-  const installedAppIds = installedApps.map((a) => a.recipeId);
 
   // Instances d'une même recette (comptes multiples : 2 Gmail, 2 Slack…)
   const getInstances = (recipeId) => installedApps.filter((a) => a.recipeId === recipeId);

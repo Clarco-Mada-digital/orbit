@@ -1,6 +1,6 @@
 {
   "name": "orbit",
-  "version": "1.15.0",
+  "version": "1.16.0",
   "description": "Orbit — toutes vos apps web dans une seule fenêtre (Windows, macOS, Linux)",
   "main": "electron/main.js",
   "type": "module",
@@ -38,7 +38,7 @@
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
     "concurrently": "^9.1.2",
-    "electron": "43.2.0",
+    "electron": "43.8.3",
     "electron-builder": "^26.15.3",
     "eslint": "^9.39.5",
     "eslint-plugin-react": "^7.37.5",
@@ -55,14 +55,22 @@
     "clsx": "^2.1.1",
     "electron-updater": "^6.8.9",
     "framer-motion": "^11.15.0",
+    "katex": "0.19.1",
     "lucide-react": "^0.468.0",
     "onnxruntime-node": "^1.29.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
+    "react-markdown": "^10.1.0",
+    "rehype-katex": "^7.0.1",
+    "remark-gfm": "^4.0.1",
+    "remark-math": "^6.0.0",
     "tldts-experimental": "^7.4.10",
     "tweetnacl": "^1.0.3",
     "yauzl": "^2.10.0",
     "zustand": "^5.0.2"
+  },
+  "overrides": {
+    "katex": "0.19.1"
   },
   "build": {
     "appId": "com.orbit.app",

@@ -160,7 +160,6 @@ export default function Extensions() {
   const [storeUrl, setStoreUrl] = useState('');
   const [error, setError] = useState(null);
   const [exportingFakeData, setExportingFakeData] = useState(false);
-  const [fakeDataSettingsOpen, setFakeDataSettingsOpen] = useState(false);
   const [fakeDataSaved, setFakeDataSaved] = useState(false);
   const [nativeConfigOpen, setNativeConfigOpen] = useState(null); // id de l'extension dont le panneau inline est ouvert
   const [extQuery, setExtQuery] = useState('');

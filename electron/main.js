@@ -10,6 +10,10 @@ import { collectBackupFiles, stageRestore, applyPendingRestore } from './backup-
 import { unpackCrx } from './crx.js';
 import { init as initKeepass, setEnabled as keepassSetEnabled, getLogins as keepassGetLogins, associate as keepassAssociate, checkStatus as keepassCheckStatus } from './keepass.js';
 import * as security from './security.js';
+import {
+  permissionCheckAllowed,
+  permissionRequestDecision,
+} from './permission-rules.js';
 import * as adblock from './adblock.js';
 import * as shields from './shields.js';
 import * as shieldRules from './shields-rules.js';
@@ -351,14 +355,8 @@ function createTray() {
     // l'échelle lui-même, et un redimensionnement préalable (surtout avec un
     // facteur d'écran > 1) produit parfois une icône vide/déformée.
     //
-    // ⚠️ RÉGRESSION ÉLECTRON (ne PAS monter au-delà de 43.2.x) : depuis 43.3.0,
-    // Chromium route les items SNI par nom de service, mais les hôtes de tray
-    // Linux (xApp/Cinnamon, extension GNOME AppIndicator) adressent l'item par
-    // son nom UNIQUE (:1.xxx) via Gio.DBusProxy → `GetAll` échoue avec
-    // « error occurred in GetAll » → le watcher ne lit jamais l'icône → le tray
-    // affiche le placeholder « image cassée » (rose, non cliquable). Voir
-    // electron/electron#52674. Electron est épinglé à 43.2.0 dans package.json
-    // (dernière version saine) — vérifier le correctif upstream avant tout bump.
+    // Une régression SNI signalée sur Electron 43.3 a été corrigée en amont ;
+    // conserver ce chemin Linux avec l'icône lue directement depuis le disque.
     if (process.platform === 'linux') {
       tray = new Tray(trayIconPath());
     } else {
@@ -802,41 +800,6 @@ function setupHeaderBypass(ses) {
 //   • REFUSÉ par défaut : accès matériel/sensible peu courant — géoloc, USB,
 //     HID, série, MIDI, capteurs, détection d'inactivité…
 // ---------------------------------------------------------------------------
-const ALLOWED_PERMISSIONS = new Set([
-  'notifications',
-  'media', // micro + caméra (appels/visio)
-  'mediaKeySystem', // DRM (lecture vidéo protégée)
-  'geolocation', // géolocalisation (cartes, météo…)
-  'fullscreen',
-  'clipboard-read',
-  'clipboard-sanitized-write',
-  'pointerLock',
-  'background-sync',
-  'openExternal',
-  'display-capture', // partage d'écran (WebRTC / appels vidéo)
-  'desktop-capture', // idem, ancien nom
-  // Sélecteur de fichiers/dossiers (showDirectoryPicker, showOpenFilePicker).
-  // Son absence ici refusait la demande en silence : la promesse était rejetée
-  // et les pages qui analysent un dossier ne démarraient jamais.
-  'fileSystem',
-]);
-
-// Permissions pour lesquelles Orbit DEMANDE (comportement d'un navigateur) :
-// tout ce qui touche au matériel, à la position ou à l'écran. Les autres
-// gardent la politique globale ci-dessus, accordée ou refusée en silence.
-const ASKABLE_PERMISSIONS = new Set([
-  'media', // caméra / micro
-  'geolocation',
-  'notifications',
-  'display-capture',
-  'desktop-capture',
-  'midiSysex',
-  'clipboard-read',
-  'idle-detection',
-  'window-management',
-  'fileSystem', // dossier ou fichier choisi par l'utilisateur
-]);
-
 // Sessions passant par un proxy : le WebRTC doit alors rester dans le tunnel.
 const proxiedSessions = new WeakSet();
 // `setupPermissions` est rejoué à chaque attachement de webview : les
@@ -860,9 +823,6 @@ function setupPermissions(ses) {
       const cb = typeof a === 'function' ? a : typeof c === 'function' ? c : null;
       if (!cb) return;
       const details = b || {};
-      const byDefault = () => cb(ALLOWED_PERMISSIONS.has(permission));
-
-      if (!ASKABLE_PERMISSIONS.has(permission)) return byDefault();
 
       // De quel site vient la demande ? On préfère l'URL portée par la demande
       // (une iframe peut demander pour son propre compte) et on retombe sur
@@ -875,18 +835,16 @@ function setupPermissions(ses) {
         details.requestingUrl || details.securityOrigin || pageUrl
       );
 
-      // Décision déjà prise pour ce site → on la rejoue sans rien demander.
-      const known = sitePermissions.decisionFor(origin, permission);
-      if (known) {
-        permLog(`${permission} pour ${origin} — décision mémorisée : ${known}`);
-        return cb(known === 'allow');
-      }
-
       const mode = sitePermissions.getMode();
-      if (mode !== 'ask' || !origin) {
-        permLog(`${permission} pour ${origin || 'origine illisible'} — mode « ${mode} »`);
-        if (mode === 'deny') return cb(false);
-        return byDefault(); // 'allow', ou origine illisible (about:, blob:…)
+      const decision = permissionRequestDecision(
+        permission,
+        mode,
+        origin,
+        sitePermissions.decisionFor(origin, permission)
+      );
+      if (decision !== 'ask') {
+        permLog(`${permission} pour ${origin || 'origine illisible'} — décision : ${decision}`);
+        return cb(decision === 'allow');
       }
 
       permLog(`${permission} demandé par ${origin} — question posée`);
@@ -898,10 +856,10 @@ function setupPermissions(ses) {
         writable: details.fileAccessType === 'writable',
       }).then((answer) => {
         // `null` = aucune interface pour poser la question (pop-up) : on
-        // applique la politique par défaut plutôt que de bloquer l'app.
+        // refuse plutôt que d'accorder silencieusement une permission sensible.
         if (answer === null) {
-          permLog(`${permission} pour ${origin} — sans réponse, politique par défaut`);
-          return byDefault();
+          permLog(`${permission} pour ${origin} — aucune interface, demande refusée`);
+          return cb(false);
         }
         cb(answer);
       });
@@ -910,34 +868,47 @@ function setupPermissions(ses) {
     // Vérifications synchrones (navigator.permissions.query, Notification.permission…)
     ses.setPermissionCheckHandler((_wc, permission, requestingOrigin) => {
       const origin = sitePermissions.originOf(requestingOrigin || '');
-      const known = sitePermissions.decisionFor(origin, permission);
-      if (known) return known === 'allow';
-      if (sitePermissions.getMode() === 'deny' && ASKABLE_PERMISSIONS.has(permission)) return false;
-      return ALLOWED_PERMISSIONS.has(permission);
+      return permissionCheckAllowed(
+        permission,
+        sitePermissions.getMode(),
+        sitePermissions.decisionFor(origin, permission),
+        origin
+      );
     });
 
-    // Périphériques (caméra / micro) : sans handler, Electron refuse
-    // l'accès même quand la permission 'media' est accordée.  WhatsApp,
-    // Messenger… appellent getUserMedia() → besoin de ce handler pour
-    // que la caméra et le micro soient réellement accessibles.
-    try {
-      ses.setDevicePermissionHandler((_details, callback) => {
-        callback(true);
-      });
-    } catch (_) { /* Electron < 15 */ }
-
     // Partage d'écran (« Partager l'écran » dans un appel).
-    // Le callback attend un FLUX, pas un booléen : `callback(true)` ne
-    // partageait rien du tout. On passe la main au sélecteur du système
-    // quand il existe, et on retombe sur l'écran principal sinon.
+    // Le sélecteur natif est utilisé quand il existe. Sinon, demander
+    // explicitement à l'utilisateur quel écran partager plutôt que de choisir
+    // automatiquement le premier écran disponible.
     try {
       ses.setDisplayMediaRequestHandler(
-        async (_request, callback) => {
+        async (request, callback) => {
           try {
+            if (!request.videoRequested) {
+              callback({});
+              return;
+            }
             const sources = await desktopCapturer.getSources({ types: ['screen'] });
-            const screenSource = sources[0];
-            callback(screenSource ? { video: screenSource } : {});
-          } catch {
+            if (sources.length === 0 || !mainWindow || mainWindow.isDestroyed()) {
+              callback({});
+              return;
+            }
+
+            const cancelLabel = 'Annuler';
+            const { response } = await dialog.showMessageBox(mainWindow, {
+              type: 'question',
+              title: 'Partager un écran',
+              message: 'Choisissez l’écran à partager.',
+              buttons: [
+                ...sources.map((source, index) => source.name || `Écran ${index + 1}`),
+                cancelLabel,
+              ],
+              cancelId: sources.length,
+              defaultId: sources.length,
+            });
+            callback(response < sources.length ? { video: sources[response] } : {});
+          } catch (error) {
+            console.error('[orbit] screen sharing source selection failed:', error);
             callback({}); // un objet vide = refus, jamais un plantage
           }
         },
@@ -4913,17 +4884,22 @@ async function exportExtensionToZip(extDir, zipPath) {
 }
 
 // Export de l'extension Fake Data Filler bundled avec Orbit
-ipcMain.handle('extensions:exportFakeData', async () => {
+handleFromUi('extensions:exportFakeData', async () => {
   try {
     const srcDir = path.join(__dirname, 'extensions', 'fake-data-sources');
-    if (!fs.existsSync(srcDir)) {
-      return { success: false, error: 'Extension Fake Data introuvable sur le disque' };
-    }
     const destDir = app.getPath('downloads');
     const zipName = 'fake-data-filler-orbit.zip';
     const zipPath = path.join(destDir, zipName);
 
-    await exportExtensionToZip(srcDir, zipPath);
+    if (fs.existsSync(srcDir)) {
+      await exportExtensionToZip(srcDir, zipPath);
+    } else {
+      const bundledZip = resourcePath(path.join('extensions-dist', zipName));
+      if (!fs.existsSync(bundledZip)) {
+        return { success: false, error: 'Archive Fake Data introuvable' };
+      }
+      await fs.promises.copyFile(bundledZip, zipPath);
+    }
     return { success: true, zipPath };
   } catch (err) {
     console.error('[orbit] export fake data échoué :', err.message);
@@ -5508,12 +5484,12 @@ ipcMain.handle(
   'phone:dismissNotifications',
   phoneGuard(async (p, phone) => {
     const res = await phone.dismissNotifications(p);
-    const keys = new Set(Array.isArray(p.keys) ? p.keys : []);
-    if (res.success) {
-      for (const key of keys) phoneNotifKnown.delete(String(key));
+    const dismissed = new Set(Array.isArray(res.dismissedKeys) ? res.dismissedKeys : []);
+    if (dismissed.size) {
+      for (const key of dismissed) phoneNotifKnown.delete(String(key));
       publishPhoneNotifications({
         serial: phoneNotifCache.serial,
-        items: phoneNotifCache.items.filter((item) => !keys.has(item.key)),
+        items: phoneNotifCache.items.filter((item) => !dismissed.has(item.key)),
       });
     }
     return res;

@@ -191,7 +191,7 @@ export default function MultiSelectionMenu({ ids, x, y, onClose }) {
               <button
                 key={f.id}
                 onClick={() => {
-                  assignAppsToFolder(ids, f.id);
+                  assignAppsToFolder(ids, f.id, activeProfile);
                   onClose();
                 }}
                 className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-bg-hover transition-colors"
@@ -232,7 +232,7 @@ export default function MultiSelectionMenu({ ids, x, y, onClose }) {
           {commonFolder && (
             <button
               onClick={() => {
-                assignAppsToFolder(ids, null);
+                assignAppsToFolder(ids, null, activeProfile);
                 onClose();
               }}
               className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-bg-hover transition-colors"

@@ -96,9 +96,43 @@ export function groupByFolder(apps, folders) {
   return { groups: [...buckets.values()].filter((g) => g.apps.length > 0), loose };
 }
 
+export function folderForProfile(app, profileId) {
+  if (!app) return undefined;
+  if (Object.hasOwn(app.folderByProfile || {}, profileId)) {
+    return app.folderByProfile[profileId] || undefined;
+  }
+  return app.scope === 'all'
+    ? app.profileId === profileId
+      ? app.folderId
+      : undefined
+    : app.folderId;
+}
+
+export function orderForProfile(app, profileId) {
+  const profileOrder = app?.orderByProfile?.[profileId];
+  return Number.isFinite(profileOrder) ? profileOrder : Number(app?.order) || 0;
+}
+
+export function withFolderForProfile(app, profileId, folderId) {
+  if (app?.scope !== 'all') {
+    const overrides = app?.folderByProfile || {};
+    if (!Object.hasOwn(overrides, profileId)) {
+      return folderId ? { ...app, folderId } : withoutFolderId(app);
+    }
+    const { [profileId]: _removed, ...folderByProfile } = overrides;
+    const updated = folderId ? { ...app, folderId } : withoutFolderId(app);
+    return { ...updated, folderByProfile };
+  }
+  return {
+    ...app,
+    folderByProfile: { ...(app.folderByProfile || {}), [profileId]: folderId || null },
+  };
+}
+
 export function reorderIdsByDrop(ids, draggedId, targetId, placement = 'before') {
-  const next = (ids || []).filter((id) => id !== draggedId);
-  if (!draggedId) return next;
+  const current = ids || [];
+  if (!draggedId || !current.includes(draggedId)) return [...current];
+  const next = current.filter((id) => id !== draggedId);
   if (draggedId === targetId) return [...ids];
   const targetIndex = targetId ? next.indexOf(targetId) : -1;
   const index =
@@ -111,7 +145,17 @@ export function reorderIdsByDrop(ids, draggedId, targetId, placement = 'before')
 // référence si rien ne change : inutile de faire re-rendre la liste pour rien.
 export function pruneEmptyFolders(folders, apps) {
   const list = folders || [];
-  const used = new Set((apps || []).map((a) => a && a.folderId).filter(Boolean));
+  const used = new Set();
+  for (const app of apps || []) {
+    const ownerOverride =
+      Object.hasOwn(app?.folderByProfile || {}, app?.profileId);
+    if (app?.folderId && !ownerOverride) used.add(app.folderId);
+    for (const [profileId, folderId] of Object.entries(app?.folderByProfile || {})) {
+      if (folderId && (app?.scope === 'all' || profileId === app?.profileId)) {
+        used.add(folderId);
+      }
+    }
+  }
   const kept = list.filter((f) => f && used.has(f.id));
   return kept.length === list.length ? list : kept;
 }

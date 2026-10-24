@@ -16,12 +16,14 @@ import {
   Monitor,
   Power,
   Palette,
+  Plus,
   RefreshCw,
   Search,
   Settings,
   Smartphone,
   Square,
   Star,
+  Trash2,
   Usb,
   Wifi,
   Volume1,
@@ -36,6 +38,7 @@ import {
   filterPhoneApps,
   initialsOf,
   normalizePhoneSettings,
+  PHONE_HOME_BACKGROUNDS,
   scrcpyCapabilities,
   sortPhoneApps,
 } from '../lib/phone';
@@ -235,6 +238,9 @@ export default function PhoneApp({ visible, onClose }) {
   const [tab, setTab] = useState('home');
   const [desktopNow, setDesktopNow] = useState(() => new Date());
   const [notificationsExpanded, setNotificationsExpanded] = useState(false);
+  const [clearingNotifications, setClearingNotifications] = useState(false);
+  const [wallpaperUrl, setWallpaperUrl] = useState('');
+  const wallpaperFileRef = useRef(null);
   const phoneNotifications = usePhoneStore((s) => s.notifications);
 
   const [apps, setApps] = useState([]);
@@ -242,6 +248,7 @@ export default function PhoneApp({ visible, onClose }) {
   const [appsToken, setAppsToken] = useState(0);
   const [query, setQuery] = useState('');
   const [appDrawerOpen, setAppDrawerOpen] = useState(false);
+  const [homeWidgetPickerOpen, setHomeWidgetPickerOpen] = useState(false);
   const [sortMode, setSortMode] = useState('name');
 
   const [favorites, setFavorites] = useState([]);
@@ -273,12 +280,9 @@ export default function PhoneApp({ visible, onClose }) {
   const serial = status?.serial || null;
   const device = status?.device || null;
   const engine = status?.engine || null;
-  const desktopBackgrounds = {
-    aurora: 'from-[#11182b] via-[#1b2945] to-[#11131f]',
-    ocean: 'from-[#082f49] via-[#0f4961] to-[#111827]',
-    sunset: 'from-[#431407] via-[#7c2d36] to-[#1e1b4b]',
-    midnight: 'from-[#09090b] via-[#18181b] to-[#172554]',
-  };
+  const desktopBackground = settings.homeBackgroundImage
+    ? `linear-gradient(rgba(2, 6, 23, 0.56), rgba(2, 6, 23, 0.56)), url("${settings.homeBackgroundImage}")`
+    : PHONE_HOME_BACKGROUNDS.find((background) => background.id === settings.homeBackground)?.css;
 
   useEffect(() => {
     if (tab !== 'home') return undefined;
@@ -301,6 +305,7 @@ export default function PhoneApp({ visible, onClose }) {
     }
     setStatus(res);
     setSettings(normalizePhoneSettings(res.settings || {}));
+    setWallpaperUrl(res.settings?.homeBackgroundImage || '');
     setFavorites(Array.isArray(res.settings?.favoritePackages) ? res.settings.favoritePackages : []);
     setRecents(Array.isArray(res.settings?.recentPackages) ? res.settings.recentPackages : []);
     setMirrorRunning(!!res.mirror?.running);
@@ -317,6 +322,62 @@ export default function PhoneApp({ visible, onClose }) {
     }
     return res;
   }, []);
+
+  const clearPhoneNotifications = useCallback(async () => {
+    if (!phoneNotifications.length || clearingNotifications) return;
+    if (!serial) {
+      setError('Aucun téléphone connecté pour écarter les notifications.');
+      return;
+    }
+    setClearingNotifications(true);
+    try {
+      const result = await apiRef.current?.dismissNotifications?.({
+        serial,
+        keys: phoneNotifications.map((notification) => notification.key),
+      });
+      const dismissedKeys = new Set(result?.dismissedKeys || []);
+      if (dismissedKeys.size) {
+        usePhoneStore.getState().setNotifications(
+          usePhoneStore.getState().notifications.filter((notification) => !dismissedKeys.has(notification.key))
+        );
+      }
+      if (!result?.success) {
+        setError(result?.error || 'Certaines notifications n’ont pas pu être écartées du téléphone.');
+      } else {
+        setError('');
+      }
+    } catch (err) {
+      setError(String(err?.message || err));
+    } finally {
+      setClearingNotifications(false);
+    }
+  }, [clearingNotifications, phoneNotifications, serial]);
+
+  const choosePhoneWallpaper = (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file) return;
+    if (file.size > 4 * 1024 * 1024) {
+      setError('L’image doit peser 4 Mo ou moins.');
+      return;
+    }
+    if (!['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.type)) {
+      setError('Choisis une image PNG, JPEG, WebP ou GIF.');
+      return;
+    }
+    const reader = new FileReader();
+    reader.onload = () => {
+      const image = String(reader.result || '');
+      if (!image.startsWith('data:image/')) {
+        setError('Impossible de lire cette image.');
+        return;
+      }
+      setWallpaperUrl(image);
+      saveSettings({ homeBackgroundImage: image });
+    };
+    reader.onerror = () => setError('Impossible de lire cette image.');
+    reader.readAsDataURL(file);
+  };
 
   const setPhoneRadio = useCallback(
     async (radio, enabled) => {
@@ -546,7 +607,12 @@ export default function PhoneApp({ visible, onClose }) {
     if (!api) return;
     try {
       const res = await api.setSettings(patch);
-      if (res?.success && res.settings) setSettings(normalizePhoneSettings(res.settings));
+      if (res?.success && res.settings) {
+        setSettings(normalizePhoneSettings(res.settings));
+        if (typeof patch.homeBackgroundImage === 'string') {
+          setWallpaperUrl(res.settings.homeBackgroundImage || '');
+        }
+      }
       else setError(res?.error || 'Impossible d’enregistrer ces réglages.');
     } catch (err) {
       setError(String(err.message || err));
@@ -793,24 +859,24 @@ export default function PhoneApp({ visible, onClose }) {
     <div
       key={app.package}
       className={`group relative flex ${
-        compact ? 'w-36 shrink-0 items-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-2 py-2 text-white hover:bg-white/[0.09]' : 'flex-col items-center gap-1.5 rounded-xl px-1 py-2 hover:bg-bg-hover'
+        compact ? 'w-28 shrink-0 flex-col items-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.04] px-2 py-2 text-white hover:bg-white/[0.09]' : 'flex-col items-center gap-1.5 rounded-xl px-1 py-2 hover:bg-bg-hover'
       }`}
     >
       <button
         type="button"
         onClick={() => launch(app)}
-        className={`min-w-0 ${compact ? 'flex flex-1 items-center gap-2 text-left' : 'flex w-full flex-col items-center gap-1.5'}`}
+        className={`min-w-0 ${compact ? 'flex w-full flex-col items-center gap-1.5 text-center' : 'flex w-full flex-col items-center gap-1.5'}`}
         title={`${app.name} — ${app.package}`}
       >
         <PhoneIcon
           serial={serial}
           pkg={app.package}
           name={app.name}
-          size={compact ? 32 : tileSize}
+          size={compact ? 44 : tileSize}
           limit={iconLimitForGrid}
         />
         <span className={`line-clamp-2 min-w-0 leading-tight ${
-          compact ? 'flex-1 text-left text-[11px] text-white/80' : 'w-full text-center text-[11px] text-text-secondary'
+          compact ? 'w-full text-center text-[11px] text-white/80' : 'w-full text-center text-[11px] text-text-secondary'
         }`}>
           {app.name}
         </span>
@@ -818,7 +884,7 @@ export default function PhoneApp({ visible, onClose }) {
       <button
         type="button"
         onClick={() => toggleFavorite(app.package)}
-        className={`${compact ? 'shrink-0 rounded-full p-1' : 'absolute right-0 top-0 rounded-full p-1 opacity-0 transition-opacity group-hover:opacity-100'} ${
+        className={`absolute right-1 top-1 rounded-full p-1 transition-opacity ${compact ? '' : 'opacity-0 group-hover:opacity-100'} ${
           favorites.includes(app.package)
             ? 'text-amber-400 opacity-100'
             : 'text-text-muted hover:text-text-primary'
@@ -846,7 +912,14 @@ export default function PhoneApp({ visible, onClose }) {
   }
 
   return (
-    <div className={`flex h-full min-h-0 flex-col text-text-primary ${tab === 'home' ? `bg-gradient-to-br ${desktopBackgrounds[settings.homeBackground]}` : 'bg-bg-primary'}`}>
+    <div
+      className={`flex h-full min-h-0 flex-col text-text-primary ${tab === 'home' ? '' : 'bg-bg-primary'}`}
+      style={tab === 'home' ? {
+        backgroundImage: desktopBackground || PHONE_HOME_BACKGROUNDS[0].css,
+        backgroundPosition: 'center',
+        backgroundSize: 'cover',
+      } : undefined}
+    >
       <header className="flex shrink-0 items-center gap-3 border-b border-border px-4 py-2.5">
         <div className="flex items-center gap-2">
           <Smartphone size={18} className="text-accent-primary" />
@@ -1166,7 +1239,9 @@ export default function PhoneApp({ visible, onClose }) {
                   <span className="grid h-7 w-7 place-items-center rounded-lg bg-sky-300/10 text-sky-200"><Bell size={14} /></span>
                   <span className="text-xs font-semibold">Notifications</span>
                   <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] tabular-nums text-white/70">{phoneNotifications.length}</span>
-                  <span className="ml-auto text-[10px] text-white/35">Du téléphone</span>
+                  <button type="button" onClick={clearPhoneNotifications} disabled={clearingNotifications} className="ml-auto flex items-center gap-1.5 rounded-lg px-2 py-1 text-[10px] text-white/55 transition hover:bg-white/10 hover:text-white disabled:opacity-40" title="Écarter toutes les notifications du téléphone">
+                    <Trash2 size={12} /> {clearingNotifications ? 'Effacement…' : 'Tout effacer'}
+                  </button>
                 </div>
                 <div className="max-h-[360px] divide-y divide-white/[0.06] overflow-y-auto">
                   {phoneNotifications.slice(0, notificationsExpanded ? phoneNotifications.length : 5).map((notification) => {
@@ -1186,10 +1261,57 @@ export default function PhoneApp({ visible, onClose }) {
                 {phoneNotifications.length > 5 ? <button type="button" onClick={() => setNotificationsExpanded((expanded) => !expanded)} className="w-full border-t border-white/[0.07] px-3 py-2 text-[11px] font-medium text-sky-200/80 transition hover:bg-white/[0.04] hover:text-sky-100">{notificationsExpanded ? 'Afficher moins' : `Afficher les ${phoneNotifications.length - 5} autres notifications`}</button> : null}
               </section> : null}
 
-              <div className="flex items-center justify-between gap-3 lg:col-span-12">
+              <div className="relative flex items-center justify-between gap-3 lg:col-span-12">
                 <div><h2 className="text-sm font-semibold text-white/90">Ton bureau</h2><p className="text-[11px] text-white/50">Favoris, raccourcis et activité récente</p></div>
-                <button type="button" onClick={() => selectTab('settings')} className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.05] px-2.5 py-1.5 text-xs text-white/70 hover:bg-white/10"><Settings size={13} /> Personnaliser</button>
+                <div className="flex items-center gap-2">
+                  <button type="button" onClick={() => setHomeWidgetPickerOpen((open) => !open)} aria-expanded={homeWidgetPickerOpen} className="flex items-center gap-1.5 rounded-lg border border-sky-200/15 bg-sky-300/10 px-2.5 py-1.5 text-xs text-sky-100 hover:bg-sky-300/20"><Plus size={13} /> Ajouter un widget</button>
+                  <button type="button" onClick={() => selectTab('settings')} className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.05] px-2.5 py-1.5 text-xs text-white/70 hover:bg-white/10"><Settings size={13} /> Personnaliser</button>
+                </div>
               </div>
+              {homeWidgetPickerOpen ? (
+                <section className="rounded-2xl border border-sky-200/15 bg-slate-950/70 p-3 text-white shadow-xl backdrop-blur-xl lg:col-span-12">
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <div>
+                      <h3 className="text-xs font-semibold">Widgets disponibles</h3>
+                      <p className="mt-1 text-[11px] text-white/45">Ajoute ou retire les cartes affichées sur cet accueil.</p>
+                    </div>
+                    <button type="button" onClick={() => selectTab('settings')} className="rounded-lg px-2 py-1 text-[11px] text-sky-200 hover:bg-white/10">Plus de réglages</button>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
+                    {[
+                      ['clock', 'Horloge'],
+                      ['device', 'Appareil et batterie'],
+                      ['quickControls', 'Contrôles rapides'],
+                      ['favorites', 'Applications favorites'],
+                      ['recent', 'Applications récentes'],
+                      ['notifications', 'Notifications'],
+                    ].map(([key, label]) => {
+                      const enabled = settings.homeWidgets[key];
+                      return (
+                        <button
+                          key={key}
+                          type="button"
+                          aria-pressed={enabled}
+                          onClick={() => saveSettings({
+                            homeWidgets: { ...settings.homeWidgets, [key]: !enabled },
+                          })}
+                          className={`rounded-xl border px-3 py-2 text-left text-xs transition ${
+                            enabled
+                              ? 'border-sky-200/30 bg-sky-300/10 text-sky-100'
+                              : 'border-white/10 bg-white/[0.03] text-white/60 hover:bg-white/[0.08]'
+                          }`}
+                        >
+                          <span className="block font-medium">{label}</span>
+                          <span className="mt-1 block text-[10px] opacity-60">{enabled ? 'Ajouté · retirer' : 'Cliquer pour ajouter'}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className="mt-3 text-[10px] leading-relaxed text-white/40">
+                    Ce sont les widgets intégrés à Orbit. Les widgets Android tiers ne sont pas encore hébergeables dans ce panneau; cela nécessite une application hôte native sur Android.
+                  </p>
+                </section>
+              ) : null}
               {showHomeFavorites ? <section className={`min-w-0 rounded-2xl border border-white/10 bg-white/[0.06] p-3 text-white shadow-lg backdrop-blur-xl ${homeAppSections > 1 ? 'lg:col-span-6' : 'lg:col-span-12'}`}>
                 <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-white/70"><Star size={14} className="text-amber-300" /> Favoris <span className="ml-auto text-[10px] font-normal text-white/40">{favoriteApps.length}</span></div>
                 <div className="flex gap-2 overflow-x-auto pb-1">{favoriteApps.slice(0, 12).map((app) => tile(app, true))}</div>
@@ -1572,23 +1694,52 @@ export default function PhoneApp({ visible, onClose }) {
               </h3>
               <p className="mb-3 text-xs text-text-muted">Choisis le fond et les widgets visibles sur l’accueil Orbit du téléphone.</p>
               <div className="mb-3 flex flex-wrap gap-2">
-                {[
-                  ['aurora', 'Aurore'], ['ocean', 'Océan'], ['sunset', 'Crépuscule'], ['midnight', 'Nuit'],
-                ].map(([value, label]) => (
-                  <button key={value} type="button" onClick={() => saveSettings({ homeBackground: value })}
-                    className={`rounded-lg border px-3 py-1.5 text-xs transition-colors ${settings.homeBackground === value ? 'border-accent-primary bg-accent-primary/15 text-accent-primary' : 'border-border text-text-muted hover:bg-bg-hover'}`}>
-                    {label}
+                {PHONE_HOME_BACKGROUNDS.map(({ id, label, css }) => (
+                  <button key={id} type="button" onClick={() => saveSettings({ homeBackground: id, homeBackgroundImage: '' })}
+                    className={`h-16 w-24 rounded-lg border bg-cover bg-center text-xs font-medium text-white shadow-sm transition-transform hover:scale-[1.03] ${settings.homeBackground === id && !settings.homeBackgroundImage ? 'border-accent-primary ring-2 ring-accent-primary/50' : 'border-white/20'}`}
+                    style={{ backgroundImage: css }}>
+                    <span className="rounded bg-black/45 px-1.5 py-0.5">{label}</span>
                   </button>
                 ))}
               </div>
+              <div className="mb-3 flex flex-wrap items-center gap-2">
+                <input
+                  ref={wallpaperFileRef}
+                  type="file"
+                  accept=".png,.jpg,.jpeg,.webp,.gif"
+                  className="hidden"
+                  onChange={choosePhoneWallpaper}
+                />
+                <input
+                  type="url"
+                  value={wallpaperUrl.startsWith('data:') ? '' : wallpaperUrl}
+                  onChange={(event) => setWallpaperUrl(event.target.value)}
+                  placeholder="https://… (image)"
+                  className="min-w-0 flex-1 rounded-lg border border-border bg-bg-primary px-2.5 py-1.5 text-xs outline-none focus:border-accent-primary"
+                />
+                <button type="button" onClick={() => saveSettings({ homeBackgroundImage: wallpaperUrl.trim() })} disabled={!wallpaperUrl.trim()} className="rounded-lg border border-border px-3 py-1.5 text-xs hover:bg-bg-hover disabled:opacity-40">
+                  Appliquer l’URL
+                </button>
+                <button type="button" onClick={() => wallpaperFileRef.current?.click()} className="rounded-lg border border-border px-3 py-1.5 text-xs hover:bg-bg-hover">
+                  Fichier…
+                </button>
+                {settings.homeBackgroundImage ? (
+                  <button type="button" onClick={() => saveSettings({ homeBackgroundImage: '' })} className="rounded-lg px-2 py-1.5 text-xs text-text-muted hover:bg-bg-hover">
+                    Retirer
+                  </button>
+                ) : null}
+              </div>
               <p className="mb-3 text-[11px] leading-relaxed text-text-muted">
                 Scrcpy crée un nouvel écran Android avec ces dimensions. Ce réglage s’applique aux nouvelles fenêtres ; ferme les fenêtres déjà ouvertes ci-dessous avant de relancer une app. Une app peut toujours imposer sa propre orientation.
+              </p>
+              <p className="mb-3 text-[11px] leading-relaxed text-text-muted">
+                Ces cartes sont des widgets Orbit affichés dans le panneau. Les widgets Android fournis par d’autres applications ne peuvent pas encore être hébergés ici : il faudrait un hôte de widgets Android natif.
               </p>
               <Toggle label="Horloge et date" checked={settings.homeWidgets.clock} onChange={(v) => saveSettings({ homeWidgets: { ...settings.homeWidgets, clock: v } })} />
               <Toggle label="Appareil et batterie" checked={settings.homeWidgets.device} onChange={(v) => saveSettings({ homeWidgets: { ...settings.homeWidgets, device: v } })} />
               <Toggle label="Applications favorites" checked={settings.homeWidgets.favorites} onChange={(v) => saveSettings({ homeWidgets: { ...settings.homeWidgets, favorites: v } })} />
               <Toggle label="Applications récentes" checked={settings.homeWidgets.recent} onChange={(v) => saveSettings({ homeWidgets: { ...settings.homeWidgets, recent: v } })} />
-              <Toggle label="Notifications du téléphone" hint="Affiche seulement les deux dernières alertes, avec leur texte raccourci. Cliquer ouvre l’application dans sa fenêtre." checked={settings.homeWidgets.notifications} onChange={(v) => saveSettings({ homeWidgets: { ...settings.homeWidgets, notifications: v } })} />
+              <Toggle label="Notifications du téléphone" hint="Affiche les alertes récentes. Cliquer ouvre l’application dans sa fenêtre ; « Tout effacer » les écarte du téléphone." checked={settings.homeWidgets.notifications} onChange={(v) => saveSettings({ homeWidgets: { ...settings.homeWidgets, notifications: v } })} />
               <Toggle label="Contrôles rapides" hint="Volume, Wi-Fi, Bluetooth et raccourcis vers les réglages Android." checked={settings.homeWidgets.quickControls} onChange={(v) => saveSettings({ homeWidgets: { ...settings.homeWidgets, quickControls: v } })} />
               <div className="mt-4 border-t border-border pt-3">
                 <h4 className="mb-2 text-xs font-medium text-text-secondary">Tiroir d’applications</h4>

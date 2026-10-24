@@ -848,13 +848,19 @@ export async function dismissNotification({ serial, key } = {}) {
 
 export async function dismissNotifications({ serial, keys } = {}) {
   if (!serial) return { success: false, error: 'aucun appareil', count: 0 };
-  const list = (Array.isArray(keys) ? keys : []).slice(0, 64).map((k) => String(k));
-  let count = 0;
+  const list = [...new Set((Array.isArray(keys) ? keys : []).map((key) => String(key)))];
+  const dismissedKeys = [];
   for (const key of list) {
     const res = await dismissNotification({ serial, key });
-    if (res.success) count += 1;
+    if (res.success) dismissedKeys.push(key);
   }
-  return { success: true, count };
+  const success = dismissedKeys.length === list.length;
+  return {
+    success,
+    count: dismissedKeys.length,
+    dismissedKeys,
+    ...(success ? {} : { error: 'Certaines notifications n’ont pas pu être écartées.' }),
+  };
 }
 
 // Réveille l'écran et ouvre le volet des notifications SUR le téléphone :

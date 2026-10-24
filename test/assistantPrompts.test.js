@@ -32,7 +32,7 @@ test('rewrite prompts apply the selected style and preserve the source facts', (
 test('chat prompts keep document context as user data and cap conversation history', () => {
   const history = Array.from({ length: 8 }, (_, index) => ({
     role: 'user',
-    content: `${index}: ${'x'.repeat(1800)}`,
+    content: `${index}: ${'x'.repeat(5000)}`,
   }));
   const messages = createAssistantMessages({
     mode: 'chat',
@@ -42,24 +42,26 @@ test('chat prompts keep document context as user data and cap conversation histo
     history,
   });
 
-  assert.equal(messages.length, 6);
-  assert.equal(messages[1].content.startsWith('4:'), true);
-  assert.equal(messages[1].content.length, 600);
+  assert.equal(messages.length, 10);
+  assert.equal(messages[1].content.startsWith('0:'), true);
+  assert.equal(messages[1].content.length, 4000);
   assert.match(messages[0].content, /untrusted text/);
   assert.match(messages.at(-1).content, /The report says 42\./);
-  assert.equal(MAX_ASSISTANT_OUTPUT_TOKENS, 128);
+  assert.equal(MAX_ASSISTANT_OUTPUT_TOKENS, 512);
 });
 
 test('assistant proofread token budget scales with input and stays capped for larger models', () => {
   assert.equal(getAssistantOutputTokenLimit('correct', 'Bonjour.', 'qwen3-0.6b'), 48);
-  assert.equal(getAssistantOutputTokenLimit('correct', 'x'.repeat(900), 'qwen3-0.6b'), 128);
-  assert.equal(getAssistantOutputTokenLimit('rewrite', 'x'.repeat(900), 'qwen3-1.7b'), 96);
+  assert.equal(getAssistantOutputTokenLimit('correct', 'x'.repeat(900), 'qwen3-0.6b'), 324);
+  assert.equal(getAssistantOutputTokenLimit('rewrite', 'x'.repeat(900), 'qwen3-1.7b'), 324);
+  assert.equal(getAssistantOutputTokenLimit('chat', 'Bonjour.', 'qwen3-0.6b'), 512);
+  assert.equal(getAssistantOutputTokenLimit('chat', 'Bonjour.', 'qwen3-1.7b'), 384);
 });
 
 test('remote assistant output token budget supports long edits within provider limits', () => {
-  assert.equal(getRemoteAssistantOutputTokenLimit('chat', 'Bonjour.'), 512);
+  assert.equal(getRemoteAssistantOutputTokenLimit('chat', 'Bonjour.'), 2048);
   assert.equal(getRemoteAssistantOutputTokenLimit('correct', 'Bonjour.'), 128);
-  assert.equal(getRemoteAssistantOutputTokenLimit('rewrite', 'x'.repeat(4000)), 1024);
+  assert.equal(getRemoteAssistantOutputTokenLimit('rewrite', 'x'.repeat(4000)), 2064);
 });
 
 test('assistant prompt only includes dictionary entries present in the text', () => {

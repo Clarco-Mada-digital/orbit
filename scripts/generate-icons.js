@@ -15,8 +15,6 @@ const ROOT = join(__dirname, '..');
 // Rasterisation du logo (espace 64×64, supersampling pour l'anti-aliasing)
 // ---------------------------------------------------------------------------
 
-const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
-
 function renderLogo(size, ss = 4) {
   const big = size * ss;
   const buf = Buffer.alloc(big * big * 4);

@@ -16,6 +16,9 @@ import {
   isToggleClick,
   withoutFolderId,
   reorderIdsByDrop,
+  folderForProfile,
+  orderForProfile,
+  withFolderForProfile,
 } from '../src/lib/appGroups.js';
 
 // Les dossiers se contentent d'un `folderId` posé sur l'app : le risque n'est
@@ -98,6 +101,26 @@ test('groupByFolder : entrées nulles traversées sans planter', () => {
   assert.deepEqual(loose.map((a) => a.id), ['a']);
 });
 
+test('apps globales : dossiers et ordre sont propres à chaque profil', () => {
+  const shared = app('shared', {
+    scope: 'all',
+    profileId: 'work',
+    folderId: 'work-folder',
+    order: 2,
+    folderByProfile: { personal: 'personal-folder' },
+    orderByProfile: { personal: 0 },
+  });
+  assert.equal(folderForProfile(shared, 'work'), 'work-folder');
+  assert.equal(folderForProfile(shared, 'personal'), 'personal-folder');
+  assert.equal(folderForProfile(shared, 'other'), undefined);
+  assert.equal(orderForProfile(shared, 'work'), 2);
+  assert.equal(orderForProfile(shared, 'personal'), 0);
+
+  const personalized = withFolderForProfile(shared, 'personal', null);
+  assert.equal(folderForProfile(personalized, 'personal'), undefined);
+  assert.equal(folderForProfile(personalized, 'work'), 'work-folder');
+});
+
 test('reorderIdsByDrop : glisser avant/après la cible, y compris la ligne voisine', () => {
   const order = ['a', 'b', 'c'];
   assert.deepEqual(reorderIdsByDrop(order, 'a', 'b', 'after'), ['b', 'a', 'c']);
@@ -106,10 +129,35 @@ test('reorderIdsByDrop : glisser avant/après la cible, y compris la ligne voisi
   assert.deepEqual(order, ['a', 'b', 'c']);
 });
 
+test('reorderIdsByDrop : un glisser périmé ne réinsère pas un élément absent', () => {
+  const order = ['a', 'b', 'c'];
+  assert.deepEqual(reorderIdsByDrop(order, 'removed', 'b'), order);
+  assert.deepEqual(reorderIdsByDrop(order, null, 'b'), order);
+});
+
 test('pruneEmptyFolders : retire les dossiers sans app', () => {
   const folders = [folder('f1'), folder('f2')];
   const kept = pruneEmptyFolders(folders, [app('a', { folderId: 'f1' })]);
   assert.deepEqual(kept.map((f) => f.id), ['f1']);
+});
+
+test('pruneEmptyFolders : conserve les dossiers référencés par une app globale', () => {
+  const folders = [folder('work'), folder('personal', { profileId: 'personal' })];
+  const kept = pruneEmptyFolders(folders, [
+    app('shared', { scope: 'all', folderByProfile: { personal: 'personal' } }),
+  ]);
+  assert.deepEqual(kept.map((item) => item.id), ['personal']);
+});
+
+test('pruneEmptyFolders : une exception du profil propriétaire remplace le dossier historique', () => {
+  const folders = [folder('work')];
+  const shared = app('shared', {
+    scope: 'all',
+    profileId: 'work',
+    folderId: 'work',
+    folderByProfile: { work: null },
+  });
+  assert.deepEqual(pruneEmptyFolders(folders, [shared]), []);
 });
 
 test('pruneEmptyFolders : rien à retirer → même référence (pas de re-rendu)', () => {

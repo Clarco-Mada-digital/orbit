@@ -28,10 +28,10 @@ export const SYNC_FORMAT = 1;
 // cette liste reste purement local.
 const APP_FIELDS = [
   'id', 'profileId', 'sessionKey', 'recipeId', 'name', 'homeUrl', 'icon',
-  'color', 'favicon', 'order', 'zoom', 'scope', 'containerId', 'proxy',
+  'color', 'favicon', 'order', 'orderByProfile', 'folderByProfile', 'zoom', 'scope', 'containerId', 'proxy',
   'userAgent', 'notifications', 'favorite', 'folderId',
 ];
-const PROFILE_FIELDS = ['id', 'name', 'emoji', 'color', 'proxy'];
+const PROFILE_FIELDS = ['id', 'name', 'emoji', 'color', 'proxy', 'home'];
 const CONTAINER_FIELDS = ['id', 'name', 'color'];
 // `collapsed` (plié/déplié) reste LOCAL : plier un dossier sur le portable ne
 // doit pas le plier sur le fixe.

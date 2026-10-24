@@ -95,6 +95,7 @@ export default function Settings({ onClose }) {
   const [checking, setChecking] = useState(false);
   const [downloadFolderError, setDownloadFolderError] = useState('');
   const [pickingDownloadFolder, setPickingDownloadFolder] = useState(false);
+  const [homeImageError, setHomeImageError] = useState('');
 
   useEffect(() => {
     window.electronAPI?.getVersion?.().then((v) => v && setAppVersion(v));
@@ -114,24 +115,39 @@ export default function Settings({ onClose }) {
       setUpdateMsg(t('st.upd.upToDate'));
     }
   };
-  const { settings, updateSettings, apps, profiles } = useStore();
+  const { settings, updateSettings, apps, profiles, activeProfile, updateProfile } = useStore();
   const t = useT();
 
-  // Page d'accueil : on passe toujours par `normalizeHome` (installation mise
-  // à jour = pas encore de clé `settings.home`).
-  const home = normalizeHome(settings.home);
+  const currentProfile = profiles.find((profile) => profile.id === activeProfile);
+  const homeSource = currentProfile?.home || settings.home;
+  const home = normalizeHome(homeSource);
+  const updateHome = (updates) =>
+    updateProfile(activeProfile, { home: { ...home, ...updates } });
   const homeFileRef = useRef(null);
   const handleHomeImage = (e) => {
     const file = e.target.files && e.target.files[0];
+    e.target.value = '';
     if (file) {
+      if (file.size > 3 * 1024 * 1024) {
+        setHomeImageError(t('st.homeImageTooLarge'));
+        return;
+      }
+      if (!['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.type)) {
+        setHomeImageError(t('st.homeImageFormat'));
+        return;
+      }
+      setHomeImageError('');
       const reader = new FileReader();
       reader.onload = () => {
-        const cur = useStore.getState().settings.home;
-        updateSettings({ home: { ...normalizeHome(cur), imageUrl: String(reader.result || '') } });
+        const profile = useStore.getState().profiles.find((item) => item.id === activeProfile);
+        const cur = normalizeHome(profile?.home || useStore.getState().settings.home);
+        useStore.getState().updateProfile(activeProfile, {
+          home: { ...cur, imageUrl: String(reader.result || '') },
+        });
       };
+      reader.onerror = () => setHomeImageError(t('st.homeImageReadError'));
       reader.readAsDataURL(file);
     }
-    e.target.value = '';
   };
 
   // Téléchargements : choisir le dossier d'enregistrement. Le sélecteur est
@@ -233,7 +249,7 @@ export default function Settings({ onClose }) {
   return (
     <>
       <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center animate-fade-in">
-        <div className="w-full max-w-4xl h-[80vh] bg-bg-secondary border border-border rounded-2xl shadow-2xl overflow-hidden flex animate-scale-in">
+        <div className="w-[min(96vw,80rem)] max-w-6xl h-[86vh] bg-bg-secondary border border-border rounded-2xl shadow-2xl overflow-hidden flex animate-scale-in">
           {/* Sidebar */}
           <div className="w-64 bg-bg-primary border-r border-border flex flex-col">
             <div className="p-6 border-b border-border">
@@ -852,6 +868,9 @@ export default function Settings({ onClose }) {
                       <h4 className="font-semibold">{t('st.homeTitle')}</h4>
                     </div>
                     <p className="text-sm text-text-muted mb-4">{t('st.homeDesc')}</p>
+                    <p className="mb-4 rounded-lg border border-border bg-bg-primary/50 px-3 py-2 text-xs text-text-secondary">
+                      {t('st.homeProfile', { name: currentProfile?.name || '' })}
+                    </p>
 
                     {/* Fonds proposés (dégradés) */}
                     <div className="text-sm font-medium mb-2">{t('st.homeBackground')}</div>
@@ -862,7 +881,7 @@ export default function Settings({ onClose }) {
                           <button
                             key={b.id}
                             onClick={() =>
-                              updateSettings({ home: { ...home, background: b.id, imageUrl: '' } })
+                              updateHome({ background: b.id, imageUrl: '' })
                             }
                             title={t(`home.bg.${b.id}`)}
                             className={`w-12 h-12 rounded-xl border-2 transition-all ${
@@ -884,9 +903,7 @@ export default function Settings({ onClose }) {
                         <input
                           type="text"
                           value={home.imageUrl}
-                          onChange={(e) =>
-                            updateSettings({ home: { ...home, imageUrl: e.target.value } })
-                          }
+                          onChange={(e) => updateHome({ imageUrl: e.target.value })}
                           placeholder={t('st.homeImageUrl')}
                           className="input flex-1"
                         />
@@ -900,11 +917,14 @@ export default function Settings({ onClose }) {
                         <input
                           ref={homeFileRef}
                           type="file"
-                          accept="image/*"
+                          accept=".png,.jpg,.jpeg,.webp,.gif"
                           className="hidden"
                           onChange={handleHomeImage}
                         />
                       </div>
+                      {homeImageError ? (
+                        <p role="alert" className="text-xs text-error">{homeImageError}</p>
+                      ) : null}
 
                       {home.imageUrl && (
                         <>
@@ -915,7 +935,7 @@ export default function Settings({ onClose }) {
                             />
                             <button
                               onClick={() =>
-                                updateSettings({ home: { ...home, imageUrl: '' } })
+                                updateHome({ imageUrl: '' })
                               }
                               className="btn btn-ghost btn-sm"
                             >
@@ -934,9 +954,7 @@ export default function Settings({ onClose }) {
                               step="1"
                               value={home.blur}
                               onChange={(e) =>
-                                updateSettings({
-                                  home: { ...home, blur: parseInt(e.target.value, 10) },
-                                })
+                                updateHome({ blur: parseInt(e.target.value, 10) })
                               }
                               className="w-full accent-accent-primary mt-1"
                             />
@@ -957,7 +975,7 @@ export default function Settings({ onClose }) {
                           step="5"
                           value={home.dim}
                           onChange={(e) =>
-                            updateSettings({ home: { ...home, dim: parseInt(e.target.value, 10) } })
+                            updateHome({ dim: parseInt(e.target.value, 10) })
                           }
                           className="w-full accent-accent-primary mt-1"
                         />
@@ -978,11 +996,8 @@ export default function Settings({ onClose }) {
                               type="checkbox"
                               checked={home.widgets[key] !== false}
                               onChange={(e) =>
-                                updateSettings({
-                                  home: {
-                                    ...home,
-                                    widgets: { ...home.widgets, [key]: e.target.checked },
-                                  },
+                                updateHome({
+                                  widgets: { ...home.widgets, [key]: e.target.checked },
                                 })
                               }
                               className="w-4 h-4 accent-accent-primary"

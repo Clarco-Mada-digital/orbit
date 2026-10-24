@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { Check, ChevronDown } from 'lucide-react';
 import { useStore } from '../../stores/useStore';
 import { useT } from '../../lib/i18n';

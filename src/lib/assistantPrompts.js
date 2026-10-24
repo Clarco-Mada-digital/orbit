@@ -1,9 +1,21 @@
-const MAX_HISTORY_MESSAGES = 4;
-const MAX_HISTORY_LENGTH = 600;
-export const MAX_ASSISTANT_OUTPUT_TOKENS = 128;
+import { getAssistantCommand } from './assistantCommands.js';
+import { getAssistantAgent } from './assistantAgents.js';
+
+const MAX_HISTORY_MESSAGES = 12;
+const MAX_HISTORY_LENGTH = 4000;
+export const MAX_ASSISTANT_OUTPUT_TOKENS = 512;
+export const MAX_REMOTE_ASSISTANT_OUTPUT_TOKENS = 4096;
+
+// Le chat a besoin de beaucoup plus de place qu'une correction : une réponse
+// utile dépasse vite quelques phrases, et le modèle s'arrêtait en plein milieu.
+const LOCAL_CHAT_TOKEN_LIMITS = {
+  'smollm2-360m': 384,
+  'qwen3-0.6b': 512,
+  'qwen3-1.7b': 384,
+};
 
 export function getAssistantOutputTokenLimit(mode, text, modelKey) {
-  const modelLimit = modelKey === 'qwen3-1.7b' ? 96 : MAX_ASSISTANT_OUTPUT_TOKENS;
+  const modelLimit = LOCAL_CHAT_TOKEN_LIMITS[modelKey] || MAX_ASSISTANT_OUTPUT_TOKENS;
   if (mode === 'correct' || mode === 'rewrite') {
     const textBudget = Math.max(48, Math.ceil(String(text || '').length / 3) + 24);
     return Math.min(modelLimit, textBudget);
@@ -12,9 +24,9 @@ export function getAssistantOutputTokenLimit(mode, text, modelKey) {
 }
 
 export function getRemoteAssistantOutputTokenLimit(mode, text) {
-  if (mode === 'chat') return 512;
-  const estimated = Math.ceil(String(text || '').length / 2) + 48;
-  return Math.min(1024, Math.max(128, estimated));
+  if (mode === 'chat') return 2048;
+  const estimated = Math.ceil(String(text || '').length / 2) + 64;
+  return Math.min(MAX_REMOTE_ASSISTANT_OUTPUT_TOKENS, Math.max(128, estimated));
 }
 
 const REWRITE_STYLES = {
@@ -59,6 +71,14 @@ function promptFor(mode, language, dictionary, context, rewriteStyle, text) {
   return `You are Orbit, an on-device assistant. Answer in ${langName} unless the user asks otherwise. Be clear and concise. You may help with basic writing, explanations and everyday questions, but do not claim to have completed an app action. ${contextRule} ${userTerms}`;
 }
 
+function commandInstruction(chatCommandId, agentId) {
+  const agent = getAssistantAgent(agentId);
+  const command = agent.commands.find((item) => item.id === chatCommandId)
+    || (!agentId ? getAssistantCommand(chatCommandId) : null);
+  if (!command) return '';
+  return `\n\nThe user selected the /${command.id} command. ${command.instruction}`;
+}
+
 function normalizeHistory(history) {
   if (!Array.isArray(history)) return [];
   return history
@@ -81,9 +101,19 @@ export function createAssistantMessages({
   context = 'selection',
   contextText = '',
   history = [],
+  chatCommandId = '',
+  agentId = '',
 }) {
+  const agent = mode === 'chat' && agentId ? getAssistantAgent(agentId) : null;
   return [
-    { role: 'system', content: promptFor(mode, language, dictionary, context, rewriteStyle, text) },
+    {
+      role: 'system',
+      content: `${promptFor(mode, language, dictionary, context, rewriteStyle, text)}${
+        agent ? `\n\n${agent.instruction}` : ''
+      }${
+        mode === 'chat' ? commandInstruction(chatCommandId, agentId) : ''
+      }`,
+    },
     ...(mode === 'chat' ? normalizeHistory(history) : []),
     {
       role: 'user',
