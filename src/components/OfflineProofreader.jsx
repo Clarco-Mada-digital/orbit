@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowRight, Check, CheckCheck, CircleCheck, Download, LoaderCircle, ShieldCheck, SpellCheck, X } from 'lucide-react';
+import { ArrowRight, Check, CheckCheck, CircleCheck, Copy, Download, LoaderCircle, ShieldCheck, SpellCheck, X } from 'lucide-react';
 import { analyzeText, applyIssues } from '../lib/offlineProofreader';
-import { mapLanguageToolMatches, mergeProofreadingIssues } from '../lib/languageTool';
+import {
+  languageToolIssuesForSource,
+  mapLanguageToolMatches,
+  mergeProofreadingIssues,
+} from '../lib/languageTool';
 import { resolveLang, translate, useT } from '../lib/i18n';
 import { useStore } from '../stores/useStore';
 
@@ -30,14 +34,16 @@ export default function OfflineProofreader() {
   const [grammarProgress, setGrammarProgress] = useState(null);
   const [installingGrammar, setInstallingGrammar] = useState(false);
   const [checkingGrammar, setCheckingGrammar] = useState(false);
+  const [copiedJavaCommand, setCopiedJavaCommand] = useState(false);
   const selectionEdited = useRef(false);
   const text = request?.text || '';
   const localIssues = useMemo(() => analyzeText(text, language), [text, language]);
+  const currentEnhancedIssues = languageToolIssuesForSource(enhancedIssues, text, language);
   const issues = useMemo(
-    () => proofreaderEngine === 'languagetool' && grammarState?.installed && enhancedIssues
-      ? mergeProofreadingIssues(localIssues, enhancedIssues)
+    () => proofreaderEngine === 'languagetool' && grammarState?.installed && currentEnhancedIssues
+      ? mergeProofreadingIssues(localIssues, currentEnhancedIssues)
       : localIssues,
-    [enhancedIssues, grammarState?.installed, localIssues, proofreaderEngine]
+    [currentEnhancedIssues, grammarState?.installed, localIssues, proofreaderEngine]
   );
   const correctedText = useMemo(
     () => applyIssues(text, issues, selected),
@@ -119,7 +125,7 @@ export default function OfflineProofreader() {
         }
         const nextEnhancedIssues = mapLanguageToolMatches(text, result.matches, language);
         const combinedIssues = mergeProofreadingIssues(localIssues, nextEnhancedIssues);
-        setEnhancedIssues(nextEnhancedIssues);
+        setEnhancedIssues({ text, language, issues: nextEnhancedIssues });
         setSelected((current) => {
           if (!selectionEdited.current) return new Set(combinedIssues.map((issue) => issue.id));
           const selectedLocal = localIssues.filter((issue) => current.has(issue.id));
@@ -140,7 +146,10 @@ export default function OfflineProofreader() {
         setError(translate(language, 'proofreader.enhancedUnavailable'));
       })
       .finally(() => {
-        if (active) setCheckingGrammar(false);
+        if (active) {
+          setCheckingGrammar(false);
+          setGrammarProgress(null);
+        }
       });
 
     return () => {
@@ -255,6 +264,29 @@ export default function OfflineProofreader() {
     }
   };
 
+  const refreshJavaState = async () => {
+    try {
+      const state = await grammarApi()?.state({ refreshJava: true });
+      if (!state?.success) throw new Error('grammar-state-unavailable');
+      setGrammarState(state);
+      setError('');
+    } catch (err) {
+      console.error('[orbit] vérification de Java échouée:', err);
+      setError(t('proofreader.engineCheckFailed'));
+    }
+  };
+
+  const copyJavaCommand = async () => {
+    try {
+      await navigator.clipboard.writeText(grammarState.javaInstallCommand);
+      setCopiedJavaCommand(true);
+      window.setTimeout(() => setCopiedJavaCommand(false), 1800);
+    } catch (err) {
+      console.error('[orbit] copie de la commande Java échouée:', err);
+      setError(t('proofreader.copyCommandFailed'));
+    }
+  };
+
   return (
     <div
       className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/55 p-4 backdrop-blur-[3px]"
@@ -317,7 +349,9 @@ export default function OfflineProofreader() {
                       ? t('proofreader.enhancedFallback')
                       : t('proofreader.enhancedActive')
                     : t('proofreader.local')}
-                  {checkingGrammar && ` · ${t('proofreader.checking')}`}
+                  {checkingGrammar && ` · ${t(grammarProgress?.phase === 'starting'
+                    ? 'proofreader.starting'
+                    : 'proofreader.checking')}`}
                   {issues.length > 0 && ` · ${t('proofreader.selectedCount', { count: selected.size })}`}
                 </p>
               </div>
@@ -407,15 +441,36 @@ export default function OfflineProofreader() {
               )}
             </div>
             {!grammarState?.installed && (
-              <p className="mt-2 text-xs text-text-muted">
-                {!grammarState
-                  ? t('proofreader.engineChecking')
-                  : grammarState.javaAvailable
-                  ? t('proofreader.downloadInfo')
-                  : grammarState.javaVersion
-                    ? t('proofreader.javaVersion')
-                    : t('proofreader.javaMissing')}
-              </p>
+              <div className="mt-3 space-y-2">
+                <p className="text-xs text-text-muted">
+                  {!grammarState
+                    ? t('proofreader.engineChecking')
+                    : grammarState.javaAvailable
+                      ? t('proofreader.downloadInfo')
+                      : grammarState.javaVersion
+                        ? t('proofreader.javaVersion')
+                        : t('proofreader.javaMissing')}
+                </p>
+                {grammarState?.javaInstallCommand && !grammarState.javaAvailable && (
+                  <div className="rounded-lg border border-border bg-bg-primary/50 p-3">
+                    <p className="mb-2 text-xs font-medium text-text-secondary">
+                      {t('proofreader.javaInstallFor', { platform: grammarState.javaInstallLabel })}
+                    </p>
+                    <code className="block overflow-x-auto whitespace-pre-wrap break-all rounded bg-black/10 p-2 text-xs text-text-primary">
+                      {grammarState.javaInstallCommand}
+                    </code>
+                    <div className="mt-2 flex flex-wrap gap-2">
+                      <button type="button" onClick={copyJavaCommand} className="btn btn-secondary btn-sm">
+                        <Copy size={13} />
+                        {t(copiedJavaCommand ? 'proofreader.commandCopied' : 'proofreader.copyCommand')}
+                      </button>
+                      <button type="button" onClick={refreshJavaState} className="btn btn-ghost btn-sm">
+                        {t('proofreader.recheckJava')}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             )}
             {installingGrammar && grammarProgress && (
               <div className="mt-3">

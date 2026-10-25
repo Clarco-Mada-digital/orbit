@@ -56,6 +56,14 @@
       "description": "Abréviations extensibles : tapez ;email, ;addr, ;sig… dans n'importe quel champ et ils se transforment en votre texte complet. Configurable (⚙️).",
       "nativeApp": null,
       "size": 14711
+    },
+    {
+      "file": "web-clipper.zip",
+      "name": "Web Clipper",
+      "version": "1.0.0",
+      "description": "Capture localement une sélection ou le contenu principal d’une page, puis retrouvez et exportez vos captures en Markdown.",
+      "nativeApp": null,
+      "size": 6687
     }
   ]
 }

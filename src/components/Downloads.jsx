@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { Download, FolderOpen, X, CheckCircle2, AlertCircle, Trash2, File } from 'lucide-react';
 import { useDownloadsStore } from '../lib/downloadsStore';
 import { useT } from '../lib/i18n';
@@ -22,24 +22,12 @@ function humanSize(bytes) {
 // des événements 'orbit:download' vit ici : la Topbar monte ce composant une
 // seule fois.
 export default function Downloads({ placement = 'top', align = 'right-0' }) {
-  const { downloads, upsert, remove, clearFinished } = useDownloadsStore();
+  const { downloads, remove, clearFinished } = useDownloadsStore();
   const t = useT();
   const [open, setOpen] = useState(false);
   // Mode épuré : garde la barre ouverte tant que ce panneau l'est.
   useZoneHold(placement, 'panel', open);
   const ref = useRef(null);
-
-  // Abonnement aux événements de téléchargement du main process
-  useEffect(() => {
-    const off = window.electronAPI?.onDownload?.((payload) => {
-      upsert(payload);
-      // Ouvre le panneau automatiquement au démarrage d'un téléchargement
-      if (payload.event === 'started') setOpen(true);
-    });
-    return () => {
-      if (typeof off === 'function') off();
-    };
-  }, [upsert]);
 
   // Fermeture : clic ailleurs, clic dans une app, Échap (voir lib/useDismiss).
   // C'est ici que se jouait le comportement le plus déroutant : l'ancien
@@ -83,7 +71,10 @@ export default function Downloads({ placement = 'top', align = 'right-0' }) {
               </button>
               {downloads.some((d) => d.state !== 'progressing') && (
                 <button
-                  onClick={clearFinished}
+                  onClick={async () => {
+                    const result = await window.electronAPI?.clearDownloadHistory?.();
+                    if (result?.success !== false) clearFinished();
+                  }}
                   className="text-xs text-text-muted hover:text-text-primary flex items-center gap-1"
                   title={t('dl.clearList')}
                 >
@@ -152,7 +143,10 @@ export default function Downloads({ placement = 'top', align = 'right-0' }) {
                         </button>
                       ) : (
                         <button
-                          onClick={() => remove(d.id)}
+                          onClick={async () => {
+                            const result = await window.electronAPI?.removeDownload?.(d.id);
+                            if (result?.success !== false) remove(d.id);
+                          }}
                           className="btn-icon w-8 h-8 text-text-muted"
                           title={t('dl.removeFromList')}
                         >

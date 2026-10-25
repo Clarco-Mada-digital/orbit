@@ -13,6 +13,7 @@ import QuickSwitcher from './components/QuickSwitcher';
 // le paquet principal faisait analyser leur code à chaque lancement, avant même
 // d'afficher la première app.
 const Settings = lazy(() => import('./components/Settings'));
+const DownloadsPage = lazy(() => import('./components/DownloadsPage'));
 const ProfileManager = lazy(() => import('./components/ProfileManager'));
 const AppStore = lazy(() => import('./components/AppStore'));
 // L'espace Téléphone vient d'une extension : bureau, aperçu et réglages ne
@@ -42,6 +43,7 @@ import { reloadApp, navigateApp } from './lib/webviewRegistry';
 import { logDiagnostic } from './lib/diagnosticsStore';
 import { useT } from './lib/i18n';
 import { attachTtsPlayer, setVolume as setTtsVolume } from './lib/ttsPlayer';
+import { useDownloadsStore } from './lib/downloadsStore';
 
 function AssistantHost() {
   const [Assistant, setAssistant] = useState(null);
@@ -160,7 +162,26 @@ export default function App() {
   const [flyMenu, setFlyMenu] = useState(null); // { x, y, page } — menu contextuel d'une page volante
 const [editUrlFor, setEditUrlFor] = useState(null); // { id, url } — boîte « modifier l'adresse »
   const [showVault, setShowVault] = useState(false);
+  const [showDownloads, setShowDownloads] = useState(false);
   const t = useT();
+  const upsertDownload = useDownloadsStore((state) => state.upsert);
+  const hydrateDownloads = useDownloadsStore((state) => state.hydrate);
+
+  useEffect(() => {
+    let active = true;
+    Promise.resolve(window.electronAPI?.listDownloads?.() || { success: false })
+      .then((result) => {
+        if (active && result?.success) hydrateDownloads(result.downloads);
+      })
+      .catch((error) => console.error('[orbit] historique des téléchargements indisponible:', error));
+    const off = window.electronAPI?.onDownload?.((payload) => {
+      upsertDownload(payload);
+    });
+    return () => {
+      active = false;
+      if (typeof off === 'function') off();
+    };
+  }, [hydrateDownloads, upsertDownload]);
   const [captive, setCaptive] = useState(null); // { detected, url } | null
   const [showFind, setShowFind] = useState(false);
   useEffect(() => {
@@ -299,8 +320,15 @@ const [editUrlFor, setEditUrlFor] = useState(null); // { id, url } — boîte «
     window.electronAPI?.setDownloadPrefs?.({
       dir: settings.downloadDir || '',
       ask: settings.askDownloadPath === true,
+      videoQuality: settings.downloadVideoQuality || 'best',
+      audioFormat: settings.downloadAudioFormat || 'm4a',
     });
-  }, [settings.downloadDir, settings.askDownloadPath]);
+  }, [
+    settings.downloadDir,
+    settings.askDownloadPath,
+    settings.downloadVideoQuality,
+    settings.downloadAudioFormat,
+  ]);
 
   // Média : pour synchroniser le mini-lecteur flottant
   const media = useMediaStore((s) => s.media);
@@ -984,6 +1012,7 @@ const openEditUrl = useCallback((id) => {
         setShowProfileManager(false);
         setShowAppStore(false);
         setShowFind(false);
+        setShowDownloads(false);
         // Échap renvoie aussi les barres appelées au clavier.
         useAutoHideStore.getState().clearSummon();
       }
@@ -1083,7 +1112,7 @@ const openEditUrl = useCallback((id) => {
   // par-dessus la modale (visible : menu à gauche, contenu masqué).
   // visibility:hidden ne décharge PAS les webviews — juste pas de peinture.
   const overlayOpen =
-    showQuickSwitcher || showSettings || showProfileManager || showAppStore;
+    showQuickSwitcher || showSettings || showProfileManager || showAppStore || showDownloads;
 
   return (
     <div
@@ -1163,6 +1192,7 @@ const openEditUrl = useCallback((id) => {
               onOpenSettings={() => setShowSettings(true)}
               onOpenStore={() => setShowAppStore(true)}
               onOpenProfileManager={() => setShowProfileManager(true)}
+              onOpenDownloads={() => setShowDownloads(true)}
               onSelectApp={handleSetActiveApp}
               onFlyPageMenu={(e, page) => {
                 e.preventDefault();
@@ -1469,6 +1499,7 @@ const openEditUrl = useCallback((id) => {
           et le chargement est local (quelques millisecondes) — afficher un
           indicateur ferait clignoter l'interface plus qu'il n'informerait. */}
       <Suspense fallback={null}>
+        {showDownloads && <DownloadsPage onClose={() => setShowDownloads(false)} />}
         {showSettings && <Settings onClose={() => setShowSettings(false)} />}
         {showProfileManager && <ProfileManager onClose={() => setShowProfileManager(false)} />}
         {showAppStore && (

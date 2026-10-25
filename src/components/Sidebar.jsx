@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useStore } from '../stores/useStore';
-import { ChevronLeft, ChevronRight, ChevronDown, Plus, Settings, Grid, User, Moon, BellOff, Lock, Volume2, VolumeX, LogIn, Globe, X, EyeOff, FolderPlus, Check, GripVertical, MessageCircle } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ChevronDown, Plus, Settings, Grid, User, Moon, BellOff, Lock, Volume2, VolumeX, LogIn, Globe, X, EyeOff, FolderPlus, Check, GripVertical, MessageCircle, Download } from 'lucide-react';
 import AppContextMenu from './AppContextMenu';
 import MultiSelectionMenu from './MultiSelectionMenu';
 import AppFolderMenu from './AppFolderMenu';
@@ -34,6 +34,7 @@ export default function Sidebar({
   onOpenSettings,
   onOpenStore,
   onOpenProfileManager,
+  onOpenDownloads,
   onSelectApp,
   onFlyPageMenu,
   bottomOffset = 0,
@@ -1130,6 +1131,14 @@ export default function Sidebar({
         {!collapsed ? (
           <div className="space-y-2">
             <button
+              onClick={onOpenDownloads}
+              className={`w-full btn btn-secondary ${settings.compactMode ? 'text-xs py-2' : 'text-sm'}`}
+              title={t('dl.title')}
+            >
+              <Download size={16} />
+              {t('dl.title')}
+            </button>
+            <button
               onClick={onOpenStore}
               className={`w-full btn btn-primary ${settings.compactMode ? 'text-xs py-2' : 'text-sm'}`}
               title={t('sb.store')}
@@ -1158,6 +1167,13 @@ export default function Sidebar({
           </div>
         ) : (
           <div className="space-y-2">
+            <button
+              onClick={onOpenDownloads}
+              className="w-full btn-icon flex items-center justify-center"
+              title={t('dl.title')}
+            >
+              <Download size={18} />
+            </button>
             <button
               onClick={onOpenStore}
               className="w-full btn-icon flex items-center justify-center"

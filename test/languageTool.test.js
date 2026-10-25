@@ -1,6 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mapLanguageToolMatches, mergeProofreadingIssues } from '../src/lib/languageTool.js';
+import {
+  languageToolIssuesForSource,
+  mapLanguageToolMatches,
+  mergeProofreadingIssues,
+} from '../src/lib/languageTool.js';
 
 test('maps LanguageTool offsets and first replacement to Orbit proofreading issues', () => {
   const text = 'Ceci est un test.';
@@ -53,4 +57,11 @@ test('deduplicates overlapping issues while preserving source order', () => {
     { id: 'lt-2', start: 2, end: 4 },
   ];
   assert.deepEqual(mergeProofreadingIssues(local, enhanced), [enhanced[0]]);
+});
+
+test('does not reuse LanguageTool offsets for a different text or language', () => {
+  const result = { text: 'Bonjour', language: 'fr', issues: [{ start: 0, end: 7 }] };
+  assert.deepEqual(languageToolIssuesForSource(result, 'Bonjour', 'fr'), result.issues);
+  assert.equal(languageToolIssuesForSource(result, 'Bonjour !', 'fr'), null);
+  assert.equal(languageToolIssuesForSource(result, 'Bonjour', 'en'), null);
 });

@@ -4,12 +4,8 @@ name: Argus
 # NB : on lance le CLI via npx plutôt que l'action `Clarco-Mada-digital/argus@main`,
 # car son action.yml est actuellement invalide (erreur de parsing YAML).
 #
-# Les exclusions vivent dans `argus.config.json` à la racine, pas dans une
-# baseline. Ce commentaire annonçait auparavant un fichier `.argus/baseline.json`
-# qui n'a jamais existé : le job échouait donc sur CHAQUE push depuis son ajout
-# (six exécutions rouges d'affilée, deux releases publiées avec un check au
-# rouge). Une baseline aurait masqué les dix constats d'un bloc, vrais comme
-# faux ; la configuration, elle, dit lesquels sont écartés et pourquoi.
+# Les exceptions précises et motivées vivent dans `argus.config.json` à la
+# racine, pas dans une baseline qui masquerait indistinctement la dette.
 on:
   push:
     branches: [master]
@@ -24,14 +20,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
 
       - name: Analyse Argus
-        run: npx --yes github:Clarco-Mada-digital/argus scan . --ci --fail-on high
+        run: npx --yes github:Clarco-Mada-digital/argus#490dcca3ac3624176b177c5f21442d4086952f4d scan . --ci --fail-on high

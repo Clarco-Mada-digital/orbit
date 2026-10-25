@@ -1,10 +1,11 @@
 import { app, net } from 'electron';
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn } from 'node:child_process';
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { promisify } from 'node:util';
 import yauzl from 'yauzl';
+import { getJavaInstallInstructions } from '../src/lib/javaRuntime.js';
 
 const LANGUAGETOOL_VERSION = '6.6';
 const LANGUAGETOOL_URL = `https://languagetool.org/download/LanguageTool-${LANGUAGETOOL_VERSION}.zip`;
@@ -21,6 +22,10 @@ let serverPort = null;
 let serverStart = null;
 let serverIdleTimer = null;
 let checkQueue = Promise.resolve();
+let javaCheckPromise = null;
+let javaCheckCache = null;
+let javaCheckAt = 0;
+const JAVA_CHECK_CACHE_MS = 30_000;
 
 export function setGrammarProgressReporter(reporter) {
   if (typeof reporter !== 'function') throw new TypeError('Progress reporter must be a function');
@@ -40,28 +45,90 @@ function serverJar() {
   return path.join(installDirectory(), 'languagetool-server.jar');
 }
 
-function javaVersion() {
-  const result = spawnSync('java', ['-version'], { encoding: 'utf8', timeout: 5000 });
-  if (result.error) return { available: false, version: null };
-  const output = `${result.stdout || ''}\n${result.stderr || ''}`;
-  const version = output.match(/version\s+"?(\d+)(?:\.(\d+))?/i);
-  const major = version ? Number(version[1] === '1' ? version[2] : version[1]) : null;
-  return { available: result.status === 0 && major >= 17, version: major };
+function readLinuxDistro() {
+  if (process.platform !== 'linux') return {};
+  try {
+    const release = fs.readFileSync('/etc/os-release', 'utf8');
+    const read = (key) => {
+      const value = release.match(new RegExp(`^${key}=(.*)$`, 'm'))?.[1]?.trim();
+      return value?.replace(/^["']|["']$/g, '') || '';
+    };
+    return { distroId: read('ID'), distroLike: read('ID_LIKE') };
+  } catch (error) {
+    if (error.code !== 'ENOENT') {
+      console.error('[orbit] détection de la distribution Linux échouée:', error);
+    }
+    return {};
+  }
 }
 
-export function getGrammarState() {
+function javaVersion({ refresh = false } = {}) {
+  if (refresh) {
+    javaCheckCache = null;
+    javaCheckAt = 0;
+  }
+  if (javaCheckCache && Date.now() - javaCheckAt < JAVA_CHECK_CACHE_MS) {
+    return Promise.resolve(javaCheckCache);
+  }
+  if (javaCheckPromise) return javaCheckPromise;
+
+  javaCheckPromise = new Promise((resolve) => {
+    let child;
+    let output = '';
+    let settled = false;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timer);
+      javaCheckCache = result;
+      javaCheckAt = Date.now();
+      resolve(result);
+    };
+    const timer = setTimeout(() => {
+      child?.kill();
+      finish({ available: false, version: null });
+    }, 2500);
+    timer.unref?.();
+    try {
+      child = spawn('java', ['-version'], { windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
+    } catch {
+      finish({ available: false, version: null });
+      return;
+    }
+    const collect = (chunk) => {
+      if (output.length < 4096) output += chunk.toString('utf8').slice(0, 4096 - output.length);
+    };
+    child.stdout.on('data', collect);
+    child.stderr.on('data', collect);
+    child.once('error', () => finish({ available: false, version: null }));
+    child.once('close', (code) => {
+      const version = output.match(/version\s+"?(\d+)(?:\.(\d+))?/i);
+      const major = version ? Number(version[1] === '1' ? version[2] : version[1]) : null;
+      finish({ available: code === 0 && major >= 17, version: major });
+    });
+  }).finally(() => {
+    javaCheckPromise = null;
+  });
+  return javaCheckPromise;
+}
+
+export async function getGrammarState(options = {}) {
   let installed = false;
   try {
     installed = fs.statSync(serverJar()).isFile();
   } catch {
     installed = false;
   }
-  const java = javaVersion();
+  const java = await javaVersion({ refresh: options?.refreshJava === true });
+  const installInstructions = getJavaInstallInstructions(process.platform, readLinuxDistro());
   return {
     success: true,
     installed,
     javaAvailable: java.available,
     javaVersion: java.version,
+    javaInstallLabel: installInstructions.label,
+    javaInstallCommand: installInstructions.command,
+    platform: process.platform,
     downloading: Boolean(installPromise),
     running: Boolean(serverProcess && serverProcess.exitCode === null),
     downloadBytes: MAX_ARCHIVE_BYTES,
@@ -189,14 +256,14 @@ async function extractArchive(archive, destination) {
 
 export async function installLanguageTool() {
   if (installPromise) return installPromise;
-  const java = javaVersion();
+  const java = await javaVersion();
   if (!java.available) {
     return {
       success: false,
       error: java.version ? 'java-version' : 'java-missing',
     };
   }
-  if (getGrammarState().installed) return { success: true, alreadyInstalled: true };
+  if ((await getGrammarState()).installed) return { success: true, alreadyInstalled: true };
 
   installPromise = (async () => {
     const base = grammarRoot();
@@ -325,8 +392,8 @@ async function ensureLanguageToolServer() {
   }
   if (!serverStart) {
     serverStart = (async () => {
-      if (!getGrammarState().installed) throw new Error('LanguageTool is not installed');
-      const java = javaVersion();
+      if (!(await getGrammarState()).installed) throw new Error('LanguageTool is not installed');
+      const java = await javaVersion();
       if (!java.available) throw new Error(java.version ? 'Java 17 or newer is required' : 'Java 17 or newer is required but was not found');
       const port = await reservePort();
       progressReporter({ phase: 'starting' });
@@ -393,7 +460,7 @@ function checkLanguageTool(text, language) {
 
 function scheduleServerStop() {
   clearTimeout(serverIdleTimer);
-  serverIdleTimer = setTimeout(stopLanguageToolServer, 60_000);
+  serverIdleTimer = setTimeout(stopLanguageToolServer, 5 * 60_000);
   serverIdleTimer.unref?.();
 }
 

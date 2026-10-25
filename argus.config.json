@@ -1,0 +1,63 @@
+// Configuration Argus.
+//
+// Les dossiers evidents — node_modules, .venv, dist, build, vendor,
+// __pycache__, staticfiles — sont deja ignores sans etre listes ici.
+// `ignore` ne sert qu'a ce qui est propre a ce projet.
+//
+// `failOn` decide du code de sortie en integration continue ; `minSeverity`
+// ne fait que filtrer l'affichage. Les deux sont independants.
+{
+  "$schema": "https://argus-scan.dev/schema.json",
+  "categories": [
+    "security",
+    "routes",
+    "deadcode",
+    "seo",
+    "design",
+    "performance",
+    "quality",
+    "dependencies"
+  ],
+  "ignore": [
+    "**/*.generated.*"
+  ],
+  "minSeverity": "info",
+  "failOn": "high",
+  "failUnderScore": 0,
+  "siteUrl": "https://orbit.app",
+  "disabledRules": [],
+  "ruleSeverity": {},
+  "options": {
+    "quality": {
+      "maxComplexity": 15,
+      "maxFileLines": 500,
+      "maxFunctionLines": 80,
+      "maxParams": 5,
+      "duplicationMinLines": 6
+    },
+    "design": {
+      "minContrastRatio": 4.5,
+      "minTapTargetPx": 44,
+      "minFontSizePx": 12
+    },
+    "seo": {
+      "minWordCount": 250,
+      "titleMin": 30,
+      "titleMax": 60,
+      "descriptionMin": 70,
+      "descriptionMax": 160
+    },
+    "performance": {
+      "maxImageBytes": 307200,
+      "maxAssetBytes": 1048576
+    }
+  },
+  "suppressions": [
+    {
+      "regle": "ELECTRON-OPEN-EXTERNAL",
+      "fichier": "electron/main.js",
+      "ligne": 5060,
+      "raison": "Lien magnet : parseDownloadUrl exige un identifiant torrent valide, le protocole magnet est contrôlé explicitement, et l'ouverture du client torrent système est volontaire."
+    }
+  ]
+}

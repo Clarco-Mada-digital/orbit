@@ -26,6 +26,7 @@ import { matchShortcutInput } from '../src/lib/shortcuts.js';
 import { matchLinkRule } from '../src/lib/rules.js';
 import { hasBinaryContent } from '../src/lib/documents.js';
 import { savePlan } from '../src/lib/downloadPath.js';
+import { mediaFormatOptions, parseDownloadUrl } from '../src/lib/downloadOptions.js';
 import { getDomain } from 'tldts-experimental';
 import { fileURLToPath } from 'url';
 
@@ -954,9 +955,76 @@ function setupPermissions(ses) {
 // + panneau : ouvrir, afficher dans le dossier, annuler).
 const downloads = new Map(); // id -> { item, savePath, url, filename }
 const downloadSessions = new WeakSet();
+const pendingSavePrompts = new Set();
 let downloadSeq = 0;
+let downloadHistory;
+
+function getDownloadHistory() {
+  if (downloadHistory) return downloadHistory;
+  const historyFile = path.join(app.getPath('userData'), 'download-history.json');
+  try {
+    const parsed = JSON.parse(fs.readFileSync(historyFile, 'utf8'));
+    downloadHistory = Array.isArray(parsed)
+      ? parsed.filter((entry) => entry && typeof entry.id === 'string').slice(0, 500)
+      : [];
+  } catch (error) {
+    if (error.code !== 'ENOENT') {
+      console.error('[orbit] historique des téléchargements illisible:', error);
+    }
+    downloadHistory = [];
+  }
+  let changed = false;
+  downloadHistory = downloadHistory.map((entry) => {
+    if (entry.state !== 'progressing' && entry.state !== 'selecting') return entry;
+    changed = true;
+    return { ...entry, state: 'interrupted', error: 'Orbit a été fermé avant la fin du téléchargement.' };
+  });
+  if (changed) saveDownloadHistory();
+  return downloadHistory;
+}
+
+function saveDownloadHistory() {
+  if (!downloadHistory) return;
+  try {
+    const historyFile = path.join(app.getPath('userData'), 'download-history.json');
+    const temporary = `${historyFile}.tmp`;
+    fs.writeFileSync(temporary, JSON.stringify(downloadHistory), { mode: 0o600 });
+    fs.renameSync(temporary, historyFile);
+  } catch (error) {
+    console.error('[orbit] sauvegarde de l’historique des téléchargements échouée:', error);
+  }
+}
+
+function rememberDownload(payload) {
+  if (!payload?.id || typeof payload.id !== 'string') return;
+  const history = getDownloadHistory();
+  const current = history.find((entry) => entry.id === payload.id);
+  const entry = {
+    id: payload.id,
+    filename: String(payload.filename || current?.filename || 'Téléchargement'),
+    savePath: String(payload.savePath || current?.savePath || ''),
+    url: String(payload.url || current?.url || ''),
+    kind: payload.kind || current?.kind || 'file',
+    mode: payload.mode || current?.mode || '',
+    state: payload.state || current?.state || 'progressing',
+    totalBytes: Number.isFinite(payload.totalBytes) ? payload.totalBytes : current?.totalBytes || 0,
+    receivedBytes: Number.isFinite(payload.receivedBytes)
+      ? payload.receivedBytes
+      : current?.receivedBytes || 0,
+    speedBytesPerSecond: Number.isFinite(payload.speedBytesPerSecond)
+      ? payload.speedBytesPerSecond
+      : current?.speedBytesPerSecond || 0,
+    etaSeconds: Number.isFinite(payload.etaSeconds) ? payload.etaSeconds : current?.etaSeconds || 0,
+    error: String(payload.error || current?.error || ''),
+    createdAt: current?.createdAt || Date.now(),
+    updatedAt: Date.now(),
+  };
+  downloadHistory = [entry, ...history.filter((item) => item.id !== entry.id)].slice(0, 500);
+  saveDownloadHistory();
+}
 
 function broadcastDownload(payload) {
+  rememberDownload(payload);
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('orbit:download', payload);
   }
@@ -990,17 +1058,7 @@ let downloadBlockerId = null;
 function activeDownloadCount() {
   let n = 0;
   for (const rec of downloads.values()) {
-    if (!rec.item) continue;
-    // Deux sortes de transferts partagent ce registre : les DownloadItem
-    // d'Electron (qui exposent getState) et les téléchargements yt-dlp, dont
-    // l'entrée n'est qu'un objet { cancel }. Appeler getState() sur le second
-    // levait une TypeError — ce qui, dans `before-quit`, empêchait purement et
-    // simplement de quitter l'application.
-    if (typeof rec.item.getState === 'function') {
-      if (rec.item.getState() === 'progressing') n += 1;
-    } else if (rec.active) {
-      n += 1;
-    }
+    if (rec.active) n += 1;
   }
   return n;
 }
@@ -1024,7 +1082,12 @@ function refreshDownloadPowerBlocker() {
 // Réglages de téléchargement, poussés par l'interface (voir App.jsx).
 // `dir` : '' = dossier Téléchargements du système. `ask` : ouvrir la boîte
 // d'enregistrement du système à chaque fois.
-let downloadPrefs = { dir: '', ask: false };
+let downloadPrefs = {
+  dir: '',
+  ask: false,
+  videoQuality: 'best',
+  audioFormat: 'm4a',
+};
 
 // Le dossier de l'utilisateur a pu être supprimé depuis le dernier lancement :
 // on le recrée plutôt que d'échouer sur le premier téléchargement.
@@ -1050,9 +1113,10 @@ function systemDownloadsDir() {
 function setupDownloads(ses) {
   if (!ses || downloadSessions.has(ses)) return;
   downloadSessions.add(ses);
-  ses.on('will-download', (event, item) => {
+  ses.on('will-download', (_event, item) => {
+    const url = item.getURL();
     const id = `dl-${Date.now()}-${(downloadSeq += 1)}`;
-    const plan = savePlan({
+    const initialPlan = savePlan({
       configuredDir: downloadPrefs.dir,
       systemDir: systemDownloadsDir(),
       filename: item.getFilename(),
@@ -1060,64 +1124,90 @@ function setupDownloads(ses) {
       exists: fs.existsSync,
       sep: path.sep,
     });
-    const dir = ensureDownloadDir(plan.dir);
-
-    // Lancement une fois le chemin DÉCIDÉ. On ne diffuse rien avant : le panneau
-    // Téléchargements ne doit pas afficher un fichier dont le nom et le dossier
-    // peuvent encore changer (ou disparaître si l'utilisateur annule).
-    const start = (savePath) => {
-      item.setSavePath(savePath);
-      const filename = path.basename(savePath);
-      downloads.set(id, { item, savePath, url: item.getURL(), filename });
-
-      const snapshot = (state) => ({
-        id,
-        filename,
-        savePath,
-        url: item.getURL(),
-        totalBytes: item.getTotalBytes(),
-        receivedBytes: item.getReceivedBytes(),
-        state: state || item.getState(),
+    const dir = ensureDownloadDir(initialPlan.dir);
+    const plan = dir === initialPlan.dir
+      ? initialPlan
+      : savePlan({
+        configuredDir: dir,
+        systemDir: dir,
+        filename: item.getFilename(),
+        ask: downloadPrefs.ask,
+        exists: fs.existsSync,
+        sep: path.sep,
       });
 
-      broadcastDownload({ ...snapshot('progressing'), event: 'started' });
-      refreshDownloadPowerBlocker();
-      item.on('updated', (_e, state) => broadcastDownload({ ...snapshot(state), event: 'updated' }));
-      item.once('done', (_e, state) => {
-        broadcastDownload({ ...snapshot(state), event: 'done' });
-        refreshDownloadPowerBlocker();
-        // On garde le chemin un moment (ouvrir / afficher) puis on nettoie.
-        const rec = downloads.get(id);
-        if (rec) rec.item = null;
-        setTimeout(() => downloads.delete(id), 10 * 60 * 1000);
-      });
-    };
-
-    if (plan.mustAsk) {
-      // On empêche d'abord le comportement par défaut : sinon Electron afficherait
-      // SA propre boîte de sauvegarde en plus de la nôtre. On ne relance le
-      // téléchargement (setSavePath) qu'une fois le choix fait.
-      event.preventDefault();
-      const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined;
-      dialog
-        .showSaveDialog(win, {
-          title: 'Enregistrer le téléchargement',
-          defaultPath: path.join(dir, plan.filename),
-          buttonLabel: 'Enregistrer',
-        })
-        .then(({ canceled, filePath }) => {
-          if (canceled || !filePath) {
-            // Annulé : rien n'est écrit et rien n'apparaît dans le panneau —
-            // c'est le comportement attendu d'un « Annuler ».
-            return;
-          }
-          start(filePath);
-        })
-        .catch(() => start(path.join(dir, plan.filename)));
+    if (
+      plan.mustAsk &&
+      (pendingSavePrompts.has(url) ||
+        [...downloads.values()].some((record) => record.active && record.url === url))
+    ) {
+      console.warn('[orbit] demande de destination en double ignorée');
+      item.cancel();
       return;
     }
 
-    start(plan.savePath);
+    if (plan.mustAsk) {
+      pendingSavePrompts.add(url);
+      item.setSaveDialogOptions({
+        title: 'Enregistrer le téléchargement',
+        defaultPath: plan.savePath,
+        buttonLabel: 'Enregistrer',
+      });
+    } else {
+      item.setSavePath(plan.savePath);
+    }
+
+    const snapshot = (state) => {
+      const savePath = item.getSavePath() || (plan.mustAsk ? '' : plan.savePath);
+      const filename = savePath ? path.basename(savePath) : plan.filename;
+      const record = downloads.get(id) || {};
+      Object.assign(record, {
+        item,
+        savePath,
+        url,
+        filename,
+        kind: 'file',
+        canPause: true,
+        active: state === 'progressing',
+      });
+      downloads.set(id, record);
+      return {
+        id,
+        filename,
+        savePath,
+        url,
+        kind: 'file',
+        canPause: true,
+        totalBytes: item.getTotalBytes(),
+        receivedBytes: item.getReceivedBytes(),
+        state,
+      };
+    };
+
+    if (plan.mustAsk) {
+      const initial = snapshot('selecting');
+      downloads.get(id).active = false;
+      broadcastDownload({ ...initial, event: 'started' });
+    } else {
+      broadcastDownload({ ...snapshot('progressing'), event: 'started' });
+    }
+    refreshDownloadPowerBlocker();
+    item.on('updated', (_event, state) => {
+      const currentState = item.isPaused() ? 'paused' : state;
+      broadcastDownload({ ...snapshot(currentState), event: 'updated' });
+      refreshDownloadPowerBlocker();
+    });
+    item.once('done', (_event, state) => {
+      const finalSnapshot = snapshot(state);
+      const record = downloads.get(id);
+      if (record) {
+        record.active = false;
+        record.item = null;
+      }
+      pendingSavePrompts.delete(url);
+      broadcastDownload({ ...finalSnapshot, event: 'done' });
+      refreshDownloadPowerBlocker();
+    });
   });
 }
 
@@ -2324,7 +2414,8 @@ function createOrbitPopup(url, partition) {
     // Menu contextuel natif dans la pop-up aussi (copier un lien, coller un
     // mot de passe…) — absent par défaut dans un <webview>.
     // Les pop-ups n'hébergent pas l'interface d'Orbit : menu natif.
-    guestContents.on('context-menu', (_e, params) => {
+    guestContents.on('context-menu', (event, params) => {
+      event.preventDefault();
       showGuestContextMenu(guestContents, params, win);
     });
   });
@@ -2720,7 +2811,8 @@ function createWindow() {
     // ouvrir/copier/télécharger un lien, rechercher la sélection, couper/
     // coller dans un champ, précédent/suivant/recharger. Absent par défaut
     // dans un <webview> → on le construit et on l'affiche nous-mêmes.
-    guestContents.on('context-menu', (_e, params) => {
+    guestContents.on('context-menu', (event, params) => {
+      event.preventDefault();
       // Electron ne détecte pas toujours le type 'password' (Shadow DOM,
       // composants custom). On fait un probe JS rapide quand le champ est
       // éditable mais que inputFieldType n'est pas 'password'.
@@ -3635,7 +3727,9 @@ async function loadGrammar() {
   return grammarModule;
 }
 
-handleFromUi('grammar:state', async () => (await loadGrammar()).getGrammarState());
+handleFromUi('grammar:state', async (_event, options) =>
+  (await loadGrammar()).getGrammarState(options)
+);
 handleFromUi('grammar:install', async () => (await loadGrammar()).installLanguageTool());
 handleFromUi('grammar:remove', async () => (await loadGrammar()).removeLanguageTool());
 handleFromUi('grammar:check', async (_event, { text, language } = {}) =>
@@ -4662,15 +4756,16 @@ ipcMain.handle('sync:write', (_e, { folder, password, snapshot } = {}) => {
 // IPC — Téléchargements
 // ---------------------------------------------------------------------------
 ipcMain.handle('downloads:open', (_event, id) => {
-  const rec = downloads.get(id);
-  if (rec?.savePath) shell.openPath(rec.savePath);
-  return { success: Boolean(rec) };
+  const rec = downloads.get(id) || getDownloadHistory().find((entry) => entry.id === id);
+  if (!rec?.savePath || !fs.existsSync(rec.savePath)) return { success: false, error: 'file-not-found' };
+  return shell.openPath(rec.savePath).then((error) => ({ success: !error, error }));
 });
 
 ipcMain.handle('downloads:reveal', (_event, id) => {
-  const rec = downloads.get(id);
-  if (rec?.savePath) shell.showItemInFolder(rec.savePath);
-  return { success: Boolean(rec) };
+  const rec = downloads.get(id) || getDownloadHistory().find((entry) => entry.id === id);
+  if (!rec?.savePath || !fs.existsSync(rec.savePath)) return { success: false, error: 'file-not-found' };
+  shell.showItemInFolder(rec.savePath);
+  return { success: true };
 });
 
 ipcMain.handle('downloads:cancel', (_event, id) => {
@@ -4681,6 +4776,59 @@ ipcMain.handle('downloads:cancel', (_event, id) => {
     /* déjà terminé */
   }
   return { success: Boolean(rec) };
+});
+
+ipcMain.handle('downloads:pause', (_event, id) => {
+  const rec = downloads.get(id);
+  try {
+    if (typeof rec?.item?.pause !== 'function') return { success: false, error: 'not-pausable' };
+    rec.item.pause();
+    rec.active = false;
+    rec.paused = true;
+    broadcastDownload({ id, filename: rec.filename, savePath: rec.savePath, url: rec.url, kind: rec.kind, state: 'paused' });
+    refreshDownloadPowerBlocker();
+    return { success: true };
+  } catch (error) {
+    console.error('[orbit] mise en pause du téléchargement échouée:', error);
+    return { success: false, error: String(error.message || error) };
+  }
+});
+
+ipcMain.handle('downloads:resume', (_event, id) => {
+  const rec = downloads.get(id);
+  try {
+    if (typeof rec?.item?.resume !== 'function') return { success: false, error: 'not-resumable' };
+    rec.active = true;
+    rec.paused = false;
+    rec.item.resume();
+    broadcastDownload({ id, filename: rec.filename, savePath: rec.savePath, url: rec.url, kind: rec.kind, state: 'progressing' });
+    refreshDownloadPowerBlocker();
+    return { success: true };
+  } catch (error) {
+    console.error('[orbit] reprise du téléchargement échouée:', error);
+    return { success: false, error: String(error.message || error) };
+  }
+});
+
+ipcMain.handle('downloads:list', () => ({ success: true, downloads: getDownloadHistory() }));
+
+ipcMain.handle('downloads:remove', (_event, id) => {
+  const rec = downloads.get(id);
+  if (rec?.active || rec?.item) return { success: false, error: 'download-active' };
+  downloads.delete(id);
+  downloadHistory = getDownloadHistory().filter((entry) => entry.id !== id);
+  saveDownloadHistory();
+  return { success: true };
+});
+
+ipcMain.handle('downloads:clearHistory', () => {
+  const activeIds = new Set([...downloads.entries()].filter(([, rec]) => rec.active || rec.item).map(([id]) => id));
+  downloadHistory = getDownloadHistory().filter((entry) => activeIds.has(entry.id));
+  saveDownloadHistory();
+  for (const [id] of downloads) {
+    if (!activeIds.has(id)) downloads.delete(id);
+  }
+  return { success: true };
 });
 
 // Ouvre le dossier des téléchargements : celui réglé par l'utilisateur s'il
@@ -4697,6 +4845,10 @@ ipcMain.handle('downloads:setPrefs', (_event, prefs = {}) => {
   downloadPrefs = {
     dir: String(prefs.dir || '').trim(),
     ask: Boolean(prefs.ask),
+    videoQuality: ['best', '1080p', '720p', '480p'].includes(prefs.videoQuality)
+      ? prefs.videoQuality
+      : 'best',
+    audioFormat: ['m4a', 'mp3'].includes(prefs.audioFormat) ? prefs.audioFormat : 'm4a',
   };
   return { success: true, prefs: downloadPrefs };
 });
@@ -4731,17 +4883,43 @@ ipcMain.handle('downloads:pickFolder', async () => {
 let mediaSeq = 0;
 const mediaStarted = new Set();
 function startMediaDownload(url, mode) {
-  if (!url || !/^https?:\/\//.test(url)) return { success: false };
+  const parsed = parseDownloadUrl(url);
+  if (!parsed.success || parsed.type !== 'file') return { success: false, error: 'invalid-url' };
+  if (!['video', 'audio'].includes(mode)) return { success: false, error: 'invalid-mode' };
+  const existing = [...downloads.entries()].find(([, record]) =>
+    record.active && record.kind === 'media' && record.mode === mode && record.url === parsed.url
+  );
+  if (existing) return { success: true, id: existing[0] };
+  if (downloadPrefs.ask && pendingSavePrompts.has(parsed.url)) {
+    console.warn(`[orbit] demande de destination en double ignorée pour ${parsed.url}`);
+    return { success: false, error: 'destination-dialog-open' };
+  }
   const id = `yt-${Date.now()}-${(mediaSeq += 1)}`;
-  downloader.downloadMedia({ id, url, mode }, (ev) => {
+  const record = {
+    active: true,
+    url: parsed.url,
+    filename: mode === 'audio' ? 'Audio en préparation…' : 'Vidéo en préparation…',
+    kind: 'media',
+    mode,
+    canPause: false,
+  };
+  downloads.set(id, record);
+  const progress = (ev) => {
     const rec = downloads.get(id) || {};
-    if (ev.proc) rec.item = { cancel: () => { try { ev.proc.kill('SIGTERM'); } catch { /* ignore */ } } };
-    // yt-dlp n'a pas de DownloadItem : on suit nous-mêmes l'état pour que le
-    // blocage de mise en veille et la confirmation de sortie en tiennent compte.
-    rec.active = ev.state === 'progressing';
+    if (ev.proc) {
+      const stop = () => {
+        try { ev.proc.kill('SIGTERM'); } catch (error) {
+          console.error('[orbit] arrêt du processus média échoué:', error);
+        }
+      };
+      rec.item = { cancel: stop, kill: stop };
+    }
+    rec.active = ev.state === 'progressing' || ev.state === 'selecting';
     if (ev.savePath) rec.savePath = ev.savePath;
-    rec.url = url;
-    rec.filename = ev.filename;
+    rec.url = parsed.url;
+    rec.filename = ev.filename || rec.filename;
+    rec.kind = 'media';
+    rec.mode = mode;
     downloads.set(id, rec);
     refreshDownloadPowerBlocker();
     const first = !mediaStarted.has(id);
@@ -4750,25 +4928,142 @@ function startMediaDownload(url, mode) {
       id,
       filename: ev.filename,
       savePath: ev.savePath || rec.savePath || '',
-      url,
+      url: parsed.url,
       totalBytes: ev.totalBytes || 0,
       receivedBytes: ev.receivedBytes || 0,
+      speedBytesPerSecond: ev.speedBytesPerSecond || 0,
+      etaSeconds: ev.etaSeconds || 0,
       state: ev.state,
+      error: ev.error || '',
+      kind: 'media',
+      mode,
+      canPause: false,
       event:
-        ev.state === 'completed' || ev.state === 'interrupted'
+        ev.state === 'completed' || ev.state === 'interrupted' || ev.state === 'cancelled'
           ? 'done'
           : first
             ? 'started'
             : 'updated',
     });
-    if (ev.state === 'completed' || ev.state === 'interrupted') {
+    if (ev.state === 'completed' || ev.state === 'interrupted' || ev.state === 'cancelled') {
+      rec.item = null;
+      downloads.set(id, rec);
       mediaStarted.delete(id);
       setTimeout(() => downloads.delete(id), 10 * 60 * 1000);
     }
+  };
+  const start = (outputTemplate, formatConfig) => {
+    broadcastDownload({
+      id,
+      filename: record.filename,
+      url: parsed.url,
+      state: 'progressing',
+      receivedBytes: 0,
+      totalBytes: 0,
+      kind: 'media',
+      mode,
+      canPause: false,
+      event: 'started',
+    });
+    downloader.downloadMedia({
+      id,
+      url: parsed.url,
+      mode,
+      outputTemplate,
+      ...formatConfig,
+    }, progress);
+  };
+  const dir = ensureDownloadDir(downloadPrefs.dir || systemDownloadsDir());
+  const hasFfmpeg = (() => {
+    try {
+      execFileSync('ffmpeg', ['-version'], { stdio: 'ignore', timeout: 2500 });
+      return true;
+    } catch {
+      return false;
+    }
+  })();
+  const formatConfig = mediaFormatOptions(mode, {
+    videoQuality: downloadPrefs.videoQuality,
+    audioFormat: downloadPrefs.audioFormat,
+    hasFfmpeg,
   });
+  if (formatConfig.audioFormat === 'mp3' && !formatConfig.extractAudio) {
+    formatConfig.audioFormat = 'm4a';
+  }
+  if (downloadPrefs.ask) {
+    record.active = false;
+    progress({
+      id,
+      filename: 'Choisissez le nom du fichier…',
+      state: 'selecting',
+    });
+    pendingSavePrompts.add(parsed.url);
+    const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined;
+    dialog.showSaveDialog(win, {
+      title: mode === 'audio' ? 'Enregistrer l’audio' : 'Enregistrer la vidéo',
+      defaultPath: path.join(dir, mode === 'audio' ? 'audio.m4a' : 'video.mp4'),
+      buttonLabel: 'Enregistrer',
+    }).then(({ canceled, filePath }) => {
+      if (canceled || !filePath) {
+        pendingSavePrompts.delete(parsed.url);
+        record.active = false;
+        progress({ id, filename: record.filename, state: 'cancelled', error: '' });
+        return;
+      }
+      const ext = path.extname(filePath);
+      const base = ext ? filePath.slice(0, -ext.length) : filePath;
+      const safeTemplate = `${base}.%(ext)s`;
+      record.active = true;
+      start(safeTemplate, formatConfig);
+      pendingSavePrompts.delete(parsed.url);
+    }).catch((error) => {
+      pendingSavePrompts.delete(parsed.url);
+      console.error('[orbit] dialogue de destination du média échoué:', error);
+      record.active = false;
+      progress({
+        id,
+        filename: record.filename,
+        state: 'interrupted',
+        error: String(error.message || error),
+      });
+    });
+  } else {
+    const template = path.join(dir, '%(title).200s [%(id)s].%(ext)s');
+    start(template, formatConfig);
+  }
   return { success: true, id };
 }
 ipcMain.handle('media:download', (_e, { url, mode } = {}) => startMediaDownload(url, mode));
+
+ipcMain.handle('downloads:startUrl', (_event, value) => {
+  const parsed = parseDownloadUrl(value);
+  if (!parsed.success || parsed.type !== 'file') return { success: false, error: parsed.reason || 'invalid-url' };
+  try {
+    session.defaultSession.downloadURL(parsed.url);
+    return { success: true };
+  } catch (error) {
+    console.error('[orbit] démarrage du téléchargement URL échoué:', error);
+    return { success: false, error: String(error.message || error) };
+  }
+});
+
+ipcMain.handle('downloads:openTorrent', async (_event, value) => {
+  const parsed = parseDownloadUrl(value);
+  if (!parsed.success || parsed.type !== 'torrent') {
+    return { success: false, error: parsed.reason || 'invalid-torrent-link' };
+  }
+  try {
+    const torrentUrl = new URL(parsed.url);
+    if (torrentUrl.protocol !== 'magnet:') {
+      return { success: false, error: 'unsupported-torrent-protocol' };
+    }
+    const error = await shell.openExternal(torrentUrl.href);
+    return error ? { success: false, error } : { success: true };
+  } catch (error) {
+    console.error('[orbit] ouverture du lien torrent échouée:', error);
+    return { success: false, error: String(error.message || error) };
+  }
+});
 
 // Ouvrir une app dans une fenêtre DÉTACHÉE (séparée), en réutilisant la même
 // partition → session/connexion partagée avec l'onglet embarqué.

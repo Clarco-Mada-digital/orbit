@@ -1,6 +1,6 @@
 {
   "name": "orbit",
-  "version": "1.16.0",
+  "version": "1.16.1",
   "description": "Orbit — toutes vos apps web dans une seule fenêtre (Windows, macOS, Linux)",
   "main": "electron/main.js",
   "type": "module",
@@ -99,6 +99,8 @@
       "src/lib/markdown.js",
       "src/lib/urls.js",
       "src/lib/downloadPath.js",
+      "src/lib/downloadOptions.js",
+      "src/lib/javaRuntime.js",
       "src/lib/phone.js",
       "src/lib/aiProviders.js",
       "build/icon.png",
@@ -206,6 +208,10 @@
     }
   },
   "allowScripts": {
-    "electron@43.2.0": true
+    "electron@43.8.3": true,
+    "electron-winstaller@5.4.0": true,
+    "esbuild@0.25.12": true,
+    "onnxruntime-node@1.30.0": true,
+    "protobufjs@7.6.6": true
   }
 }

@@ -8,10 +8,22 @@ export const useDownloadsStore = create((set) => ({
   // receivedBytes, state: 'progressing'|'completed'|'cancelled'|'interrupted' }
   downloads: [],
 
+  hydrate: (downloads) =>
+    set((state) => {
+      const history = Array.isArray(downloads) ? downloads : [];
+      const known = new Set(history.map((item) => item.id));
+      return {
+        downloads: [
+          ...state.downloads.filter((item) => item.state === 'progressing' && !known.has(item.id)),
+          ...history,
+        ].slice(0, 500),
+      };
+    }),
+
   upsert: (d) =>
     set((state) => {
       const idx = state.downloads.findIndex((x) => x.id === d.id);
-      if (idx === -1) return { downloads: [d, ...state.downloads].slice(0, 50) };
+      if (idx === -1) return { downloads: [d, ...state.downloads].slice(0, 500) };
       const next = state.downloads.slice();
       next[idx] = { ...next[idx], ...d };
       return { downloads: next };
@@ -22,5 +34,11 @@ export const useDownloadsStore = create((set) => ({
 
   // Retire tout ce qui n'est plus en cours (garde les téléchargements actifs)
   clearFinished: () =>
-    set((state) => ({ downloads: state.downloads.filter((x) => x.state === 'progressing') })),
+    set((state) => ({
+      downloads: state.downloads.filter((x) =>
+        ['progressing', 'paused', 'selecting'].includes(x.state)
+      ),
+    })),
+
+  replace: (downloads) => set({ downloads: Array.isArray(downloads) ? downloads.slice(0, 500) : [] }),
 }));

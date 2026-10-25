@@ -125,6 +125,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openDownload: (id) => ipcRenderer.invoke('downloads:open', id),
   revealDownload: (id) => ipcRenderer.invoke('downloads:reveal', id),
   cancelDownload: (id) => ipcRenderer.invoke('downloads:cancel', id),
+  pauseDownload: (id) => ipcRenderer.invoke('downloads:pause', id),
+  resumeDownload: (id) => ipcRenderer.invoke('downloads:resume', id),
+  listDownloads: () => ipcRenderer.invoke('downloads:list'),
+  removeDownload: (id) => ipcRenderer.invoke('downloads:remove', id),
+  clearDownloadHistory: () => ipcRenderer.invoke('downloads:clearHistory'),
   openDownloadsFolder: () => ipcRenderer.invoke('downloads:openFolder'),
   // Réglages de téléchargement : dossier d'enregistrement et « demander à
   // chaque fois ». `pickFolder` ouvre le sélecteur de dossiers du système.
@@ -145,6 +150,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openOutside: (url) => ipcRenderer.invoke('document:openOutside', url),
   // Téléchargement vidéo/audio (yt-dlp) — mode: 'video' | 'audio'
   downloadMedia: (url, mode) => ipcRenderer.invoke('media:download', { url, mode }),
+  startDownloadUrl: (url) => ipcRenderer.invoke('downloads:startUrl', url),
+  openTorrentLink: (url) => ipcRenderer.invoke('downloads:openTorrent', url),
   // Ouvrir une app dans une fenêtre détachée (même session)
   openDetached: (payload) => ipcRenderer.invoke('app:openDetached', payload),
   // Données de test (« Fake data ») : pousse les valeurs perso vers le main
@@ -260,7 +267,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
   },
   grammar: {
-    state: () => ipcRenderer.invoke('grammar:state'),
+    state: (options) => ipcRenderer.invoke('grammar:state', options),
     install: () => ipcRenderer.invoke('grammar:install'),
     remove: () => ipcRenderer.invoke('grammar:remove'),
     check: (text, language) => ipcRenderer.invoke('grammar:check', { text, language }),

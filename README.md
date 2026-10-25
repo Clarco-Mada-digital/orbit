@@ -44,8 +44,11 @@ Récupérez la dernière version sur la page des **[Releases](https://github.com
   sont modifiables avant application et le texte reste sur l’appareil
 - 📚 **LanguageTool local facultatif** — moteur de grammaire français/anglais
   téléchargeable à la demande depuis les réglages du correcteur ; nécessite Java 17+
-  et plusieurs centaines de Mo d’espace disque. Le moteur s’arrête après une période
-  d’inactivité ; les règles rapides d’Orbit restent disponibles en repli
+  et plusieurs centaines de Mo d’espace disque. Orbit détecte Windows, macOS et les
+  distributions Linux courantes et propose la commande d’installation adaptée
+  (APT pour Debian, Ubuntu et Linux Mint). Le serveur reste chaud cinq minutes pour
+  accélérer les vérifications suivantes ; les règles rapides d’Orbit restent
+  disponibles en repli
 - ⌨️ **Raccourcis de relecture** — `Alt + Maj + E` (ou `⌘ + Maj + E` sur macOS)
   pour relire le champ actif sans IA ; `Alt + Maj + I` (ou `⌘ + Maj + I`) pour
   ouvrir la relecture IA avec la sélection courante ou le contenu du champ
@@ -126,12 +129,12 @@ extensions-dist/            ← ZIPs distribuables (SUIVI EN GIT, partagés avec
   └── text-snippets.zip            (14 Ko) — abréviations extensibles (;email → texte complet)
   └── sticky-notes.zip             (14 Ko) — notes par site (bouton 📝, Alt+N)
   └── qr-code-generator.zip        (17 Ko) — QR codes locaux (bouton ⊞, Alt+Q, clic droit)
+  └── web-clipper.zip              — captures locales de pages et de sélections, recherche et export Markdown
 
 userData/extensions/         ← Extensions installées par l'utilisateur (Electron, jamais en git)
 
-# Les sources des extensions (electron/extensions/) NE SONT PAS dans git :
-# uniquement les développeurs qui modifient les extensions ont les sources
-# localement. Pour créer/modifier une extension :
+# Les sources des extensions présentes dans electron/extensions/ sont suivies en git.
+# Pour créer/modifier une extension :
 #   1. Créer electron/extensions/<mon-extension>/ localement
 #   2. Lancer npm run export:extensions
 #   3. Le ZIP est créé dans extensions-dist/ et suivi en git
@@ -147,10 +150,19 @@ userData/extensions/         ← Extensions installées par l'utilisateur (Elect
 
 #### Installation manuelle d'une extension depuis ZIP
 
-1. Récupérer le ZIP depuis `dist/extensions/` (ex: `fake-data-filler-orbit.zip`)
+1. Récupérer le ZIP depuis `extensions-dist/` (ex: `web-clipper.zip`)
 2. Dans Orbit : **Réglages → Extensions → Extensions installables → Installer depuis ZIP**
 3. Sélectionner le fichier ZIP
 4. L'extension est extraite et chargée automatiquement
+
+#### Web Clipper
+
+- Sur une page web, ouvrir le bouton flottant **⌑** pour capturer la sélection
+  ou le texte de l'article/page.
+- Les captures restent dans le stockage local de l'extension ; aucune donnée
+  n'est envoyée à un service distant.
+- **Ouvrir mes captures** donne accès à la recherche, à l'export Markdown
+  individuel ou groupé et à la suppression des captures.
 
 #### Distribution des extensions
 

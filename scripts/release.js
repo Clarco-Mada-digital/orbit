@@ -6,7 +6,7 @@
 // Ce que ça fait :
 //   1. Vérifie que le dépôt est propre, que la version n'existe pas déjà et
 //      qu'elle a bien ses notes dans CHANGELOG.md
-//   2. Bump « version » dans package.json
+//   2. Bump « version » dans package.json et package-lock.json et package-lock.json
 //   3. Génère les icônes + build le front (vérification que tout compile)
 //   4. Commit « chore(release): vX.Y.Z », crée le tag vXYZ et pousse
 //   5. GitHub Actions (.github/workflows/release.yml) construit alors la
@@ -97,12 +97,20 @@ console.log('');
 // --- Bump de version --------------------------------------------------------
 const pkgPath = new URL('../package.json', import.meta.url).pathname;
 const pkg = JSON.parse(readFileSync(pkgPath, 'utf8'));
+const lockPath = new URL('../package-lock.json', import.meta.url).pathname;
+const lock = JSON.parse(readFileSync(lockPath, 'utf8'));
 if (pkg.version === version) {
   console.log(`✓ package.json est déjà en version ${version} — pas de bump nécessaire.`);
 } else {
   pkg.version = version;
   writeFileSync(pkgPath, JSON.stringify(pkg, null, 2) + '\n');
   console.log(`✓ package.json → version ${version}`);
+}
+if (lock.version !== version || lock.packages?.['']?.version !== version) {
+  lock.version = version;
+  if (lock.packages?.['']) lock.packages[''].version = version;
+  writeFileSync(lockPath, JSON.stringify(lock, null, 2) + '\n');
+  console.log(`✓ package-lock.json → version ${version}`);
 }
 
 // --- Build de vérification ---------------------------------------------------
@@ -116,9 +124,12 @@ run('npm run build');
 console.log(`→ Commit, tag ${tag} et push…`);
 // Commit seulement si le bump a modifié quelque chose (sinon « nothing to
 // commit » ferait échouer le script).
-if (quiet('git status --porcelain package.json')) {
-  run('git add package.json');
-  run(`git commit -m "chore(release): ${tag}"`);
+if (quiet('git status --porcelain package.json package-lock.json')) {
+  run('git add package.json package-lock.json');
+  run(
+    `git commit -m "chore(release): ${tag}" ` +
+      '-m "Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>"'
+  );
 } else {
   console.log('  (rien à committer — version déjà à jour)');
 }

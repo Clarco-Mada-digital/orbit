@@ -7,9 +7,6 @@ on:
   push:
     tags:
       - 'v*'
-  # Permet de lancer manuellement depuis l'onglet « Actions » (utile pour
-  # (re)générer les artefacts d'une version déjà publiée).
-  workflow_dispatch:
 
 permissions:
   contents: write
@@ -29,10 +26,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
           cache: npm
@@ -54,10 +51,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v7
         with:
           node-version: 22
 

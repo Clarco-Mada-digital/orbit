@@ -49,3 +49,15 @@ export function mergeProofreadingIssues(localIssues, languageToolIssues) {
       !all.slice(0, index).some((previous) => issue.start < previous.end && previous.start < issue.end)
     );
 }
+
+export function languageToolIssuesForSource(result, text, language) {
+  if (
+    !result ||
+    result.text !== text ||
+    result.language !== language ||
+    !Array.isArray(result.issues)
+  ) {
+    return null;
+  }
+  return result.issues;
+}

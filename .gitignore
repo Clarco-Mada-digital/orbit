@@ -6,6 +6,8 @@ dist-electron
 electron/extensions/*
 !electron/extensions/orbit-phone/
 !electron/extensions/orbit-phone/**
+!electron/extensions/web-clipper/
+!electron/extensions/web-clipper/**
 extensions-src/*
 
 # Extensions distribuables (ZIPs) — dossier dédié, suivi en git
@@ -24,6 +26,7 @@ lerna-debug.log*
 *.swo
 *~
 .cache
+.argus/
 .parcel-cache
 .turbo
 coverage

@@ -150,7 +150,6 @@ export function getAssistantState() {
 
 function serveModelFile(request, response) {
   const headers = {
-    'Access-Control-Allow-Origin': '*',
     'Access-Control-Allow-Methods': 'GET, HEAD, OPTIONS',
     'Access-Control-Allow-Headers': 'Range, Content-Type',
     'Cache-Control': 'private, max-age=31536000, immutable',

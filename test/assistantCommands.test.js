@@ -58,30 +58,6 @@ test('chat prompts carry the command instruction, other modes ignore it', () => 
     chatCommandId: 'fix',
   });
 
-  test('agent commands are scoped to the selected agent', () => {
-    const writer = getAssistantAgent('writer');
-    const developer = getAssistantAgent('developer');
-    assert.ok(parseAssistantCommand('/fix typo', writer.commands).command);
-    assert.equal(parseAssistantCommand('/refactor code', writer.commands).command, null);
-    assert.ok(parseAssistantCommand('/refactor code', developer.commands).command);
-    assert.equal(filterAssistantCommands('', writer.commands).length, 3);
-    assert.deepEqual(
-      groupAssistantAgents().map((group) => group.agents.map((agent) => agent.id)).flat().sort(),
-      ASSISTANT_AGENTS.map((agent) => agent.id).sort()
-    );
-  });
-
-  test('agent prompt uses the chosen persona and its own slash-command instruction', () => {
-    const messages = createAssistantMessages({
-      mode: 'chat',
-      text: 'const value = 1;',
-      agentId: 'developer',
-      chatCommandId: 'refactor',
-    });
-    assert.match(messages[0].content, /software engineering assistant/);
-    assert.match(messages[0].content, /user selected the \/refactor command/);
-    assert.doesNotMatch(messages[0].content, /email/);
-  });
   assert.doesNotMatch(proofread[0].content, /selected the/);
 
   const unknown = createAssistantMessages({
@@ -90,4 +66,29 @@ test('chat prompts carry the command instruction, other modes ignore it', () => 
     chatCommandId: 'unknown',
   });
   assert.doesNotMatch(unknown[0].content, /selected the/);
+});
+
+test('agent commands are scoped to the selected agent', () => {
+  const writer = getAssistantAgent('writer');
+  const developer = getAssistantAgent('developer');
+  assert.ok(parseAssistantCommand('/fix typo', writer.commands).command);
+  assert.equal(parseAssistantCommand('/refactor code', writer.commands).command, null);
+  assert.ok(parseAssistantCommand('/refactor code', developer.commands).command);
+  assert.equal(filterAssistantCommands('', writer.commands).length, 3);
+  assert.deepEqual(
+    groupAssistantAgents().map((group) => group.agents.map((agent) => agent.id)).flat().sort(),
+    ASSISTANT_AGENTS.map((agent) => agent.id).sort()
+  );
+});
+
+test('agent prompt uses the chosen persona and its own slash-command instruction', () => {
+  const messages = createAssistantMessages({
+    mode: 'chat',
+    text: 'const value = 1;',
+    agentId: 'developer',
+    chatCommandId: 'refactor',
+  });
+  assert.match(messages[0].content, /software engineering assistant/);
+  assert.match(messages[0].content, /user selected the \/refactor command/);
+  assert.doesNotMatch(messages[0].content, /email/);
 });

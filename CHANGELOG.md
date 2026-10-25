@@ -8,6 +8,26 @@ Format : une section `## [X.Y.Z] — AAAA-MM-JJ` par version, puis des
 sous-sections `### Ajouté` / `### Modifié` / `### Corrigé` / `### Sécurité`.
 La plus récente en premier.
 
+## [1.16.1] — 2026-10-25
+
+### Ajouté
+- **Gestionnaire de téléchargements** : page dédiée aux téléchargements,
+  historique, choix du dossier, liens torrent magnet et options de médias.
+- **Web Clipper** : capture locale d'une sélection ou d'une page, recherche
+  dans la bibliothèque et export Markdown d'une capture ou de toute la collection.
+- **Correcteur hors ligne** : détection du système et du runtime Java pour
+  guider l'installation de LanguageTool sur Linux, macOS et Windows.
+
+### Corrigé
+- Le choix du dossier de destination ne déclenche plus de demande de dossier
+  en double et les téléchargements sont finalisés dans le dossier sélectionné.
+- Le serveur de modèles locaux limite maintenant le CORS aux origines Orbit
+  autorisées ; les liens magnet sont validés avant d'ouvrir le client torrent.
+- Les tests imbriqués d'agents sont maintenant exécutés de manière fiable sous
+  Node 22, utilisé par la CI.
+- Les releases mettent à jour le manifeste npm et le lockfile ensemble. Le
+  workflow de release ne se déclenche que sur un tag de version.
+
 ## [1.16.0] — 2026-10-24
 
 ### Ajouté

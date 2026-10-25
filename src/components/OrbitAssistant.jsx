@@ -1,5 +1,5 @@
 import { lazy, Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Bot, Check, Compass, Copy, Download, FileText, History, Languages, Lightbulb, ListChecks, LoaderCircle, Mail, MessageCircle, Reply, Send, ShieldCheck, Sparkles, SpellCheck, Trash2, WandSparkles, X } from 'lucide-react';
+import { ArrowDown, Bot, Check, Compass, Copy, Download, FileText, History, Languages, Lightbulb, ListChecks, LoaderCircle, Mail, MessageCircle, Reply, Send, ShieldCheck, Sparkles, SpellCheck, Trash2, WandSparkles, X } from 'lucide-react';
 import { useT, resolveLang, translate } from '../lib/i18n';
 import { useStore } from '../stores/useStore';
 import { proposeOrbitAction } from '../lib/assistantActions';
@@ -110,6 +110,10 @@ export default function OrbitAssistant({ onReady }) {
   const [contextKind, setContextKind] = useState('selection');
   const [resultText, setResultText] = useState('');
   const [messages, setMessages] = useState([]);
+  const chatScrollRef = useRef(null);
+  const chatAtBottomRef = useRef(true);
+  const lastChatViewRef = useRef({ isOpen: false, chatOnly: false, sessionId: '' });
+  const [chatIsAtBottom, setChatIsAtBottom] = useState(true);
   const [pendingAction, setPendingAction] = useState(null);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState('');
@@ -295,6 +299,26 @@ export default function OrbitAssistant({ onReady }) {
   useEffect(() => {
     if (isOpen && chatOnly) questionInputRef.current?.focus();
   }, [chatOnly, isOpen]);
+
+  useEffect(() => {
+    const previous = lastChatViewRef.current;
+    const conversationChanged =
+      (!previous.isOpen && isOpen) ||
+      (!previous.chatOnly && chatOnly) ||
+      previous.sessionId !== activeSessionId;
+    lastChatViewRef.current = { isOpen, chatOnly, sessionId: activeSessionId };
+    if (!isOpen || !chatOnly || (!conversationChanged && !chatAtBottomRef.current)) {
+      return undefined;
+    }
+    const scroller = chatScrollRef.current;
+    if (!scroller) return undefined;
+    const frame = requestAnimationFrame(() => {
+      scroller.scrollTop = scroller.scrollHeight;
+      chatAtBottomRef.current = true;
+      setChatIsAtBottom(true);
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [activeSessionId, chatOnly, isOpen, messages.length]);
 
   useEffect(() => {
     const closeChat = () => {
@@ -1122,7 +1146,7 @@ export default function OrbitAssistant({ onReady }) {
           </label>
         </nav>}
 
-        <div className="flex min-h-0 min-w-0 flex-1">
+        <div className="relative flex min-h-0 min-w-0 flex-1">
           {chatOnly && (
             <AssistantWorkspaceSidebar
               sessions={assistantSessions}
@@ -1147,7 +1171,15 @@ export default function OrbitAssistant({ onReady }) {
               busy={busy}
             />
           )}
-          <main className={`min-h-0 min-w-0 flex-1 space-y-4 overflow-y-auto p-5 ${
+          <main
+            ref={chatScrollRef}
+            onScroll={(event) => {
+              const { scrollTop, clientHeight, scrollHeight } = event.currentTarget;
+              const atBottom = scrollHeight - scrollTop - clientHeight < 48;
+              chatAtBottomRef.current = atBottom;
+              setChatIsAtBottom(atBottom);
+            }}
+            className={`min-h-0 min-w-0 flex-1 space-y-4 overflow-y-auto p-5 ${
             chatOnly ? 'flex flex-col' : ''
           } ${
             chatOnly ? 'bg-gradient-to-b from-bg-secondary/50 to-bg-primary/30 sm:px-8' : ''
@@ -1502,6 +1534,22 @@ export default function OrbitAssistant({ onReady }) {
             </section>
           )}
           </main>
+          {chatOnly && messages.length > 0 && !chatIsAtBottom && (
+            <button
+              type="button"
+              onClick={() => {
+                const scroller = chatScrollRef.current;
+                if (!scroller) return;
+                scroller.scrollTo({ top: scroller.scrollHeight, behavior: 'smooth' });
+              }}
+              className="absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-full border border-border bg-bg-elevated px-4 py-2 text-xs font-medium text-text-primary shadow-xl transition-colors hover:bg-bg-hover"
+              aria-label={t('assistant.chat.scrollToLatest')}
+              title={t('assistant.chat.scrollToLatest')}
+            >
+              <ArrowDown size={14} />
+              {t('assistant.chat.scrollToLatest')}
+            </button>
+          )}
         </div>
 
         <footer className={`border-t border-border p-4 ${
