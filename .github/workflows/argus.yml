@@ -30,4 +30,4 @@ jobs:
           node-version: 22
 
       - name: Analyse Argus
-        run: npx --yes github:Clarco-Mada-digital/argus#490dcca3ac3624176b177c5f21442d4086952f4d scan . --ci --fail-on high
+        run: npx --yes --package=https://codeload.github.com/Clarco-Mada-digital/argus/tar.gz/490dcca3ac3624176b177c5f21442d4086952f4d argus scan . --ci --fail-on high
