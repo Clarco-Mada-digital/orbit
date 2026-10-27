@@ -2061,6 +2061,12 @@ const knownPartitions = new Set(EXT_PARTITIONS);
 // Extensions actives (source de vérité = store React, synchronisé ici)
 let enabledExtensions = []; // [{ id, name, version, path, managed }]
 const loadedPerPartition = new Map(); // partition -> Set(extensionId)
+const pendingExtensionLoads = new Map(); // partition -> Promise<boolean>
+let markExtensionSyncReady;
+let extensionSyncStarted = false;
+const extensionSyncReady = new Promise((resolve) => {
+  markExtensionSyncReady = resolve;
+});
 
 // Apps natives demandées par les extensions ACTIVES (`orbit.nativeApp`).
 // C'est la seule source de vérité pour savoir si le pont Téléphone doit
@@ -2141,27 +2147,57 @@ async function downloadCrxFromWebStore(extensionId, destPath) {
 
 // Charge les extensions actives dans une session (une seule fois par session)
 async function ensureExtensionsForPartition(partition) {
-  try {
-    const ses = getSessionForPartition(partition);
-    const loaded = loadedPerPartition.get(partition) || new Set();
-    for (const ext of enabledExtensions) {
-      if (loaded.has(ext.id)) continue;
-      try {
-        const loadedExt = await ses.loadExtension(ext.path);
-        loaded.add(loadedExt.id);
-      } catch (err) {
-        console.error('[orbit] échec chargement extension', ext.name, ':', err.message);
+  if (isPrivatePartition(partition)) return true;
+  if (!extensionSyncStarted) await extensionSyncReady;
+
+  const pending = pendingExtensionLoads.get(partition);
+  if (pending) return pending;
+
+  const loadPromise = (async () => {
+    let success = true;
+    try {
+      const ses = getSessionForPartition(partition);
+      const loaded = loadedPerPartition.get(partition) || new Set();
+      const getAll = () =>
+        typeof ses.extensions?.getAllExtensions === 'function'
+          ? ses.extensions.getAllExtensions()
+          : ses.getAllExtensions();
+      for (const ext of enabledExtensions) {
+        if (loaded.has(ext.id)) continue;
+        if (getAll().some((loadedExt) => loadedExt.id === ext.id)) {
+          loaded.add(ext.id);
+          continue;
+        }
+        try {
+          const loadedExt = await ses.loadExtension(ext.path);
+          loaded.add(loadedExt.id);
+        } catch (err) {
+          success = false;
+          console.error('[orbit] échec chargement extension', ext.name, ':', err.message);
+        }
       }
+      loadedPerPartition.set(partition, loaded);
+    } catch (err) {
+      success = false;
+      console.error('[orbit] ensureExtensionsForPartition failed:', err.message);
     }
-    loadedPerPartition.set(partition, loaded);
-  } catch (err) {
-    console.error('[orbit] ensureExtensionsForPartition failed:', err.message);
+    return success;
+  })();
+  pendingExtensionLoads.set(partition, loadPromise);
+  try {
+    return await loadPromise;
+  } finally {
+    if (pendingExtensionLoads.get(partition) === loadPromise) {
+      pendingExtensionLoads.delete(partition);
+    }
   }
 }
 
 // Réconcilie l'état du store React avec les sessions (charger / décharger)
 async function syncExtensions(list) {
   enabledExtensions = (list || []).filter((e) => e.enabled);
+  extensionSyncStarted = true;
+  markExtensionSyncReady();
   for (const partition of knownPartitions) {
     try {
       const ses = getSessionForPartition(partition);
@@ -2769,19 +2805,7 @@ function createWindow() {
       }
     });
 
-    guestContents.on('before-input-event', (event, input) => {
-      const action = matchShortcutInput(input, assistantChatShortcutKey);
-      if (action) {
-        event.preventDefault();
-        if (action === 'proofread-editor' || action === 'assistant-editor') {
-          openActiveEditorCorrection(guestContents, action).catch((error) => {
-            console.error('[orbit] ouverture de la relecture du champ actif échouée:', error);
-          });
-          return;
-        }
-        mainWindow.webContents.send('orbit:shortcut', action);
-      }
-    });
+    attachPageShortcuts(guestContents);
 
     // Réinitialise les stats de blocage au début de chaque chargement de page.
     guestContents.on('did-start-loading', () => adblock.clearBlockedStats(guestContents.id));
@@ -3183,6 +3207,25 @@ async function openActiveEditorCorrection(wc, action) {
   } else {
     requestAssistantSelection(wc, params);
   }
+}
+
+function attachPageShortcuts(contents) {
+  contents.on('before-input-event', (event, input) => {
+    const action = matchShortcutInput(input, assistantChatShortcutKey);
+    if (!action) return;
+
+    event.preventDefault();
+    if (action === 'proofread-editor' || action === 'assistant-editor') {
+      openActiveEditorCorrection(contents, action).catch((error) => {
+        console.error('[orbit] ouverture de la relecture du champ actif échouée:', error);
+      });
+      return;
+    }
+
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send('orbit:shortcut', action);
+    }
+  });
 }
 
 // Lecture des items de menu contextuel proposés par les extensions installées
@@ -5068,8 +5111,14 @@ ipcMain.handle('downloads:openTorrent', async (_event, value) => {
 // Ouvrir une app dans une fenêtre DÉTACHÉE (séparée), en réutilisant la même
 // partition → session/connexion partagée avec l'onglet embarqué.
 const detachedWindows = new Map();
-ipcMain.handle('app:openDetached', (_e, { appId, url, partition, title } = {}) => {
+ipcMain.handle('app:openDetached', async (_e, { appId, url, partition, title } = {}) => {
   if (!url || !/^https?:\/\//.test(url) || !partition) return { success: false };
+  if (!isPrivatePartition(partition)) {
+    const extensionsReady = await ensureExtensionsForPartition(partition);
+    if (!extensionsReady) {
+      console.error('[orbit] certaines extensions n’ont pas pu être chargées avant l’ouverture détachée');
+    }
+  }
   const existing = detachedWindows.get(appId);
   if (existing && !existing.isDestroyed()) {
     if (existing.isMinimized()) existing.restore();
@@ -5097,13 +5146,41 @@ ipcMain.handle('app:openDetached', (_e, { appId, url, partition, title } = {}) =
   });
   win.setMenuBarVisibility(false);
   win.webContents.setUserAgent(CHROME_UA);
-  // Popups (OAuth, connexion) : fenêtre enfant avec la MÊME session
-  win.webContents.setWindowOpenHandler(({ url: u }) => {
-    if (/^https?:\/\//.test(u)) {
-      return { action: 'allow', overrideBrowserWindowOptions: { webPreferences: { partition } } };
-    }
-    return { action: 'deny' };
-  });
+  attachPageShortcuts(win.webContents);
+  const attachDetachedPopupHandler = (contents, parentWindow) => {
+    contents.setWindowOpenHandler(({ url: popupUrl }) => {
+      if (
+        popupUrl !== 'about:blank' &&
+        !/^https?:\/\//.test(popupUrl)
+      ) {
+        return { action: 'deny' };
+      }
+      return {
+        action: 'allow',
+        overrideBrowserWindowOptions: {
+          parent: parentWindow,
+          width: 920,
+          height: 720,
+          autoHideMenuBar: true,
+          backgroundColor: '#0a0a0f',
+          webPreferences: {
+            session: win.webContents.session,
+            nodeIntegration: false,
+            contextIsolation: true,
+            sandbox: true,
+            spellcheck: true,
+            preload: path.join(__dirname, 'credentials-preload.cjs'),
+          },
+        },
+      };
+    });
+    contents.on('did-create-window', (childWindow) => {
+      childWindow.webContents.setUserAgent(CHROME_UA);
+      attachPageShortcuts(childWindow.webContents);
+      attachDetachedPopupHandler(childWindow.webContents, childWindow);
+    });
+  };
+  attachDetachedPopupHandler(win.webContents, win);
   win.loadURL(url);
   detachedWindows.set(appId, win);
   win.on('closed', () => detachedWindows.delete(appId));
@@ -5114,6 +5191,19 @@ ipcMain.handle('app:openDetached', (_e, { appId, url, partition, title } = {}) =
 // IPC — Extensions Chrome
 // ---------------------------------------------------------------------------
 ipcMain.handle('extensions:sync', (_event, list) => syncExtensions(list));
+ipcMain.handle('extensions:ensureForPartition', async (_event, partition) => {
+  if (
+    typeof partition !== 'string' ||
+    partition.length > 200 ||
+    !/^(?:persist:|priv:)/.test(partition)
+  ) {
+    return { success: false, error: 'invalid-partition' };
+  }
+  const success = await ensureExtensionsForPartition(partition);
+  return success
+    ? { success: true }
+    : { success: false, error: 'extension-load-failed' };
+});
 
 ipcMain.handle('extensions:pickFolder', async () => {
   if (!mainWindow) return null;
@@ -5960,6 +6050,7 @@ handleFromUi('vault:copy', (_e, { id, entryId, field } = {}) =>
 );
 handleFromUi('vault:totp', (_e, { id, entryId } = {}) => vault.entryTotp(id, entryId));
 handleFromUi('vault:audit', (_e, { id } = {}) => vault.audit(id));
+handleFromUi('vault:auditBreaches', (_e, { id } = {}) => vault.auditBreaches(id));
 handleFromUi('vault:strength', (_e, { password } = {}) => vault.strength(password));
 handleFromUi('vault:generate', (_e, opts = {}) =>
   opts.passphrase ? vault.generatePassphrase(opts.words) : vault.generatePassword(opts)

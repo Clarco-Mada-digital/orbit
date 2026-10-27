@@ -29,6 +29,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   clearHostSession: (payload) => ipcRenderer.invoke('sessions:clearHost', payload),
   // Extensions Chrome
   syncExtensions: (list) => ipcRenderer.invoke('extensions:sync', list),
+  ensureExtensionsForPartition: (partition) =>
+    ipcRenderer.invoke('extensions:ensureForPartition', partition),
   installWebStoreExtension: (idOrUrl) => ipcRenderer.invoke('extensions:installWebStore', { idOrUrl }),
   openExtensionOptions: (payload) => ipcRenderer.invoke('extensions:openOptions', payload),
   getExtensionInfo: (payload) => ipcRenderer.invoke('extensions:getInfo', payload),
@@ -329,6 +331,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     copy: (id, entryId, field) => ipcRenderer.invoke('vault:copy', { id, entryId, field }),
     totp: (id, entryId) => ipcRenderer.invoke('vault:totp', { id, entryId }),
     audit: (id) => ipcRenderer.invoke('vault:audit', { id }),
+    auditBreaches: (id) => ipcRenderer.invoke('vault:auditBreaches', { id }),
     strength: (password) => ipcRenderer.invoke('vault:strength', { password }),
     generate: (opts) => ipcRenderer.invoke('vault:generate', opts),
     importFile: (id) => ipcRenderer.invoke('vault:import', { id }),

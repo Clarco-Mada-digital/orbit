@@ -31,6 +31,9 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { getDomain, getHostname } from 'tldts-experimental';
+import { checkPwnedPasswords } from './pwned-passwords.js';
+import { scorePassword } from './password-strength.js';
+import { applyImportedFields } from './vault-import.js';
 
 // scrypt : N=32768 → ~33 Mo, environ 100 ms par dérivation sur une machine de
 // bureau. Assez lent pour ruiner une attaque hors-ligne, assez rapide pour un
@@ -696,27 +699,6 @@ export function entryTotp(id, entryId) {
 // ---------------------------------------------------------------------------
 // Audit de santé des mots de passe
 // ---------------------------------------------------------------------------
-// Trois défauts qui comptent vraiment en pratique : trop court/trop simple,
-// RÉUTILISÉ sur plusieurs sites (le pire — une fuite en compromet plusieurs),
-// et très ancien. On ne calcule aucune empreinte hors de la machine : rien
-// n'est envoyé à un service de fuite.
-function strengthOf(password) {
-  const p = String(password || '');
-  if (!p) return 0;
-  let classes = 0;
-  if (/[a-z]/.test(p)) classes += 1;
-  if (/[A-Z]/.test(p)) classes += 1;
-  if (/[0-9]/.test(p)) classes += 1;
-  if (/[^a-zA-Z0-9]/.test(p)) classes += 1;
-  // Entropie approchée : longueur × log2(taille de l'alphabet deviné)
-  const alphabet = [26, 52, 62, 95][Math.max(0, classes - 1)] || 26;
-  const bits = p.length * Math.log2(alphabet);
-  if (bits < 40) return 1; // faible
-  if (bits < 60) return 2; // moyen
-  if (bits < 80) return 3; // bon
-  return 4; // excellent
-}
-
 export function audit(id) {
   const session = requireOpen(id);
   if (!session) return { success: false, error: 'locked' };
@@ -727,15 +709,16 @@ export function audit(id) {
     counts.set(e.password, (counts.get(e.password) || 0) + 1);
   }
   const yearAgo = now() - 365 * 24 * 3600 * 1000;
-  const result = { weak: [], reused: [], old: [], empty: [], strong: 0 };
+  const result = { weak: [], reused: [], old: [], empty: [], moderate: 0, strong: 0 };
   for (const e of entries) {
     const view = { id: e.id, title: e.title, username: e.username, url: e.url };
     if (!e.password) {
       result.empty.push(view);
       continue;
     }
-    const s = strengthOf(e.password);
+    const s = scorePassword(e.password);
     if (s <= 2) result.weak.push({ ...view, strength: s });
+    else if (s === 3) result.moderate += 1;
     else result.strong += 1;
     if (counts.get(e.password) > 1) result.reused.push(view);
     if ((e.passwordUpdatedAt || e.createdAt || 0) < yearAgo) result.old.push(view);
@@ -743,8 +726,37 @@ export function audit(id) {
   return { success: true, total: entries.length, ...result };
 }
 
+export async function auditBreaches(id) {
+  const session = requireOpen(id);
+  if (!session) return { success: false, error: 'locked' };
+  const entries = session.payload.entries.filter((entry) => entry.password);
+  const checks = await checkPwnedPasswords(entries.map((entry) => entry.password));
+  if (open.get(id) !== session) return { success: false, error: 'locked' };
+  const compromised = [];
+  let failed = 0;
+  for (const entry of entries) {
+    const result = checks.get(entry.password);
+    if (!result || result.error) {
+      failed += 1;
+    } else if (result.count > 0) {
+      compromised.push({
+        id: entry.id,
+        title: entry.title,
+        username: entry.username,
+        count: result.count,
+      });
+    }
+  }
+  return {
+    success: true,
+    checked: entries.length - failed,
+    failed,
+    compromised,
+  };
+}
+
 export function strength(password) {
-  return { success: true, score: strengthOf(password) };
+  return { success: true, score: scorePassword(password) };
 }
 
 // ---------------------------------------------------------------------------
@@ -820,7 +832,7 @@ export async function importFromFile(id, { window } = {}) {
   const session = requireOpen(id);
   if (!session) return { success: false, error: 'locked' };
   const res = await dialog.showOpenDialog(window || undefined, {
-    title: 'Importer des mots de passe',
+    title: 'Importer des identifiants',
     filters: [{ name: 'CSV / JSON', extensions: ['csv', 'json'] }],
     properties: ['openFile'],
   });
@@ -860,15 +872,68 @@ export async function importFromFile(id, { window } = {}) {
 
   // Dédoublonnage : réimporter le même fichier deux fois ne doit pas créer
   // 400 doublons. Clé = domaine + identifiant.
-  const seen = new Set(
-    session.payload.entries.map((e) => `${domainOf(e.url)}|${e.username}`)
+  const existingEntries = new Map(
+    session.payload.entries.map((entry) => [
+      `${domainOf(entry.url)}|${entry.username || ''}`,
+      entry,
+    ])
   );
+  const seen = new Set(existingEntries.keys());
+  const conflicts = new Set(
+    rows
+      .filter((row) => row.password || row.username)
+      .map((row) => `${domainOf(row.url)}|${row.username || ''}`)
+      .filter((key) => seen.has(key))
+  );
+  const duplicateCount = conflicts.size;
+  let duplicateMode = 'merge';
+  if (duplicateCount > 0) {
+    const choice = await dialog.showMessageBox(window || undefined, {
+      type: 'question',
+      title: 'Identifiants déjà présents',
+      message: `${duplicateCount} identifiant(s) correspondent déjà à ce site et à ce nom d’utilisateur.`,
+      detail:
+        'Fusionner complète les champs vides sans remplacer les données existantes. Écraser remplace les champs fournis par le fichier. Les champs absents ou vides sont conservés dans les deux cas.',
+      buttons: ['Fusionner', 'Écraser les doublons', 'Annuler'],
+      defaultId: 0,
+      cancelId: 2,
+      noLink: true,
+    });
+    if (choice.response === 2) return { success: false, error: 'canceled' };
+    duplicateMode = choice.response === 1 ? 'overwrite' : 'merge';
+  }
+
   let imported = 0;
+  let merged = 0;
+  let overwritten = 0;
   let skipped = 0;
+  let changedExisting = false;
+  const processed = new Set();
   for (const row of rows) {
     if (!row.password && !row.username) continue;
     const key = `${domainOf(row.url)}|${row.username || ''}`;
+    if (processed.has(key)) {
+      skipped += 1;
+      continue;
+    }
+    processed.add(key);
     if (seen.has(key)) {
+      const existing = existingEntries.get(key);
+      if (existing) {
+        const values = {
+          title: String(row.title || '').trim() || hostLabel(row.url),
+          url: String(row.url || '').trim(),
+          username: String(row.username || ''),
+          password: String(row.password || ''),
+          totp: normalizeTotpSecret(row.totp),
+          notes: String(row.notes || ''),
+        };
+        changedExisting =
+          applyImportedFields(existing, values, duplicateMode, now()) || changedExisting;
+        if (duplicateMode === 'overwrite') overwritten += 1;
+        else merged += 1;
+        continue;
+      }
       skipped += 1;
       continue;
     }
@@ -891,8 +956,8 @@ export async function importFromFile(id, { window } = {}) {
     });
     imported += 1;
   }
-  persist(headerOf(id), session.key, session.payload);
-  return { success: true, imported, skipped };
+  if (imported || changedExisting) persist(headerOf(id), session.key, session.payload);
+  return { success: true, imported, merged, overwritten, skipped };
 }
 
 // Export : exige de RESAISIR le mot de passe maître. Un export CSV/JSON est en

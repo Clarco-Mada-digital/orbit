@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Lock,
   Unlock,
@@ -568,16 +568,24 @@ export default function PasswordVault() {
   const [activeId, setActiveId] = useState('');
   const [creating, setCreating] = useState(false);
   const [entries, setEntries] = useState([]);
+  const [entriesError, setEntriesError] = useState('');
   const [categories, setCategories] = useState([]);
   const [query, setQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [editing, setEditing] = useState(null); // { entry } | { entry: null }
   const [toast, setToast] = useState('');
+  const [showEntries, setShowEntries] = useState(false);
   const [audit, setAudit] = useState(null);
+  const [auditError, setAuditError] = useState('');
+  const [auditing, setAuditing] = useState(false);
+  const [breachAudit, setBreachAudit] = useState(null);
+  const [breachError, setBreachError] = useState('');
+  const [checkingBreaches, setCheckingBreaches] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportPassword, setExportPassword] = useState('');
   const [exportError, setExportError] = useState('');
   const [managing, setManaging] = useState(false);
+  const entriesRequestRef = useRef(0);
 
   const refreshVaults = useCallback(async () => {
     const state = await api()?.state();
@@ -591,11 +599,24 @@ export default function PasswordVault() {
 
   const refreshEntries = useCallback(async (id) => {
     if (!id) return;
-    const res = await api()?.entries(id);
-    if (res?.success) {
+    const requestId = ++entriesRequestRef.current;
+    setEntriesError('');
+    try {
+      const res = await api()?.entries(id);
+      if (requestId !== entriesRequestRef.current) return;
+      if (!res?.success) {
+        console.error('[vault] chargement des identifiants échoué:', res?.error || 'unknown');
+        setEntriesError('pv.entriesLoadFailed');
+        setEntries([]);
+        setCategories([]);
+        return;
+      }
       setEntries(res.entries);
       setCategories(res.categories || []);
-    } else {
+    } catch (error) {
+      if (requestId !== entriesRequestRef.current) return;
+      console.error('[vault] chargement des identifiants échoué:', error);
+      setEntriesError('pv.entriesLoadFailed');
       setEntries([]);
       setCategories([]);
     }
@@ -606,12 +627,21 @@ export default function PasswordVault() {
   }, [refreshVaults]);
 
   useEffect(() => {
-    if (active?.unlocked) refreshEntries(active.id);
-    else {
+    if (active?.unlocked && showEntries) {
+      refreshEntries(active.id);
+    } else {
+      entriesRequestRef.current += 1;
+      setEntriesError('');
       setEntries([]);
-      setAudit(null);
+      setCategories([]);
     }
-  }, [active?.id, active?.unlocked, refreshEntries]);
+    if (!active?.unlocked) {
+      setAudit(null);
+      setAuditError('');
+      setBreachAudit(null);
+      setBreachError('');
+    }
+  }, [active?.id, active?.unlocked, showEntries, refreshEntries]);
 
   // Un trousseau se referme tout seul après inactivité : sans ce rappel,
   // l'écran continuerait d'afficher une liste qui n'est plus déverrouillée.
@@ -641,6 +671,13 @@ export default function PasswordVault() {
   }, [entries, query, categoryFilter]);
 
   const lock = async (id) => {
+    entriesRequestRef.current += 1;
+    setShowEntries(false);
+    setEntriesError('');
+    setEntries([]);
+    setCategories([]);
+    setAudit(null);
+    setBreachAudit(null);
     await api()?.lock(id);
     refreshVaults();
   };
@@ -648,17 +685,55 @@ export default function PasswordVault() {
   const runAudit = async () => {
     if (audit) {
       setAudit(null);
+      setBreachAudit(null);
       return;
     }
-    const res = await api()?.audit(activeId);
-    if (res?.success) setAudit(res);
+    setAuditing(true);
+    setAuditError('');
+    setBreachAudit(null);
+    setBreachError('');
+    try {
+      const res = await api()?.audit(activeId);
+      if (res?.success) setAudit(res);
+      else setAuditError(t('pv.auditFailed'));
+    } catch (error) {
+      console.error('[vault] audit local échoué:', error);
+      setAuditError(t('pv.auditFailed'));
+    } finally {
+      setAuditing(false);
+    }
+  };
+
+  const runBreachAudit = async () => {
+    setCheckingBreaches(true);
+    setBreachError('');
+    setBreachAudit(null);
+    try {
+      const res = await api()?.auditBreaches(activeId);
+      if (res?.success) setBreachAudit(res);
+      else setBreachError(t('pv.auditFailed'));
+    } catch (error) {
+      console.error('[vault] vérification des fuites échouée:', error);
+      setBreachError(t('pv.breachUnavailable'));
+    } finally {
+      setCheckingBreaches(false);
+    }
   };
 
   const doImport = async () => {
     const res = await api()?.importFile(activeId);
     if (res?.success) {
-      setToast(t('pv.imported', { n: res.imported, skipped: res.skipped }));
-      refreshEntries(activeId);
+      setToast(
+        t('pv.imported', {
+          n: res.imported,
+          merged: res.merged || 0,
+          overwritten: res.overwritten || 0,
+          skipped: res.skipped,
+        })
+      );
+      setAudit(null);
+      setBreachAudit(null);
+      if (showEntries) refreshEntries(activeId);
     } else if (res?.error && res.error !== 'canceled') {
       setToast(t('pv.importFailed'));
     }
@@ -684,6 +759,12 @@ export default function PasswordVault() {
       <CreateVault
         onDone={async (id) => {
           setCreating(false);
+          entriesRequestRef.current += 1;
+          setShowEntries(false);
+          setEntries([]);
+          setCategories([]);
+          setAudit(null);
+          setBreachAudit(null);
           await refreshVaults();
           setActiveId(id);
         }}
@@ -733,7 +814,19 @@ export default function PasswordVault() {
         {vaults.map((v) => (
           <button
             key={v.id}
-            onClick={() => setActiveId(v.id)}
+            onClick={() => {
+              if (v.id !== activeId) {
+                entriesRequestRef.current += 1;
+                setShowEntries(false);
+                setEntries([]);
+                setCategories([]);
+                setAudit(null);
+                setAuditError('');
+                setBreachAudit(null);
+                setBreachError('');
+              }
+              setActiveId(v.id);
+            }}
             className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm transition-colors border ${
               v.id === activeId
                 ? 'border-accent-primary bg-accent-primary/10 text-accent-primary'
@@ -782,8 +875,32 @@ export default function PasswordVault() {
             <button onClick={() => setEditing({ entry: null })} className="btn btn-primary btn-sm">
               <Plus size={14} /> {t('pv.addEntry')}
             </button>
-            <button onClick={runAudit} className="btn btn-secondary btn-sm" title={t('pv.audit')}>
+            <button
+              onClick={() => {
+                if (showEntries) {
+                  entriesRequestRef.current += 1;
+                  setShowEntries(false);
+                  setEntries([]);
+                  setCategories([]);
+                } else {
+                  setShowEntries(true);
+                }
+              }}
+              className="btn btn-secondary btn-sm"
+              title={t(showEntries ? 'pv.entries.hide' : 'pv.entries.show')}
+              aria-expanded={showEntries}
+            >
+              {showEntries ? <EyeOff size={14} /> : <Eye size={14} />}
+              {t(showEntries ? 'pv.entries.hide' : 'pv.entries.show')}
+            </button>
+            <button
+              onClick={runAudit}
+              disabled={auditing}
+              className="btn btn-secondary btn-sm"
+              title={t('pv.audit')}
+            >
               {audit ? <ShieldCheck size={14} /> : <ShieldAlert size={14} />}
+              {t(auditing ? 'pv.auditRunning' : 'pv.audit')}
             </button>
             <button onClick={doImport} className="btn btn-secondary btn-sm" title={t('pv.import')}>
               <Upload size={14} />
@@ -801,7 +918,16 @@ export default function PasswordVault() {
 
           {managing && <VaultSettings vault={active} onChanged={refreshVaults} onClose={() => setManaging(false)} />}
 
-          {audit && <AuditPanel audit={audit} />}
+          {auditError && <p className="text-sm text-error">{auditError}</p>}
+          {audit && (
+            <AuditPanel
+              audit={audit}
+              breachAudit={breachAudit}
+              breachError={breachError}
+              checkingBreaches={checkingBreaches}
+              onCheckBreaches={runBreachAudit}
+            />
+          )}
 
           {exporting && (
             <div className="card space-y-3">
@@ -829,26 +955,40 @@ export default function PasswordVault() {
             </div>
           )}
 
-          {/* Liste */}
-          <div className="space-y-2">
-            {filtered.length === 0 ? (
-              <div className="text-center py-10 text-sm text-text-muted">
-                {entries.length === 0 ? t('pv.noEntries') : t('pv.noMatch')}
-              </div>
-            ) : (
-              filtered.map((e) => (
-                <EntryRow
-                  key={e.id}
-                  vaultId={active.id}
-                  entry={e}
-                  categories={categories}
-                  onEdit={() => setEditing({ entry: e })}
-                  onDeleted={() => refreshEntries(active.id)}
-                  onToast={setToast}
-                />
-              ))
-            )}
-          </div>
+          {showEntries ? (
+            <div className="space-y-2">
+              {entriesError ? (
+                <div className="text-center py-10 text-sm text-error">{t(entriesError)}</div>
+              ) : filtered.length === 0 ? (
+                <div className="text-center py-10 text-sm text-text-muted">
+                  {entries.length === 0 ? t('pv.noEntries') : t('pv.noMatch')}
+                </div>
+              ) : (
+                filtered.map((e) => (
+                  <EntryRow
+                    key={e.id}
+                    vaultId={active.id}
+                    entry={e}
+                    categories={categories}
+                    onEdit={() => setEditing({ entry: e })}
+                    onDeleted={() => {
+                      setAudit(null);
+                      setBreachAudit(null);
+                      refreshEntries(active.id);
+                    }}
+                    onToast={setToast}
+                  />
+                ))
+              )}
+            </div>
+          ) : (
+            <div className="card flex items-center justify-between gap-3">
+              <span className="text-sm text-text-muted">{t('pv.entries.hidden')}</span>
+              <button onClick={() => setShowEntries(true)} className="btn btn-secondary btn-sm">
+                <Eye size={14} /> {t('pv.entries.show')}
+              </button>
+            </div>
+          )}
 
           <p className="text-xs text-text-muted">
             {t('pv.footerNote', { minutes: active.autoLockMinutes || 0 })}
@@ -863,7 +1003,9 @@ export default function PasswordVault() {
           categories={categories}
           onSaved={() => {
             setEditing(null);
-            refreshEntries(activeId);
+            setAudit(null);
+            setBreachAudit(null);
+            if (showEntries) refreshEntries(activeId);
           }}
           onCancel={() => setEditing(null)}
         />
@@ -1009,13 +1151,25 @@ function VaultSettings({ vault, onChanged, onClose }) {
 // ---------------------------------------------------------------------------
 // Audit
 // ---------------------------------------------------------------------------
-function AuditPanel({ audit }) {
+function AuditPanel({
+  audit,
+  breachAudit,
+  breachError,
+  checkingBreaches,
+  onCheckBreaches,
+}) {
   const t = useT();
   const groups = [
     { key: 'reused', label: t('pv.audit.reused'), items: audit.reused, tone: 'text-error' },
     { key: 'weak', label: t('pv.audit.weak'), items: audit.weak, tone: 'text-warning' },
     { key: 'old', label: t('pv.audit.old'), items: audit.old, tone: 'text-text-secondary' },
     { key: 'empty', label: t('pv.audit.empty'), items: audit.empty, tone: 'text-text-muted' },
+    {
+      key: 'breached',
+      label: t('pv.audit.breached'),
+      items: breachAudit?.compromised || [],
+      tone: 'text-error',
+    },
   ].filter((g) => g.items && g.items.length > 0);
 
   return (
@@ -1023,6 +1177,19 @@ function AuditPanel({ audit }) {
       <div>
         <h4 className="font-semibold text-sm">{t('pv.audit')}</h4>
         <p className="text-xs text-text-muted mt-1">{t('pv.auditDesc')}</p>
+      </div>
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+        {[
+          { label: t('pv.audit.total'), value: audit.total },
+          { label: t('pv.audit.weak'), value: audit.weak.length, tone: 'text-warning' },
+          { label: t('pv.audit.moderate'), value: audit.moderate, tone: 'text-accent-primary' },
+          { label: t('pv.audit.strong'), value: audit.strong, tone: 'text-success' },
+        ].map((stat) => (
+          <div key={stat.label} className="rounded-lg bg-bg-primary border border-border p-2">
+            <div className={`text-lg font-semibold ${stat.tone || ''}`}>{stat.value}</div>
+            <div className="text-[11px] text-text-muted">{stat.label}</div>
+          </div>
+        ))}
       </div>
       {groups.length === 0 ? (
         <div className="text-sm text-success">{t('pv.auditClean', { n: audit.total })}</div>
@@ -1037,12 +1204,46 @@ function AuditPanel({ audit }) {
                 <div key={it.id} className="truncate">
                   {it.title}
                   {it.username ? ` · ${it.username}` : ''}
+                  {g.key === 'breached' && ` · ${t('pv.breachCount', { n: it.count })}`}
                 </div>
               ))}
               {g.items.length > 8 && <div>+{g.items.length - 8}…</div>}
             </div>
           </div>
         ))
+      )}
+      {!breachAudit ? (
+        <div className="border-t border-border pt-3 space-y-2">
+          <p className="text-xs text-text-muted">{t('pv.breachPrivacy')}</p>
+          {breachError && <p className="text-xs text-error">{breachError}</p>}
+          <button
+            onClick={onCheckBreaches}
+            disabled={checkingBreaches}
+            className="btn btn-secondary btn-sm"
+          >
+            <ShieldCheck size={14} />
+            {t(checkingBreaches ? 'pv.breachChecking' : 'pv.breachCheck')}
+          </button>
+        </div>
+      ) : (
+        <div className="border-t border-border pt-3 text-sm">
+          {breachAudit.failed > 0 && (
+            <p className="text-warning mb-2">
+              {t('pv.breachPartial', {
+                checked: breachAudit.checked,
+                failed: breachAudit.failed,
+              })}
+            </p>
+          )}
+          {breachAudit.checked === 0 && breachAudit.failed === 0 ? (
+            <p className="text-text-muted">{t('pv.breachNoPasswords')}</p>
+          ) : breachAudit.compromised.length === 0 && breachAudit.failed === 0 ? (
+            <p className="text-success">
+              {t('pv.breachClean', { n: breachAudit.checked })}
+            </p>
+          ) : null}
+          <p className="text-[11px] text-text-muted mt-2">{t('pv.generatorHint')}</p>
+        </div>
       )}
     </div>
   );

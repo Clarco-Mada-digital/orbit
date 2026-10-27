@@ -1,11 +1,12 @@
 node_modules
 dist
 dist-electron
-# Extensions optionnelles : sources des extensions livrées (l'app Téléphone)
-# suivie en git ; les autres dossiers restent des copies de travail.
+# Extensions optionnelles : seules les sources livrées avec Orbit sont suivies.
 electron/extensions/*
 !electron/extensions/orbit-phone/
 !electron/extensions/orbit-phone/**
+!electron/extensions/text-snippets/
+!electron/extensions/text-snippets/**
 !electron/extensions/web-clipper/
 !electron/extensions/web-clipper/**
 extensions-src/*

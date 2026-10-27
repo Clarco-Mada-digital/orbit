@@ -321,10 +321,16 @@ function setValue(el, value) {
   } catch {
     /* ignore */
   }
-  const proto =
-    el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
-  const setter = Object.getOwnPropertyDescriptor(proto, 'value').set;
-  setter.call(el, value);
+  if (el.isContentEditable || el.getAttribute('contenteditable') === 'true') {
+    el.textContent = value;
+  } else if (el.tagName?.toLowerCase() === 'select') {
+    el.value = value;
+  } else {
+    const proto =
+      el instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+    const setter = Object.getOwnPropertyDescriptor(proto, 'value').set;
+    setter.call(el, value);
+  }
   // input + change couvrent React/Vue ; keydown/keyup réveillent les frameworks
   // qui n'écoutent que le clavier ; beforeinput aide les éditeurs riches.
   el.dispatchEvent(new InputEvent('beforeinput', { bubbles: true, inputType: 'insertText', data: value }));
@@ -342,6 +348,33 @@ function highlight(el) {
   setTimeout(() => {
     el.style.outline = prev;
   }, 1800);
+}
+
+function showFakeInfo(message) {
+  const existing = document.getElementById('__orbit_fake_info__');
+  existing?.remove();
+  const box = document.createElement('div');
+  box.id = '__orbit_fake_info__';
+  box.textContent = message;
+  Object.assign(box.style, {
+    position: 'fixed',
+    zIndex: '2147483647',
+    left: '50%',
+    bottom: '24px',
+    transform: 'translateX(-50%)',
+    maxWidth: 'min(560px, 90vw)',
+    background: '#111827',
+    color: '#f3f4f6',
+    border: '1px solid #374151',
+    borderRadius: '10px',
+    padding: '10px 14px',
+    fontFamily: 'system-ui, sans-serif',
+    fontSize: '13px',
+    boxShadow: '0 10px 30px rgba(0,0,0,0.5)',
+    pointerEvents: 'none',
+  });
+  document.body.appendChild(box);
+  setTimeout(() => box.remove(), 4000);
 }
 
 // Remplit le formulaire avec le compte choisi et mémorise le choix (pour les
@@ -1261,8 +1294,25 @@ const FAKE_LAST = ['Martin', 'Bernard', 'Dubois', 'Robert', 'Petit', 'Durand', '
 const FAKE_CITY = ['Paris', 'Lyon', 'Marseille', 'Toulouse', 'Nantes', 'Bordeaux', 'Lille', 'Nice', 'Rennes'];
 const FAKE_STREET = ['12 rue des Lilas', '8 avenue Victor Hugo', '25 boulevard Voltaire', '3 impasse du Moulin'];
 const FAKE_COMPANY = ['Orbit SAS', 'Nova Labs', 'Studio Meridian', 'Atelier Kairos', 'Groupe Lumen'];
+const FAKE_COUNTRY = ['France', 'Belgique', 'Suisse', 'Canada', 'Allemagne', 'Espagne', 'Italie', 'Portugal'];
+const FAKE_REGION = ['Île-de-France', 'Auvergne-Rhône-Alpes', 'Occitanie', 'Nouvelle-Aquitaine', 'Bretagne', 'Normandie'];
+const FAKE_JOBS = ['Product designer', 'Développeur logiciel', 'Chef de projet', 'Analyste de données', 'Responsable marketing', 'Technicien support'];
+const FAKE_SUBJECTS = ['Demande de démonstration', 'Question sur le produit', 'Retour utilisateur', 'Proposition de partenariat', 'Demande de renseignements'];
+const LOREM_WORDS = [
+  'lorem', 'ipsum', 'dolor', 'sit', 'amet', 'consectetur', 'adipiscing', 'elit', 'integer',
+  'vitae', 'justo', 'efficitur', 'congue', 'nunc', 'sagittis', 'sollicitudin', 'nullam',
+  'mattis', 'ligula', 'euismod', 'viverra', 'mauris', 'aliquam', 'faucibus', 'vestibulum',
+  'ornare', 'sapien', 'finibus', 'pulvinar', 'tempor', 'placerat', 'pharetra', 'rutrum',
+  'facilisis', 'dictum', 'elementum', 'commodo', 'suscipit', 'hendrerit', 'varius', 'magna',
+];
 const frand = (arr) => arr[Math.floor(Math.random() * arr.length)];
 const frandInt = (n) => Math.floor(Math.random() * n);
+const loremText = (min = 2, max = 5) =>
+  Array.from({ length: min + frandInt(max - min + 1) }, () => {
+    const words = Array.from({ length: 7 + frandInt(12) }, () => frand(LOREM_WORDS));
+    words[0] = words[0][0].toUpperCase() + words[0].slice(1);
+    return `${words.join(' ')}.`;
+  }).join(' ');
 const fslug = (s) =>
   String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z]/g, '');
 
@@ -1273,11 +1323,16 @@ function detectFieldKind(el) {
   if (t === 'tel') return 'phone';
   if (t === 'url') return 'url';
   if (t === 'number') return 'number';
-  if (t === 'date') return 'date';
+  if (['date', 'datetime-local', 'month', 'week', 'time'].includes(t)) return t;
+  if (t === 'range') return 'number';
+  if (t === 'color') return 'color';
+  if (t === 'checkbox') return 'boolean';
+  if (t === 'radio' || el.tagName?.toLowerCase() === 'select') return 'choice';
   const hint = [el.autocomplete, el.name, el.id, el.placeholder, el.getAttribute && el.getAttribute('aria-label')]
     .filter(Boolean)
     .join(' ')
     .toLowerCase();
+  if (el.tagName?.toLowerCase() === 'textarea' || el.isContentEditable) return 'lorem';
   if (/e-?mail|courriel/.test(hint)) return 'email';
   if (/phone|t[eé]l|mobile|portable|whatsapp/.test(hint)) return 'phone';
   if (/first.?name|pr[eé]nom|given/.test(hint)) return 'firstName';
@@ -1289,6 +1344,11 @@ function detectFieldKind(el) {
   if (/zip|postal|code.?postal|\bcp\b/.test(hint)) return 'zip';
   if (/address|adresse|street|rue/.test(hint)) return 'address';
   if (/company|soci[eé]t[eé]|entreprise|organi[sz]ation/.test(hint)) return 'company';
+  if (/country|pays/.test(hint)) return 'country';
+  if (/state|province|r[eé]gion/.test(hint)) return 'region';
+  if (/job.?title|position|poste/.test(hint)) return 'jobTitle';
+  if (/subject|objet/.test(hint)) return 'subject';
+  if (/description|comment|message|bio|about|notes|detail|content|texte/.test(hint)) return 'lorem';
   if (/url|site|website/.test(hint)) return 'url';
   return 'text';
 }
@@ -1322,39 +1382,190 @@ async function fakeValueFor(kind) {
       return fakeCustom.address || frand(FAKE_STREET);
     case 'company':
       return fakeCustom.company || frand(FAKE_COMPANY);
+    case 'country':
+      return frand(FAKE_COUNTRY);
+    case 'region':
+      return frand(FAKE_REGION);
+    case 'jobTitle':
+      return frand(FAKE_JOBS);
+    case 'subject':
+      return frand(FAKE_SUBJECTS);
     case 'url':
-      return 'https://example.com';
+      return `https://${fslug(first)}-${fslug(last)}.example.com`;
     case 'number':
-      return String(frandInt(100));
+      return String(1 + frandInt(9999));
     case 'date':
-      return new Date(Date.now() - frandInt(3e10)).toISOString().slice(0, 10);
-    default: {
-      // Données textuelles plus réalistes et variées (phrases complètes, pas juste "Lorem")
-      const sentences = [
-        'Ceci est un exemple de texte rempli automatiquement par Orbit.',
-        'Voici une valeur de test pour ce champ de formulaire.',
-        'Donnée générée aléatoirement pour les tests de saisie.',
-        'Ce champ contient une valeur fictive à titre de démonstration.',
-        'Exemple de contenu textuel utilisé pour le remplissage de formulaire.',
-        'Donnée de test — remplacez par votre propre valeur lors de la saisie réelle.',
-        'Valeur par défaut utilisée lors du remplissage automatique des champs.',
-        'Ce texte est généré par Orbit pour illustrer le remplissage de données test.',
-      ];
-      return frand(sentences);
+    case 'datetime-local':
+    case 'month':
+    case 'week':
+    case 'time': {
+      const date = new Date(Date.now() - frandInt(3e10));
+      if (kind === 'month') return date.toISOString().slice(0, 7);
+      if (kind === 'week') {
+        const firstDay = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+        const week = Math.ceil(((date - firstDay) / 86400000 + firstDay.getUTCDay() + 1) / 7);
+        return `${date.getUTCFullYear()}-W${String(week).padStart(2, '0')}`;
+      }
+      if (kind === 'time') {
+        return `${String(frandInt(24)).padStart(2, '0')}:${String(frandInt(60)).padStart(2, '0')}`;
+      }
+      if (kind === 'datetime-local') {
+        return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+      }
+      return date.toISOString().slice(0, 10);
     }
+    case 'color':
+      return `#${Math.floor(Math.random() * 0x1000000).toString(16).padStart(6, '0')}`;
+    case 'lorem':
+    case 'text':
+    default:
+      return fakeCustom.text || loremText(kind === 'lorem' ? 3 : 1, kind === 'lorem' ? 6 : 3);
   }
 }
 
-const FAKE_TYPES = new Set(['text', 'email', 'tel', 'url', 'number', 'search', 'password', 'date', '']);
+const FAKE_TYPES = new Set([
+  'text', 'email', 'tel', 'url', 'number', 'search', 'password', 'date',
+  'datetime-local', 'month', 'week', 'time', 'range', 'color', 'checkbox',
+  'radio', ''
+]);
 function isFillable(el) {
   if (!el || !el.tagName) return false;
   const tag = el.tagName.toLowerCase();
-  if (tag === 'textarea') return reallyVisible(el);
+  if (tag === 'textarea' || tag === 'select') {
+    return reallyVisible(el) && !el.disabled && !el.readOnly;
+  }
+  if (el.isContentEditable || el.getAttribute('contenteditable') === 'true') {
+    return reallyVisible(el) && el.getAttribute('aria-readonly') !== 'true';
+  }
   if (tag !== 'input') return false;
   const t = (el.getAttribute('type') || 'text').toLowerCase();
+  if (['hidden', 'file', 'submit', 'reset', 'button', 'image'].includes(t)) return false;
   if (!FAKE_TYPES.has(t)) return false;
   if (el.readOnly || el.disabled) return false;
   return reallyVisible(el);
+}
+
+function isFakeLoginField(el) {
+  if (el?.tagName?.toLowerCase() !== 'input') return false;
+  const type = (el.getAttribute('type') || 'text').toLowerCase();
+  if (!['text', 'email', 'password', ''].includes(type)) return false;
+  if (/\b(?:username|current-password)\b/i.test(el.autocomplete || '')) return true;
+  const form = el.form || el.closest('form');
+  const loginScope = form || el.closest('dialog, [role="dialog"]');
+  if (!loginScope) return false;
+  const passwords = Array.from(loginScope.querySelectorAll('input[type="password"]')).filter(reallyVisible);
+  return passwords.length === 1 && !/\bnew-password\b/i.test(passwords[0].autocomplete || '');
+}
+
+function focusedFakeField(event) {
+  const path = typeof event.composedPath === 'function' ? event.composedPath() : [event.target];
+  return path.find((node) => isFillable(node)) || document.activeElement;
+}
+
+async function fillFakeElement(el) {
+  const tag = el.tagName?.toLowerCase();
+  const type = (el.getAttribute('type') || el.type || 'text').toLowerCase();
+  if (tag === 'select') {
+    const options = Array.from(el.options || []).filter(
+      (option) => !option.disabled && !option.hidden && option.value.trim()
+    );
+    if (!options.length) return;
+    if (el.multiple) {
+      const count = 1 + frandInt(options.length);
+      const selected = new Set(options.sort(() => Math.random() - 0.5).slice(0, count));
+      for (const option of el.options) option.selected = selected.has(option);
+    } else {
+      el.value = frand(options).value;
+    }
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    return;
+  }
+  if (type === 'checkbox') {
+    el.checked = Math.random() >= 0.5;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    return;
+  }
+  if (type === 'radio') {
+    const group = el.name
+      ? Array.from((el.form || document).querySelectorAll('input[type="radio"]')).filter(
+          (radio) => radio.name === el.name && !radio.disabled && reallyVisible(radio)
+        )
+      : [el];
+    const selected = frand(group.length ? group : [el]);
+    for (const radio of group) radio.checked = radio === selected;
+    selected.dispatchEvent(new Event('input', { bubbles: true }));
+    selected.dispatchEvent(new Event('change', { bubbles: true }));
+    return;
+  }
+  const kind = detectFieldKind(el);
+  if (type === 'range') {
+    const min = el.min !== '' && Number.isFinite(Number(el.min)) ? Number(el.min) : 0;
+    const max = el.max !== '' && Number.isFinite(Number(el.max)) ? Number(el.max) : 100;
+    const step = Number(el.step) > 0 ? Number(el.step) : 1;
+    const steps = Math.max(0, Math.floor((Math.max(min, max) - min) / step));
+    setValue(el, String(min + frandInt(steps + 1) * step));
+  } else {
+    setValue(el, await fakeValueFor(kind));
+  }
+}
+
+function fieldsInFakeScope(scope) {
+  const fields = new Set(scope.elements ? Array.from(scope.elements) : []);
+  const walk = (root) => {
+    root.querySelectorAll?.('input, textarea, select, [contenteditable="true"], [contenteditable=""]').forEach(
+      (el) => fields.add(el)
+    );
+    root.querySelectorAll?.('*').forEach((el) => {
+      if (el.shadowRoot) walk(el.shadowRoot);
+    });
+  };
+  walk(scope);
+  return Array.from(fields);
+}
+
+async function fillFocusedFakeForm(active) {
+  const scope = active?.form || active?.closest?.('form, dialog, [role="dialog"]');
+  if (!scope) return 0;
+  const candidates = fieldsInFakeScope(scope);
+  if (!candidates.includes(active)) candidates.push(active);
+  const fields = candidates.filter((field) => isFillable(field) && !isFakeLoginField(field));
+  if (!fields.length) return 0;
+
+  const passwordFields = fields.filter(
+    (field) =>
+      field.tagName?.toLowerCase() === 'input' &&
+      (field.getAttribute('type') || '').toLowerCase() === 'password'
+  );
+  if (passwordFields.length) {
+    const password = await fakeValueFor('password');
+    for (const field of passwordFields) {
+      setValue(field, password);
+      highlight(field);
+    }
+  }
+
+  const seenRadioGroups = new Map();
+  let filled = passwordFields.length;
+  for (const field of fields) {
+    if (passwordFields.includes(field)) continue;
+    if ((field.getAttribute('type') || '').toLowerCase() === 'radio') {
+      const owner = field.form || scope;
+      const name = field.name || field;
+      let names = seenRadioGroups.get(owner);
+      if (!names) {
+        names = new Set();
+        seenRadioGroups.set(owner, names);
+      }
+      if (names.has(name)) continue;
+      names.add(name);
+    }
+    await fillFakeElement(field);
+    highlight(field);
+    filled += 1;
+  }
+  return filled;
 }
 
 let fakeBtn = null;
@@ -1406,14 +1617,21 @@ function showFakeBtn(anchor) {
   fakeBtn.addEventListener('click', async (e) => {
     e.preventDefault();
     e.stopPropagation();
-    const kind = detectFieldKind(anchor);
+    const button = fakeBtn;
+    const anchorField = button?._anchor || anchor;
+    if (isFakeLoginField(anchorField)) return;
+    const kind = detectFieldKind(anchorField);
     if (kind === 'password') {
       if (fakeExtPresent()) return; // l'extension (modale modifiable) s'en charge
-      offerGenerator(anchor, true); // panneau : voir/modifier avant d'utiliser
+      offerGenerator(anchorField, true); // panneau : voir/modifier avant d'utiliser
       return;
     }
-    setValue(anchor, await fakeValueFor(kind));
-    highlight(anchor);
+    try {
+      await fillFakeElement(anchorField);
+      highlight(anchorField);
+    } catch (err) {
+      console.error('[orbit] remplissage fake data impossible:', err);
+    }
   });
   document.body.appendChild(fakeBtn);
   positionFakeBtn(anchor);
@@ -1430,15 +1648,55 @@ document.addEventListener(
   (e) => {
     if (fakeExtPresent()) return; // l'extension pose son propre 🎲
     if (!fakeDataEnabled) return;
-    if (isFillable(e.target)) showFakeBtn(e.target);
+    if (isFillable(e.target) && !isFakeLoginField(e.target)) showFakeBtn(e.target);
+    else removeFakeBtn();
   },
   true
 );
+document.addEventListener('keydown', async (e) => {
+  if (!e.altKey || !['f', 'F'].includes(e.key)) return;
+  const active = focusedFakeField(e);
+  if (
+    !fakeDataEnabled ||
+    fakeExtPresent() ||
+    !isFillable(active) ||
+    (!e.shiftKey && isFakeLoginField(active))
+  ) return;
+  e.preventDefault();
+  e.stopPropagation();
+  removeFakeBtn();
+  if (e.shiftKey) {
+    try {
+      const count = await fillFocusedFakeForm(active);
+      showFakeInfo(
+        count
+          ? `${count} champ(s) rempli(s) dans le formulaire actif (\u{1F5D1}\u{FE0F} Alt+Maj+F)`
+          : 'Aucun champ remplissable dans le formulaire actif'
+      );
+    } catch (err) {
+      console.error('[orbit] remplissage du formulaire fake data impossible:', err);
+    }
+    return;
+  }
+  const kind = detectFieldKind(active);
+  if (kind === 'password') {
+    offerGenerator(active, true);
+    return;
+  }
+  try {
+    await fillFakeElement(active);
+    highlight(active);
+  } catch (err) {
+    console.error('[orbit] remplissage fake data impossible:', err);
+  }
+});
 document.addEventListener(
   'focusout',
   () => {
     setTimeout(() => {
-      if (!isFillable(document.activeElement)) removeFakeBtn();
+      if (!isFillable(document.activeElement) || isFakeLoginField(document.activeElement)) {
+        removeFakeBtn();
+      }
     }, 200);
   },
   true

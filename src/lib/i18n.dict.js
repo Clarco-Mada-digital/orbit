@@ -15,7 +15,10 @@ export const fr = {
 
   // Bienvenue (onboarding)
   'welcome.title': 'Bienvenue dans Orbit 🛰',
-  'welcome.subtitle': 'Toutes vos apps web dans une seule fenêtre. Voici l’essentiel pour démarrer.',
+  'welcome.subtitle':
+    'Votre espace de travail connecté : applications, profils, assistant IA et outils réunis dans une seule fenêtre.',
+  'welcome.eyebrow': 'Un espace, toutes vos possibilités',
+  'welcome.features': 'Un espace enrichi pour travailler',
   'welcome.apps.title': 'Ajoutez vos apps',
   'welcome.apps.text': 'Bouton « + » de la barre latérale → choisissez parmi le catalogue ou une URL.',
   'welcome.profiles.title': 'Profils & comptes',
@@ -28,6 +31,15 @@ export const fr = {
   'welcome.find.text': 'Ctrl/Cmd + F cherche à l’intérieur de l’app affichée.',
   'welcome.context.title': 'Clic droit sur une app',
   'welcome.context.text': 'Veille, favori, fenêtre détachée, conteneur, effacer les données…',
+  'welcome.ai.title': 'Assistant IA intégré',
+  'welcome.ai.text': 'Discutez, résumez et travaillez avec plusieurs fournisseurs IA depuis Orbit.',
+  'welcome.downloads.title': 'Téléchargements centralisés',
+  'welcome.downloads.text': 'Retrouvez vos fichiers et suivez leur progression dans un gestionnaire dédié.',
+  'welcome.vault.title': 'Coffre-fort de mots de passe',
+  'welcome.vault.text': 'Protégez vos identifiants dans des trousseaux chiffrés et vérifiez leur robustesse.',
+  'welcome.extensions.title': 'Extensions et outils',
+  'welcome.extensions.text': 'Ajoutez des extensions utiles et automatisez les formulaires avec Fake Data.',
+  'fake.text': 'Texte de test personnalisé',
   'welcome.cta.addApp': 'Ajouter ma première app',
 
   // À propos
@@ -70,15 +82,15 @@ export const fr = {
 
   // Extension Fake Data Filler (native, built into Orbit)
   'fakeExt.title': 'Fake Data Filler',
-  'fakeExt.desc': 'Remplit les champs de formulaires avec des données réalistes (email, nom, téléphone, ville, etc.). Bouton 🎲 + raccourci Alt+F.',
+  'fakeExt.desc': 'Remplit les formulaires avec des données réalistes et du Lorem Ipsum. 🎲 ou Alt+F pour un champ, Alt+Maj+F pour le formulaire actif.',
   'fakeExt.showSettings': 'Configurer',
   'fakeExt.hideSettings': 'Masquer',
   'fakeExt.export': 'Exporter en ZIP',
   'fakeExt.exportTitle': 'Exporter en ZIP pour partage ou installation manuelle',
   'fakeExt.exporting': 'Exportation…',
-  'fakeExt.settingsDesc': 'Personnalisez les valeurs utilisées par le bouton 🎲. Laissez un champ vide pour une valeur aléatoire.',
+  'fakeExt.settingsDesc': 'Personnalisez les valeurs du bouton 🎲, y compris le texte des champs libres. Laissez vide pour une valeur aléatoire.',
   'fakeExt.saved': 'Enregistré avec succès',
-  'fakeExt.usageNote': 'Le bouton 🎲 apparaît automatiquement sur les champs de formulaire (sauf connexion). Raccourci Alt+F pour remplir le champ focalisé. Vos valeurs personnalisées ci-dessus sont utilisées en priorité : ex. un email défini ici sera inséré sur CHAQUE champ email (au lieu d\u2019un email aléatoire).',
+  'fakeExt.usageNote': 'Le bouton 🎲 apparaît automatiquement sur les champs de formulaire (sauf connexion). Alt+F remplit le champ focalisé ; Alt+Maj+F remplit les champs visibles du formulaire actif. Les champs de connexion sont ignorés. Vos valeurs personnalisées sont utilisées en priorité.',
   'fakeExt.enable': 'Activer',
   'fakeExt.disable': 'Désactiver',
   'fakeExt.remove': 'Supprimer',
@@ -1122,6 +1134,10 @@ export const fr = {
     'Le déverrouillage prend une fraction de seconde : ce délai est volontaire, il rend une attaque par dictionnaire coûteuse.',
   'pv.lock': 'Verrouiller maintenant',
   'pv.search': 'Rechercher un site, un identifiant…',
+  'pv.entries.show': 'Afficher les identifiants',
+  'pv.entries.hide': 'Masquer les identifiants',
+  'pv.entries.hidden': 'Les identifiants sont masqués jusqu’à ce que vous choisissiez de les afficher.',
+  'pv.entriesLoadFailed': 'Impossible de charger les identifiants. Vérifiez que le trousseau est déverrouillé.',
   'pv.allCategories': 'Toutes les catégories',
   'pv.addEntry': 'Ajouter',
   'pv.newEntry': 'Nouvelle entrée',
@@ -1162,7 +1178,8 @@ export const fr = {
   'pv.deleteVaultWarning':
     'Suppression définitive de toutes ses entrées. Saisissez le mot de passe maître pour confirmer.',
   'pv.import': 'Importer (CSV / JSON)',
-  'pv.imported': '{n} entrée(s) importée(s), {skipped} doublon(s) ignoré(s)',
+  'pv.imported':
+    '{n} entrée(s) importée(s), {merged} fusionnée(s), {overwritten} écrasée(s), {skipped} doublon(s) ignoré(s)',
   'pv.importFailed': "Import impossible : fichier illisible ou sans colonne de mot de passe.",
   'pv.export': 'Exporter',
   'pv.exportWarning':
@@ -1170,12 +1187,29 @@ export const fr = {
   'pv.exported': '{n} entrée(s) exportée(s)',
   'pv.audit': 'Contrôle de santé',
   'pv.auditDesc':
-    "Analyse locale : rien ne sort de votre machine, aucune base de fuites n'est interrogée.",
+    "L’estimation de robustesse et l’analyse de réutilisation restent locales. La vérification des fuites est facultative et lancée séparément.",
   'pv.auditClean': 'Rien à signaler sur {n} entrée(s).',
+  'pv.auditRunning': 'Analyse…',
+  'pv.auditFailed': 'L’analyse n’a pas pu aboutir. Vérifiez que le trousseau est toujours déverrouillé.',
+  'pv.audit.total': 'Entrées',
+  'pv.audit.moderate': 'Moyens',
+  'pv.audit.strong': 'Forts',
   'pv.audit.reused': 'Mots de passe réutilisés sur plusieurs sites',
   'pv.audit.weak': 'Mots de passe faibles',
   'pv.audit.old': 'Inchangés depuis plus d’un an',
   'pv.audit.empty': 'Entrées sans mot de passe',
+  'pv.audit.breached': 'Mots de passe trouvés dans des fuites connues',
+  'pv.breachPrivacy':
+    'Vérification facultative via Have I Been Pwned. Orbit envoie seulement les 5 premiers caractères du SHA-1 calculé localement pour chaque mot de passe unique. Le service voit toutefois votre adresse IP et l’heure de la requête ; les résultats ne sont pas enregistrés.',
+  'pv.breachCheck': 'Vérifier les fuites (Internet)',
+  'pv.breachChecking': 'Vérification…',
+  'pv.breachUnavailable': 'Le service de vérification est injoignable. Aucun résultat de fuite n’a été enregistré.',
+  'pv.breachPartial': '{checked} mot(s) vérifié(s) ; {failed} non vérifié(s) car le service était indisponible.',
+  'pv.breachNoPasswords': 'Aucun mot de passe à vérifier.',
+  'pv.breachClean': 'Aucun des {n} mot(s) vérifié(s) n’a été trouvé dans le corpus consulté.',
+  'pv.breachCount': 'signalé {n} fois',
+  'pv.generatorHint':
+    'Pour remplacer un mot de passe, Orbit peut déjà en proposer un fort sur les formulaires d’inscription ou de changement de mot de passe de vos applications.',
   'pv.footerNote':
     'Verrouillage automatique après {minutes} min sans activité, et à chaque mise en veille ou verrouillage d’Orbit.',
   'pv.err.badPassword': 'Mot de passe incorrect.',
@@ -1792,7 +1826,10 @@ export const en = {
 
   // Welcome (onboarding)
   'welcome.title': 'Welcome to Orbit 🛰',
-  'welcome.subtitle': 'All your web apps in a single window. Here are the essentials to get going.',
+  'welcome.subtitle':
+    'Your connected workspace: apps, profiles, AI assistant and useful tools in one window.',
+  'welcome.eyebrow': 'One workspace, many possibilities',
+  'welcome.features': 'Everything you need to work better',
   'welcome.apps.title': 'Add your apps',
   'welcome.apps.text': 'The “+” button in the sidebar → pick from the catalog or enter a URL.',
   'welcome.profiles.title': 'Profiles & accounts',
@@ -1805,6 +1842,15 @@ export const en = {
   'welcome.find.text': 'Ctrl/Cmd + F searches inside the current app.',
   'welcome.context.title': 'Right-click an app',
   'welcome.context.text': 'Sleep, favorite, detached window, container, clear data…',
+  'welcome.ai.title': 'Built-in AI assistant',
+  'welcome.ai.text': 'Chat, summarize and work with multiple AI providers, right inside Orbit.',
+  'welcome.downloads.title': 'Centralized downloads',
+  'welcome.downloads.text': 'Find your files and track their progress in a dedicated manager.',
+  'welcome.vault.title': 'Password vault',
+  'welcome.vault.text': 'Protect credentials in encrypted vaults and check their strength.',
+  'welcome.extensions.title': 'Extensions and tools',
+  'welcome.extensions.text': 'Add useful extensions and automate forms with Fake Data.',
+  'fake.text': 'Custom test text',
   'welcome.cta.addApp': 'Add my first app',
 
   // About
@@ -1847,15 +1893,15 @@ export const en = {
 
   // Extension Fake Data Filler (native, built into Orbit)
   'fakeExt.title': 'Fake Data Filler',
-  'fakeExt.desc': 'Fills form fields with realistic data (email, name, phone, city, etc.). 🎲 button + Alt+F shortcut.',
+  'fakeExt.desc': 'Fills forms with realistic sample data and Lorem Ipsum. 🎲 or Alt+F for one field; Alt+Shift+F for the active form.',
   'fakeExt.showSettings': 'Configure',
   'fakeExt.hideSettings': 'Hide',
   'fakeExt.export': 'Export as ZIP',
   'fakeExt.exportTitle': 'Export as ZIP for sharing or manual installation',
   'fakeExt.exporting': 'Exporting…',
-  'fakeExt.settingsDesc': 'Customize values used by the 🎲 button. Leave a field empty for random data.',
+  'fakeExt.settingsDesc': 'Customize 🎲 values, including text for free-form fields. Leave a field empty for random data.',
   'fakeExt.saved': 'Saved successfully',
-  'fakeExt.usageNote': 'The 🎲 button appears automatically on form fields (except login). Alt+F shortcut to fill the focused field. Your custom values above take priority: e.g. an email set here is inserted into EVERY email field (instead of a random one).',
+  'fakeExt.usageNote': 'The 🎲 button appears automatically on form fields (except login). Alt+F fills the focused field; Alt+Shift+F fills visible fields in the active form. Login fields are skipped. Your custom values take priority.',
   'fakeExt.enable': 'Enable',
   'fakeExt.disable': 'Disable',
   'fakeExt.remove': 'Remove',
@@ -2849,6 +2895,10 @@ export const en = {
     'Unlocking takes a fraction of a second on purpose — that delay is what makes a dictionary attack expensive.',
   'pv.lock': 'Lock now',
   'pv.search': 'Search a site, a username…',
+  'pv.entries.show': 'Show passwords',
+  'pv.entries.hide': 'Hide passwords',
+  'pv.entries.hidden': 'Your passwords stay hidden until you choose to show them.',
+  'pv.entriesLoadFailed': 'Could not load the entries. Make sure the vault is unlocked.',
   'pv.allCategories': 'All categories',
   'pv.addEntry': 'Add',
   'pv.newEntry': 'New entry',
@@ -2888,19 +2938,38 @@ export const en = {
   'pv.deleteVaultWarning':
     'Permanently deletes all its entries. Enter the master password to confirm.',
   'pv.import': 'Import (CSV / JSON)',
-  'pv.imported': '{n} entries imported, {skipped} duplicates skipped',
+  'pv.imported':
+    '{n} entries imported, {merged} merged, {overwritten} overwritten, {skipped} duplicate row(s) skipped',
   'pv.importFailed': 'Import failed: unreadable file, or no password column.',
   'pv.export': 'Export',
   'pv.exportWarning':
     'The exported file is NOT encrypted: every password is in clear text. Enter the master password to continue.',
   'pv.exported': '{n} entries exported',
   'pv.audit': 'Health check',
-  'pv.auditDesc': 'Analysed locally: nothing leaves your machine, no breach database is queried.',
+  'pv.auditDesc':
+    'Estimated strength and reuse checks stay local. The optional breach lookup is separate and only runs when requested.',
   'pv.auditClean': 'Nothing to report across {n} entries.',
+  'pv.auditRunning': 'Checking…',
+  'pv.auditFailed': 'The health check could not complete. Make sure the vault is still unlocked.',
+  'pv.audit.total': 'Entries',
+  'pv.audit.moderate': 'Moderate',
+  'pv.audit.strong': 'Strong',
   'pv.audit.reused': 'Passwords reused across sites',
   'pv.audit.weak': 'Weak passwords',
   'pv.audit.old': 'Unchanged for over a year',
   'pv.audit.empty': 'Entries with no password',
+  'pv.audit.breached': 'Passwords found in known breaches',
+  'pv.breachPrivacy':
+    'Optional check via Have I Been Pwned. Orbit sends only the first 5 characters of each unique password’s locally computed SHA-1 hash. The service can still see your IP address and request time; results are not saved.',
+  'pv.breachCheck': 'Check for breaches (online)',
+  'pv.breachChecking': 'Checking…',
+  'pv.breachUnavailable': 'The breach-check service is unavailable. No breach result was saved.',
+  'pv.breachPartial': '{checked} password(s) checked; {failed} could not be checked because the service was unavailable.',
+  'pv.breachNoPasswords': 'There are no passwords to check.',
+  'pv.breachClean': 'None of the {n} checked password(s) were found in the queried corpus.',
+  'pv.breachCount': 'seen {n} times',
+  'pv.generatorHint':
+    'To replace a password, Orbit can already suggest a strong one on sign-up and password-change forms in your apps.',
   'pv.footerNote':
     'Auto-locks after {minutes} min of inactivity, and whenever Orbit sleeps or locks.',
   'pv.err.badPassword': 'Wrong password.',

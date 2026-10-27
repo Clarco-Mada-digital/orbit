@@ -659,46 +659,50 @@ export default function Extensions() {
                           { key: 'zip', label: 'fake.zip' },
                           { key: 'address', label: 'fake.address' },
                           { key: 'company', label: 'fake.company' },
-                        ].map(({ key, label }) => (
-                          <div key={key} className="block">
-                            <label className="block text-xs text-text-muted mb-1">
-                              {t(label)}
-                              {settings.fakeData?.[key] && (
-                                <span className="text-emerald-500 ml-1">
-                                  <Check size={10} />
-                                </span>
-                              )}
-                            </label>
-                            <div className="flex gap-2">
-                              <input
-                                type="text"
-                                value={settings.fakeData?.[key] || ''}
-                                onChange={(e) =>
-                                  updateSettings({
-                                    fakeData: { ...(settings.fakeData || {}), [key]: e.target.value },
-                                  })
-                                }
-                                onBlur={() => saveFakeDataSettings(settings.fakeData)}
-                                placeholder="Laisser vide pour aléatoire"
-                                className="input flex-1 text-sm"
-                              />
-                              {settings.fakeData?.[key] && (
-                                <button
-                                  onClick={() => {
-                                    const updated = { ...(settings.fakeData || {}) };
-                                    delete updated[key];
-                                    updateSettings({ fakeData: updated });
-                                    saveFakeDataSettings(updated);
-                                  }}
-                                  className="btn-icon p-1.5 text-error hover:bg-error/10 rounded"
-                                  title="Effacer"
-                                >
-                                  <X size={14} />
-                                </button>
-                              )}
+                          { key: 'text', label: 'fake.text' },
+                        ].map(({ key, label }) => {
+                          const TextField = key === 'text' ? 'textarea' : 'input';
+                          return (
+                            <div key={key} className="block">
+                              <label className="block text-xs text-text-muted mb-1">
+                                {t(label)}
+                                {settings.fakeData?.[key] && (
+                                  <span className="text-emerald-500 ml-1">
+                                    <Check size={10} />
+                                  </span>
+                                )}
+                              </label>
+                              <div className="flex gap-2">
+                                <TextField
+                                  {...(key === 'text' ? { rows: 3 } : { type: 'text' })}
+                                  value={settings.fakeData?.[key] || ''}
+                                  onChange={(e) =>
+                                    updateSettings({
+                                      fakeData: { ...(settings.fakeData || {}), [key]: e.target.value },
+                                    })
+                                  }
+                                  onBlur={() => saveFakeDataSettings(settings.fakeData)}
+                                  placeholder="Laisser vide pour aléatoire"
+                                  className="input flex-1 text-sm"
+                                />
+                                {settings.fakeData?.[key] && (
+                                  <button
+                                    onClick={() => {
+                                      const updated = { ...(settings.fakeData || {}) };
+                                      delete updated[key];
+                                      updateSettings({ fakeData: updated });
+                                      saveFakeDataSettings(updated);
+                                    }}
+                                    className="btn-icon p-1.5 text-error hover:bg-error/10 rounded"
+                                    title="Effacer"
+                                  >
+                                    <X size={14} />
+                                  </button>
+                                )}
+                              </div>
                             </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                       {fakeDataSaved && (
                         <p className="text-xs text-emerald-500 flex items-center gap-1">

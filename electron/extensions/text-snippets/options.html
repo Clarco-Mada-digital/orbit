@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <title>Text Snippets — Options</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 24px;
+      background: #0b0e14;
+      color: #f3f4f6;
+      font-family: system-ui, -apple-system, sans-serif;
+      font-size: 14px;
+    }
+    h1 { font-size: 18px; margin: 0 0 4px; }
+    .sub { color: #9ca3af; font-size: 13px; margin-bottom: 20px; }
+    .card {
+      background: #111827;
+      border: 1px solid #374151;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 16px;
+      max-width: 760px;
+    }
+    .row { display: flex; gap: 8px; align-items: center; margin-bottom: 10px; }
+    .row input[type="text"] {
+      background: #1f2937;
+      border: 1px solid #374151;
+      color: #f3f4f6;
+      border-radius: 8px;
+      padding: 8px 10px;
+      font-size: 13px;
+    }
+    .abbr { width: 160px; font-family: ui-monospace, monospace; }
+    .value { flex: 1; min-height: 60px; resize: vertical; font-family: inherit; }
+    textarea.value { display: block; width: 100%; }
+    .btn {
+      border: none;
+      border-radius: 8px;
+      padding: 8px 14px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      background: #6366f1;
+      color: #fff;
+    }
+    .btn.ghost { background: transparent; border: 1px solid #374151; color: #9ca3af; }
+    .btn.danger { background: transparent; border: 1px solid #7f1d1d; color: #f87171; }
+    .saved { color: #10b981; font-size: 13px; margin-left: 10px; display: none; }
+    .opt-row { display: flex; gap: 16px; align-items: center; margin-bottom: 4px; }
+    .opt-row label { display: flex; align-items: center; gap: 6px; color: #d1d5db; }
+    .hint { color: #6b7280; font-size: 12px; margin-top: 6px; }
+  </style>
+</head>
+<body>
+  <h1>⚡ Text Snippets</h1>
+  <p class="sub">Tapez une abréviation (ex. <code>;email</code>) dans un champ — elle se transforme immédiatement en texte complet.</p>
+
+  <div class="card">
+    <div class="opt-row">
+      <label><input type="checkbox" id="enabled" /> Extension activée</label>
+      <label style="margin-left: 16px;">
+        Déclencheur
+        <input type="text" id="trigger" maxlength="1" style="width: 40px; text-align: center;" />
+        (un seul caractère, ex. <code>;</code> ou <code>::</code> non — 1 seul)
+      </label>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2 style="font-size: 14px; margin: 0 0 10px;">Vos snippets</h2>
+    <div id="list"></div>
+    <div style="margin-top: 12px; display: flex; gap: 8px;">
+      <button class="btn" id="add">+ Ajouter</button>
+      <button class="btn ghost" id="reset">Réinitialiser les défauts</button>
+      <button class="btn" id="save">Enregistrer</button>
+      <span class="saved" id="saved">✓ Enregistré</span>
+    </div>
+    <p class="hint">
+      Astuce : la valeur peut contenir des retours à la ligne (signature multi-lignes).
+      Les champs de mot de passe restent exclus par défaut. Vous pouvez les autoriser
+      ci-dessous, mais les snippets sont enregistrés localement sans chiffrement.
+    </p>
+    <div class="opt-row">
+      <label><input type="checkbox" id="allow-password-fields" /> Autoriser l'expansion dans les champs de mot de passe</label>
+    </div>
+  </div>
+
+  <script src="options.js"></script>
+</body>
+</html>

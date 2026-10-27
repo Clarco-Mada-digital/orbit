@@ -6,6 +6,11 @@ sessions isolées et multi-comptes.
 
 ![Orbit](docs/orbit-welcome.png)
 
+📘 **Documentation complète :** [guide utilisateur PDF](docs/guide-utilisateur.pdf) ·
+[guide utilisateur](docs/guide-utilisateur.md) ·
+[guide développeur](docs/guide-developpeur.md) ·
+[site de présentation](docs/index.html)
+
 > D'autres captures (interface principale, écran partagé…) sont les bienvenues :
 > déposez vos PNG dans `docs/` et référencez-les ici.
 
@@ -144,6 +149,7 @@ userData/extensions/         ← Extensions installées par l'utilisateur (Elect
 
 - Le bouton 🎲 apparaît automatiquement sur les champs de formulaire
 - Raccourci **Alt+F** pour remplir le champ focalisé
+- Raccourci **Alt+Maj+F** pour remplir les champs visibles du formulaire actif
 - Personnalisation dans **Réglages → Extensions** → section Fake Data Filler
 - Toggle **Activer/Désactiver** pour masquer le bouton 🎲
 - Export en ZIP pour partage : **Réglages → Extensions → Exporter en ZIP**

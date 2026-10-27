@@ -105,6 +105,8 @@ export default function WebView({ app, active, visible, flexLayout }) {
   const sharedSession = useStore(
     (s) => !!s.profiles.find((p) => p.id === app.profileId)?.sharedSession
   );
+  const partition = appPartition(app, sharedSession);
+  const [extensionsReadyPartition, setExtensionsReadyPartition] = useState(null);
   // « Plafond » de non-lus déjà notifiés : on ne re-notifie que si le compteur
   // le DÉPASSE (le clignotement de titre 1↔0 ne le franchit jamais → pas de
   // notification/son en boucle). Réarmé à la lecture (app active ou 0 durable).
@@ -117,6 +119,27 @@ export default function WebView({ app, active, visible, flexLayout }) {
   const [loading, setLoading] = useState(false);
   const [crashed, setCrashed] = useState(false);
   const loadingTimer = useRef(null);
+
+  useEffect(() => {
+    let active = true;
+    const ensureExtensions = window.electronAPI?.ensureExtensionsForPartition;
+    if (typeof ensureExtensions !== 'function') return undefined;
+
+    ensureExtensions(partition)
+      .then((result) => {
+        if (!result?.success) {
+          console.error('[orbit] extensions non prêtes pour la session', partition, result?.error || '');
+        }
+      })
+      .catch((error) => {
+        console.error('[orbit] préparation des extensions échouée:', error);
+      })
+      .finally(() => {
+        if (active) setExtensionsReadyPartition(partition);
+      });
+
+    return () => { active = false; };
+  }, [partition]);
 
   // URL de démarrage fixée AU MONTAGE de l'app : jamais une page de connexion
   // persistée (signin, 2FA, cpsess…) → on repart de la « maison » (recette).
@@ -567,12 +590,17 @@ export default function WebView({ app, active, visible, flexLayout }) {
     >
       <webview
         ref={ref}
-        src={startUrl}
+        src={
+          typeof window.electronAPI?.ensureExtensionsForPartition === 'function' &&
+          extensionsReadyPartition !== partition
+            ? 'about:blank'
+            : startUrl
+        }
         // Partition (« coffre à cookies ») : soit propre à l'app (sessions
         // isolées, plusieurs comptes possibles), soit partagée avec tout le
         // profil (mode « navigateur » → SSO Google entre Gmail/YouTube/Drive).
         // Voir lib/session.js.
-        partition={appPartition(app, sharedSession)}
+        partition={partition}
         useragent={CHROME_UA}
         allowpopups="true"
         className="w-full h-full min-w-0 min-h-0"

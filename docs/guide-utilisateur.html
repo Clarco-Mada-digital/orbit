@@ -1,0 +1,510 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light" />
+    <title>Orbit — Guide utilisateur</title>
+    <style>
+      :root {
+        --ink: #15213a;
+        --muted: #61708a;
+        --line: #dce5f0;
+        --blue: #4662ea;
+        --teal: #24c8c0;
+        --paper: #fff;
+        --tint: #f3f6fb;
+      }
+      * { box-sizing: border-box; }
+      html { background: #e8edf5; }
+      body {
+        margin: 0 auto;
+        max-width: 900px;
+        color: var(--ink);
+        background: var(--paper);
+        font: 15px/1.65 Inter, "Segoe UI", Arial, sans-serif;
+        box-shadow: 0 16px 70px #1828461c;
+      }
+      a { color: #3551cc; text-decoration: none; }
+      h1, h2, h3 { line-height: 1.18; letter-spacing: -0.025em; }
+      h2 { margin: 0 0 16px; font-size: 30px; }
+      h3 { margin: 22px 0 8px; font-size: 18px; }
+      p { margin: 0 0 12px; }
+      ul, ol { padding-left: 22px; }
+      li { margin: 5px 0; }
+      .page {
+        min-height: 1120px;
+        padding: 66px 76px;
+        position: relative;
+      }
+      .cover {
+        min-height: 1120px;
+        overflow: hidden;
+        color: white;
+        background:
+          radial-gradient(ellipse at 87% 14%, #2ac7c033 0, transparent 32%),
+          radial-gradient(ellipse at 16% 82%, #6674ff4a 0, transparent 34%),
+          linear-gradient(145deg, #10182d 0%, #172545 55%, #1b2b4c 100%);
+        padding: 70px 76px;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+      }
+      .cover::after {
+        content: "";
+        position: absolute;
+        width: 580px;
+        height: 580px;
+        right: -265px;
+        top: 280px;
+        border: 1px solid #ffffff24;
+        border-radius: 50%;
+        box-shadow: 0 0 0 58px #ffffff08, 0 0 0 116px #ffffff06;
+      }
+      .brand { display: flex; align-items: center; gap: 14px; font-weight: 700; font-size: 19px; }
+      .brand svg { width: 48px; height: 48px; }
+      .cover-copy { position: relative; z-index: 1; max-width: 650px; }
+      .eyebrow {
+        color: #9ce8e1;
+        font-size: 11px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: .22em;
+      }
+      .cover h1 { margin: 20px 0 18px; font-size: 68px; letter-spacing: -.055em; }
+      .cover .lead { max-width: 540px; color: #d8e1f4; font-size: 21px; line-height: 1.5; }
+      .cover-card {
+        position: relative;
+        z-index: 1;
+        width: 100%;
+        max-width: 530px;
+        margin-top: 40px;
+        padding: 19px;
+        border: 1px solid #ffffff27;
+        border-radius: 20px;
+        background: #ffffff0d;
+        backdrop-filter: blur(12px);
+      }
+      .cover-card .apps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+      .mini-app {
+        padding: 14px 8px;
+        border: 1px solid #ffffff17;
+        border-radius: 13px;
+        background: #ffffff0a;
+        text-align: center;
+        color: #e9effb;
+        font-size: 12px;
+      }
+      .mini-app b {
+        display: grid;
+        width: 35px;
+        height: 35px;
+        margin: 0 auto 8px;
+        place-items: center;
+        border-radius: 11px;
+        background: linear-gradient(140deg, #6d79ff, #28c6bc);
+        color: white;
+        font-size: 15px;
+      }
+      .cover-foot {
+        position: relative;
+        z-index: 1;
+        display: flex;
+        justify-content: space-between;
+        gap: 20px;
+        border-top: 1px solid #ffffff2a;
+        padding-top: 18px;
+        color: #c0cce2;
+        font-size: 12px;
+      }
+      .section-label {
+        margin-bottom: 12px;
+        color: var(--blue);
+        font-size: 11px;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: .18em;
+      }
+      .intro { margin-bottom: 24px; color: var(--muted); font-size: 17px; }
+      .callout {
+        margin: 18px 0;
+        padding: 16px 18px;
+        border-left: 4px solid var(--teal);
+        border-radius: 0 12px 12px 0;
+        background: #effaf9;
+      }
+      .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+      .card {
+        padding: 16px;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: linear-gradient(145deg, white, #f8faff);
+        break-inside: avoid;
+      }
+      .card h3 { margin: 0 0 7px; }
+      .card p { margin: 0; color: var(--muted); font-size: 13px; }
+      table { width: 100%; border-collapse: collapse; margin: 16px 0; }
+      th, td { padding: 10px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+      th { color: #3a4b67; background: var(--tint); font-size: 12px; text-transform: uppercase; letter-spacing: .06em; }
+      td { font-size: 13px; }
+      code {
+        padding: 2px 6px;
+        border: 1px solid #dfe5f1;
+        border-radius: 5px;
+        background: #f4f6fb;
+        color: #3649ad;
+        font: 12px ui-monospace, SFMono-Regular, Menlo, monospace;
+      }
+      .muted { color: var(--muted); }
+      .chapter { break-before: page; }
+      .small { font-size: 12px; color: var(--muted); }
+      .links { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
+      .links a { padding: 9px 13px; border-radius: 9px; background: #edf1ff; font-weight: 700; font-size: 12px; }
+      .endmark { margin-top: 38px; padding-top: 18px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
+      @page {
+        size: A4;
+        margin: 16mm 17mm 18mm;
+        @bottom-left { content: "ORBIT  ·  GUIDE UTILISATEUR"; color: #7a8799; font: 8pt Arial, sans-serif; }
+        @bottom-right { content: counter(page); color: #7a8799; font: 8pt Arial, sans-serif; }
+      }
+      @media print {
+        html, body { max-width: none; box-shadow: none; background: white; }
+        .page { min-height: auto; padding: 0; }
+        .cover { min-height: 264mm; margin: -16mm -17mm -18mm; padding: 24mm 22mm 20mm; }
+        .chapter { break-before: page; }
+        a { color: inherit; }
+      }
+      @media screen {
+        .page { margin: 24px auto; }
+      }
+    </style>
+  </head>
+  <body>
+    <section class="page cover">
+      <div class="brand">
+        <svg viewBox="0 0 64 64" aria-label="Logo Orbit">
+          <defs><linearGradient id="orb" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#7882ff"/><stop offset="1" stop-color="#9a72ff"/></linearGradient></defs>
+          <rect x="1" y="1" width="62" height="62" rx="17" fill="url(#orb)"/>
+          <circle cx="32" cy="32" r="20" fill="none" stroke="#fff" stroke-width="2.6"/>
+          <circle cx="32" cy="32" r="5" fill="#fff"/><circle cx="48.4" cy="20.5" r="6.2" fill="#c7d2fe"/>
+        </svg>
+        <span>ORBIT</span>
+      </div>
+      <div class="cover-copy">
+        <div class="eyebrow">Guide utilisateur · Édition 2026</div>
+        <h1>Toutes vos apps.<br />Un seul espace.</h1>
+        <p class="lead">
+          Le guide complet pour organiser vos applications web, profils, outils
+          de productivité et téléchargements avec Orbit.
+        </p>
+        <div class="cover-card" aria-label="Illustration d'un espace de travail Orbit">
+          <div class="apps">
+            <div class="mini-app"><b>G</b>Messagerie</div>
+            <div class="mini-app"><b>N</b>Notes & projets</div>
+            <div class="mini-app"><b>✦</b>Assistant IA</div>
+          </div>
+          <p style="margin:14px 2px 0;color:#ccdaef;font-size:12px">
+            Profils séparés · Sessions maîtrisées · Outils à portée de main
+          </p>
+        </div>
+      </div>
+      <div class="cover-foot">
+        <span>Développé par <strong>Clarco RAHERINANDRASANA</strong></span>
+        <span>Windows · macOS · Linux</span>
+      </div>
+    </section>
+
+    <section class="page chapter">
+      <div class="section-label">Bienvenue</div>
+      <h2>Un poste de travail plus clair</h2>
+      <p class="intro">
+        Orbit réunit vos applications web dans une application de bureau et
+        fournit des outils pour mieux les organiser. Ce guide vous accompagne
+        de l’installation aux fonctions avancées.
+      </p>
+      <div class="grid">
+        <article class="card"><h3>Vos applications</h3><p>Ajoutez des services depuis la boutique intégrée ou avec une URL.</p></article>
+        <article class="card"><h3>Vos profils</h3><p>Séparez les espaces personnels et professionnels avec leurs propres sessions.</p></article>
+        <article class="card"><h3>Vos outils</h3><p>Assistant IA, relecture, coffre-fort et téléchargements dans la même interface.</p></article>
+        <article class="card"><h3>Votre contrôle</h3><p>Choisissez les extensions, les fournisseurs IA et les options de partage de session.</p></article>
+      </div>
+      <div class="callout">
+        <strong>À retenir.</strong> Orbit héberge l’interface ; les sites ajoutés
+        restent des services indépendants, avec leurs propres comptes et
+        politiques de confidentialité.
+      </div>
+      <h3>Sommaire</h3>
+      <ol>
+        <li>Installer Orbit et démarrer</li>
+        <li>Organiser applications, profils et espaces</li>
+        <li>Rechercher et utiliser les raccourcis</li>
+        <li>Assistant IA et relecture</li>
+        <li>Coffre-fort de mots de passe</li>
+        <li>Téléchargements et extensions</li>
+        <li>Confidentialité et sécurité</li>
+        <li>Dépannage et liens utiles</li>
+      </ol>
+    </section>
+
+    <section class="page chapter">
+      <div class="section-label">01 · Mise en route</div>
+      <h2>Installer Orbit</h2>
+      <p>
+        Récupérez Orbit depuis la dernière release du dépôt officiel. Choisissez
+        l’asset correspondant à votre système :
+      </p>
+      <table>
+        <thead><tr><th>Système</th><th>Fichier</th><th>À savoir</th></tr></thead>
+        <tbody>
+          <tr><td>Windows</td><td>Installateur ou portable <code>.exe</code></td><td>SmartScreen peut signaler une application non signée.</td></tr>
+          <tr><td>Linux</td><td><code>.AppImage</code> ou paquet <code>.deb</code></td><td>Le paquet Debian convient aux systèmes compatibles.</td></tr>
+          <tr><td>macOS</td><td><code>.dmg</code> ou <code>.zip</code></td><td>Gatekeeper peut demander une confirmation d’ouverture.</td></tr>
+        </tbody>
+      </table>
+      <ol>
+        <li>Ouvrez la page <a href="https://github.com/Clarco-Mada-digital/orbit/releases/latest">Releases</a> et téléchargez le fichier de votre plateforme.</li>
+        <li>Installez ou extrayez le paquet selon votre système.</li>
+        <li>Lancez Orbit et choisissez <strong>Ajouter ma première app</strong> ou commencez sans application.</li>
+        <li>Ajoutez les services nécessaires via la boutique ou une URL.</li>
+      </ol>
+      <div class="callout">
+        Téléchargez toujours les binaires depuis le dépôt officiel. En cas de
+        doute sur un avertissement de sécurité, annulez et vérifiez l’origine du
+        fichier.
+      </div>
+      <h3>Premiers repères</h3>
+      <p>
+        La barre latérale sert à choisir une app et un profil. La barre supérieure
+        donne accès aux contrôles de la page, aux outils et aux notifications.
+        Les paramètres regroupent les réglages globaux, les extensions et les
+        options du profil actif.
+      </p>
+    </section>
+
+    <section class="page chapter">
+      <div class="section-label">02 · Organisation</div>
+      <h2>Construire votre espace</h2>
+      <h3>Applications, dossiers et favoris</h3>
+      <p>
+        Installez une app depuis le catalogue, saisissez une URL personnalisée,
+        puis ordonnez la barre latérale par glisser-déposer. Les dossiers
+        regroupent les apps liées. Le menu contextuel propose les actions
+        disponibles pour chaque app, comme favori, veille, fenêtre détachée et
+        gestion des données de site.
+      </p>
+      <h3>Profils et comptes</h3>
+      <p>
+        Créez des profils Travail, Personnel ou tout autre espace. Les sessions
+        web sont séparées selon la configuration. Le partage de connexion (SSO)
+        peut être activé par profil lorsque vous souhaitez que les apps d’un
+        service suivent une même session. Les conteneurs permettent de conserver
+        plusieurs comptes indépendants.
+      </p>
+      <div class="callout">
+        L’activation du SSO peut recharger les apps et demander une nouvelle
+        connexion. Consultez la confirmation d’Orbit avant de modifier ce mode.
+      </div>
+      <h3>Espaces de travail et fenêtres</h3>
+      <ul>
+        <li>Affichez plusieurs apps en écran partagé et enregistrez une disposition.</li>
+        <li>Détachez une app pour l’afficher dans une fenêtre de bureau séparée.</li>
+        <li>Personnalisez thème, accent, polices et modules des barres.</li>
+        <li>Configurez des fonds et options d’accueil propres à chaque profil.</li>
+      </ul>
+      <h3>Recherche et calcul</h3>
+      <p>
+        La palette <code>Alt/⌘ + K</code> recherche les apps, espaces et actions.
+        Elle peut aussi calculer et convertir des valeurs ; la recherche dans
+        une page utilise <code>Ctrl + F</code> ou <code>⌘ + F</code>.
+      </p>
+    </section>
+
+    <section class="page chapter">
+      <div class="section-label">03 · Raccourcis</div>
+      <h2>Gagner du temps</h2>
+      <p>
+        Sur Windows et Linux, Orbit utilise généralement <strong>Alt</strong>.
+        Sur macOS, utilisez généralement <strong>⌘</strong>. Les apps web gardent
+        leurs propres raccourcis.
+      </p>
+      <table>
+        <thead><tr><th>Raccourci</th><th>Action</th></tr></thead>
+        <tbody>
+          <tr><td><code>Alt/⌘ + K</code></td><td>Recherche et palette de commandes</td></tr>
+          <tr><td><code>Alt/⌘ + ,</code></td><td>Réglages</td></tr>
+          <tr><td><code>Alt/⌘ + Maj + O</code></td><td>Boutique d’applications</td></tr>
+          <tr><td><code>Alt/⌘ + Maj + P</code></td><td>Gestion des profils</td></tr>
+          <tr><td><code>Alt/⌘ + L</code></td><td>Modifier l’URL de la page active</td></tr>
+          <tr><td><code>Alt/⌘ + Page ↓ / Page ↑</code></td><td>App précédente ou suivante</td></tr>
+          <tr><td><code>Alt/⌘ + Maj + Page ↓ / Page ↑</code></td><td>Profil précédent ou suivant</td></tr>
+          <tr><td><code>Alt/⌘ + Maj + E</code></td><td>Relire hors ligne le champ actif</td></tr>
+          <tr><td><code>Alt/⌘ + Maj + I</code></td><td>Ouvrir la relecture IA</td></tr>
+          <tr><td><code>Alt/⌘ + Maj + A</code></td><td>Ouvrir la discussion IA</td></tr>
+          <tr><td><code>Ctrl + R / ⌘ + R</code></td><td>Recharger la page active</td></tr>
+        </tbody>
+      </table>
+      <p class="small">
+        Les raccourcis peuvent être configurables et évoluer. La liste visible
+        dans Réglages → Raccourcis est la référence pour votre version.
+      </p>
+    </section>
+
+    <section class="page chapter">
+      <div class="section-label">04 · Aide à la rédaction</div>
+      <h2>Assistant IA et relecture</h2>
+      <p>
+        L’assistant Orbit peut aider à discuter, résumer, reformuler et travailler
+        sur un texte. Utilisez les commandes de relecture pour corriger le champ
+        actif ou ouvrir la conversation avec le texte sélectionné.
+      </p>
+      <div class="grid">
+        <article class="card"><h3>Règles locales</h3><p>La relecture rapide fonctionne sur l’appareil et couvre des erreurs fréquentes.</p></article>
+        <article class="card"><h3>LanguageTool local</h3><p>Option grammaticale plus complète ; nécessite Java 17+ et un téléchargement initial.</p></article>
+        <article class="card"><h3>Modèles locaux</h3><p>Facultatifs ; ils utilisent le stockage et les ressources matérielles de votre machine.</p></article>
+        <article class="card"><h3>Fournisseurs distants</h3><p>Ollama, fournisseurs compatibles et services configurés ; les conditions varient selon le fournisseur.</p></article>
+      </div>
+      <div class="callout">
+        Avant d’envoyer un texte à un fournisseur en ligne, vérifiez l’indication
+        et la confirmation de consentement affichées par Orbit. Les données
+        envoyées sont soumises aux règles du fournisseur choisi.
+      </div>
+      <h3>Configuration</h3>
+      <p>
+        Choisissez un fournisseur dans les paramètres de l’assistant, configurez
+        les informations nécessaires et testez la connexion. Les clés API sont
+        stockées via le mécanisme sécurisé du système lorsqu’il est disponible.
+        Les modèles locaux facultatifs se gèrent depuis les mêmes paramètres.
+      </p>
+    </section>
+
+    <section class="page chapter">
+      <div class="section-label">05 · Identifiants</div>
+      <h2>Coffre-fort de mots de passe</h2>
+      <p>
+        Le coffre-fort intégré organise les identifiants en trousseaux protégés
+        par un mot de passe maître. Déverrouillez-le pour consulter, créer,
+        rechercher ou utiliser une entrée, puis reverrouillez lorsque vous avez
+        terminé.
+      </p>
+      <h3>Rapport de santé</h3>
+      <p>
+        Le rapport peut classer les mots de passe selon leur robustesse et
+        signaler des réutilisations. Une vérification facultative des mots de
+        passe compromis utilise Have I Been Pwned. Orbit calcule localement une
+        empreinte SHA-1 et envoie uniquement les cinq premiers caractères de
+        cette empreinte ; le service reçoit tout de même l’adresse IP et l’heure
+        de la requête.
+      </p>
+      <h3>Import et export</h3>
+      <p>
+        Lorsqu’un import rencontre un trousseau existant, choisissez la fusion
+        ou le remplacement si l’option est présentée. Protégez les exports :
+        toute personne pouvant lire une sauvegarde non chiffrée pourrait en
+        consulter le contenu.
+      </p>
+      <div class="callout">
+        Choisissez un mot de passe maître robuste et conservez-le en lieu sûr.
+        Orbit ne peut pas retrouver un mot de passe maître oublié.
+      </div>
+      <h3>Connexion à KeePassXC</h3>
+      <p>
+        Le remplissage KeePassXC est disponible si KeePassXC et son intégration
+        navigateur sont correctement configurés. Le coffre-fort intégré est une
+        option distincte ; sélectionnez la source voulue dans les réglages.
+      </p>
+    </section>
+
+    <section class="page chapter">
+      <div class="section-label">06 · Téléchargements et extensions</div>
+      <h2>Les outils au quotidien</h2>
+      <h3>Gestionnaire de téléchargements</h3>
+      <p>
+        La page Téléchargements centralise les fichiers, l’historique, les
+        destinations et les téléchargements de médias pris en charge. Choisissez
+        un dossier par défaut ou demandez un emplacement à chaque fois. Un lien
+        magnet ouvre le client torrent associé par votre système ; Orbit ne
+        télécharge pas lui-même les torrents.
+      </p>
+      <p>
+        Le téléchargement de médias dépend des outils disponibles, du site
+        source et de ses conditions d’utilisation. Ne téléchargez que les contenus
+        que vous êtes autorisé à conserver.
+      </p>
+      <h3>Extensions disponibles</h3>
+      <div class="grid">
+        <article class="card"><h3>Text Snippets</h3><p>Développe des abréviations, par exemple <code>;email</code>, en texte complet au fil de la saisie.</p></article>
+        <article class="card"><h3>Fake Data Filler</h3><p><code>Alt+F</code> remplit le champ focalisé ; <code>Alt+Maj+F</code> remplit les champs visibles du formulaire actif.</p></article>
+        <article class="card"><h3>Web Clipper</h3><p>Capture une sélection ou une page et conserve les clips localement pour les rechercher ou exporter en Markdown.</p></article>
+        <article class="card"><h3>Orbit Phone</h3><p>Extension optionnelle pour contrôler des apps Android compatibles via un appareil connecté.</p></article>
+      </div>
+      <p class="small">
+        Fake Data évite les champs détectés comme identifiants de connexion.
+        Text Snippets n’a pas accès aux champs protégés par mot de passe tant que
+        cette option n’est pas explicitement activée.
+      </p>
+    </section>
+
+    <section class="page chapter">
+      <div class="section-label">07 · Protection des données</div>
+      <h2>Confidentialité et sécurité</h2>
+      <ul>
+        <li>Les sessions peuvent être isolées par app et par profil ; le SSO est facultatif.</li>
+        <li>Les versions empaquetées activent le chiffrement des cookies d’Electron et utilisent le mécanisme système lorsqu’il est disponible.</li>
+        <li>Les règles de relecture rapide, Fake Data et Text Snippets s’exécutent localement.</li>
+        <li>Les fonctionnalités basées sur un fournisseur externe transmettent les données requises à ce service selon les choix confirmés.</li>
+        <li>Les sites web continuent de recevoir les données que vous y saisissez.</li>
+      </ul>
+      <h3>Sauvegardes et changements de session</h3>
+      <p>
+        Faites des sauvegardes régulières et gardez-les dans un emplacement
+        protégé. Les options de suppression des données de site peuvent
+        déconnecter l’app concernée. L’activation du partage SSO change le mode
+        d’isolation ; relisez l’avertissement avant confirmation.
+      </p>
+      <h3>Signalement responsable</h3>
+      <p>
+        Pour signaler un problème, ouvrez une issue dans le dépôt GitHub avec
+        votre système, la version d’Orbit, les étapes de reproduction et un
+        extrait de diagnostic expurgé. Ne partagez jamais de cookies, mots de
+        passe, clés API ou données personnelles.
+      </p>
+    </section>
+
+    <section class="page chapter">
+      <div class="section-label">08 · Assistance</div>
+      <h2>Résoudre les problèmes courants</h2>
+      <h3>Une app ne charge pas</h3>
+      <p>
+        Vérifiez la connexion, la disponibilité du service et l’URL de l’app.
+        Rechargez la page. Si la session est perdue, reconnectez-vous au service.
+      </p>
+      <h3>Une extension ne réagit pas</h3>
+      <p>
+        Vérifiez qu’elle est installée et activée dans Réglages → Extensions,
+        puis rechargez l’app web. Vérifiez le déclencheur et les options de
+        l’extension. Les pages intégrées dans des contextes spéciaux peuvent
+        limiter l’accès des extensions.
+      </p>
+      <h3>L’assistant local est lent ou indisponible</h3>
+      <p>
+        Le premier téléchargement et chargement d’un modèle peut prendre du
+        temps. Vérifiez le modèle, la mémoire et le matériel requis dans les
+        réglages. Un fournisseur distant configuré constitue un chemin distinct.
+      </p>
+      <h3>La relecture complète ne démarre pas</h3>
+      <p>
+        LanguageTool requiert Java 17 ou plus récent. Installez le runtime indiqué
+        par Orbit et réessayez ; les règles rapides restent disponibles.
+      </p>
+      <div class="links">
+        <a href="https://github.com/Clarco-Mada-digital/orbit/releases/latest">Télécharger Orbit</a>
+        <a href="https://github.com/Clarco-Mada-digital/orbit">Code source</a>
+        <a href="https://github.com/Clarco-Mada-digital/orbit/issues">Signaler un problème</a>
+      </div>
+      <div class="endmark">
+        <strong>Orbit</strong> · Développé par Clarco RAHERINANDRASANA · Licence MIT<br />
+        <span>Merci d’utiliser Orbit et de contribuer à un espace de travail web plus simple.</span>
+      </div>
+    </section>
+  </body>
+</html>

@@ -8,6 +8,26 @@ Format : une section `## [X.Y.Z] — AAAA-MM-JJ` par version, puis des
 sous-sections `### Ajouté` / `### Modifié` / `### Corrigé` / `### Sécurité`.
 La plus récente en premier.
 
+## [1.16.2] — 2026-10-27
+
+### Ajouté
+- **Santé du coffre-fort** : évaluation des mots de passe faibles ou réutilisés,
+  statistiques de robustesse et vérification facultative des mots de passe
+  compromis avec le protocole k-anonymity de Have I Been Pwned.
+- **Import de trousseaux** : choisissez de fusionner ou remplacer un trousseau
+  existant portant le même nom.
+- **Formulaires et snippets** : `Alt+Maj+F` remplit les champs visibles du
+  formulaire actif ; Text Snippets développe immédiatement les abréviations,
+  y compris dans les modales.
+- **Documentation publique** : guides utilisateur et développeur, guide PDF et
+  page de présentation Orbit publiable avec GitHub Pages.
+
+### Corrigé
+- Les extensions et raccourcis de page sont maintenant disponibles dans les
+  fenêtres détachées et leurs fenêtres de connexion.
+- Le chargement des extensions dans une session détachée attend leur
+  synchronisation avec les réglages du profil.
+
 ## [1.16.1] — 2026-10-25
 
 ### Ajouté
