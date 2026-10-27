@@ -56,7 +56,7 @@
     {
       "regle": "ELECTRON-OPEN-EXTERNAL",
       "fichier": "electron/main.js",
-      "ligne": 5060,
+      "ligne": 5103,
       "raison": "Lien magnet : parseDownloadUrl exige un identifiant torrent valide, le protocole magnet est contrôlé explicitement, et l'ouverture du client torrent système est volontaire."
     }
   ]
