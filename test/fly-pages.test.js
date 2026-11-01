@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { optionalImport, missingDepsReason } from './helpers/optional-dep.mjs';
+import { optionalImport, missingDepsReason } from './helpers/optional-dep.js';
 
 // `useStore` persiste via localStorage. zustand lit précisément
 // `window.localStorage` — il n'y a pas de `window` sous Node, donc on pose un

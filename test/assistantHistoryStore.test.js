@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { optionalImport, missingDepsReason } from './helpers/optional-dep.mjs';
+import { optionalImport, missingDepsReason } from './helpers/optional-dep.js';
 import { appendSessionMessages, createAssistantSession } from '../src/lib/assistantSessions.js';
 
 // Comme pour fly-pages.test.js : zustand lit `window.localStorage`, absent sous

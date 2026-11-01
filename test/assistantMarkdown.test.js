@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { optionalImportAll, missingDepsReason } from './helpers/optional-dep.mjs';
+import { optionalImportAll, missingDepsReason } from './helpers/optional-dep.js';
 
 // Ce fichier exerce la VRAIE chaîne de rendu de l'assistant : react-markdown,
 // remark-gfm, remark-math et KaTeX, tels que l'application les enchaîne. C'est
