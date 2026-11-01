@@ -34,6 +34,7 @@ import { getDomain, getHostname } from 'tldts-experimental';
 import { checkPwnedPasswords } from './pwned-passwords.js';
 import { scorePassword } from './password-strength.js';
 import { applyImportedFields } from './vault-import.js';
+import { mergeCategories, applyCategoryIds } from './vault-categories.js';
 import {
   sealArchive,
   openArchive,
@@ -1006,13 +1007,25 @@ async function applyRows(id, session, rows, { window } = {}) {
 // fait que les fusionner, avec le même dédoublonnage que l'import de fichier.
 // Les mots de passe ne font donc qu'un aller-retour KeePassXC → main process →
 // trousseau chiffré : ils ne passent jamais par le renderer.
-export async function importRows(id, rows, { window } = {}) {
+export async function importRows(id, rows, { window, categories } = {}) {
   const session = requireOpen(id);
   if (!session) return { success: false, error: 'locked' };
   if (!Array.isArray(rows) || rows.length === 0) {
     return { success: true, imported: 0, merged: 0, overwritten: 0, skipped: 0 };
   }
-  return applyRows(id, session, rows, { window });
+  // Les lignes venant d'une base KeePass portent un NOM de catégorie (le
+  // groupe d'origine), pas un identifiant. On crée les catégories manquantes
+  // et on traduit les noms, sinon toutes les entrées atterriraient dans
+  // « Sans catégorie » et l'organisation de la base serait perdue.
+  let added = 0;
+  if (categories?.length) {
+    const merged = mergeCategories(session.payload.categories || [], categories, () => newId('c'));
+    session.payload.categories = merged.categories;
+    added = merged.added;
+    rows = applyCategoryIds(rows, merged.categories);
+  }
+  const res = await applyRows(id, session, rows, { window });
+  return added ? { ...res, categories: added } : res;
 }
 
 // Export : exige de RESAISIR le mot de passe maître. Un export CSV/JSON est en

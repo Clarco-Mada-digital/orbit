@@ -23,9 +23,11 @@ import {
   Archive,
   Loader2,
   ArrowDownUp,
+  FileKey,
 } from 'lucide-react';
 import { useT } from '../lib/i18n';
 import CredentialSource from './CredentialSource';
+import { useStore } from '../stores/useStore';
 import VaultBackupSettings from './VaultBackupSettings';
 
 // ---------------------------------------------------------------------------
@@ -635,7 +637,7 @@ function EntryRow({ vaultId, entry, categories, onEdit, onDeleted, onToast }) {
 // Quatre actions rares (import fichier, rapatriement KeePassXC, restauration
 // d'archive, export) partagent un seul bouton : alignées dans la barre, elles
 // faisaient sept icônes à la suite, que plus personne ne distingue.
-function TransferMenu({ busy, onImportFile, onImportKeepass, onRestoreArchive, onExport }) {
+function TransferMenu({ busy, onImportFile, onImportKdbx, onImportKeepass, onRestoreArchive, onExport }) {
   const t = useT();
   const [open, setOpen] = useState(false);
   const rootRef = useRef(null);
@@ -660,6 +662,7 @@ function TransferMenu({ busy, onImportFile, onImportKeepass, onRestoreArchive, o
 
   const items = [
     { id: 'importFile', icon: Upload, label: t('pv.import'), run: onImportFile },
+    { id: 'importKdbx', icon: FileKey, label: t('pv.kdbx.action'), run: onImportKdbx },
     { id: 'importKeepass', icon: Database, label: t('pv.kpImport.action'), run: onImportKeepass },
     { id: 'restore', icon: Archive, label: t('pv.restoreArchive'), run: onRestoreArchive },
     { id: 'export', icon: Download, label: t('pv.export'), run: onExport },
@@ -737,6 +740,13 @@ export default function PasswordVault() {
   const [keepassReport, setKeepassReport] = useState(null);
   const [managing, setManaging] = useState(false);
   const entriesRequestRef = useRef(0);
+  // Adresses des apps installées, dédoublonnées : elles servent de repli au
+  // rapatriement KeePassXC (voir doKeepassImport).
+  const apps = useStore((st) => st.apps);
+  const appUrls = useMemo(
+    () => [...new Set((apps || []).map((a) => a.url || a.homeUrl).filter(Boolean))],
+    [apps]
+  );
 
   const refreshVaults = useCallback(async () => {
     const state = await api()?.state();
@@ -901,13 +911,59 @@ export default function PasswordVault() {
   // passe ne traversent pas cet écran : le processus principal parle à
   // KeePassXC et écrit directement dans le trousseau chiffré, on n'en reçoit
   // qu'un compte-rendu chiffré en nombres.
+  // Import direct d'un fichier .kdbx : la voie complète, sans KeePassXC.
+  const [kdbxOpen, setKdbxOpen] = useState(false);
+  const [kdbxPassword, setKdbxPassword] = useState('');
+  const [kdbxError, setKdbxError] = useState('');
+  const [kdbxBusy, setKdbxBusy] = useState(false);
+
+  const doKdbxImport = async () => {
+    setKdbxError('');
+    setKdbxBusy(true);
+    try {
+      const res = await api()?.importKdbx(activeId, kdbxPassword);
+      if (res?.success) {
+        setKdbxOpen(false);
+        setKdbxPassword('');
+        setToast(
+          t('pv.kdbx.done', {
+            n: res.imported || 0,
+            merged: res.merged || 0,
+            total: res.total || 0,
+            skipped: (res.skipped?.empty || 0) + (res.skipped?.recycled || 0),
+          })
+        );
+        setAudit(null);
+        setBreachAudit(null);
+        if (showEntries) refreshEntries(activeId);
+      } else if (res?.error && res.error !== 'canceled') {
+        setKdbxError(
+          t(
+            {
+              'bad-password': 'pv.kdbx.err.badPassword',
+              'not-a-kdbx': 'pv.kdbx.err.notKdbx',
+              'unsupported-kdbx': 'pv.kdbx.err.unsupported',
+              'corrupt-kdbx': 'pv.kdbx.err.corrupt',
+              unreadable: 'pv.kdbx.err.unreadable',
+              locked: 'pv.err.locked',
+            }[res.error] || 'pv.kdbx.err.generic'
+          )
+        );
+      }
+    } finally {
+      setKdbxBusy(false);
+    }
+  };
+
   const doKeepassImport = async () => {
     setKeepassError('');
     setKeepassReport(null);
     setKeepassImport({ done: 0, total: 0 });
     const stop = api()?.onKeepassImportProgress?.((p) => setKeepassImport(p));
     try {
-      const res = await api()?.importKeepass(activeId);
+      // Sites des apps d'Orbit. KeePassXC ne sait énumérer sa base que depuis
+      // la 2.8 ; en dessous, c'est cette liste qui dit quoi lui demander.
+      const res = await api()?.importKeepass(activeId, appUrls);
       if (res?.success) {
         setKeepassReport(res);
         setAudit(null);
@@ -1155,6 +1211,7 @@ export default function PasswordVault() {
             <TransferMenu
               busy={Boolean(keepassImport)}
               onImportFile={doImport}
+              onImportKdbx={() => setKdbxOpen(true)}
               onImportKeepass={doKeepassImport}
               onRestoreArchive={() => setRestoring((v) => !v)}
               onExport={() => setExporting(true)}
@@ -1207,13 +1264,34 @@ export default function PasswordVault() {
                     <Database size={14} /> {t('pv.kpImport.doneTitle')}
                   </div>
                   <p className="text-xs text-text-muted mt-1">
-                    {t('pv.kpImport.summary', {
-                      scanned: keepassReport.scanned || 0,
-                      n: keepassReport.imported || 0,
-                      merged: keepassReport.merged || 0,
-                      overwritten: keepassReport.overwritten || 0,
-                    })}
+                    {/* Deux récits possibles : la base entière a été énumérée
+                        (KeePassXC 2.8+), ou seuls les sites des apps d'Orbit
+                        ont été interrogés. Annoncer « N entrées dans la base »
+                        dans le second cas serait faux. */}
+                    {keepassReport.mode === 'apps'
+                      ? t('pv.kpImport.summaryApps', {
+                          sites: keepassReport.sites || 0,
+                          n: keepassReport.imported || 0,
+                          merged: keepassReport.merged || 0,
+                          overwritten: keepassReport.overwritten || 0,
+                        })
+                      : t('pv.kpImport.summary', {
+                          scanned: keepassReport.scanned || 0,
+                          n: keepassReport.imported || 0,
+                          merged: keepassReport.merged || 0,
+                          overwritten: keepassReport.overwritten || 0,
+                        })}
                   </p>
+                  {/* Pourquoi on n'a pas pu tout lire, et comment faire mieux. */}
+                  {keepassReport.mode === 'apps' && (
+                    <p className="text-xs text-warning mt-2">
+                      {t(
+                        keepassReport.reason === 'unsupported-action'
+                          ? 'pv.kpImport.partialVersion'
+                          : 'pv.kpImport.partialDenied'
+                      )}
+                    </p>
+                  )}
                   {/* Une entrée KeePassXC sans URL est injoignable par le
                       protocole : on la nomme au lieu de la perdre en silence. */}
                   {keepassReport.withoutUrl?.length > 0 && (
@@ -1233,6 +1311,42 @@ export default function PasswordVault() {
                   <X size={14} />
                 </button>
               </div>
+            </div>
+          )}
+
+          {/* Ouverture directe d'un fichier .kdbx */}
+          {kdbxOpen && (
+            <div className="card space-y-3">
+              <div>
+                <h4 className="font-semibold text-sm flex items-center gap-2">
+                  <FileKey size={15} /> {t('pv.kdbx.action')}
+                </h4>
+                <p className="text-xs text-text-muted mt-1">{t('pv.kdbx.hint')}</p>
+              </div>
+              <SecretInput
+                value={kdbxPassword}
+                onChange={setKdbxPassword}
+                placeholder={t('pv.kdbx.password')}
+                onEnter={kdbxPassword ? doKdbxImport : undefined}
+              />
+              {kdbxError && <div className="text-sm text-error">{kdbxError}</div>}
+              <div className="flex gap-2">
+                <button
+                  onClick={doKdbxImport}
+                  disabled={kdbxBusy || !kdbxPassword}
+                  className="btn btn-primary btn-sm flex-1"
+                >
+                  {kdbxBusy ? <Loader2 size={14} className="animate-spin" /> : <FileKey size={14} />}
+                  {t('pv.kdbx.choose')}
+                </button>
+                <button
+                  onClick={() => { setKdbxOpen(false); setKdbxPassword(''); setKdbxError(''); }}
+                  className="btn btn-secondary btn-sm"
+                >
+                  {t('common.cancel')}
+                </button>
+              </div>
+              <p className="text-xs text-text-muted">{t('pv.kdbx.safety')}</p>
             </div>
           )}
 

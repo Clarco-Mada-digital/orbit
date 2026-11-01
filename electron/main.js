@@ -19,6 +19,7 @@ import * as shields from './shields.js';
 import * as shieldRules from './shields-rules.js';
 import * as vault from './vault.js';
 import * as vaultBackup from './vault-backup.js';
+import { readDatabase as readKdbx } from './kdbx.js';
 import * as sitePermissions from './site-permissions.js';
 import * as tts from './tts.js';
 import * as downloader from './downloader.js';
@@ -6068,6 +6069,41 @@ handleFromUi('vault:import', (e, { id } = {}) =>
 handleFromUi('vault:export', (e, { id, password, format, passphrase } = {}) =>
   vault.exportToFile(id, { password, format, passphrase, window: vaultWindow(e) })
 );
+// Import direct d'une base KeePass (.kdbx). Voie complète : elle n'a besoin
+// ni que KeePassXC tourne, ni d'association, et rapporte TOUTES les entrées —
+// y compris celles sans URL, que le protocole navigateur ne peut pas rendre.
+//
+// Le mot de passe de la base vient de l'interface, sert à l'ouvrir, et n'est
+// ni conservé ni journalisé. Le fichier est lu en lecture seule.
+handleFromUi('vault:importKdbx', async (e, { id, password, keyFile } = {}) => {
+  const picked = await dialog.showOpenDialog(vaultWindow(e), {
+    title: 'Ouvrir une base KeePass',
+    filters: [{ name: 'Base KeePass', extensions: ['kdbx'] }],
+    properties: ['openFile'],
+  });
+  if (picked.canceled || !picked.filePaths[0]) return { success: false, error: 'canceled' };
+
+  const read = await readKdbx({
+    path: picked.filePaths[0],
+    password,
+    keyFilePath: typeof keyFile === 'string' && keyFile ? keyFile : null,
+  });
+  if (!read.success) {
+    credLog(`importKdbx refusé : ${read.error}`);
+    return read;
+  }
+  const res = await vault.importRows(id, read.rows, {
+    window: vaultWindow(e),
+    categories: read.categories,
+  });
+  if (!res.success) return res;
+  credLog(
+    `importKdbx base="${read.name}" entrees=${read.total} vides=${read.skipped.empty} ` +
+      `corbeille=${read.skipped.recycled} nouvelles=${res.imported} fusionnees=${res.merged}`
+  );
+  return { ...res, total: read.total, skipped: read.skipped, name: read.name };
+});
+
 handleFromUi('vault:importArchive', (e, { id, passphrase } = {}) =>
   vault.importArchive(id, { passphrase, window: vaultWindow(e) })
 );
@@ -6075,9 +6111,12 @@ handleFromUi('vault:importArchive', (e, { id, passphrase } = {}) =>
 // Rapatriement de la base KeePassXC dans un trousseau. Les mots de passe
 // passent de KeePassXC au trousseau chiffré SANS traverser le renderer : seul
 // le compte-rendu (des nombres et des titres) remonte à l'interface.
-handleFromUi('vault:importKeepass', async (e, { id } = {}) => {
+handleFromUi('vault:importKeepass', async (e, { id, urls } = {}) => {
   try {
     const collected = await keepassCollectAll({
+      // Sites des apps d'Orbit : servent de repli quand KeePassXC ne sait pas
+      // énumérer sa base (versions antérieures à la 2.8).
+      fallbackUrls: Array.isArray(urls) ? urls.filter((u) => typeof u === 'string') : [],
       onProgress: ({ done, total }) => {
         if (!e.sender.isDestroyed()) {
           e.sender.send('vault:importKeepassProgress', { done, total });
@@ -6088,12 +6127,16 @@ handleFromUi('vault:importKeepass', async (e, { id } = {}) => {
     const res = await vault.importRows(id, collected.rows, { window: vaultWindow(e) });
     if (!res.success) return res;
     credLog(
-      `importKeepass base=${collected.scanned} urls=${collected.urls} echecs=${collected.failed} ` +
-        `nouvelles=${res.imported} fusionnees=${res.merged} ecrasees=${res.overwritten}`
+      `importKeepass mode=${collected.mode} base=${collected.scanned} urls=${collected.urls} ` +
+        `echecs=${collected.failed} nouvelles=${res.imported} fusionnees=${res.merged} ` +
+        `ecrasees=${res.overwritten}`
     );
     return {
       ...res,
+      mode: collected.mode,
+      reason: collected.reason,
       scanned: collected.scanned,
+      sites: collected.urls,
       failed: collected.failed,
       withoutUrl: collected.withoutUrl,
     };

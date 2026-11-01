@@ -8,6 +8,26 @@ Format : une section `## [X.Y.Z] — AAAA-MM-JJ` par version, puis des
 sous-sections `### Ajouté` / `### Modifié` / `### Corrigé` / `### Sécurité`.
 La plus récente en premier.
 
+## [1.17.2] — 2026-11-01
+
+### Ajouté
+- **Ouverture directe d'une base KeePass (.kdbx)** — Transférer → « Ouvrir une
+  base KeePass ». C'est la voie COMPLÈTE : elle n'exige ni que KeePassXC
+  tourne, ni association, et reprend **toutes** les entrées, y compris celles
+  sans adresse de site, que le protocole navigateur ne peut pas rendre. Les
+  groupes de la base deviennent des catégories ; la corbeille et les entrées
+  vides sont écartées. Le fichier est lu en LECTURE SEULE et son mot de passe
+  n'est ni conservé ni journalisé. KDBX 4 (Argon2) pris en charge.
+
+### Corrigé
+- **Le rapatriement KeePassXC répondait « Action incorrecte ».** L'action
+  `get-database-entries` n'existe que depuis KeePassXC 2.8 ; sur 2.7.x — la
+  version la plus répandue — la base ne peut pas être énumérée. Orbit interroge
+  désormais, dans ce cas, les adresses de ses propres apps (ce que `get-logins`
+  sait faire sur toutes les versions) et l'écran annonce clairement que
+  l'import est partiel, en indiquant les deux moyens de tout rapatrier :
+  KeePassXC 2.8+, ou l'ouverture directe du fichier .kdbx ci-dessus.
+
 ## [1.17.1] — 2026-11-01
 
 ### Corrigé

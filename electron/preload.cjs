@@ -345,7 +345,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     exportFile: (id, password, format, passphrase) =>
       ipcRenderer.invoke('vault:export', { id, password, format, passphrase }),
     // Rapatrie la base KeePassXC ouverte dans ce trousseau
-    importKeepass: (id) => ipcRenderer.invoke('vault:importKeepass', { id }),
+    importKeepass: (id, urls) => ipcRenderer.invoke('vault:importKeepass', { id, urls }),
+    // Ouvre un fichier .kdbx directement (sans KeePassXC). Le mot de passe de
+    // la base part au processus principal et n'en revient jamais.
+    importKdbx: (id, password, keyFile) =>
+      ipcRenderer.invoke('vault:importKdbx', { id, password, keyFile }),
     onKeepassImportProgress: (callback) => {
       const handler = (_event, payload) => callback(payload);
       ipcRenderer.on('vault:importKeepassProgress', handler);

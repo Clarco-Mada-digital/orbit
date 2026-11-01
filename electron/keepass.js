@@ -29,7 +29,7 @@ import fs from 'fs';
 import path from 'path';
 import net from 'net';
 import os from 'os';
-import { uniqueUrls, buildImportRows, entriesWithoutUrl } from './keepass-import.js';
+import { buildImportRows, entriesWithoutUrl, chooseScanUrls } from './keepass-import.js';
 
 // Conversions via Buffer (nacl.util n'est plus fourni par tweetnacl récent)
 const b64 = (bytes) => Buffer.from(bytes).toString('base64');
@@ -490,7 +490,15 @@ const isAllEntriesDeniedError = (msg) =>
 // base.
 const isEmptyDatabaseError = (msg) => /no groups found/i.test(String(msg || ''));
 
+// KeePassXC répond « Incorrect action » (traduit, d'où le test sur les deux
+// langues) quand l'action lui est inconnue : `get-database-entries` n'existe
+// que depuis la 2.8. Sur 2.7.x — la version encore la plus répandue — il faut
+// donc passer par le repli, pas afficher un sigle incompréhensible.
+const isUnknownActionError = (msg) =>
+  /incorrect action/i.test(String(msg || '')) || /action incorrecte/i.test(String(msg || ''));
+
 function mapListingError(msg) {
+  if (isUnknownActionError(msg)) return 'unsupported-action';
   if (isAllEntriesDeniedError(msg)) return 'all-entries-denied';
   if (isEmptyDatabaseError(msg)) return 'database-locked-or-empty';
   return String(msg);
@@ -545,11 +553,14 @@ export async function getDatabaseEntries() {
 // afficher une demande d'autorisation. Les paralléliser multiplierait les
 // dialogues sans rien accélérer. `onProgress` permet d'afficher l'avancement
 // plutôt que de laisser l'interface muette pendant une base de 300 entrées.
-export async function collectAllCredentials({ onProgress } = {}) {
+export async function collectAllCredentials({ fallbackUrls = [], onProgress } = {}) {
   const listing = await getDatabaseEntries();
-  if (!listing.success) return listing;
+  // Sur une version sans `get-database-entries`, on interroge les sites des
+  // apps d'Orbit plutôt que d'abandonner (voir chooseScanUrls).
+  const plan = chooseScanUrls(listing, fallbackUrls);
+  if (!plan) return listing;
 
-  const urls = uniqueUrls(listing.entries);
+  const { urls, entries: listed, mode } = plan;
   const loginsByUrl = new Map();
   let failed = 0;
   for (let i = 0; i < urls.length; i += 1) {
@@ -566,11 +577,15 @@ export async function collectAllCredentials({ onProgress } = {}) {
 
   return {
     success: true,
-    rows: buildImportRows(listing.entries, loginsByUrl),
-    scanned: listing.entries.length,
+    rows: buildImportRows(listed, loginsByUrl),
+    // En mode « apps », la base n'a pas été énumérée : on ne prétend pas
+    // savoir combien d'entrées elle contient.
+    mode,
+    reason: plan.reason || null,
+    scanned: listed.length,
     urls: urls.length,
     failed,
-    withoutUrl: entriesWithoutUrl(listing.entries),
+    withoutUrl: entriesWithoutUrl(listed),
   };
 }
 

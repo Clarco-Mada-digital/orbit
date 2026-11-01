@@ -44,6 +44,29 @@ export function uniqueUrls(dbEntries = []) {
   return urls;
 }
 
+// Que faut-il interroger ?
+//
+// `get-database-entries` n'existe QUE depuis KeePassXC 2.8 : sur 2.7.x, il
+// répond « action incorrecte » et on ne peut pas énumérer la base. Le
+// rapatriement n'est pas perdu pour autant — `get-logins` marche sur toutes
+// les versions, il faut juste lui fournir les sites à interroger. Orbit en
+// connaît une liste pertinente : les adresses de ses propres apps.
+//
+// On obtient alors les identifiants des sites que l'utilisateur utilise
+// vraiment dans Orbit, ce qui couvre l'essentiel du besoin. Le reste de la
+// base demande KeePassXC 2.8, ou son export CSV.
+//
+// `mode` dit laquelle des deux sources a servi, pour que l'écran l'annonce
+// au lieu de laisser croire à un import exhaustif.
+export function chooseScanUrls(listing, fallbackUrls = []) {
+  if (listing?.success) {
+    return { mode: 'database', urls: uniqueUrls(listing.entries), entries: listing.entries };
+  }
+  const candidates = uniqueUrls((fallbackUrls || []).map((url) => ({ url })));
+  if (candidates.length === 0) return null; // rien à proposer : l'erreur remonte
+  return { mode: 'apps', urls: candidates, entries: [], reason: listing?.error || 'unknown' };
+}
+
 // Entrées de la base qui n'ont aucune URL exploitable : on remonte leur titre
 // pour que l'utilisateur sache exactement ce qui n'a pas suivi.
 export function entriesWithoutUrl(dbEntries = []) {

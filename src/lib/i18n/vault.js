@@ -128,6 +128,23 @@ export const fr = {
   'pv.deleteVaultWarning':
     'Suppression définitive de toutes ses entrées. Saisissez le mot de passe maître pour confirmer.',
   'pv.transfer': 'Transférer',
+  'pv.kdbx.action': 'Ouvrir une base KeePass (.kdbx)',
+  'pv.kdbx.hint':
+    'Importe directement le fichier de votre base, sans que KeePassXC ait besoin de tourner. C’est la voie complète : toutes les entrées sont reprises, y compris celles sans adresse de site, et les groupes deviennent des catégories.',
+  'pv.kdbx.password': 'Mot de passe maître de la base',
+  'pv.kdbx.choose': 'Choisir le fichier .kdbx…',
+  'pv.kdbx.safety':
+    'Le fichier est ouvert en LECTURE SEULE : votre base n’est jamais modifiée. Son mot de passe sert à l’ouvrir puis est oublié — il n’est ni enregistré ni journalisé. La corbeille de la base n’est pas importée.',
+  'pv.kdbx.done':
+    '{n} identifiant(s) ajouté(s), {merged} fusionné(s) — {total} entrée(s) lues, {skipped} écartée(s) (vides ou en corbeille).',
+  'pv.kdbx.err.badPassword':
+    'Mot de passe incorrect. Si votre base utilise aussi un FICHIER CLÉ, elle ne peut pas encore être ouverte ici.',
+  'pv.kdbx.err.notKdbx': 'Ce fichier n’est pas une base KeePass (.kdbx).',
+  'pv.kdbx.err.unsupported':
+    'Format de base non pris en charge. Ouvrez-la dans KeePassXC et enregistrez-la au format KDBX 4.',
+  'pv.kdbx.err.corrupt': 'Ce fichier est abîmé et n’a pas pu être lu.',
+  'pv.kdbx.err.unreadable': 'Fichier illisible : vérifiez les droits d’accès.',
+  'pv.kdbx.err.generic': 'L’ouverture de la base a échoué.',
   'pv.import': 'Importer (CSV / JSON)',
   'pv.imported':
     '{n} entrée(s) importée(s), {merged} fusionnée(s), {overwritten} écrasée(s), {skipped} doublon(s) ignoré(s)',
@@ -165,6 +182,12 @@ export const fr = {
     'KeePassXC refuse de lister ses entrées. Cochez « Allow limited access to all entries in connected databases » dans Paramètres → Intégration navigateur → Avancé, puis réessayez.',
   'pv.kpImport.notAssociated':
     "Orbit n'est pas encore associé à une base KeePassXC. Faites-le dans Réglages → KeePassXC.",
+  'pv.kpImport.summaryApps':
+    '{sites} site(s) de vos apps interrogés — {n} ajouté(s), {merged} fusionné(s), {overwritten} écrasé(s).',
+  'pv.kpImport.partialVersion':
+    'Votre version de KeePassXC ne sait pas lister sa base : seules les adresses de vos apps Orbit ont été interrogées. Pour tout rapatrier, passez à KeePassXC 2.8 ou plus récent, ou exportez votre base en CSV depuis KeePassXC puis utilisez « Importer (CSV / JSON) ».',
+  'pv.kpImport.partialDenied':
+    'KeePassXC n’a pas autorisé la lecture de sa base : seules les adresses de vos apps Orbit ont été interrogées. Cochez « Allow limited access to all entries in connected databases » dans ses paramètres pour tout rapatrier.',
   'pv.kpImport.dbLocked':
     'KeePassXC n’a renvoyé aucune entrée : sa base est verrouillée (ou vide). Déverrouillez-la, puis réessayez.',
   'pv.audit': 'Contrôle de santé',
@@ -405,6 +428,23 @@ export const en = {
   'pv.deleteVaultWarning':
     'Permanently deletes all its entries. Enter the master password to confirm.',
   'pv.transfer': 'Transfer',
+  'pv.kdbx.action': 'Open a KeePass database (.kdbx)',
+  'pv.kdbx.hint':
+    'Imports your database file directly, with no need for KeePassXC to be running. This is the complete route: every entry is taken, including those without a site address, and groups become categories.',
+  'pv.kdbx.password': 'Database master password',
+  'pv.kdbx.choose': 'Choose the .kdbx file…',
+  'pv.kdbx.safety':
+    'The file is opened READ-ONLY: your database is never modified. Its password is used to open it and then forgotten — never stored, never logged. The database’s recycle bin is not imported.',
+  'pv.kdbx.done':
+    '{n} credentials added, {merged} merged — {total} entries read, {skipped} set aside (empty or in the recycle bin).',
+  'pv.kdbx.err.badPassword':
+    'Wrong password. If your database also uses a KEY FILE, it cannot be opened here yet.',
+  'pv.kdbx.err.notKdbx': 'This file is not a KeePass database (.kdbx).',
+  'pv.kdbx.err.unsupported':
+    'Unsupported database format. Open it in KeePassXC and save it as KDBX 4.',
+  'pv.kdbx.err.corrupt': 'This file is damaged and could not be read.',
+  'pv.kdbx.err.unreadable': 'Unreadable file: check the access rights.',
+  'pv.kdbx.err.generic': 'Opening the database failed.',
   'pv.import': 'Import (CSV / JSON)',
   'pv.imported':
     '{n} entries imported, {merged} merged, {overwritten} overwritten, {skipped} duplicate row(s) skipped',
@@ -441,6 +481,12 @@ export const en = {
     'KeePassXC refuses to list its entries. Tick “Allow limited access to all entries in connected databases” under Settings → Browser Integration → Advanced, then try again.',
   'pv.kpImport.notAssociated':
     'Orbit is not associated with a KeePassXC database yet. Do that in Settings → KeePassXC.',
+  'pv.kpImport.summaryApps':
+    '{sites} of your apps’ sites queried — {n} added, {merged} merged, {overwritten} overwritten.',
+  'pv.kpImport.partialVersion':
+    'Your KeePassXC version cannot list its database: only your Orbit apps’ addresses were queried. To import everything, upgrade to KeePassXC 2.8 or later, or export your database to CSV from KeePassXC and use “Import (CSV / JSON)”.',
+  'pv.kpImport.partialDenied':
+    'KeePassXC did not allow reading its database: only your Orbit apps’ addresses were queried. Tick “Allow limited access to all entries in connected databases” in its settings to import everything.',
   'pv.kpImport.dbLocked':
     'KeePassXC returned no entries: its database is locked (or empty). Unlock it, then try again.',
   'pv.audit': 'Health check',
