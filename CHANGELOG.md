@@ -8,6 +8,20 @@ Format : une section `## [X.Y.Z] — AAAA-MM-JJ` par version, puis des
 sous-sections `### Ajouté` / `### Modifié` / `### Corrigé` / `### Sécurité`.
 La plus récente en premier.
 
+## [1.17.1] — 2026-11-01
+
+### Corrigé
+- **Le menu « Transférer » du coffre ne faisait rien.** Son détecteur de clic
+  extérieur s'exécutait en phase capture : il refermait le menu avant que le
+  clic n'atteigne l'entrée choisie. « Rapatrier la base KeePassXC », comme les
+  trois autres actions, restait donc sans effet.
+- **Ce menu s'ouvrait vers la gauche** et passait sous la colonne des sections
+  des réglages, où ses entrées devenaient illisibles.
+- **Réglages tronqués à droite** : la colonne de contenu gardait
+  `min-width: auto`, donc elle refusait de rétrécir sous la largeur de son
+  contenu. Une seule URL longue dans une entrée du coffre élargissait toute la
+  colonne, et le panneau rognait le reste — barre d'outils et textes coupés.
+
 ## [1.17.0] — 2026-11-01
 
 ### Ajouté

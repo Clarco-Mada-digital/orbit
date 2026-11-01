@@ -638,14 +638,24 @@ function EntryRow({ vaultId, entry, categories, onEdit, onDeleted, onToast }) {
 function TransferMenu({ busy, onImportFile, onImportKeepass, onRestoreArchive, onExport }) {
   const t = useT();
   const [open, setOpen] = useState(false);
+  const rootRef = useRef(null);
 
-  // Un clic ailleurs referme le menu — y compris dans la page derrière lui.
+  // Fermeture au clic EXTÉRIEUR.
+  //
+  // Surtout pas en phase capture sur `window` : le clic sur une entrée du menu
+  // passerait d'abord par ce gestionnaire, qui démonterait l'entrée avant que
+  // React ne lui délivre son `onClick`. Le menu se refermait alors sans rien
+  // exécuter — exactement le symptôme « je clique, il ne se passe rien ».
+  //
+  // On écoute donc `mousedown` en phase de bulle, et on ne ferme que si le
+  // clic est tombé hors du menu.
   useEffect(() => {
     if (!open) return undefined;
-    const close = () => setOpen(false);
-    // `capture` : on veut fermer même si l'élément cliqué arrête la propagation.
-    window.addEventListener('click', close, true);
-    return () => window.removeEventListener('click', close, true);
+    const onDown = (e) => {
+      if (!rootRef.current?.contains(e.target)) setOpen(false);
+    };
+    window.addEventListener('mousedown', onDown);
+    return () => window.removeEventListener('mousedown', onDown);
   }, [open]);
 
   const items = [
@@ -656,12 +666,9 @@ function TransferMenu({ busy, onImportFile, onImportKeepass, onRestoreArchive, o
   ];
 
   return (
-    <div className="relative">
+    <div className="relative" ref={rootRef}>
       <button
-        onClick={(e) => {
-          e.stopPropagation();
-          setOpen((v) => !v);
-        }}
+        onClick={() => setOpen((v) => !v)}
         className="btn btn-secondary btn-sm"
         aria-haspopup="menu"
         aria-expanded={open}
@@ -673,7 +680,7 @@ function TransferMenu({ busy, onImportFile, onImportKeepass, onRestoreArchive, o
       {open && (
         <div
           role="menu"
-          className="absolute right-0 z-20 mt-1 w-64 rounded-lg border border-border bg-bg-elevated shadow-lg p-1"
+          className="absolute left-0 z-30 mt-1 w-64 max-w-[calc(100vw-2rem)] rounded-lg border border-border bg-bg-elevated shadow-lg p-1"
         >
           {items.map(({ id, icon: Icon, label, run }) => (
             <button

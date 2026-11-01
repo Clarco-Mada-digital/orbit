@@ -279,7 +279,12 @@ export default function Settings({ onClose }) {
           </div>
 
           {/* Content */}
-          <div className="flex-1 flex flex-col">
+          {/* `min-w-0` : sans lui, un enfant flex garde `min-width: auto`, donc
+              la colonne refuse de descendre sous la largeur « min-content » de
+              son contenu. Une seule URL longue dans une entrée du coffre
+              suffisait alors à élargir toute la colonne, et le panneau
+              rognait le reste — barre d'outils et textes coupés à droite. */}
+          <div className="flex-1 flex flex-col min-w-0">
             <div className="h-16 border-b border-border flex items-center justify-between px-6">
               <h3 className="text-lg font-semibold">
                 {tabs.find((t) => t.id === activeTab)?.name}
@@ -289,7 +294,7 @@ export default function Settings({ onClose }) {
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-6">
+            <div className="flex-1 overflow-y-auto p-6 min-w-0">
               {/* Téléchargements : où enregistrer, et si l'on demande à chaque
                   fois. Le dossier reste facultatif — rien de réglé = le dossier
                   Téléchargements du système, comme avant. */}
