@@ -8,7 +8,7 @@ import { extractOpenables } from './open-links.js';
 import * as defaultApp from './default-app.js';
 import { collectBackupFiles, stageRestore, applyPendingRestore } from './backup-files.js';
 import { unpackCrx } from './crx.js';
-import { init as initKeepass, setEnabled as keepassSetEnabled, getLogins as keepassGetLogins, associate as keepassAssociate, checkStatus as keepassCheckStatus } from './keepass.js';
+import { init as initKeepass, setEnabled as keepassSetEnabled, getLogins as keepassGetLogins, associate as keepassAssociate, checkStatus as keepassCheckStatus, collectAllCredentials as keepassCollectAll } from './keepass.js';
 import * as security from './security.js';
 import {
   permissionCheckAllowed,
@@ -18,6 +18,7 @@ import * as adblock from './adblock.js';
 import * as shields from './shields.js';
 import * as shieldRules from './shields-rules.js';
 import * as vault from './vault.js';
+import * as vaultBackup from './vault-backup.js';
 import * as sitePermissions from './site-permissions.js';
 import * as tts from './tts.js';
 import * as downloader from './downloader.js';
@@ -6029,6 +6030,12 @@ function handleFromUi(channel, fn) {
 handleFromUi('vault:state', () => vault.getState());
 handleFromUi('vault:create', (_e, payload) => vault.create(payload));
 handleFromUi('vault:unlock', (_e, { id, password } = {}) => vault.unlock(id, password));
+// Mémorisation facultative du mot de passe maître dans le trousseau de l'OS.
+// Le mot de passe ne revient jamais à l'interface : elle demande le
+// déverrouillage, le processus principal le fait.
+handleFromUi('vault:unlockRemembered', (_e, { id } = {}) => vault.unlockRemembered(id));
+handleFromUi('vault:remember', (_e, { id, password } = {}) => vault.rememberMaster(id, password));
+handleFromUi('vault:forgetRemembered', (_e, { id } = {}) => vault.forgetMaster(id));
 handleFromUi('vault:lock', (_e, { id } = {}) => (id ? vault.lock(id) : vault.lockAll()));
 handleFromUi('vault:update', (_e, { id, ...patch } = {}) => vault.updateVault(id, patch));
 handleFromUi('vault:changeMaster', (_e, { id, current, next } = {}) =>
@@ -6058,9 +6065,64 @@ handleFromUi('vault:generate', (_e, opts = {}) =>
 handleFromUi('vault:import', (e, { id } = {}) =>
   vault.importFromFile(id, { window: vaultWindow(e) })
 );
-handleFromUi('vault:export', (e, { id, password, format } = {}) =>
-  vault.exportToFile(id, { password, format, window: vaultWindow(e) })
+handleFromUi('vault:export', (e, { id, password, format, passphrase } = {}) =>
+  vault.exportToFile(id, { password, format, passphrase, window: vaultWindow(e) })
 );
+handleFromUi('vault:importArchive', (e, { id, passphrase } = {}) =>
+  vault.importArchive(id, { passphrase, window: vaultWindow(e) })
+);
+
+// Rapatriement de la base KeePassXC dans un trousseau. Les mots de passe
+// passent de KeePassXC au trousseau chiffré SANS traverser le renderer : seul
+// le compte-rendu (des nombres et des titres) remonte à l'interface.
+handleFromUi('vault:importKeepass', async (e, { id } = {}) => {
+  try {
+    const collected = await keepassCollectAll({
+      onProgress: ({ done, total }) => {
+        if (!e.sender.isDestroyed()) {
+          e.sender.send('vault:importKeepassProgress', { done, total });
+        }
+      },
+    });
+    if (!collected.success) return collected;
+    const res = await vault.importRows(id, collected.rows, { window: vaultWindow(e) });
+    if (!res.success) return res;
+    credLog(
+      `importKeepass base=${collected.scanned} urls=${collected.urls} echecs=${collected.failed} ` +
+        `nouvelles=${res.imported} fusionnees=${res.merged} ecrasees=${res.overwritten}`
+    );
+    return {
+      ...res,
+      scanned: collected.scanned,
+      failed: collected.failed,
+      withoutUrl: collected.withoutUrl,
+    };
+  } catch (err) {
+    return { success: false, error: String(err.message || err) };
+  }
+});
+// Sauvegarde automatique chiffrée des trousseaux. La phrase de passe part vers
+// le trousseau de l'OS et ne revient jamais à l'interface (voir vault-backup.js).
+handleFromUi('vaultBackup:state', () => ({ success: true, ...vaultBackup.getState() }));
+handleFromUi('vaultBackup:configure', (_e, payload = {}) => vaultBackup.configure(payload));
+handleFromUi('vaultBackup:forgetPassphrase', () => vaultBackup.forgetPassphrase());
+handleFromUi('vaultBackup:run', () => vaultBackup.runNow({ manual: true }));
+handleFromUi('vaultBackup:pickDir', async (e) => {
+  const res = await dialog.showOpenDialog(vaultWindow(e), {
+    title: 'Dossier des sauvegardes chiffrées',
+    defaultPath: vaultBackup.getState().dir || vaultBackup.suggestedDir(),
+    properties: ['openDirectory', 'createDirectory'],
+  });
+  if (res.canceled || !res.filePaths[0]) return { success: false, error: 'canceled' };
+  return vaultBackup.configure({ dir: res.filePaths[0] });
+});
+handleFromUi('vaultBackup:reveal', () => {
+  const dir = vaultBackup.getState().dir;
+  if (!dir) return { success: false, error: 'dir-required' };
+  shell.openPath(dir);
+  return { success: true };
+});
+
 handleFromUi('vault:ignored', () => ({ success: true, domains: vault.ignoredDomains() }));
 handleFromUi('vault:unignore', (_e, { domain } = {}) => vault.unignoreDomain(domain));
 
@@ -6089,6 +6151,16 @@ function senderUrl(event, fallback) {
 let credentialSource = 'both';
 const useKeepass = () => credentialSource === 'both' || credentialSource === 'keepass';
 const useVault = () => credentialSource === 'both' || credentialSource === 'vault';
+
+// Le code à usage unique est proposé dans les pages par défaut, mais c'est un
+// secret de plus qui sort du coffre sur un clic : l'utilisateur peut l'écarter
+// (Réglages → Mots de passe → source des identifiants).
+let offerTotp = true;
+
+handleFromUi('credentials:setTotpOffer', (_event, enabled) => {
+  offerTotp = enabled !== false;
+  return { success: true, offerTotp };
+});
 
 handleFromUi('credentials:setSource', (_event, source) => {
   const allowed = ['both', 'keepass', 'vault', 'none'];
@@ -6132,7 +6204,9 @@ ipcMain.handle('credentials:getLogins', async (event, { url: claimed } = {}) => 
     const key = `${e.login}|${e.password}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    merged.push(e);
+    // Option coupée : la page n'apprend même pas qu'un code existe, donc elle
+    // n'affiche pas de bouton qui serait refusé au clic.
+    merged.push(offerTotp ? e : { ...e, hasTotp: false });
   }
 
   credLog(
@@ -6184,6 +6258,37 @@ ipcMain.handle('credentials:shouldOffer', (event) => {
 // La page ne transmet PAS le mot de passe : il n'a jamais quitté le processus
 // principal (voir stashPending / takePending). Elle indique seulement dans quel
 // trousseau ranger la soumission mise de côté.
+// Code TOTP demandé par la page, au moment où elle en a besoin.
+//
+// La page nomme une entrée (vaultId + entryId), mais ne peut pas se servir de
+// ça pour lire l'entrée d'un AUTRE site : on revérifie que cette entrée fait
+// bien partie des identifiants du domaine réellement affiché par l'émetteur.
+// Sans ce contrôle, une page malveillante pourrait réclamer le code d'une
+// banque en devinant un identifiant d'entrée.
+ipcMain.handle('credentials:totp', (event, { vaultId, entryId, copy } = {}) => {
+  if (!useVault()) return { success: false, error: 'vault-disabled' };
+  if (!offerTotp) return { success: false, error: 'totp-disabled' };
+  const url = senderUrl(event);
+  if (!url) return { success: false, error: 'no-url' };
+  const allowed = vault
+    .findLogins(url)
+    .entries.some((e) => e.vaultId === vaultId && e.entryId === entryId);
+  if (!allowed) {
+    credLog(`totp REFUSÉ pour ${hostOf(url)} — entrée hors du domaine émetteur`);
+    return { success: false, error: 'forbidden' };
+  }
+  // Pas de champ à remplir dans la page : le code est copié ICI et n'entre
+  // jamais dans le contexte du site. Le presse-papiers est vidé après 30 s.
+  if (copy) {
+    const res = vault.copySecret(vaultId, entryId, 'totp');
+    credLog(`totp ${hostOf(url)} → ${res.success ? 'copié' : res.error}`);
+    return res;
+  }
+  const res = vault.entryTotp(vaultId, entryId);
+  credLog(`totp ${hostOf(url)} → ${res.success ? 'fourni' : res.error}`);
+  return res;
+});
+
 ipcMain.handle('credentials:save', (event, { vaultId, entryId, title } = {}) => {
   const rec = pendingCredentials.get(event.sender.id);
   if (!rec) return { success: false, error: 'no-pending' };
@@ -6552,6 +6657,11 @@ app.whenReady().then(() => {
   // Coffre-fort intégré : prépare le dossier des trousseaux (rien n'est
   // déverrouillé au démarrage — il faut toujours saisir le mot de passe maître)
   vault.init(app.getPath('userData'));
+
+  // Sauvegarde automatique chiffrée des trousseaux. Elle ne peut archiver que
+  // ce qui est ouvert : le planificateur ne fait donc rien tant que
+  // l'utilisateur n'a pas déverrouillé un trousseau au moins une fois.
+  vaultBackup.init(app.getPath('userData'), vault);
 
   // Autorisations par site (caméra, micro, position…) : décisions mémorisées
   sitePermissions.init(app.getPath('userData'));

@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { optionalImport, missingDepsReason } from './helpers/optional-dep.mjs';
 import { appendSessionMessages, createAssistantSession } from '../src/lib/assistantSessions.js';
 
 // Comme pour fly-pages.test.js : zustand lit `window.localStorage`, absent sous
@@ -25,7 +26,21 @@ memory.set(
   })
 );
 
-const { useStore } = await import('../src/stores/useStore.js');
+// Le magasin repose sur zustand, absent pendant `npm test` (contrainte du
+// projet : la suite tourne sans `node_modules`). On ne le simule PAS — on
+// testerait notre imitation plutôt que le magasin. Les tests sont donc ignorés
+// avec une raison lisible quand le paquet manque, et s'exécutent normalement
+// dès que les dépendances sont installées (donc en CI).
+//
+// La logique PURE que ces tests effleuraient vit désormais dans des modules
+// sans dépendance, vérifiés sans rien installer : lib/flyPages.js
+// (test/flyPages.test.js) et lib/assistantSessions.js
+// (test/assistantSessions.test.js).
+const store = await optionalImport(
+  new URL('../src/stores/useStore.js', import.meta.url).href
+);
+const skip = store ? false : missingDepsReason('zustand');
+const useStore = store?.useStore ?? { getState: () => ({}) };
 
 const sessions = () => useStore.getState().assistantSessions;
 
@@ -40,12 +55,12 @@ function chatSession(id, text, now) {
   );
 }
 
-test('une installation existante démarre avec un historique vide', () => {
+test('une installation existante démarre avec un historique vide', { skip }, () => {
   assert.deepEqual(sessions(), []);
   assert.ok(Array.isArray(sessions()));
 });
 
-test('une conversation est enregistrée et persiste dans le stockage', () => {
+test('une conversation est enregistrée et persiste dans le stockage', { skip }, () => {
   useStore.getState().saveAssistantSession(chatSession('s-1', 'Bonjour Orbit', NOW));
 
   assert.equal(sessions().length, 1);
@@ -59,7 +74,7 @@ test('une conversation est enregistrée et persiste dans le stockage', () => {
   assert.equal(persisted[0].messages.at(-1).content, 'Réponse à Bonjour Orbit');
 });
 
-test('continuer une conversation met à jour la session au lieu d’en créer une', () => {
+test('continuer une conversation met à jour la session au lieu d’en créer une', { skip }, () => {
   const current = sessions().find((session) => session.id === 's-1');
   const continued = appendSessionMessages(
     current,
@@ -78,7 +93,7 @@ test('continuer une conversation met à jour la session au lieu d’en créer un
   assert.equal(sessions()[0].updatedAt, NOW + DAY);
 });
 
-test('renommer et supprimer une conversation', () => {
+test('renommer et supprimer une conversation', { skip }, () => {
   useStore.getState().saveAssistantSession(chatSession('s-2', 'Idées de vacances', NOW - DAY));
   assert.deepEqual(sessions().map((session) => session.id), ['s-1', 's-2']);
 
@@ -95,7 +110,7 @@ test('renommer et supprimer une conversation', () => {
   assert.equal(sessions().length, 1);
 });
 
-test('tout effacer vide l’historique, y compris dans le stockage', () => {
+test('tout effacer vide l’historique, y compris dans le stockage', { skip }, () => {
   useStore.getState().clearAssistantSessions();
   assert.deepEqual(sessions(), []);
   const persisted = JSON.parse(memory.get('orbit-storage')).state.assistantSessions;

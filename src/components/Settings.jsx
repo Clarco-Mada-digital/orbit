@@ -40,6 +40,8 @@ import { shortcutKeys } from '../lib/shortcuts';
 import { useT } from '../lib/i18n';
 import SitePermissions from './SitePermissions';
 import ShieldSettings from './ShieldSettings';
+import HistorySettings from './HistorySettings';
+import SearchSettings from './SearchSettings';
 import { getBuiltinSound, resolveSoundUrl, playSound } from '../lib/sounds';
 import SoundPicker from './SoundPicker';
 import { normalizeHome, HOME_BACKGROUNDS, ACCENT_BACKGROUND } from '../lib/home';
@@ -364,6 +366,8 @@ export default function Settings({ onClose }) {
                       <option value="en">English</option>
                     </select>
                   </div>
+
+                  <SearchSettings />
 
                   <div className="card">
                     <h4 className="font-semibold mb-4">{t('st.startup')}</h4>
@@ -1093,6 +1097,8 @@ export default function Settings({ onClose }) {
               {activeTab === 'privacy' && (
                 <div className="space-y-6">
                   <SitePermissions />
+
+                  <HistorySettings />
 
                   <ShieldSettings />
 

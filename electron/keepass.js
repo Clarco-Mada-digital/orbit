@@ -29,6 +29,7 @@ import fs from 'fs';
 import path from 'path';
 import net from 'net';
 import os from 'os';
+import { uniqueUrls, buildImportRows, entriesWithoutUrl } from './keepass-import.js';
 
 // Conversions via Buffer (nacl.util n'est plus fourni par tweetnacl récent)
 const b64 = (bytes) => Buffer.from(bytes).toString('base64');
@@ -383,7 +384,14 @@ export async function testAssociate() {
 
 // Récupère les identifiants pour une URL (appelé par le preload des webviews)
 export async function getLogins(url) {
+  // `enabled` reflète le réglage « source des identifiants » : il gouverne
+  // l'AUTO-REMPLISSAGE des pages, pas le rapatriement manuel de la base, qui
+  // passe par fetchLogins (voir collectAllCredentials).
   if (!state.enabled) return { success: false, error: 'disabled' };
+  return fetchLogins(url);
+}
+
+async function fetchLogins(url) {
   const assocs = state.config.associations || [];
   if (assocs.length === 0) return { success: false, error: 'not-associated' };
 
@@ -461,6 +469,109 @@ export async function getLogins(url) {
     name: e.name || e.login || '',
   }));
   return { success: true, count: entries.length, entries };
+}
+
+// ---------------------------------------------------------------------------
+// Rapatriement de toute la base vers un trousseau Orbit
+// ---------------------------------------------------------------------------
+// `get-database-entries` ne rend que titre + URL + UUID (jamais les mots de
+// passe), et uniquement si l'utilisateur a coché, dans KeePassXC → Paramètres →
+// Intégration navigateur → Avancé : « Allow limited access to all entries in
+// connected databases ». Sans ce réglage, KeePassXC répond
+// ERROR_KEEPASS_ACCESS_TO_ALL_ENTRIES_DENIED — on le traduit en code lisible
+// pour que l'interface puisse dire quoi cocher au lieu d'afficher un sigle.
+const isAllEntriesDeniedError = (msg) =>
+  /access to all entries/i.test(String(msg || '')) || /denied/i.test(String(msg || ''));
+
+// Quand la base est VERROUILLÉE (ou vide), KeePassXC ne rend pas d'erreur
+// d'autorisation : il rend une liste vide, qu'il signale par
+// ERROR_KEEPASS_NO_GROUPS_FOUND. Le confondre avec un refus d'accès enverrait
+// l'utilisateur modifier un réglage déjà correct au lieu de déverrouiller sa
+// base.
+const isEmptyDatabaseError = (msg) => /no groups found/i.test(String(msg || ''));
+
+function mapListingError(msg) {
+  if (isAllEntriesDeniedError(msg)) return 'all-entries-denied';
+  if (isEmptyDatabaseError(msg)) return 'database-locked-or-empty';
+  return String(msg);
+}
+
+export async function getDatabaseEntries() {
+  const assocs = state.config.associations || [];
+  if (assocs.length === 0) return { success: false, error: 'not-associated' };
+
+  const run = async () => {
+    if (!state.hostPublicKey) await changePublicKeys();
+    await ensureValidated();
+    const sealed = encrypt({ action: 'get-database-entries' });
+    const res = await requestSafe({
+      action: 'get-database-entries',
+      message: sealed.message,
+      nonce: sealed.nonce,
+      clientID: state.config.clientId,
+    });
+    if (!res) throw new Error('Pas de réponse de KeePassXC');
+    if (res.error) return { success: false, error: mapListingError(res.error) };
+    const data = decrypt(res.message, res.nonce);
+    if (data && data.error) return { success: false, error: mapListingError(data.error) };
+    return {
+      success: true,
+      entries: (data.entries || []).map((e) => ({
+        uuid: e.uuid || '',
+        title: e.title || e.name || '',
+        url: e.url || '',
+      })),
+    };
+  };
+
+  try {
+    return await run();
+  } catch (err) {
+    // KeePassXC a peut-être redémarré (clés de session périmées) : on rééchange
+    // les clés publiques et on réessaie une fois, comme pour get-logins.
+    state.hostPublicKey = null;
+    try {
+      return await run();
+    } catch {
+      throw err;
+    }
+  }
+}
+
+// Parcourt la base et rend des lignes d'import prêtes pour le coffre.
+//
+// Les requêtes sont SÉQUENTIELLES, volontairement : KeePassXC traite un seul
+// message à la fois sur son socket, et chaque URL inconnue peut lui faire
+// afficher une demande d'autorisation. Les paralléliser multiplierait les
+// dialogues sans rien accélérer. `onProgress` permet d'afficher l'avancement
+// plutôt que de laisser l'interface muette pendant une base de 300 entrées.
+export async function collectAllCredentials({ onProgress } = {}) {
+  const listing = await getDatabaseEntries();
+  if (!listing.success) return listing;
+
+  const urls = uniqueUrls(listing.entries);
+  const loginsByUrl = new Map();
+  let failed = 0;
+  for (let i = 0; i < urls.length; i += 1) {
+    onProgress?.({ done: i, total: urls.length });
+    try {
+      const res = await fetchLogins(urls[i]);
+      if (res.success) loginsByUrl.set(urls[i], res.entries || []);
+      else failed += 1;
+    } catch {
+      failed += 1;
+    }
+  }
+  onProgress?.({ done: urls.length, total: urls.length });
+
+  return {
+    success: true,
+    rows: buildImportRows(listing.entries, loginsByUrl),
+    scanned: listing.entries.length,
+    urls: urls.length,
+    failed,
+    withoutUrl: entriesWithoutUrl(listing.entries),
+  };
 }
 
 // État complet pour l'interface (Paramètres → KeePassXC)

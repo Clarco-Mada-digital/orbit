@@ -26,7 +26,7 @@
 // entrées est envoyée SANS les mots de passe, qui ne sortent que sur demande
 // explicite (afficher / copier / remplir).
 // ---------------------------------------------------------------------------
-import { clipboard, dialog } from 'electron';
+import { clipboard, dialog, safeStorage } from 'electron';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
@@ -34,6 +34,12 @@ import { getDomain, getHostname } from 'tldts-experimental';
 import { checkPwnedPasswords } from './pwned-passwords.js';
 import { scorePassword } from './password-strength.js';
 import { applyImportedFields } from './vault-import.js';
+import {
+  sealArchive,
+  openArchive,
+  ARCHIVE_EXTENSION,
+  MIN_PASSPHRASE_LENGTH,
+} from './vault-archive.js';
 
 // scrypt : N=32768 → ~33 Mo, environ 100 ms par dérivation sur une machine de
 // bureau. Assez lent pour ruiner une attaque hors-ligne, assez rapide pour un
@@ -59,6 +65,8 @@ export function init(userDataPath) {
   invalidateVaultCount();
   vaultDir = path.join(userDataPath, 'vaults');
   ignoreFile = path.join(userDataPath, 'vault-ignore.json');
+  rememberFile = path.join(userDataPath, 'vault-remember.json');
+  loadRemembered();
   try {
     fs.mkdirSync(vaultDir, { recursive: true });
   } catch (err) {
@@ -219,6 +227,9 @@ export function list() {
       updatedAt: h.updatedAt,
       unlocked: Boolean(session),
       entryCount: session ? session.payload.entries.length : null,
+      // Mot de passe maître mémorisé par le trousseau de l'OS sur cet
+      // appareil : l'interface propose alors « déverrouiller sans saisie ».
+      remembered: Boolean(remembered[h.id]),
     };
   });
 }
@@ -310,6 +321,9 @@ export function changeMasterPassword(id, current, next) {
   };
   const key = deriveKey(next, nextHeader.kdf.salt);
   persist(nextHeader, key, payload);
+  // Une mémorisation porte l'ANCIEN mot de passe : la garder donnerait un
+  // déverrouillage sans saisie qui échoue. L'utilisateur la remet s'il veut.
+  forgetMaster(id);
   lock(id);
   open.set(id, {
     key,
@@ -361,6 +375,9 @@ export function remove(id, password) {
   } catch {
     return { success: false, error: 'delete-failed' };
   }
+  // Le mot de passe d'un trousseau supprimé n'a plus rien à garder : il ne
+  // doit pas rester dans le trousseau de l'OS.
+  forgetMaster(id);
   invalidateVaultCount();
   return { success: true };
 }
@@ -546,6 +563,10 @@ export function findLogins(url) {
         vaultId: id,
         vaultName: session.header?.name || '',
         entryId: e.id,
+        // Le SECRET TOTP ne sort pas : seulement le fait qu'il existe. La page
+        // demande le code au moment voulu (credentials:totp), ce qui évite de
+        // poser une graine permanente dans un site tiers.
+        hasTotp: Boolean(e.totp),
       });
     }
   }
@@ -870,8 +891,34 @@ export async function importFromFile(id, { window } = {}) {
     return { success: false, error: 'unreadable', detail: String(err.message || err) };
   }
 
-  // Dédoublonnage : réimporter le même fichier deux fois ne doit pas créer
-  // 400 doublons. Clé = domaine + identifiant.
+  return applyRows(id, session, rows, { window });
+}
+
+// Demande quoi faire des doublons, une seule fois pour tout l'import. Rien ne
+// distingue un dialogue par entrée d'un refus d'importer : sur un export de
+// navigateur de 300 lignes, personne ne clique 300 fois.
+async function askDuplicateMode(count, window) {
+  const choice = await dialog.showMessageBox(window || undefined, {
+    type: 'question',
+    title: 'Identifiants déjà présents',
+    message: `${count} identifiant(s) correspondent déjà à ce site et à ce nom d’utilisateur.`,
+    detail:
+      'Fusionner complète les champs vides sans remplacer les données existantes. Écraser remplace les champs fournis par la source. Les champs absents ou vides sont conservés dans les deux cas.',
+    buttons: ['Fusionner', 'Écraser les doublons', 'Annuler'],
+    defaultId: 0,
+    cancelId: 2,
+    noLink: true,
+  });
+  if (choice.response === 2) return null;
+  return choice.response === 1 ? 'overwrite' : 'merge';
+}
+
+// Cœur commun aux trois sources d'import (fichier CSV/JSON, base KeePassXC,
+// archive chiffrée). Dédoublonnage sur DOMAINE + NOM D'UTILISATEUR : c'est ce
+// qui identifie un compte pour l'utilisateur, alors qu'un titre ou une URL
+// complète varie d'un gestionnaire à l'autre. Réimporter la même source deux
+// fois ne doit pas créer 400 doublons.
+async function applyRows(id, session, rows, { window } = {}) {
   const existingEntries = new Map(
     session.payload.entries.map((entry) => [
       `${domainOf(entry.url)}|${entry.username || ''}`,
@@ -885,22 +932,14 @@ export async function importFromFile(id, { window } = {}) {
       .map((row) => `${domainOf(row.url)}|${row.username || ''}`)
       .filter((key) => seen.has(key))
   );
-  const duplicateCount = conflicts.size;
   let duplicateMode = 'merge';
-  if (duplicateCount > 0) {
-    const choice = await dialog.showMessageBox(window || undefined, {
-      type: 'question',
-      title: 'Identifiants déjà présents',
-      message: `${duplicateCount} identifiant(s) correspondent déjà à ce site et à ce nom d’utilisateur.`,
-      detail:
-        'Fusionner complète les champs vides sans remplacer les données existantes. Écraser remplace les champs fournis par le fichier. Les champs absents ou vides sont conservés dans les deux cas.',
-      buttons: ['Fusionner', 'Écraser les doublons', 'Annuler'],
-      defaultId: 0,
-      cancelId: 2,
-      noLink: true,
-    });
-    if (choice.response === 2) return { success: false, error: 'canceled' };
-    duplicateMode = choice.response === 1 ? 'overwrite' : 'merge';
+  if (conflicts.size > 0) {
+    duplicateMode = await askDuplicateMode(conflicts.size, window);
+    if (!duplicateMode) return { success: false, error: 'canceled' };
+    // Le dialogue peut rester ouvert longtemps : le trousseau a pu se
+    // verrouiller entre-temps, auquel cas la session en main n'est plus celle
+    // du coffre et persister écrirait avec une clé effacée.
+    if (open.get(id) !== session) return { success: false, error: 'locked' };
   }
 
   let imported = 0;
@@ -947,7 +986,7 @@ export async function importFromFile(id, { window } = {}) {
       password: String(row.password || ''),
       totp: normalizeTotpSecret(row.totp),
       notes: String(row.notes || ''),
-      category: '',
+      category: row.category || '',
       favorite: false,
       createdAt: now(),
       updatedAt: now(),
@@ -960,11 +999,27 @@ export async function importFromFile(id, { window } = {}) {
   return { success: true, imported, merged, overwritten, skipped };
 }
 
+// ---------------------------------------------------------------------------
+// Rapatriement depuis KeePassXC
+// ---------------------------------------------------------------------------
+// Les lignes arrivent du pont KeePassXC (electron/keepass.js) ; ce module ne
+// fait que les fusionner, avec le même dédoublonnage que l'import de fichier.
+// Les mots de passe ne font donc qu'un aller-retour KeePassXC → main process →
+// trousseau chiffré : ils ne passent jamais par le renderer.
+export async function importRows(id, rows, { window } = {}) {
+  const session = requireOpen(id);
+  if (!session) return { success: false, error: 'locked' };
+  if (!Array.isArray(rows) || rows.length === 0) {
+    return { success: true, imported: 0, merged: 0, overwritten: 0, skipped: 0 };
+  }
+  return applyRows(id, session, rows, { window });
+}
+
 // Export : exige de RESAISIR le mot de passe maître. Un export CSV/JSON est en
 // clair — c'est le seul geste de l'application qui sorte les secrets du coffre,
 // il ne doit pas pouvoir être déclenché par un simple clic sur un écran laissé
 // sans surveillance.
-export async function exportToFile(id, { password, format = 'csv', window } = {}) {
+export async function exportToFile(id, { password, format = 'csv', passphrase, window } = {}) {
   const header = readHeader(id);
   if (!header) return { success: false, error: 'not-found' };
   let key;
@@ -976,6 +1031,20 @@ export async function exportToFile(id, { password, format = 'csv', window } = {}
     return { success: false, error: 'bad-password' };
   } finally {
     key?.fill(0);
+  }
+
+  // Format « archive » : fichier CHIFFRÉ, destiné à la sauvegarde. C'est le
+  // seul export qu'on puisse poser sur une clé USB ou un cloud sans y déposer
+  // ses mots de passe en clair — et le seul qui restitue le trousseau entier
+  // (catégories, URLs secondaires, historique) à la réimportation.
+  if (format === 'archive') {
+    // Phrase de passe dédiée, ou le mot de passe maître à défaut : une archive
+    // n'est jamais écrite sans chiffrement, quelle que soit la saisie.
+    const secret = String(passphrase || '') || String(password || '');
+    if (secret.length < MIN_PASSPHRASE_LENGTH) {
+      return { success: false, error: 'weak-passphrase' };
+    }
+    return writeArchive(header, payload, secret, window);
   }
 
   const ext = format === 'json' ? 'json' : 'csv';
@@ -1015,6 +1084,270 @@ export async function exportToFile(id, { password, format = 'csv', window } = {}
   } catch (err) {
     return { success: false, error: 'write-failed', detail: String(err.message || err) };
   }
+}
+
+const safeFileName = (name) =>
+  String(name || 'trousseau')
+    .replace(/[^\p{L}\p{N}_-]+/gu, '-')
+    .toLowerCase();
+
+async function writeArchive(header, payload, passphrase, window) {
+  const res = await dialog.showSaveDialog(window || undefined, {
+    title: 'Sauvegarder le trousseau (fichier chiffré)',
+    defaultPath: `orbit-${safeFileName(header.name)}-${new Date()
+      .toISOString()
+      .slice(0, 10)}.${ARCHIVE_EXTENSION}`,
+    filters: [{ name: 'Archive Orbit chiffrée', extensions: [ARCHIVE_EXTENSION] }],
+  });
+  if (res.canceled || !res.filePath) return { success: false, error: 'canceled' };
+  try {
+    const envelope = sealArchive({
+      passphrase,
+      payload,
+      meta: { vaultName: header.name },
+    });
+    fs.writeFileSync(res.filePath, JSON.stringify(envelope), { mode: 0o600 });
+    return {
+      success: true,
+      path: res.filePath,
+      count: payload.entries.length,
+      encrypted: true,
+    };
+  } catch (err) {
+    if (err.code === 'weak-passphrase') return { success: false, error: 'weak-passphrase' };
+    return { success: false, error: 'write-failed', detail: String(err.message || err) };
+  }
+}
+
+// Réimporte une archive chiffrée. Contrairement au CSV, l'archive porte la
+// forme interne des entrées : on restitue aussi les catégories, les URLs
+// secondaires, les favoris et l'historique des mots de passe. Une sauvegarde
+// qui revient appauvrie n'est pas une sauvegarde.
+export async function importArchive(id, { passphrase, window } = {}) {
+  const session = requireOpen(id);
+  if (!session) return { success: false, error: 'locked' };
+  if (!String(passphrase || '')) return { success: false, error: 'passphrase-required' };
+
+  const picked = await dialog.showOpenDialog(window || undefined, {
+    title: 'Restaurer une archive chiffrée',
+    filters: [{ name: 'Archive Orbit chiffrée', extensions: [ARCHIVE_EXTENSION, 'json'] }],
+    properties: ['openFile'],
+  });
+  if (picked.canceled || !picked.filePaths[0]) return { success: false, error: 'canceled' };
+
+  let archive;
+  try {
+    archive = openArchive({
+      passphrase,
+      envelope: JSON.parse(fs.readFileSync(picked.filePaths[0], 'utf8')),
+    });
+  } catch (err) {
+    if (err.code === 'bad-passphrase') return { success: false, error: 'bad-passphrase' };
+    if (err.code === 'unsupported-version') return { success: false, error: 'unsupported-version' };
+    return { success: false, error: 'not-an-archive' };
+  }
+  if (open.get(id) !== session) return { success: false, error: 'locked' };
+
+  // Catégories d'abord : sans elles, les entrées restaurées pointeraient vers
+  // des catégories inexistantes et retomberaient dans « Sans catégorie ».
+  const categories = session.payload.categories || [];
+  const knownCategories = new Set(categories.map((c) => c.id));
+  let addedCategories = 0;
+  for (const category of archive.categories) {
+    if (!category?.id || knownCategories.has(category.id)) continue;
+    knownCategories.add(category.id);
+    categories.push({
+      id: category.id,
+      name: String(category.name || '').trim() || 'Sans nom',
+      color: category.color || '#6b7280',
+    });
+    addedCategories += 1;
+  }
+  session.payload.categories = categories;
+
+  const existingEntries = new Map(
+    session.payload.entries.map((entry) => [
+      `${domainOf(entry.url)}|${entry.username || ''}`,
+      entry,
+    ])
+  );
+  const conflicts = archive.entries.filter((entry) =>
+    existingEntries.has(`${domainOf(entry.url)}|${entry.username || ''}`)
+  );
+  let duplicateMode = 'merge';
+  if (conflicts.length > 0) {
+    duplicateMode = await askDuplicateMode(conflicts.length, window);
+    if (!duplicateMode) return { success: false, error: 'canceled' };
+    if (open.get(id) !== session) return { success: false, error: 'locked' };
+  }
+
+  const usedIds = new Set(session.payload.entries.map((e) => e.id));
+  let imported = 0;
+  let merged = 0;
+  let overwritten = 0;
+  let changedExisting = false;
+  for (const entry of archive.entries) {
+    const key = `${domainOf(entry.url)}|${entry.username || ''}`;
+    const existing = existingEntries.get(key);
+    if (existing) {
+      changedExisting =
+        applyImportedFields(
+          existing,
+          {
+            title: String(entry.title || '').trim(),
+            url: String(entry.url || '').trim(),
+            username: String(entry.username || ''),
+            password: String(entry.password || ''),
+            totp: normalizeTotpSecret(entry.totp),
+            notes: String(entry.notes || ''),
+          },
+          duplicateMode,
+          now()
+        ) || changedExisting;
+      if (duplicateMode === 'overwrite') overwritten += 1;
+      else merged += 1;
+      continue;
+    }
+    // Les identifiants d'entrée viennent de l'archive : on les garde quand ils
+    // sont libres (une restauration conserve les mêmes entrées), on en génère
+    // un neuf en cas de collision avec une entrée déjà là.
+    const entryId = entry.id && !usedIds.has(entry.id) ? entry.id : newId('e');
+    usedIds.add(entryId);
+    const restored = {
+      id: entryId,
+      title: String(entry.title || '').trim() || hostLabel(entry.url) || 'Sans titre',
+      url: String(entry.url || '').trim(),
+      extraUrls: Array.isArray(entry.extraUrls) ? entry.extraUrls.filter(Boolean) : [],
+      username: String(entry.username || ''),
+      password: String(entry.password || ''),
+      totp: normalizeTotpSecret(entry.totp),
+      notes: String(entry.notes || ''),
+      category: knownCategories.has(entry.category) ? entry.category : '',
+      favorite: Boolean(entry.favorite),
+      createdAt: entry.createdAt || now(),
+      updatedAt: entry.updatedAt || now(),
+      passwordUpdatedAt: entry.passwordUpdatedAt || entry.updatedAt || now(),
+      history: Array.isArray(entry.history) ? entry.history.slice(0, 5) : [],
+    };
+    existingEntries.set(key, restored);
+    session.payload.entries.push(restored);
+    imported += 1;
+  }
+
+  if (imported || changedExisting || addedCategories) {
+    persist(headerOf(id), session.key, session.payload);
+  }
+  return { success: true, imported, merged, overwritten, skipped: 0, categories: addedCategories };
+}
+
+// ---------------------------------------------------------------------------
+// Mémorisation du mot de passe maître sur CET appareil (facultatif)
+// ---------------------------------------------------------------------------
+// Ce que ça change, honnêtement : le mot de passe maître n'est plus seulement
+// dans la tête de l'utilisateur, il est aussi dans le trousseau de l'OS. Ce
+// trousseau est lié à la session du système : un attaquant qui ouvre une
+// session sous ce compte peut donc déverrouiller le coffre sans rien savoir.
+//
+// Pourquoi le proposer quand même : sans ça, un verrouillage automatique à
+// 15 minutes pousse à l'une des deux issues suivantes — mettre le
+// verrouillage à « jamais », ou choisir un mot de passe maître court et facile
+// à retaper. Les deux sont pires. L'option est donc OPT-IN, par trousseau, et
+// dit clairement ce qu'elle implique.
+//
+// Le mot de passe est vérifié avant d'être mémorisé (on refuse d'enregistrer
+// une saisie fausse, qui donnerait un bouton « déverrouiller » qui échoue).
+let rememberFile = null;
+let remembered = {}; // id -> mot de passe maître chiffré par safeStorage (base64)
+
+function loadRemembered() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(rememberFile, 'utf8'));
+    remembered = raw && typeof raw === 'object' ? raw : {};
+  } catch {
+    remembered = {};
+  }
+}
+
+function saveRemembered() {
+  try {
+    fs.writeFileSync(rememberFile, JSON.stringify(remembered), { mode: 0o600 });
+  } catch (err) {
+    console.error('[vault] mémorisation non sauvegardée:', err.message);
+  }
+}
+
+function keychainAvailable() {
+  try {
+    return safeStorage.isEncryptionAvailable();
+  } catch {
+    return false;
+  }
+}
+
+export function rememberMaster(id, password) {
+  const header = readHeader(id);
+  if (!header) return { success: false, error: 'not-found' };
+  if (!keychainAvailable()) return { success: false, error: 'no-keychain' };
+  // Vérification : un mot de passe faux mémorisé ne se verrait qu'au prochain
+  // déverrouillage, bien trop tard pour comprendre pourquoi.
+  let key;
+  try {
+    key = deriveKey(password, header.kdf.salt);
+    unseal(header, key);
+  } catch {
+    return { success: false, error: 'bad-password' };
+  } finally {
+    key?.fill(0);
+  }
+  try {
+    remembered[id] = safeStorage.encryptString(String(password)).toString('base64');
+  } catch {
+    return { success: false, error: 'no-keychain' };
+  }
+  saveRemembered();
+  return { success: true };
+}
+
+export function forgetMaster(id) {
+  if (id) delete remembered[id];
+  else remembered = {};
+  saveRemembered();
+  return { success: true };
+}
+
+// Déverrouillage sans saisie, à partir du trousseau de l'OS.
+export function unlockRemembered(id) {
+  const stored = remembered[id];
+  if (!stored) return { success: false, error: 'not-remembered' };
+  if (!keychainAvailable()) return { success: false, error: 'no-keychain' };
+  let password;
+  try {
+    password = safeStorage.decryptString(Buffer.from(stored, 'base64'));
+  } catch {
+    // Trousseau de l'OS inaccessible ou changé : la mémorisation est caduque.
+    delete remembered[id];
+    saveRemembered();
+    return { success: false, error: 'not-remembered' };
+  }
+  const res = unlock(id, password);
+  // Le mot de passe maître a pu être changé depuis : on ne garde pas une
+  // mémorisation qui ne marche plus.
+  if (!res.success) forgetMaster(id);
+  return res;
+}
+
+// Contenu complet d'un trousseau DÉJÀ OUVERT, pour la sauvegarde automatique
+// (electron/vault-backup.js). Réservé au processus principal : cette fonction
+// n'est branchée à AUCUN canal IPC, et ne doit jamais l'être — c'est le seul
+// point du module qui rende les mots de passe en bloc sans redemander le mot de
+// passe maître. Elle s'appuie sur le fait que la clé est déjà en mémoire parce
+// que l'utilisateur a déverrouillé le trousseau lui-même.
+export function exportPayload(id) {
+  const session = open.get(id);
+  if (!session) return { success: false, error: 'locked' };
+  // Copie figée : l'appelant chiffre à son rythme, sans risque de lire un
+  // payload modifié entre-temps par une écriture.
+  return { success: true, payload: JSON.parse(JSON.stringify(session.payload)) };
 }
 
 // État global pour l'interface

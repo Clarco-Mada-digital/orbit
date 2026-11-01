@@ -82,6 +82,21 @@ function AssistantMarkdown({ content }) {
           th: ({ children }) => <th className="border-b border-border px-3 py-2 font-semibold">{children}</th>,
           td: ({ children }) => <td className="border-t border-border/70 px-3 py-2">{children}</td>,
           hr: () => <hr className="my-4 border-border" />,
+          // Notes de bas de page (GFM) : remark les regroupe dans une
+          // <section>. Sans style, elles se confondaient avec le dernier
+          // paragraphe de la réponse.
+          section: ({ children, className, ...props }) =>
+            className?.includes('footnotes') ? (
+              <section
+                {...props}
+                className="mt-4 border-t border-border pt-2 text-xs text-text-muted"
+              >
+                {children}
+              </section>
+            ) : (
+              <section {...props} className={className}>{children}</section>
+            ),
+          sup: ({ children }) => <sup className="text-accent-primary">{children}</sup>,
           img: ({ alt }) => alt
             ? <span className="rounded bg-bg-primary/70 px-1.5 py-0.5 text-xs text-text-muted">{alt}</span>
             : null,

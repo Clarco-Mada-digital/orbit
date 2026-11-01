@@ -1,4 +1,4 @@
-import { KeyRound, Vault, Layers, Ban } from 'lucide-react';
+import { KeyRound, Vault, Layers, Ban, Timer } from 'lucide-react';
 import { useStore } from '../stores/useStore';
 import { useT } from '../lib/i18n';
 
@@ -20,6 +20,13 @@ export default function CredentialSource() {
   const { settings, updateSettings } = useStore();
   const t = useT();
   const source = settings.credentials?.source || 'both';
+  const useVaultSource = source === 'both' || source === 'vault';
+  const offerTotp = settings.credentials?.totp !== false;
+
+  const setTotp = (value) => {
+    updateSettings({ credentials: { ...(settings.credentials || {}), totp: value } });
+    window.electronAPI?.credentialsSetTotpOffer?.(value);
+  };
 
   const choose = (value) => {
     updateSettings({ credentials: { ...(settings.credentials || {}), source: value } });
@@ -38,7 +45,7 @@ export default function CredentialSource() {
       </h4>
       <p className="text-sm text-text-muted mb-4">{t('cred.desc')}</p>
 
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mb-4">
         {OPTIONS.map(({ id, icon: Icon }) => {
           const active = source === id;
           return (
@@ -68,6 +75,27 @@ export default function CredentialSource() {
           );
         })}
       </div>
+
+      {/* Le code à usage unique est un secret de plus qui sort du coffre sur un
+          clic : il se coupe séparément, et seulement si le coffre est
+          effectivement interrogé dans les pages. */}
+      {useVaultSource && (
+        <label className="flex items-center justify-between gap-3 pt-3 border-t border-border">
+          <span className="flex items-start gap-3 min-w-0">
+            <Timer size={16} className={`mt-0.5 flex-shrink-0 ${offerTotp ? 'text-accent-primary' : 'text-text-muted'}`} />
+            <span className="min-w-0">
+              <span className="block font-medium text-sm">{t('cred.totp')}</span>
+              <span className="block text-xs text-text-muted">{t('cred.totpDesc')}</span>
+            </span>
+          </span>
+          <input
+            type="checkbox"
+            checked={offerTotp}
+            onChange={(e) => setTotp(e.target.checked)}
+            className="flex-shrink-0 w-12 h-6 bg-bg-hover rounded-full relative cursor-pointer appearance-none checked:bg-accent-primary transition-colors after:content-[''] after:absolute after:top-1 after:left-1 after:w-4 after:h-4 after:bg-white after:rounded-full after:transition-transform checked:after:translate-x-6"
+          />
+        </label>
+      )}
     </div>
   );
 }

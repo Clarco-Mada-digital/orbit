@@ -2,9 +2,12 @@ name: Tests
 
 # Deux jobs volontairement séparés :
 #
-#  - `test` : testeur intégré de Node. Les tests du store importent désormais
-#    Zustand directement, donc l'installation complète du lockfile est requise
-#    pour exécuter la suite comme l'application.
+#  - `test` : testeur intégré de Node. La suite est conçue pour passer AU VERT
+#    sans `node_modules` (on doit pouvoir vérifier une modification sans rien
+#    installer) : les quelques tests qui exercent une vraie bibliothèque —
+#    react-markdown, zustand — s'ignorent alors proprement, avec une raison
+#    lisible (voir test/helpers/optional-dep.mjs). D'où le `npm ci` ICI : c'est
+#    ce qui les fait réellement s'exécuter, au lieu d'être ignorés partout.
 #
 #  - `lint` : ESLint a besoin de ses paquets, d'où le `npm ci`. Le plafond
 #    `--max-warnings` (dans package.json) empêche la dette de repartir à la

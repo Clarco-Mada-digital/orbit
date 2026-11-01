@@ -109,6 +109,37 @@ leurs raccourcis propres.
 Les raccourcis IA peuvent être configurés. La liste à jour et les réglages
 personnalisés se trouvent dans Orbit.
 
+### Ce que la palette sait faire
+
+`Alt/⌘ + K` ne cherche pas que des apps. Elle calcule (`4*4`, `20% de 150`),
+convertit (`10 km en mi`, `255 in hex`), ouvre une adresse, retrouve une page
+**déjà visitée** et, si un trousseau est déverrouillé, **copie un mot de passe**
+ou un code à usage unique sans passer par les réglages. Le mot de passe ne
+transite pas par l’interface : Orbit l’écrit lui-même dans le presse-papiers et
+le vide après 30 secondes. Les identifiants n’apparaissent qu’à partir de deux
+caractères saisis — jamais à l’ouverture de la palette.
+
+### Historique de navigation
+
+Les pages visitées alimentent cette recherche. Pour l’effacer :
+
+- dans la palette, le bouton 🗑 d’une page (ou `Maj + Suppr`) l’oublie seule ;
+- les commandes **« oublier la dernière heure »** et **« vider tout
+  l’historique »** s’y trouvent aussi, avec une confirmation ;
+- **Réglages → Confidentialité → Historique de navigation** indique ce qui est
+  mémorisé, permet d’arrêter l’enregistrement et de vider par période.
+
+Les pages de connexion et les adresses porteuses de jetons ne sont jamais
+enregistrées, et l’historique ne quitte pas la machine : il n’entre pas dans la
+synchronisation.
+
+### Choisir ce que la palette cherche
+
+**Réglages → Général → Recherche (Alt+K)** active ou coupe séparément chaque
+source : pages déjà visitées, pages ouvertes en ce moment, identifiants des
+trousseaux déverrouillés et code à usage unique. Les apps, profils, actions,
+calculs et conversions restent toujours disponibles.
+
 ## 5. Assistant IA et relecture
 
 Orbit propose un assistant de discussion, des outils de résumé et de rédaction,
@@ -141,8 +172,67 @@ Pwned ; le service voit néanmoins l’adresse IP et l’heure de la requête.
 Consultez les explications affichées dans les réglages de santé avant de
 l’activer.
 
-Les trousseaux peuvent être exportés et importés. Vérifiez le contenu d’une
-archive importée et conservez les exports dans un emplacement protégé.
+### Rapatrier une base KeePassXC
+
+Si vous utilisez KeePassXC, le bouton **🗄 Rapatrier la base KeePassXC** de la
+barre d’outils du trousseau recopie ses identifiants dans le trousseau Orbit
+ouvert. KeePassXC doit tourner, sa base être déverrouillée, Orbit être associé
+(Réglages → KeePassXC) et l’option **« Allow limited access to all entries in
+connected databases »** être cochée dans KeePassXC → Paramètres → Intégration
+navigateur → Avancé.
+
+Les entrées déjà présentes ne sont pas dupliquées : Orbit les reconnaît par
+domaine et nom d’utilisateur, puis vous demande s’il faut les fusionner
+(compléter les champs vides) ou les écraser. Les entrées KeePassXC **sans URL**
+ne peuvent pas être récupérées — le protocole ne rend les mots de passe que site
+par site ; Orbit en donne la liste à la fin pour que vous les repreniez à la
+main.
+
+### Déverrouillage et code 2FA
+
+Au déverrouillage, une case permet de **mémoriser le mot de passe maître sur
+cet appareil**. Il est alors gardé par le trousseau du système, jamais en clair
+sur le disque — mais quiconque ouvre une session sous votre compte pourra
+ouvrir ce trousseau sans le connaître. C’est à vous de juger ; l’option est
+désactivée par défaut, par trousseau, et s’oublie d’elle-même si vous changez
+le mot de passe maître.
+
+Pour les comptes à double facteur, un bouton **⏱ Code 2FA** apparaît dans la
+page après un remplissage : il remplit le champ de code, ou le copie si le
+champ n’existe pas encore. Il se coupe dans **Réglages → Mots de passe**, avec
+le choix des sources d’identifiants.
+
+### Sauvegarde automatique
+
+**Réglages → Mots de passe → Sauvegarde automatique chiffrée** écrit à
+intervalle régulier une archive `.orbitvault` dans le dossier de votre choix,
+en ne conservant que les N dernières. Deux points à connaître :
+
+- la **phrase de passe** des archives est gardée par le trousseau du système.
+  Notez-la ailleurs : sans elle, les archives sont illisibles, y compris pour
+  vous ;
+- seuls les **trousseaux déverrouillés** peuvent être archivés — Orbit n’a pas
+  la clé des autres. L’écran indique lesquels ont été laissés de côté.
+
+Préférez un support différent de celui d’Orbit : une sauvegarde sur le même
+disque ne protège pas d’une panne de ce disque.
+
+### Sauvegarder et exporter à la main
+
+Le bouton **Exporter** propose deux choses différentes :
+
+- **Sauvegarde chiffrée** (recommandé) : un fichier `.orbitvault` chiffré en
+  AES-256-GCM, dont la clé est dérivée par scrypt de la phrase de passe que vous
+  choisissez (à défaut, le mot de passe maître). C’est le format à poser sur une
+  clé USB ou un cloud : il conserve tout le trousseau (catégories, URLs
+  secondaires, favoris, historique des mots de passe) et se restaure dans Orbit
+  avec le bouton **🗃 Restaurer une archive chiffrée**.
+- **Export en clair CSV / JSON** : réservé à une migration vers un autre
+  gestionnaire. Ces fichiers contiennent tous vos mots de passe lisibles ;
+  supprimez-les dès la migration terminée.
+
+Dans les deux cas, l’export exige de resaisir le mot de passe maître — un écran
+laissé sans surveillance ne doit pas pouvoir sortir les secrets d’un clic.
 
 ## 7. Téléchargements et extensions
 
@@ -178,6 +268,21 @@ toutes compatibles avec Electron.
   et notifications d’un Android compatible. Les widgets disponibles sur son
   accueil sont des widgets Orbit ; les widgets Android natifs ne sont pas
   hébergés dans cette interface.
+
+### Visionneuse de documents
+
+Un fichier `.md`, `.txt`, `.json`, `.csv` ou un fichier de code ouvert dans
+Orbit s’affiche dans une visionneuse plutôt que d’être téléchargé. Pour le
+Markdown, le rendu couvre les titres (dièses ou soulignés), les listes et cases
+à cocher, les tableaux, le code, les citations et les **alertes GitHub**
+(`> [!NOTE]`, `> [!WARNING]`…), les **formules mathématiques** TeX (`$x^2$`,
+`$$…$$`, `\(…\)`, `\[…\]`), les **notes de bas de page** numérotées — cliquez le
+renvoi pour y aller, la flèche ↩ pour revenir — et les **lecteurs audio et
+vidéo**.
+
+Pour protéger votre lecture, ni les images ni les médias d’un document distant
+ne sont chargés d’office : un média s’ouvre au clic, une image reste une
+pastille qui mène au navigateur. Le bouton **Source** affiche le fichier brut.
 
 ## 8. Confidentialité et sécurité
 

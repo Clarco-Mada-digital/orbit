@@ -1,13 +1,19 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { getDomain } from 'tldts-experimental';
+import { optionalImport, missingDepsReason } from './helpers/optional-dep.mjs';
 
 import * as rules from '../electron/shields-rules.js';
 
 // electron/shields-rules.js décide, electron/main.js exécute. Ces tests
 // verrouillent les DÉCISIONS — en particulier celles qui cassent un site quand
-// elles sont fausses. Les domaines utilisés sont ceux que tldts considère comme
-// enregistrables (voir `domain()` plus bas).
+// elles sont fausses.
+//
+// Le module testé ne dépend de RIEN : `domain()` ci-dessous reproduit juste ce
+// que la liste publique des suffixes rend pour les domaines utilisés ici, afin
+// que ces tests tournent sans `node_modules`. Le contrat réel de tldts — ce que
+// la bibliothèque répond vraiment — est vérifié séparément, tout en bas, quand
+// le paquet est installé.
+const tldts = await optionalImport('tldts-experimental');
 
 const OFF = {
   enabled: true,
@@ -21,6 +27,21 @@ const OFF = {
 
 function site(over) {
   return { ...OFF, ...over };
+}
+
+// Domaine enregistrable d'un HÔTE. `shields-rules.js` reçoit cette fonction en
+// paramètre (l'application lui passe `getDomain` de tldts) : la version locale
+// reproduit son comportement sur les hôtes utilisés ici, et le test de contrat
+// tout en bas vérifie qu'elles disent bien la même chose.
+//
+// Hôte sans domaine enregistrable (localhost, adresse IP) → null. C'est ce cas
+// qui faisait passer un site pour un tiers vis-à-vis de lui-même avant le repli
+// de `domainForComparison`.
+function getDomain(host) {
+  const h = String(host || '');
+  if (!h || h === 'localhost' || /^[\d.]+$/.test(h)) return null;
+  const labels = h.split('.');
+  return labels.length < 2 ? null : labels.slice(-2).join('.');
 }
 
 function domain(url) {
@@ -239,21 +260,39 @@ test('isSameSite : symétrique et false si un côté manque', () => {
 // ---------------------------------------------------------------------------
 
 test('domainForComparison : repli sur l’hôte quand la liste PSL ne connaît pas le domaine', () => {
-  // C'est CE repli qui manquait : getDomain('localhost') et
-  // getDomain('127.0.0.1') renvoient null, et comparer null à « localhost »
-  // faisait passer le site pour un tiers vis-à-vis de lui-même.
-  assert.equal(getDomain('localhost'), null);
-  assert.equal(getDomain('127.0.0.1'), null);
-  assert.equal(rules.domainForComparison('localhost', getDomain('localhost')), 'localhost');
-  assert.equal(rules.domainForComparison('127.0.0.1', getDomain('127.0.0.1')), '127.0.0.1');
+  // C'est CE repli qui manquait : un hôte sans domaine enregistrable rend
+  // null, et comparer null à « localhost » faisait passer le site pour un
+  // tiers vis-à-vis de lui-même.
+  assert.equal(domain('http://localhost:3000'), null);
+  assert.equal(domain('http://127.0.0.1:8080'), null);
+  assert.equal(rules.domainForComparison('localhost', null), 'localhost');
+  assert.equal(rules.domainForComparison('127.0.0.1', null), '127.0.0.1');
 });
+
+// Contrat de tldts : c'est la seule chose ici qui exige la bibliothèque, parce
+// que c'est SON comportement qu'on vérifie. Si elle se mettait un jour à rendre
+// « localhost » plutôt que null, le repli ci-dessus deviendrait du code mort et
+// il faudrait le savoir.
+test(
+  'tldts : un hôte sans domaine enregistrable rend bien null',
+  { skip: tldts ? false : missingDepsReason('tldts-experimental') },
+  () => {
+    assert.equal(tldts.getDomain('localhost'), null);
+    assert.equal(tldts.getDomain('127.0.0.1'), null);
+    // Et notre `domain()` de test dit la même chose que la bibliothèque sur
+    // les hôtes utilisés par ces tests.
+    for (const host of ['exemple.com', 'cdn.exemple.com', 'a.b.exemple.com', 'tracker.net']) {
+      assert.equal(domain(`https://${host}`), tldts.getDomain(host), host);
+    }
+  }
+);
 
 test('domainForComparison : domaine enregistrable conservé quand il existe', () => {
   assert.equal(
-    rules.domainForComparison('mail.google.com', getDomain('mail.google.com')),
+    rules.domainForComparison('mail.google.com', domain('https://mail.google.com')),
     'google.com'
   );
-  assert.equal(rules.domainForComparison('exemple.com', getDomain('exemple.com')), 'exemple.com');
+  assert.equal(rules.domainForComparison('exemple.com', domain('https://exemple.com')), 'exemple.com');
 });
 
 test('domainForComparison : hôte absent → null', () => {

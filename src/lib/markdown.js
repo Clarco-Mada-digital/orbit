@@ -17,8 +17,16 @@
 // chargées (un document distant pourrait espionner la lecture via une URL
 // unique) — elles deviennent une simple pastille cliquable.
 //
-// Périmètre assumé : titres, paragraphes, emphases/graisse/code inline, code
-// en bloc, listes (imbriquées, à cases), citations, tableaux, filets, liens.
+// Périmètre assumé : titres (dièses et soulignés), paragraphes,
+// emphases/graisse/barré/code inline, échappements, code en bloc, listes
+// (imbriquées, à cases), citations, alertes GFM, tableaux, filets, liens et
+// autoliens, images, MÉDIAS audio/vidéo, FORMULES mathématiques (TeX) et NOTES
+// DE BAS DE PAGE.
+//
+// Les formules sortent en TeX brut (`{ type: 'math', tex }`) : la mise en forme
+// est faite par KaTeX dans le composant, à partir du TeX — jamais à partir de
+// HTML trouvé dans le document. Les médias ne sont pas chargés tant que le
+// lecteur ne le demande pas, pour la même raison que les images.
 // ---------------------------------------------------------------------------
 
 // Délimiteurs de bloc, du plus spécifique au plus général.
@@ -31,6 +39,28 @@ const OL = /^(\s*)(\d{1,9})[.)]\s+(.*)$/;
 const TASK = /^\[([ xX])\]\s+(.*)$/;
 const TABLE_ROW = /^\s*\|(.+)\|\s*$/;
 const TABLE_SEP = /^\s*\|?[\s:|-]+\|[\s:|-]*$/;
+// Formule isolée sur ses propres lignes : $$…$$ ou \[…\]
+const MATH_OPEN = /^\s{0,3}(\$\$|\\\[)\s*(.*)$/;
+// Définition d'une note de bas de page : [^clé]: le texte
+const FOOTNOTE_DEF = /^\s{0,3}\[\^([^\]\s]+)\]:\s*(.*)$/;
+// Titre « souligné » (setext) : la ligne de dessous ne contient que = ou -
+const SETEXT_H1 = /^\s{0,3}=+\s*$/;
+const SETEXT_H2 = /^\s{0,3}-+\s*$/;
+// Alertes GFM : « > [!NOTE] », « > [!WARNING] »… très répandues dans les README
+const ALERT = /^\s*\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*$/i;
+
+// Extensions reconnues comme média. Liste explicite plutôt que « tout ce qui
+// n'est pas une image » : un lecteur ne doit s'ouvrir que sur un format qu'on
+// sait lire, pas sur un .exe déguisé.
+const VIDEO_EXT = /\.(mp4|webm|ogv|m4v|mov)(\?|#|$)/i;
+const AUDIO_EXT = /\.(mp3|wav|ogg|oga|m4a|flac|opus|aac)(\?|#|$)/i;
+
+export function mediaKind(href) {
+  const s = String(href || '');
+  if (VIDEO_EXT.test(s)) return 'video';
+  if (AUDIO_EXT.test(s)) return 'audio';
+  return null;
+}
 
 // Analyse un texte inline : renvoie des nœuds { type, … } que le composant
 // rend en JSX. Ordre des règles = priorité (le code inline d'abord, sinon ses
@@ -41,10 +71,30 @@ export function parseInline(text) {
   // Motifs, dans l'ordre : code `…`, image ![alt](src), lien [txt](href),
   // autolien <http…>, graisse **…**, italique *…*, barré ~~…~~.
   const RULES = [
+    // Formules délimitées à la LaTeX. Elles passent avant l'échappement :
+    // « \( » ouvre une formule, ce n'est pas une parenthèse échappée — c'est la
+    // notation que produisent la plupart des modèles de langage.
+    { re: /\\\[([\s\S]+?)\\\]/, type: 'mathDisplay' },
+    { re: /\\\(([^\n]+?)\\\)/, type: 'math' },
+    // L'échappement passe avant le reste : « \* » doit rester une étoile, pas
+    // ouvrir une emphase. Même raison pour « \$ » dans un texte qui parle
+    // d'argent au milieu d'un document à formules.
+    { re: /\\([\\`*_{}[\]()#+\-.!>~$])/, type: 'escape' },
     { re: /`([^`]+)`/, type: 'code' },
+    // Formules à dollars. Le $ simple exige de ne pas coller un espace à
+    // l'intérieur (« $x$ » oui, « $5 et $6 » non) : sans ça, deux prix dans la
+    // même phrase deviendraient une formule.
+    { re: /\$\$([^$]+)\$\$/, type: 'mathDisplay' },
+    { re: /\$(?!\s)([^$\n]+?)(?<!\s)\$/, type: 'math' },
     { re: /!\[([^\]]*)\]\(\s*([^)\s]+)[^)]*\)/, type: 'image' },
     { re: /\[([^\]]*)\]\(\s*([^)\s]+)[^)]*\)/, type: 'link' },
+    // Renvoi de note de bas de page : [^1]. Après le lien, pour que
+    // « [^1]: définition » ne soit pas pris pour un lien.
+    { re: /\[\^([^\]\s]+)\]/, type: 'fnref' },
     { re: /<(https?:\/\/[^>\s]+)>/, type: 'autolink' },
+    // URL écrite telle quelle, sans crochets : fréquent dans les README et les
+    // messages collés. La ponctuation finale est rendue au texte.
+    { re: /https?:\/\/[^\s<>()[\]]+/, type: 'bareLink' },
     { re: /\*\*([^*]+)\*\*/, type: 'strong' },
     { re: /__([^_]+)__/, type: 'strong' },
     { re: /\*([^*\n]+)\*/, type: 'em' },
@@ -64,11 +114,34 @@ export function parseInline(text) {
     }
     const { rule, m } = best;
     if (m.index > 0) out.push({ type: 'text', text: rest.slice(0, m.index) });
-    if (rule.type === 'link') {
+    if (rule.type === 'escape') {
+      out.push({ type: 'text', text: m[1] });
+    } else if (rule.type === 'link') {
       out.push({ type: 'link', text: m[1] || m[2], href: safeHref(m[2]) });
     } else if (rule.type === 'image') {
-      // Image NON chargée : on garde l'alternative, affichée comme une pastille.
-      out.push({ type: 'image', alt: m[1] || m[2], href: safeHref(m[2]) });
+      const kind = mediaKind(m[2]);
+      if (kind) {
+        // Audio/vidéo : un lecteur, pas une pastille d'image. Comme les
+        // images, la source n'est PAS chargée tant que le lecteur ne clique
+        // pas (une URL unique suffirait sinon à signaler la lecture).
+        out.push({ type: 'media', kind, alt: m[1] || '', href: safeHref(m[2]) });
+      } else {
+        // Image NON chargée : on garde l'alternative, affichée comme une pastille.
+        out.push({ type: 'image', alt: m[1] || m[2], href: safeHref(m[2]) });
+      }
+    } else if (rule.type === 'mathDisplay' || rule.type === 'math') {
+      // TeX conservé tel quel : c'est KaTeX, dans le composant, qui le met en
+      // forme. Le document n'a aucun moyen d'injecter du balisage par ici.
+      out.push({ type: 'math', tex: m[1].trim(), display: rule.type === 'mathDisplay' });
+    } else if (rule.type === 'fnref') {
+      out.push({ type: 'fnref', id: m[1] });
+    } else if (rule.type === 'bareLink') {
+      // « …voir https://exemple.test/page. » → le point final appartient à la
+      // phrase, pas à l'adresse.
+      const raw = m[0].replace(/[.,;:!?»"']+$/, '');
+      out.push({ type: 'link', text: raw, href: safeHref(raw) });
+      rest = rest.slice(m.index + raw.length);
+      continue;
     } else if (rule.type === 'autolink') {
       out.push({ type: 'link', text: m[1], href: safeHref(m[1]) });
     } else if (rule.type === 'code') {
@@ -187,6 +260,10 @@ export function parseMarkdown(source) {
   const text = String(source ?? '').replace(/\r\n?/g, '\n').replace(/\t/g, '    ');
   const lines = text.split('\n');
   const blocks = [];
+  // Notes de bas de page : les définitions sont retirées du flux et regroupées
+  // en fin de document, comme dans un livre — c'est leur intérêt, sinon elles
+  // s'intercaleraient au milieu du texte là où l'auteur les a écrites.
+  const notes = [];
   let i = 0;
 
   while (i < lines.length) {
@@ -227,6 +304,72 @@ export function parseMarkdown(source) {
       continue;
     }
 
+    // Formule en bloc : $$…$$ ou \[…\], sur une ou plusieurs lignes.
+    const mathOpen = MATH_OPEN.exec(line);
+    if (mathOpen) {
+      const closing = mathOpen[1] === '$$' ? /\$\$\s*$/ : /\\\]\s*$/;
+      const body = [];
+      // Formule tenant sur une seule ligne ($$ x = 1 $$)
+      const sameLine = mathOpen[2] || '';
+      if (closing.test(sameLine)) {
+        blocks.push({
+          type: 'math',
+          display: true,
+          tex: sameLine.replace(closing, '').trim(),
+        });
+        i += 1;
+        continue;
+      }
+      if (sameLine) body.push(sameLine);
+      i += 1;
+      while (i < lines.length && !closing.test(lines[i])) {
+        body.push(lines[i]);
+        i += 1;
+      }
+      if (i < lines.length) {
+        const last = lines[i].replace(closing, '');
+        if (last.trim()) body.push(last);
+        i += 1; // la ligne de fermeture
+      }
+      blocks.push({ type: 'math', display: true, tex: body.join('\n').trim() });
+      continue;
+    }
+
+    // Définition d'une note de bas de page. Les lignes indentées qui suivent
+    // la prolongent — c'est ainsi qu'on écrit une note de deux phrases.
+    const note = FOOTNOTE_DEF.exec(line);
+    if (note) {
+      const body = [note[2]];
+      i += 1;
+      while (i < lines.length && /^\s+\S/.test(lines[i]) && !FOOTNOTE_DEF.test(lines[i])) {
+        body.push(lines[i].trim());
+        i += 1;
+      }
+      notes.push({ id: note[1], text: body.join('\n').trim() });
+      continue;
+    }
+
+    // Titre souligné (setext) : « Titre » suivi d'une ligne de = (niveau 1) ou
+    // de - (niveau 2). Vérifié AVANT le filet horizontal, sinon « Titre\n--- »
+    // donnerait un paragraphe suivi d'un trait.
+    // Seul un PARAGRAPHE peut être souligné : « - item » suivi de « --- » est
+    // une liste puis un filet, pas un titre.
+    const under = lines[i + 1];
+    if (
+      under &&
+      !startsBlockAt(lines, i) &&
+      !FOOTNOTE_DEF.test(line) &&
+      (SETEXT_H1.test(under) || SETEXT_H2.test(under))
+    ) {
+      blocks.push({
+        type: 'heading',
+        level: SETEXT_H1.test(under) ? 1 : 2,
+        text: line.trim(),
+      });
+      i += 2;
+      continue;
+    }
+
     if (HR.test(line)) {
       blocks.push({ type: 'hr' });
       i += 1;
@@ -254,7 +397,19 @@ export function parseMarkdown(source) {
         inner.push(m ? m[1] : lines[i]);
         i += 1;
       }
-      blocks.push({ type: 'quote', blocks: parseMarkdown(inner.join('\n')) });
+      // Alerte GFM : la première ligne de la citation est « [!NOTE] » & co.
+      // On la retire du corps et on garde la nature de l'encadré, que le
+      // composant colore et titre.
+      const alert = ALERT.exec(inner[0] || '');
+      if (alert) {
+        blocks.push({
+          type: 'quote',
+          variant: alert[1].toLowerCase(),
+          blocks: parseMarkdown(inner.slice(1).join('\n')),
+        });
+        continue;
+      }
+      blocks.push({ type: 'quote', variant: null, blocks: parseMarkdown(inner.join('\n')) });
       continue;
     }
 
@@ -279,6 +434,16 @@ export function parseMarkdown(source) {
     });
   }
 
+  // Les notes closent le document, numérotées dans leur ordre de définition.
+  // Le libellé est calculé ICI parce que c'est le seul endroit qui voit tout
+  // le document : `parseInline`, qui rencontre les renvois, n'en sait rien.
+  if (notes.length) {
+    blocks.push({
+      type: 'footnotes',
+      items: notes.map((n, index) => ({ id: n.id, label: String(index + 1), text: n.text })),
+    });
+  }
+
   return blocks;
 }
 
@@ -289,7 +454,20 @@ function startsBlockAt(lines, i) {
   const line = lines[i];
   if (FENCE.test(line) || HEADING.test(line) || HR.test(line)) return true;
   if (QUOTE.test(line) || UL.test(line) || OL.test(line)) return true;
+  if (MATH_OPEN.test(line) || FOOTNOTE_DEF.test(line)) return true;
   return TABLE_ROW.test(line) && isTableSeparator(lines[i + 1] || '');
+}
+
+// Table des renvois : { id → libellé affiché }. Le composant s'en sert pour
+// qu'un « [^note] » croisé au fil du texte affiche le même numéro que l'entrée
+// de bas de page correspondante.
+export function footnoteLabels(blocks) {
+  const map = new Map();
+  for (const block of blocks || []) {
+    if (block?.type !== 'footnotes') continue;
+    for (const item of block.items || []) map.set(item.id, item.label);
+  }
+  return map;
 }
 
 // Statistiques simples, affichées dans l'en-tête de la visionneuse.

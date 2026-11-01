@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useId, useMemo, useState } from 'react';
 import {
   AlertTriangle,
   Check,
@@ -6,13 +6,21 @@ import {
   ExternalLink,
   FileWarning,
   FolderOpen,
+  Info,
+  Lightbulb,
   Loader2,
+  Music,
+  ShieldAlert,
+  Play,
   RefreshCw,
+  Video,
   WrapText,
 } from 'lucide-react';
+import katex from 'katex';
+import 'katex/dist/katex.min.css';
 import { appPartition } from '../lib/session';
 import { KIND, languageLabel } from '../lib/fileTypes';
-import { parseMarkdown, parseInline } from '../lib/markdown';
+import { parseMarkdown, parseInline, footnoteLabels } from '../lib/markdown';
 import {
   formatBytes,
   hasBinaryContent,
@@ -40,11 +48,17 @@ import { useT } from '../lib/i18n';
 // session jetable de la page) et le met en forme ici — indépendamment de ce que
 // le serveur annonce.
 //
-// SÛRETÉ DU RENDU : aucun HTML n'est injecté. Le markdown devient des
-// structures de données (lib/markdown.js) rendues en JSX, donc échappées par
-// React. Les liens partent dans le navigateur du système (jamais dans cette
-// fenêtre) et les images distantes ne sont pas chargées : un document reçu ne
-// peut ni exécuter de code ni signaler sa lecture.
+// SÛRETÉ DU RENDU : aucun HTML VENANT DU DOCUMENT n'est injecté. Le markdown
+// devient des structures de données (lib/markdown.js) rendues en JSX, donc
+// échappées par React. Les liens partent dans le navigateur du système (jamais
+// dans cette fenêtre) ; ni les images ni les médias ne sont chargés sans un
+// clic : un document reçu ne peut ni exécuter de code ni signaler sa lecture.
+//
+// Une seule exception, documentée au composant `MathFormula` : KaTeX met en
+// forme les formules et produit du HTML. Son ENTRÉE est du TeX extrait par
+// notre parseur,
+// jamais du balisage trouvé dans le document — c'est le même mécanisme que
+// l'assistant (rehype-katex).
 // ---------------------------------------------------------------------------
 
 // Ouvrir un lien du document dans le NAVIGATEUR : `window.open` est redirigé
@@ -96,10 +110,129 @@ function DocumentLink({ href, children }) {
   );
 }
 
+// --- Formules mathématiques ------------------------------------------------
+// KaTeX produit du HTML, qu'on injecte donc ici — seule exception au « aucun
+// HTML » de cette visionneuse, et elle est circonscrite :
+//   • l'entrée est du TeX extrait par notre parseur, PAS du HTML trouvé dans le
+//     document. KaTeX ne recopie jamais son entrée telle quelle en balisage ;
+//   • `trust: false` (le défaut) désactive les commandes capables d'émettre du
+//     balisage ou des liens arbitraires (\href, \url, \htmlClass, \includegraphics) ;
+//   • `throwOnError: false` + `strict: false` : une formule bancale s'affiche
+//     en rouge au lieu de faire tomber tout le document.
+// C'est exactement le mécanisme que l'assistant utilise déjà (rehype-katex).
+// En cas d'échec, on retombe sur le TeX en texte brut, échappé par React.
+// NE PAS renommer en `Math` : ce nom masquerait l'objet global `Math` dans
+// tout le module, et `Math.min` plus bas deviendrait un appel de composant.
+function MathFormula({ tex, display }) {
+  const html = useMemo(() => {
+    try {
+      return katex.renderToString(String(tex || ''), {
+        displayMode: Boolean(display),
+        throwOnError: false,
+        strict: false,
+        trust: false,
+        output: 'html',
+      });
+    } catch {
+      return null;
+    }
+  }, [tex, display]);
+
+  if (!html) {
+    return (
+      <code className={`font-mono text-[0.85em] text-text-muted ${display ? 'block my-2' : ''}`}>
+        {tex}
+      </code>
+    );
+  }
+  const Tag = display ? 'div' : 'span';
+  return (
+    <Tag
+      className={display ? 'my-3 overflow-x-auto text-center' : ''}
+      // Sortie de KaTeX, pas du document : voir le commentaire du composant.
+      dangerouslySetInnerHTML={{ __html: html }}
+    />
+  );
+}
+
+// --- Médias (audio / vidéo) ------------------------------------------------
+// Rien n'est chargé tant que le lecteur n'a pas cliqué : une URL unique dans
+// un document reçu suffirait sinon à signaler qu'on l'a ouvert, à qui et
+// quand. Le clic est le consentement, comme pour les images.
+function Media({ kind, alt, href }) {
+  const t = useT();
+  const [playing, setPlaying] = useState(false);
+
+  if (!href) return <span className="text-text-muted">{alt || t('doc.media.blocked')}</span>;
+
+  if (!playing) {
+    return (
+      <span
+        role="button"
+        tabIndex={0}
+        onClick={() => setPlaying(true)}
+        onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setPlaying(true)}
+        title={href}
+        className="my-2 inline-flex items-center gap-2 rounded-lg border border-border bg-bg-elevated px-3 py-2 text-xs text-text-secondary cursor-pointer hover:border-accent-primary hover:text-text-primary"
+      >
+        {kind === 'video' ? <Video size={14} /> : <Music size={14} />}
+        <span className="font-medium">{alt || t(`doc.media.${kind}`)}</span>
+        <span className="flex items-center gap-1 text-accent-primary">
+          <Play size={12} /> {t('doc.media.play')}
+        </span>
+      </span>
+    );
+  }
+
+  const common = { src: href, controls: true, autoPlay: true, className: 'my-2 max-w-full rounded-lg' };
+  return kind === 'video' ? (
+    <video {...common} style={{ maxHeight: '24rem' }} />
+  ) : (
+    <audio {...common} className="my-2 w-full max-w-md" />
+  );
+}
+
+// Contexte du document en cours de rendu : table des notes de bas de page et
+// préfixe d'identifiants. Passer ces deux valeurs en props aurait voulu dire
+// les traverser à la main dans chaque cellule de tableau et chaque puce de
+// liste imbriquée — le contexte les met à disposition là où elles servent.
+const MarkdownContext = createContext({ footnotes: new Map(), scope: 'md' });
+
+function scrollToAnchor(id) {
+  document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+}
+
 // --- Rendu inline (markdown) ----------------------------------------------
 function Inline({ nodes }) {
+  const { footnotes, scope } = useContext(MarkdownContext);
   return (nodes || []).map((node, i) => {
     const key = `${node.type}-${i}`;
+    if (node.type === 'math') return <MathFormula key={key} tex={node.tex} display={node.display} />;
+    if (node.type === 'media')
+      return <Media key={key} kind={node.kind} alt={node.alt} href={node.href} />;
+    // Renvoi de note : exposant cliquable qui défile jusqu'à la note. Les
+    // identifiants sont préfixés par `scope` car plusieurs documents restent
+    // montés en même temps (écran partagé) : sans ça, le renvoi d'un document
+    // sauterait dans un autre.
+    if (node.type === 'fnref') {
+      const label = footnotes?.get(node.id);
+      return (
+        <sup key={key} className="ml-0.5">
+          <span
+            role="button"
+            tabIndex={0}
+            onClick={() => scrollToAnchor(`${scope}-fn-${node.id}`)}
+            onKeyDown={(e) =>
+              (e.key === 'Enter' || e.key === ' ') && scrollToAnchor(`${scope}-fn-${node.id}`)
+            }
+            id={`${scope}-fnref-${node.id}`}
+            className="px-0.5 text-accent-primary cursor-pointer hover:underline"
+          >
+            [{label || node.id}]
+          </span>
+        </sup>
+      );
+    }
     if (node.type === 'text') return <span key={key}>{node.text}</span>;
     if (node.type === 'code')
       return (
@@ -195,6 +328,63 @@ function NestedLists({ items }) {
   );
 }
 
+// Alignement des colonnes d'un tableau, tel que le document le demande.
+const ALIGN_CLASS = { left: 'text-left', center: 'text-center', right: 'text-right' };
+
+// Couleurs des alertes GFM. Clés = variantes rendues par le parseur.
+const ALERT_STYLES = {
+  note: { icon: Info, border: 'border-accent-primary', bg: 'bg-accent-primary/5', text: 'text-accent-primary' },
+  tip: { icon: Lightbulb, border: 'border-success', bg: 'bg-success/5', text: 'text-success' },
+  important: { icon: Info, border: 'border-accent-primary', bg: 'bg-accent-primary/5', text: 'text-accent-primary' },
+  warning: { icon: AlertTriangle, border: 'border-warning', bg: 'bg-warning/5', text: 'text-warning' },
+  caution: { icon: ShieldAlert, border: 'border-error', bg: 'bg-error/5', text: 'text-error' },
+};
+
+function AlertLabel({ variant }) {
+  const t = useT();
+  return <>{t(`doc.alert.${variant}`)}</>;
+}
+
+// Notes de bas de page : regroupées en fin de document, numérotées, avec un
+// retour vers l'endroit du texte qui les appelle — c'est tout l'intérêt d'une
+// note, pouvoir y aller ET revenir.
+function Footnotes({ items }) {
+  const t = useT();
+  const { scope } = useContext(MarkdownContext);
+  if (!items?.length) return null;
+  return (
+    <section className="mt-6 border-t border-border pt-3">
+      <h3 className="text-xs font-semibold uppercase tracking-wide text-text-muted mb-2">
+        {t('doc.footnotes')}
+      </h3>
+      <ol className="space-y-1.5 text-xs text-text-secondary">
+        {items.map((item) => (
+          <li key={item.id} id={`${scope}-fn-${item.id}`} className="flex gap-2">
+            <span className="text-accent-primary tabular-nums flex-shrink-0">{item.label}.</span>
+            <span className="min-w-0">
+              <Inline nodes={parseInline(item.text)} />{' '}
+              <span
+                role="button"
+                tabIndex={0}
+                aria-label={t('doc.footnoteBack')}
+                title={t('doc.footnoteBack')}
+                onClick={() => scrollToAnchor(`${scope}-fnref-${item.id}`)}
+                onKeyDown={(e) =>
+                  (e.key === 'Enter' || e.key === ' ') &&
+                  scrollToAnchor(`${scope}-fnref-${item.id}`)
+                }
+                className="text-accent-primary cursor-pointer hover:underline"
+              >
+                ↩
+              </span>
+            </span>
+          </li>
+        ))}
+      </ol>
+    </section>
+  );
+}
+
 function MarkdownBlock({ block, keyPrefix = '' }) {
   const key = `${keyPrefix}${block.type}`;
   switch (block.type) {
@@ -219,7 +409,30 @@ function MarkdownBlock({ block, keyPrefix = '' }) {
           <code>{block.text}</code>
         </pre>
       );
-    case 'quote':
+    case 'math':
+      return <MathFormula key={key} tex={block.tex} display />;
+    case 'quote': {
+      // Alerte GFM (« > [!WARNING] ») : encadré coloré et titré, comme sur
+      // GitHub. Une citation ordinaire garde son filet discret.
+      const alert = ALERT_STYLES[block.variant];
+      if (alert) {
+        const Icon = alert.icon;
+        return (
+          <div
+            key={key}
+            className={`rounded-lg border-l-4 px-3 py-2 ${alert.border} ${alert.bg}`}
+          >
+            <div className={`flex items-center gap-2 text-xs font-semibold uppercase tracking-wide ${alert.text}`}>
+              <Icon size={14} /> <AlertLabel variant={block.variant} />
+            </div>
+            <div className="mt-1 space-y-2">
+              {(block.blocks || []).map((b, i) => (
+                <MarkdownBlock key={`${key}-${i}`} block={b} keyPrefix={`${key}-${i}-`} />
+              ))}
+            </div>
+          </div>
+        );
+      }
       return (
         <blockquote
           key={key}
@@ -230,6 +443,9 @@ function MarkdownBlock({ block, keyPrefix = '' }) {
           ))}
         </blockquote>
       );
+    }
+    case 'footnotes':
+      return <Footnotes key={key} items={block.items} />;
     case 'list': {
       const List = block.ordered ? 'ol' : 'ul';
       return (
@@ -253,7 +469,12 @@ function MarkdownBlock({ block, keyPrefix = '' }) {
                 {(block.header || []).map((cell, i) => (
                   <th
                     key={`${key}-h-${i}`}
-                    className="px-2.5 py-1.5 text-left font-semibold text-text-primary whitespace-nowrap"
+                    // L'alignement demandé par le document (`|---:|`) était
+                    // analysé mais jamais appliqué : une colonne de nombres
+                    // restait collée à gauche.
+                    className={`px-2.5 py-1.5 font-semibold text-text-primary whitespace-nowrap ${
+                      ALIGN_CLASS[block.align?.[i]] || 'text-left'
+                    }`}
                   >
                     <Inline nodes={parseInline(cell)} />
                   </th>
@@ -264,7 +485,12 @@ function MarkdownBlock({ block, keyPrefix = '' }) {
               {(block.rows || []).map((row, r) => (
                 <tr key={`${key}-r-${r}`} className="border-t border-border">
                   {row.map((cell, c) => (
-                    <td key={`${key}-r-${r}-${c}`} className="px-2.5 py-1.5 text-text-secondary">
+                    <td
+                      key={`${key}-r-${r}-${c}`}
+                      className={`px-2.5 py-1.5 text-text-secondary ${
+                        ALIGN_CLASS[block.align?.[c]] || ''
+                      }`}
+                    >
                       <Inline nodes={parseInline(cell)} />
                     </td>
                   ))}
@@ -350,17 +576,31 @@ function CsvBody({ text, t }) {
   );
 }
 
-// --- Corps du document -----------------------------------------------------
-function DocumentBody({ kind, text, showSource, wrap, jsonResult, t }) {
-  if (kind === KIND.markdown && !showSource) {
-    const blocks = parseMarkdown(text);
-    return (
+// --- Corps markdown --------------------------------------------------------
+// L'analyse est mémorisée : sans ça, chaque re-rendu (retour à la ligne,
+// bascule source, défilement qui change un état parent) relirait tout le
+// document et recalculerait toutes ses formules.
+function MarkdownBody({ text, scope }) {
+  const blocks = useMemo(() => parseMarkdown(text), [text]);
+  const context = useMemo(
+    () => ({ footnotes: footnoteLabels(blocks), scope }),
+    [blocks, scope]
+  );
+  return (
+    <MarkdownContext.Provider value={context}>
       <article className="max-w-3xl space-y-3">
         {blocks.map((block, i) => (
           <MarkdownBlock key={i} block={block} keyPrefix={`b${i}-`} />
         ))}
       </article>
-    );
+    </MarkdownContext.Provider>
+  );
+}
+
+// --- Corps du document -----------------------------------------------------
+function DocumentBody({ kind, text, showSource, wrap, jsonResult, t, scope }) {
+  if (kind === KIND.markdown && !showSource) {
+    return <MarkdownBody text={text} scope={scope} />;
   }
   if (kind === KIND.json && !showSource) {
     if (jsonResult.ok) return <CodeBody text={jsonResult.text} wrap={wrap} />;
@@ -397,6 +637,10 @@ const ERROR_KEYS = new Set([
 
 export default function DocumentViewer({ app, visible = true, flexLayout = false }) {
   const t = useT();
+  // Préfixe des ancres (notes de bas de page) : plusieurs documents restent
+  // montés simultanément en écran partagé, leurs ancres ne doivent pas se
+  // télescoper.
+  const scope = useId().replace(/[^\w-]/g, '');
   const [state, setState] = useState({ status: 'loading' });
   const [showSource, setShowSource] = useState(false);
   const [wrap, setWrap] = useState(true);
@@ -570,6 +814,7 @@ export default function DocumentViewer({ app, visible = true, flexLayout = false
               wrap={wrap}
               jsonResult={jsonResult}
               t={t}
+              scope={scope}
             />
           </div>
         )}

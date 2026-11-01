@@ -82,13 +82,21 @@ associés dans `test/textSnippets.test.js`.
 
 ## 5. Internationalisation et interface
 
-Les chaînes françaises et anglaises vivent dans `src/lib/i18n.dict.js`.
+Les chaînes vivent dans `src/lib/i18n/`, un module par domaine
+(`assistant`, `settings`, `vault`, `palette`, `topbar`, `apps`). Chacun exporte
+`fr` et `en` ; `src/lib/i18n.dict.js` les assemble et reste le seul point
+d’entrée du reste de l’application.
+
 Lorsqu’une clé est ajoutée :
 
-- l’ajouter aux deux dictionnaires ;
+- la mettre dans le module de son domaine, et dans **les deux** langues ;
+- ne pas la définir dans deux modules : l’assemblage par étalement d’objets
+  ferait gagner le dernier en silence (le test le refuse) ;
 - conserver la même liste de variables `{name}` dans les deux langues ;
 - utiliser les clés via `useT()` ou le mécanisme de traduction existant ;
-- lancer le test de parité des dictionnaires (`node --test test/i18n.test.js`).
+- lancer le test de parité des dictionnaires (`node --test test/i18n.test.js`),
+  qui vérifie la parité globale, celle de chaque module, l’absence de doublon
+  et que toute clé appelée dans le code existe.
 
 L’interface utilise React, Tailwind CSS et Lucide. Préserver les patterns
 existants, l’accessibilité clavier et les variantes compactes utilisées dans
@@ -108,6 +116,19 @@ Pour une correction ciblée, lancer d’abord les tests de son domaine. Ajouter 
 tests de régression lorsqu’un comportement avait échoué. Les avertissements
 ESLint sont plafonnés par la configuration du dépôt ; ne pas en ajouter sans
 raison.
+
+**`npm test` tourne sans `node_modules`** : c’est volontaire, on doit pouvoir
+vérifier une modification sans rien installer. La logique à tester vit donc
+dans des modules purs (`src/lib/*.js`, `electron/*-rules.js`,
+`electron/*-import.js`) plutôt que dans un composant ou un magasin.
+
+Trois fichiers de tests font exception, parce qu’ils exercent une vraie
+bibliothèque et que la simuler ne prouverait rien : `assistantMarkdown`
+(react-markdown + KaTeX), `fly-pages` et `assistantHistoryStore` (zustand). Ils
+sont **ignorés avec une raison lisible** quand le paquet manque, via
+`test/helpers/optional-dep.mjs`, et s’exécutent normalement en CI. Ne pas les
+transformer en tests sur des imitations : préférer extraire la logique dans un
+module pur, comme `src/lib/flyPages.js`.
 
 ## 7. Versions et releases
 

@@ -14,7 +14,7 @@ import {
   orderForProfile,
   withFolderForProfile,
 } from '../lib/appGroups.js';
-import { KIND } from '../lib/fileTypes.js';
+import { buildFlyPage, flyPageId } from '../lib/flyPages.js';
 import {
   upsertAssistantSession,
   removeAssistantSession,
@@ -24,20 +24,6 @@ import { stripNativeApps, withPhoneModule } from '../lib/phone.js';
 
 // Compteur d'identifiants de pages volantes (voir `openFlyPage`).
 let flySeq = 0;
-
-// Apparence d'une page volante selon la NATURE du document (voir
-// lib/fileTypes.js) : l'icône de la barre latérale annonce ce qu'on va voir.
-const FLY_PAGE_LOOKS = {
-  page: { icon: '🌐', color: '#64748b' },
-  markdown: { icon: '📝', color: '#8b5cf6' },
-  json: { icon: '🧾', color: '#f59e0b' },
-  csv: { icon: '📊', color: '#10b981' },
-  code: { icon: '💻', color: '#06b6d4' },
-  text: { icon: '📄', color: '#64748b' },
-  pdf: { icon: '📕', color: '#ef4444' },
-  image: { icon: '🖼️', color: '#0ea5e9' },
-  media: { icon: '🎬', color: '#f97316' },
-};
 
 // Hostname d'une URL (pour la migration des favicons)
 function hostnameOf(url) {
@@ -162,6 +148,20 @@ export const defaultSettings = {
   //   'none'    → aucune proposition dans les pages
   // `keepass.enabled` en découle : il n'est plus réglé séparément.
   credentials: { source: 'both' },
+
+  // Palette de recherche (Alt+K) : quelles sources elle interroge en plus des
+  // apps, profils et actions, qui sont son cœur et ne se désactivent pas.
+  //
+  // Tout est actif par défaut — une palette qui ne trouve rien ne sert à rien.
+  // Mais chaque source expose quelque chose de différent (des pages visitées,
+  // des noms de comptes), et selon l'écran que l'on a derrière soi on ne veut
+  // pas les mêmes : c'est donc un choix, pas une fatalité.
+  //   history   → pages déjà visitées (voir aussi l'historique lui-même)
+  //   openPages → titres des pages ouvertes en ce moment
+  //   vault     → entrées des trousseaux DÉVERROUILLÉS, pour copier un mot de
+  //               passe sans ouvrir les réglages
+  //   vaultTotp → bouton de copie du code à usage unique sur ces entrées
+  search: { history: true, openPages: true, vault: true, vaultTotp: true },
 
   // Composition de l'en-tête : quels modules, dans quelle zone, dans quel
   // ordre (voir src/lib/topbarLayout.js)
@@ -878,47 +878,19 @@ export const useStore = create(
         // deux pages portant le même identifiant se fermeraient ensemble,
         // casseraient les clés React et doubleraient les lignes du menu.
         flySeq += 1;
-        const id = `${isPrivate ? 'priv' : 'fly'}-${Date.now()}-${flySeq}`;
-        // Nom affiché : le domaine du site, ou le nom du fichier local.
-        const host = target.name;
+        const id = flyPageId(isPrivate, flySeq);
+        // La FORME de la page (nom, icône, couleur, nature, partition) est
+        // décidée par lib/flyPages.js — testable sans zustand.
         set((state) => ({
           flyPages: [
             ...state.flyPages,
-            {
+            buildFlyPage({
               id,
-              // Portée « tous les profils » : une page volante n'est pas une
-              // application, elle n'appartient à aucun profil. La montrer dans
-              // chaque profil (et non seulement celui au moment de l'ouverture)
-              // est la seule chose cohérente — sinon basculer de profil
-              // faisait disparaître une page qu'on est en train de lire.
-              scope: 'all',
-              // Partition jetable, distincte de toute app : consulter un lien
-              // ne doit pas toucher aux cookies d'un compte connecté.
-              sessionKey: `${isPrivate ? 'priv' : 'fly'}:${id}`,
-              ephemeral: true,
-              private: isPrivate,
-              // NATURE du document : elle décide de l'affichage — visionneuse
-              // Orbit pour les formats texte, <webview> pour le reste.
-              kind: target.kind,
-              // Chemin réel d'un fichier local (null pour une adresse web).
-              filePath: target.local ? filePath || null : null,
-              name: host,
-              url,
-              homeUrl: url,
-              // Une page HTML LOCALE reste un document : icône de feuille, pas de
-              // globe (le globe est réservé aux adresses web).
-              icon: isPrivate
-                ? '🕶️'
-                : target.local && target.kind === KIND.page
-                  ? '📄'
-                  : FLY_PAGE_LOOKS[target.kind]?.icon || (target.local ? '📄' : '🌐'),
-              color: isPrivate ? '#7c3aed' : FLY_PAGE_LOOKS[target.kind]?.color || '#64748b',
-              unread: 0,
-              sleeping: false,
-              zoom: 1,
+              target,
+              isPrivate,
+              filePath,
               order: state.flyPages.length,
-              createdAt: Date.now(),
-            },
+            }),
           ],
           activeApp: id,
         }));

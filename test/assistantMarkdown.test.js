@@ -1,27 +1,46 @@
 import assert from 'node:assert/strict';
-import { createElement } from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
-import ReactMarkdown from 'react-markdown';
 import test from 'node:test';
-import {
-  assistantRehypePlugins,
-  assistantRemarkPlugins,
-  transformAssistantMarkdownUrl,
-} from '../src/lib/assistantMarkdown.js';
+import { optionalImportAll, missingDepsReason } from './helpers/optional-dep.mjs';
 
-function renderMarkdown(content) {
-  return renderToStaticMarkup(createElement(
-    ReactMarkdown,
-    {
-      remarkPlugins: assistantRemarkPlugins,
-      rehypePlugins: assistantRehypePlugins,
-      urlTransform: transformAssistantMarkdownUrl,
-    },
-    content
-  ));
+// Ce fichier exerce la VRAIE chaîne de rendu de l'assistant : react-markdown,
+// remark-gfm, remark-math et KaTeX, tels que l'application les enchaîne. C'est
+// tout son intérêt — simuler ces bibliothèques ne prouverait rien sur ce que
+// l'utilisateur voit.
+//
+// Il a donc besoin de `node_modules`, contrairement au reste de la suite. Sans
+// lui, les tests sont IGNORÉS avec une raison lisible plutôt que de teindre
+// `npm test` en rouge pour une absence connue. La sûreté des liens, elle,
+// reste couverte sans dépendance par `safeHref` dans markdown.test.js.
+const DEPS = [
+  'react',
+  'react-dom/server',
+  'react-markdown',
+  new URL('../src/lib/assistantMarkdown.js', import.meta.url).href,
+];
+const loaded = await optionalImportAll(DEPS);
+const skip = loaded ? false : missingDepsReason('react / react-markdown');
+
+let renderMarkdown = () => '';
+let transformAssistantMarkdownUrl = () => '';
+if (loaded) {
+  const [{ createElement }, { renderToStaticMarkup }, reactMarkdown, assistantMarkdown] = loaded;
+  const ReactMarkdown = reactMarkdown.default;
+  ({ transformAssistantMarkdownUrl } = assistantMarkdown);
+  renderMarkdown = (content) =>
+    renderToStaticMarkup(
+      createElement(
+        ReactMarkdown,
+        {
+          remarkPlugins: assistantMarkdown.assistantRemarkPlugins,
+          rehypePlugins: assistantMarkdown.assistantRehypePlugins,
+          urlTransform: transformAssistantMarkdownUrl,
+        },
+        content
+      )
+    );
 }
 
-test('assistant Markdown renders GFM and inline and block math', () => {
+test('assistant Markdown renders GFM and inline and block math', { skip }, () => {
   const html = renderMarkdown([
     '# Résultat',
     '',
@@ -47,7 +66,7 @@ test('assistant Markdown renders GFM and inline and block math', () => {
   assert.match(html, /<del>ancien<\/del>/);
 });
 
-test('assistant Markdown never turns raw HTML or unsafe links into active markup', () => {
+test('assistant Markdown never turns raw HTML or unsafe links into active markup', { skip }, () => {
   const html = renderMarkdown([
     '<script>alert(1)</script>',
     '',

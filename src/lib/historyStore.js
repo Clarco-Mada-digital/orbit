@@ -14,7 +14,7 @@
 // ---------------------------------------------------------------------------
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { shouldRecord } from './historySearch.js';
+import { shouldRecord, withoutUrl, withoutSince } from './historySearch.js';
 
 // ~1500 pages : largement de quoi retrouver plusieurs semaines de navigation,
 // pour quelques centaines de kilo-octets.
@@ -77,6 +77,17 @@ export const useHistoryStore = create(
       // Retire toutes les pages d'une app (utile quand on la désinstalle)
       forgetApp: (appId) =>
         set((state) => ({ entries: state.entries.filter((e) => e.appId !== appId) })),
+
+      // Oubli d'UNE page. Indispensable à côté du vidage complet : on veut
+      // souvent faire disparaître une seule visite d'une liste de suggestions
+      // sans sacrifier plusieurs semaines d'historique.
+      forget: (url) => set((state) => ({ entries: withoutUrl(state.entries, url) })),
+
+      // Oubli des pages visitées depuis `since` (horodatage). Alimente les
+      // boutons « dernière heure » / « aujourd'hui » : c'est le geste le plus
+      // fréquent après une navigation qu'on ne veut pas garder.
+      forgetSince: (since) =>
+        set((state) => ({ entries: withoutSince(state.entries, since) })),
 
       clear: () => set({ entries: [] }),
       setEnabled: (v) => set({ enabled: v !== false }),

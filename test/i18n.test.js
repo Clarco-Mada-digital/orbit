@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { fr, en } from '../src/lib/i18n.dict.js';
+import { fr, en, MODULES } from '../src/lib/i18n.dict.js';
 
 // `translate()` retombe sur la clé brute quand une traduction manque : rien ne
 // plante, mais l'interface affiche « common.nextMonth » à l'écran. Ces tests
@@ -65,5 +65,37 @@ test('les variables {x} d’une clé sont les mêmes en fr et en en', () => {
   for (const k of Object.keys(fr)) {
     if (!(k in en)) continue;
     assert.deepEqual(vars(en[k]), vars(fr[k]), `variables divergentes pour ${k}`);
+  }
+});
+
+// Le dictionnaire est découpé par domaine (src/lib/i18n/) puis assemblé par
+// étalement d'objets. Un étalement laisse gagner la DERNIÈRE occurrence : une
+// clé définie dans deux modules verrait l'une des deux traductions disparaître
+// sans un mot. Ce test refuse ce cas.
+test('aucune clé définie dans deux modules du dictionnaire', () => {
+  for (const lang of ['fr', 'en']) {
+    const seen = new Map(); // clé → module qui l'a déjà définie
+    const duplicates = [];
+    for (const [name, mod] of Object.entries(MODULES)) {
+      for (const key of Object.keys(mod[lang])) {
+        if (seen.has(key)) duplicates.push(`${lang}/${key} (${seen.get(key)} + ${name})`);
+        else seen.set(key, name);
+      }
+    }
+    assert.deepEqual(duplicates, [], 'clés en double entre modules');
+    // Et l'assemblage ne doit rien perdre en route.
+    assert.equal(seen.size, Object.keys(lang === 'fr' ? fr : en).length);
+  }
+});
+
+test('chaque module du dictionnaire est équilibré fr/en', () => {
+  // Vérifier la parité seulement sur l'objet assemblé laisserait passer une
+  // clé rangée dans le module français d'un domaine et dans le module anglais
+  // d'un autre : le total serait juste, le découpage faux.
+  for (const [name, mod] of Object.entries(MODULES)) {
+    const F = Object.keys(mod.fr);
+    const E = Object.keys(mod.en);
+    assert.deepEqual(F.filter((k) => !(k in mod.en)), [], `${name} : sans traduction anglaise`);
+    assert.deepEqual(E.filter((k) => !(k in mod.fr)), [], `${name} : sans traduction française`);
   }
 });

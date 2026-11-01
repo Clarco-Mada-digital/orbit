@@ -1,0 +1,952 @@
+// ---------------------------------------------------------------------------
+// Réglages, sécurité, sauvegarde et synchronisation
+//
+// Un morceau du dictionnaire d'Orbit. Le fichier unique avait dépassé
+// 3 900 lignes : y retrouver une clé, ou voir ce qu'une fonctionnalité ajoute,
+// demandait de parcourir tout le reste. Le découpage est par DOMAINE, et
+// l'assemblage se fait dans ../i18n.dict.js.
+//
+// Règle unique : toute clé présente ici doit l'être dans les deux langues.
+// `test/i18n.test.js` le vérifie, ainsi que la cohérence des variables {x}.
+// ---------------------------------------------------------------------------
+export const fr = {
+
+  // À propos
+  'about.tagline': 'Toutes vos apps web réunies dans une seule fenêtre — Windows, macOS et Linux.',
+  'about.notes': 'Notes de version',
+  'about.noNotes': "Aucune note rédigée pour la version {version}.",
+  'about.version': 'Version {version}',
+  'about.github': 'GitHub',
+  'about.releaseNotes': 'Notes de version',
+  'about.checkUpdates': 'Vérifier les mises à jour',
+  'about.checking': 'Vérification…',
+  'about.features': 'Ce qu’Orbit sait faire',
+  'about.tech': 'Technologies',
+
+  // Mise à jour
+  'update.ready': 'Mise à jour prête',
+  'update.readyDesc': 'Redémarre Orbit pour l’installer.',
+  'update.restart': 'Redémarrer et installer',
+  'update.later': 'Plus tard',
+  'update.downloading': 'Téléchargement de la mise à jour… {percent}%',
+  'update.available': 'Mise à jour {version} disponible',
+
+  // Réglages — langue
+  'settings.language': 'Langue',
+  'settings.language.auto': 'Automatique (système)',
+  'dg.title': 'Journal de diagnostic',
+  'dg.desc':
+    "Incidents des apps depuis le lancement d'Orbit : échecs de chargement, pages qui cessent de répondre, sessions perdues, mises en veille automatiques. Utile quand une app se déconnecte ou cesse de répondre sans raison apparente.",
+  'dg.allApps': 'Toutes les apps',
+  'dg.copy': 'Copier',
+  'dg.clear': 'Vider',
+  'dg.empty': 'Aucun incident enregistré. Bon signe.',
+  'dg.note':
+    "Le journal n'est pas conservé : il repart de zéro à chaque démarrage d'Orbit et ne quitte jamais votre machine.",
+  'st.tab.diagnostics': 'Diagnostic',
+  // Synchronisation entre machines
+  'sync.title': 'Synchronisation entre machines',
+  'sync.desc':
+    "Gardez profils, apps, conteneurs et réglages identiques sur tous vos postes. Orbit n'héberge rien : il dépose un fichier chiffré dans un dossier que vous choisissez (Drive, Nextcloud, Dropbox, partage réseau…), et c'est ce service qui le convoie.",
+  'sync.enable': 'Activer la synchronisation',
+  'sync.choose': 'Choisir…',
+  'sync.folderPlaceholder': 'Aucun dossier choisi',
+  'sync.passphrasePlaceholder': 'Phrase secrète (la même sur chaque machine)',
+  'sync.encNote':
+    "Chiffré avant d'être écrit : l'hébergeur du dossier ne voit rien. Sans la phrase secrète, le fichier est illisible — y compris par vous.",
+  'sync.auto': 'Synchroniser automatiquement (toutes les 5 minutes)',
+  'sync.now': 'Synchroniser maintenant',
+  'sync.last': 'Dernière synchro : {when}',
+  'sync.thisDevice': 'Cette machine : {name}',
+  'sync.published': 'État publié — lancez la synchro sur vos autres machines.',
+  'sync.upToDate': 'Déjà à jour.',
+  'sync.applied': '{a} ajouté(s), {m} mis à jour, {s} supprimé(s).',
+  'sync.noFolder': "Choisissez d'abord un dossier de synchronisation.",
+  'sync.needsPassword': 'Ce dossier est chiffré : saisissez la phrase secrète.',
+  'sync.readFailed': 'Lecture impossible (phrase secrète erronée ou fichier corrompu).',
+  'sync.writeFailed': "Écriture impossible : vérifiez les droits sur le dossier.",
+  'sync.noBridge': 'Synchronisation indisponible dans cette fenêtre.',
+  // Automatisations
+  'st.tab.rules': 'Automatisations',
+  'eb.title': 'Une erreur est survenue',
+  'eb.desc':
+    'L’interface a rencontré un problème inattendu. Vos profils, applications et sessions sont intacts — un rechargement règle généralement la situation.',
+
+  // Verrouillage
+  'lock.setTitle': 'Définir un code',
+  'lock.lockedTitle': 'Orbit est verrouillé',
+  'lock.confirm': 'Confirmez le code',
+  'lock.choose': 'Choisissez un code (chiffres ou texte)',
+  'lock.enter': 'Entrez votre code pour continuer',
+  'lock.clear': 'Effacer',
+  'lock.validate': 'Valider',
+  'lock.tooShort': 'Code trop court (4 caractères minimum)',
+  'lock.tooShort2': 'Code trop court',
+  'lock.mismatch': 'Les deux codes ne correspondent pas',
+  'lock.wrong': 'Code incorrect',
+
+  // Réglages — onglets
+  'st.tab.general': 'Général',
+  'st.tab.downloads': 'Téléchargements',
+  'st.tab.appearance': 'Apparence',
+  'st.tab.display': 'Affichage',
+  'st.tab.profiles': 'Profils',
+  'st.tab.shortcuts': 'Raccourcis',
+  'st.tab.extensions': 'Extensions',
+  'st.tab.security': 'Sécurité',
+  'st.tab.privacy': 'Confidentialité',
+  'st.tab.backup': 'Sauvegarde',
+  'st.tab.notifications': 'Notifications',
+  'st.tab.about': 'À propos',
+
+  // Réglages — mises à jour
+  'st.upd.unsupported': "Mise à jour auto indisponible dans ce mode (dispo uniquement sur l'AppImage).",
+  'st.upd.cantCheck': 'Impossible de vérifier pour le moment.',
+  'st.upd.available': 'Version {version} disponible — téléchargement en cours…',
+  'st.upd.upToDate': 'Orbit est à jour.',
+  'st.upd.check': 'Rechercher les mises à jour',
+  'st.updates': 'Mises à jour',
+  'st.installedVersion': 'Version installée :',
+
+  // Réglages — Général
+  'st.startup': 'Démarrage',
+  'st.startMinimized': 'Démarrer minimisé',
+  'st.startupApp': 'Application au démarrage',
+  'st.resumeLast': 'Reprendre la dernière app',
+  'st.startupNone': "Aucune (écran d'accueil)",
+  'st.tray': 'Barre système (tray)',
+  'st.closeToTray': 'Réduire dans la barre système',
+  'st.closeToTrayDesc': 'Fermer la fenêtre garde Orbit en fond (icône du tray) au lieu de quitter',
+  'st.globalHotkey': "Raccourci global d'invocation",
+  'st.globalHotkeyDesc': "Afficher / masquer Orbit depuis n'importe où",
+  'st.hotkeyUnavailable':
+    'Ce raccourci est indisponible (déjà utilisé par le système ?). Essayez-en un autre, ex. CommandOrControl+Shift+O.',
+  'st.hotkeyUnavailable2': 'Ce raccourci est indisponible. Essayez une autre combinaison.',
+  'st.interface': 'Interface',
+  'st.hideTopbar': 'Masquer la barre supérieure',
+  'st.hideTopbarDesc': 'En mode plein écran',
+  'st.autoPip': 'Picture-in-Picture automatique',
+  'st.autoPipDesc': "Sort la vidéo en mini-fenêtre flottante quand vous changez d'app",
+  'st.mediaKeys': 'Touches média du clavier',
+  'st.mediaKeysDesc': "Les touches ⏯ ⏭ ⏮ pilotent la lecture en cours (même hors d'Orbit)",
+  'st.resources': 'Ressources',
+  'st.resourcesDesc':
+    "Met en veille les apps inactives pour libérer la mémoire. L'app active, l'écran partagé et les apps qui jouent un son ne sont jamais mises en veille.",
+  'st.autoSleep': 'Mise en veille automatique',
+  'st.sleepOff': 'Désactivée',
+  'st.sleep15': 'Après 15 minutes',
+  'st.sleep30': 'Après 30 minutes',
+  'st.sleep60': 'Après 1 heure',
+  'st.sleep120': 'Après 2 heures',
+
+  // Réglages — Affichage
+  'st.fontSize': 'Taille de police',
+  'st.small': 'Petite',
+  'st.medium': 'Moyenne',
+  'st.large': 'Grande',
+  'st.xlarge': 'Très grande',
+  'st.fontFamily': 'Police de caractères',
+  'st.fontFamilyDesc': "Le changement s'applique instantanément à toute l'interface",
+  'st.uiZoom': "Zoom de l'interface",
+  'st.displayOptions': "Options d'affichage",
+  'st.compact': 'Mode compact',
+  'st.compactDesc': "Réduit l'espacement entre les éléments",
+  'st.animations': 'Animations',
+  'st.animationsDesc': 'Active les transitions et animations',
+  'st.appIcons': "Icônes d'applications",
+  'st.appIconsDesc': 'Affiche les icônes colorées dans la sidebar',
+
+  // Réglages — Apparence
+  'st.theme': 'Thème',
+  'st.themeDark': '🌙 Sombre',
+  'st.themeLight': '☀️ Clair',
+  'st.themeAuto': '🌓 Auto',
+  'st.accentColor': "Couleur d'accent",
+  'st.accentPerProfile': 'Accent par profil',
+  'st.accentPerProfileDesc':
+    "L'accent suit la couleur choisie pour chaque profil (dans Profils → chaque profil a sa palette). Repère visuel pro / perso.",
+
+  // Réglages — Profils
+  'st.profilesDesc': 'Créez et gérez vos espaces de travail',
+  'st.manage': 'Gérer',
+  'st.profilesDesc2':
+    'Les profils vous permettent de séparer vos applications en espaces distincts (Travail, Personnel, Projets, etc.)',
+
+  // Dialogues des pages & autorisations des sites
+  'dlg.message': 'Message',
+  'dlg.confirm': 'Confirmation',
+  'dlg.prompt': 'Saisie',
+  'dlg.answerPlaceholder': 'Votre réponse…',
+  'dlg.cancel': 'Annuler',
+  'dlg.ok': 'OK',
+  'dlg.close': 'Fermer',
+  'dlg.silence': "Empêcher cette page d'ouvrir d'autres dialogues",
+  'st.permTitle': 'Autorisations des sites',
+  'st.permDesc':
+    "Caméra, microphone, position, notifications… Orbit demande avant d'accorder, puis retient votre choix pour ce site.",
+  'st.permMode': 'Quand une app demande un accès',
+  'st.permMode.ask': 'Demander à chaque nouveau site (recommandé)',
+  'st.permMode.allow': 'Toujours autoriser sans demander',
+  'st.permMode.deny': 'Toujours refuser sans demander',
+  'st.permSaved': 'Décisions enregistrées',
+  'st.permEmpty': "Aucune décision pour l'instant. Elles apparaîtront ici dès qu'une app demandera un accès.",
+  'st.permForget': 'Oublier',
+  'st.permForgetAll': 'Tout oublier',
+  'st.permAllowed': 'Autorisé',
+  'st.permBlocked': 'Bloqué',
+
+  // Réglages — Confidentialité
+  'st.adblockTitle': 'Bloqueur de pub & traceurs',
+  'st.adblockDesc':
+    'Blocage natif intégré (listes type EasyList), au niveau réseau, pour toutes les apps et tous les profils — sans extension. Plus efficace et fiable que les extensions de blocage, qui ne fonctionnent pas dans Orbit.',
+  'st.adblockEnable': 'Activer le blocage',
+  'st.adblockEnableDesc': 'Bloque les publicités et traceurs connus',
+  'st.adblockHint':
+    "Interrupteur général du moteur de blocage. Après changement, rechargez une app déjà ouverte (bouton ⟳) pour que l'effet s'applique. La première activation télécharge les listes (puis elles sont mises en cache, y compris hors-ligne). Un site peut le désactiver individuellement ci-dessus, dans « Boucliers ».",
+  'st.search.title': 'Recherche (Alt+K)',
+  'st.search.desc':
+    'Ce que la palette interroge en plus des apps, profils, actions, calculs et conversions — qui, eux, sont toujours disponibles.',
+  'st.search.history': 'Pages déjà visitées',
+  'st.search.historyDesc': 'Retrouver une page sans se rappeler dans quelle app elle était.',
+  'st.search.openPages': 'Pages ouvertes en ce moment',
+  'st.search.openPagesDesc':
+    'Cherche dans le titre courant de chaque app, pas seulement dans son nom.',
+  'st.search.vault': 'Identifiants des trousseaux déverrouillés',
+  'st.search.vaultDesc':
+    'Copier un mot de passe depuis la palette, sans ouvrir les réglages. Les trousseaux verrouillés n’apparaissent jamais.',
+  'st.search.vaultTotp': 'Code à usage unique (TOTP)',
+  'st.search.vaultTotpDesc': 'Ajoute un bouton de copie du code sur les entrées qui en ont un.',
+  'st.search.hint':
+    'Un identifiant n’apparaît qu’à partir de deux caractères saisis, jamais à l’ouverture de la palette. Le mot de passe ne passe pas par l’interface : Orbit l’écrit lui-même dans le presse-papiers et le vide après 30 secondes.',
+  'st.hist.title': 'Historique de navigation',
+  'st.hist.desc':
+    'Les pages visitées dans vos apps alimentent la recherche Alt+K (« cette page vue hier »). L’historique reste sur cette machine : il n’entre pas dans la synchronisation.',
+  'st.hist.record': 'Mémoriser les pages visitées',
+  'st.hist.recordDesc':
+    'Désactivé, rien de nouveau n’est enregistré — l’historique déjà en place est conservé.',
+  'st.hist.count': '{n} page(s) mémorisée(s)',
+  'st.hist.empty': 'Aucune page mémorisée.',
+  'st.hist.lastHour': 'Oublier la dernière heure',
+  'st.hist.today': 'Oublier les 24 dernières heures',
+  'st.hist.clearAll': 'Tout vider',
+  'st.hist.confirm': 'Confirmer ?',
+  'st.hist.hint':
+    'Les pages de connexion et les adresses porteuses de jetons ne sont jamais enregistrées. Ni l’adresse ni le titre d’une page ne quittent cette machine.',
+  'st.proxyTitle': 'Proxy / VPN',
+  'st.proxyDesc':
+    'Fait passer le trafic par un proxy (SOCKS5 ou HTTP) — pratique pour utiliser un VPN. Proxy global ici ; surchargeable par profil (Profils) et par app (clic droit → Modifier). Vide = connexion directe.',
+  'st.proxyHint':
+    "Ex. socks5://host:port, http://host:port, ou avec identifiants socks5://user:pass@host:port. SOCKS5 d'un VPN, proxy local (Mullvad), ou votre propre serveur. Rechargez l'app après changement.",
+  'st.translateTitle': 'Traduction & lecture vocale',
+  'st.translateDesc':
+    'Clic droit sur une page → « Traduire la sélection » ou « Lire à voix haute » (intégré, sans extension).',
+  'st.translateLang': 'Langue de traduction',
+  'st.lang.fr': 'Français',
+  'st.lang.en': 'Anglais',
+  'st.lang.es': 'Espagnol',
+  'st.lang.de': 'Allemand',
+  'st.lang.it': 'Italien',
+  'st.lang.pt': 'Portugais',
+  'st.lang.ar': 'Arabe',
+  'st.lang.zh': 'Chinois (simplifié)',
+  'st.lang.ru': 'Russe',
+  'st.lang.ja': 'Japonais',
+  'st.translateEngine': 'Moteur de traduction',
+  'st.engineGoogleDesc': 'Rapide, sans configuration',
+  'st.engineLibreDesc': 'Privé / auto-hébergé',
+  'st.libreUrlPlaceholder': 'URL du serveur (ex. http://localhost:5000)',
+  'st.libreKeyPlaceholder': 'Clé API (optionnelle)',
+  'st.libreHint':
+    'LibreTranslate est open-source et auto-hébergeable (Docker : libretranslate/libretranslate). Avec un serveur local, vos textes ne quittent pas votre machine.',
+  'st.googleHint':
+    'Le moteur Google envoie le texte sélectionné à Google pour la traduction. Pour un traitement privé, choisissez LibreTranslate.',
+
+  // Réglages — Notifications
+  'st.notifSystem': 'Notifications système',
+  'st.notifSystemDesc':
+    "Affiche une notification système quand une app reçoit de nouveaux messages (sauf si elle est ouverte ou en veille)",
+  'st.dndNow': 'Activer maintenant',
+  'st.dndNowDesc': 'Coupe toutes les notifications',
+  'st.quietHours': 'Plages horaires silencieuses',
+  'st.quietHoursDesc': 'Coupe automatiquement les notifications sur une plage (ex. la nuit)',
+  'st.from': 'De',
+  'st.to': 'à',
+  'st.notifSound': 'Son de notification',
+  'st.notifSoundDesc': "Personnalisez le son joué à la réception d'un message. Vide = son système.",
+  'st.customSound': 'Son personnalisé',
+  'st.systemSound': 'Son système (par défaut)',
+  'st.chooseSound': 'Choisir un son…',
+  'st.testSound': 'Tester',
+  'st.defaultSound': 'Par défaut',
+  'st.soundTooHeavy': 'Son trop lourd (max 1 Mo). Choisissez un son court.',
+  'st.notifCenter': 'Centre de notifications',
+  'st.notifCenterDesc':
+    'Cliquez sur la cloche 🔔 dans la barre supérieure pour voir toutes vos apps avec des messages non lus et y accéder en un clic.',
+
+  // Réglages — À propos
+  'st.license': 'Licence',
+  'st.licenseText': 'Orbit est un logiciel open-source sous licence MIT.',
+
+  // Sauvegarde
+  'bk.invalid': 'Fichier de sauvegarde invalide',
+  'bk.saved': 'Sauvegarde enregistrée.',
+  'bk.savedEnc': 'Sauvegarde enregistrée (chiffrée).',
+  'bk.exportFail': "Échec de l'export",
+  'bk.restored': 'Configuration restaurée. Rechargement…',
+  'bk.importFail': "Échec de l'import",
+  'bk.wrongPwd': 'Mot de passe incorrect',
+  'bk.exportTitle': 'Exporter la configuration',
+  'bk.exportDesc':
+    'Enregistre vos profils, apps et réglages dans un fichier. Idéal comme sauvegarde ou pour migrer vers un autre PC. Les sessions/comptes connectés ne sont pas inclus (ils restent sur la machine).',  'bk.exportPwdPlaceholder': 'Mot de passe (optionnel, pour chiffrer)',
+  'bk.export': 'Exporter',
+  'bk.encNote': 'Le fichier sera chiffré (AES-256). Sans ce mot de passe, il sera illisible.',
+  'bk.fullLabel': 'Inclure les sessions et les trousseaux',
+  'bk.fullDesc':
+    'Cookies, comptes connectés et coffres-fort — les mêmes apps déjà ouvertes et connectées sur un autre ordinateur. Obligatoire pour retrouver son espace de travail complet.',
+  'bk.fullNeedsPwd':
+    'Une sauvegarde avec sessions exige un mot de passe : elle contient vos cookies de connexion.',
+  'bk.restarting': 'Restauration en cours — Orbit redémarre…',
+  'bk.importTitle': 'Importer / restaurer',
+  'bk.importDesc': 'Remplace la configuration actuelle par celle du fichier. Orbit se recharge ensuite.',
+  'bk.filePwdPlaceholder': 'Mot de passe du fichier',
+  'bk.unlock': 'Déverrouiller',
+  'bk.chooseFile': 'Choisir un fichier…',
+
+  // Sécurité
+  'sec.appLockTitle': 'Verrouiller Orbit au démarrage',
+  'sec.appLockDesc':
+    "Un code est demandé à chaque ouverture d'Orbit. Sans lui, personne ne peut voir vos comptes connectés. Le code n'est jamais stocké en clair.",
+  'sec.newCode': 'Nouveau code',
+  'sec.changeCode': 'Modifier le code',
+  'sec.lockNow': 'Verrouiller maintenant',
+  'sec.disableLockTitle': 'Désactiver le verrou',
+  'sec.enterCurrentConfirm': 'Entrez le code actuel pour confirmer',
+  'sec.disable': 'Désactiver',
+  'sec.enableLock': 'Activer le verrou',
+  'sec.autoLock': 'Verrouillage automatique',
+  'sec.autoLockDesc': "Verrouille Orbit après une période d'inactivité (nécessite un code global).",
+  'sec.disabled': 'Désactivé',
+  'sec.after5': 'Après 5 minutes',
+  'sec.after10': 'Après 10 minutes',
+  'sec.profileLockTitle': 'Verrouiller un profil',
+  'sec.profileLockDesc':
+    "Un profil verrouillé reste masqué (ses apps ne se chargent pas) tant que son code n'est pas saisi. Idéal pour séparer « perso » et « pro ».",
+  'sec.lockedUnlockedSession': 'Verrouillé · déverrouillé pour cette session',
+  'sec.locked': 'Verrouillé',
+  'sec.notLocked': 'Non verrouillé',
+  'sec.relockNow': 'Reverrouiller maintenant',
+  'sec.unlockProfileTitle': 'Déverrouiller « {name} »',
+  'sec.enterCurrentRemove': 'Entrez le code actuel pour retirer le verrou',
+  'sec.removeCode': 'Retirer le code',
+  'sec.codeForProfile': 'Code pour « {name} »',
+
+  'st.topbarTitle': 'En-tête',
+  'st.topbarDesc': 'Choisissez ce qui s’affiche dans la barre du haut, et où.',
+  'st.topbarReset': 'Réinitialiser',
+  'st.topbarHint':
+    'Glissez un module pour le déplacer, d’une zone à l’autre si besoin. Les boutons de fenêtre restent toujours à droite.',
+  'st.bottombarTitle': 'Barre du bas',
+  'st.bottombarDesc': 'Ajoutez une barre en bas de la fenêtre et choisissez ce qu’elle affiche.',
+
+  'st.shieldsTitle': 'Boucliers',
+  'st.shieldsDesc':
+    "Protections appliquées site par site. Ces valeurs valent pour tout site que vous n'avez pas personnalisé ; chaque site peut ensuite être ajusté depuis son icône en barre du haut.",
+  'st.shieldsDefaults': 'Valeurs par défaut',
+  'st.shieldsDefaultsHint':
+    "S'appliquent aux sites sans réglage propre. « Activer les boucliers » coupe tout pour le site ; « Bloquer publicités et traceurs » ne coupe que les pubs, en gardant HTTPS, cookies et empreinte.",
+  'st.shieldsCustom': 'Sites personnalisés',
+  'st.shieldsEmpty': 'Aucun site personnalisé pour l’instant.',
+  'st.shieldsInherited': '(par défaut)',
+  'st.shieldsReset': 'Revenir aux valeurs par défaut',
+  'st.shieldsForgetAll': 'Tout réinitialiser',
+
+  'st.bottombarEnable': 'Afficher la barre du bas',
+  'st.zone.left': 'Gauche',
+  'st.zone.center': 'Centre',
+  'st.zone.right': 'Droite',
+  'st.zoneEmpty': 'Déposez un module ici',
+  'st.addModule': 'Ajouter',
+  'st.clockTitle': 'Horloge',
+  'st.clockFormat': 'Format',
+  'st.clock24': '24 heures',
+  'st.clock12': '12 heures (AM/PM)',
+  'st.clockSeconds': 'Afficher les secondes',
+  'st.clockDate': 'Afficher la date',
+  'st.clockZones': 'Fuseaux supplémentaires (séparés par des virgules)',
+  'st.weatherTitle': 'Météo',
+  'st.weatherDesc': 'Données Open-Meteo — aucune clé ni compte, aucune géolocalisation automatique.',
+  'st.weatherCity': 'Ville',
+  'st.weatherUnits': 'Unités',
+  'st.weatherMetric': 'Celsius, km/h',
+  'st.weatherImperial': 'Fahrenheit, mph',
+  'st.focusTitle': 'Minuteur de concentration',
+  'st.focusDesc': 'Durées des sessions Pomodoro (en minutes). Une pause longue arrive toutes les 4 sessions.',
+  'st.focusWork': 'Travail',
+  'st.focusShort': 'Pause',
+  'st.focusLong': 'Pause longue',
+  'st.focusAuto': 'Enchaîner automatiquement la phase suivante',
+  'st.popupTitle': 'Fenêtres secondaires',
+  'st.popupDesc':
+    'Les pop-ups des apps (connexion Google, liens ouverts dans une nouvelle fenêtre…) — comment Orbit les affiche.',
+  'st.popupOrbit': 'Habillage Orbit',
+  'st.popupOrbitDesc': 'Coins arrondis, en-tête épuré aux couleurs de votre thème',
+  'st.popupNative': 'Fenêtre système',
+  'st.popupNativeDesc': 'Décoration classique de votre système d’exploitation',
+  'st.popupExternal': 'Navigateur externe',
+  'st.popupExternalDesc': 'Ouvrir dans votre navigateur par défaut (la connexion peut échouer)',
+  'sys.tooltip': 'Processeur ({cores} cœurs) et mémoire — {mem}',
+  'profile.switch': 'Changer de profil',
+  'st.focusWorkSound': 'Son de fin de session (Pomodoro)',
+  'st.focusWorkSoundDesc': "Joué quand une session de travail se termine — la pause commence.",
+  'st.focusBreakSound': 'Son de fin de pause (Pomodoro)',
+  'st.focusBreakSoundDesc': 'Joué quand la pause se termine — retour au travail.',
+  'st.focusSoundEnabled': 'Sons du minuteur',
+  'st.focusSoundEnabledDesc': 'Jouer un son à chaque fin de session ou de pause.',
+  'st.soundVolume': 'Volume des sons',
+  'st.soundVolumeDesc': "Volume commun à tous les sons joués par Orbit.",
+  'st.noSound': 'Aucun son',
+  // --- Coffre-fort de mots de passe ---
+  'st.tab.passwords': 'Mots de passe',
+  'st.zen': 'Mode épuré (barres masquées)',
+  'st.zenDesc':
+    "Les barres choisies disparaissent et reviennent quand la souris touche le bord de l'écran.",
+  'st.zen.top': 'En-tête',
+  'st.zen.left': 'Barre latérale',
+  'st.zen.bottom': 'Barre du bas',
+  'st.zenHint':
+    "Une barre reste ouverte tant qu'un de ses menus est déplié ou que le focus clavier est dedans — un panneau de notifications ne peut donc pas se dérober pendant qu'on le lit. Alt+⇧+H les appelle au clavier, Échap les renvoie.",
+  'st.tab.assistant': 'Assistant IA',
+  'st.nativeCtxMenu': 'Menu contextuel du système',
+  'st.nativeCtxMenuDesc':
+    "Utiliser le menu clic droit du système au lieu de celui d'Orbit (sans icônes ni sections).",
+  // --- Lecture vocale ---
+  'st.tab.voice': 'Lecture vocale',
+  'st.homeTitle': 'Page d’accueil',
+  'st.homeDesc':
+    'Affichée dans un profil quand aucune app n’est ouverte : un fond personnalisable, le champ de recherche Alt+K et quelques widgets. On laisse un peu de vide pour profiter du fond.',
+  'st.homeProfile': 'Ces réglages concernent uniquement le profil « {name} ».',
+  'st.homeBackground': 'Fond',
+  'st.homeCustomImage': 'Image personnalisée',
+  'st.homeImageUrl': 'https://exemple.com/image.jpg',
+  'st.homeChooseImage': 'Choisir…',
+  'st.homeImageTooLarge': 'Choisissez une image de 3 Mo maximum.',
+  'st.homeImageFormat': 'Formats acceptés : PNG, JPEG, WebP et GIF.',
+  'st.homeImageReadError': 'Impossible de lire cette image.',
+  'st.homeRemoveImage': 'Retirer l’image',
+  'st.homeBlur': 'Flou',
+  'st.homeDim': 'Assombrir',
+  'st.homeWidgets': 'Widgets affichés',
+  'st.homeWidgetClock': 'Heure et date',
+  'st.homeWidgetWeather': 'Météo',
+  'st.homeWidgetApps': 'Accès rapide aux apps',
+
+  // --- « Ouvrir avec » (intégration système) ---
+  // Téléchargements
+  'st.dl.title': 'Où enregistrer les téléchargements',
+  'st.dl.desc':
+    'Par défaut, les fichiers vont dans le dossier Téléchargements de votre système. Vous pouvez choisir un autre dossier, ou demander où enregistrer à chaque fois.',
+  'st.dl.folder': 'Dossier d’enregistrement',
+  'st.dl.folderSystem': 'Dossier Téléchargements du système (par défaut)',
+  'st.dl.choose': 'Choisir un dossier…',
+  'st.dl.reset': 'Rétablir le dossier par défaut',
+  'st.dl.open': 'Ouvrir le dossier',
+  'st.dl.ask': 'Demander où enregistrer à chaque téléchargement',
+  'st.dl.askHint': 'La boîte d’enregistrement du système s’ouvre, pré-remplie avec le dossier ci-dessus.',
+  'st.dl.askFallback':
+    'Si vous annulez, rien n’est enregistré. Si aucun dossier n’est réglé, la boîte s’ouvre sur le dossier Téléchargements du système.',
+
+  'st.sysint.title': 'Ouvrir des liens avec Orbit',
+  'st.sysint.desc':
+    'Orbit peut figurer dans la liste « Ouvrir avec » du système, pour les liens web et les fichiers .html. Rien ne change tant que vous ne l’activez pas ici : on ne PREND rien par défaut, et un lien reçu s’ouvre en page volante — un lien libre, jamais dans un de vos comptes.',
+  'st.sysint.web': 'Liens web (http / https)',
+  'st.sysint.html': 'Fichiers .html',
+  'st.sysint.proposed': 'Proposé',
+  'st.sysint.notProposed': 'Non proposé',
+  'st.sysint.isDefault': 'Par défaut',
+  'st.sysint.enable': 'Proposer Orbit',
+  'st.sysint.disable': 'Retirer la proposition',
+  'st.sysint.alreadyInstalled': 'Déjà proposé par l’application installée — rien à faire.',
+  'st.sysint.linuxHint':
+    'Après activation, « Ouvrir avec → Orbit » apparaît pour les liens et les pages HTML, et s’ouvre en page volante. Pour en faire le navigateur par défaut, c’est le réglage de votre bureau qui décide (Orbit ne le fait jamais tout seul).',
+  'st.sysint.macHint':
+    'Sous macOS, c’est le système qui propose « Ouvrir avec » : l’application installée y figure déjà, il n’y a aucun réglage à toucher ici. Pour la choisir par défaut, passez par Réglages Système → Applications par défaut.',
+  'st.sysint.winHint':
+    'Sous Windows 10/11, un programme ne peut pas s’inscrire lui-même dans « Ouvrir avec » sans devenir gestionnaire par défaut : utilisez « Ouvrir avec → Choisir une autre application », puis épinglez Orbit (Parcourir… jusqu’au programme installé).',
+  'st.sysint.unpackaged':
+    'Vous lancez la version de développement : l’association pointerait vers ce binaire Electron. Préférez l’application installée.',
+  'st.sysint.errFileExists':
+    'Un fichier orbit.desktop existe déjà et n’appartient pas à Orbit : nous ne l’écrasons pas.',
+  'st.sysint.errUnsupported':
+    'Ce système ne permet pas de le faire depuis l’application (voir la note ci-dessus).',
+  'st.sysint.errFailed': 'Impossible de modifier l’association : {error}',
+};
+
+export const en = {
+
+  // About
+  'about.tagline': 'All your web apps in one window — Windows, macOS and Linux.',
+  'about.notes': 'Release notes',
+  'about.noNotes': 'No notes written for version {version}.',
+  'about.version': 'Version {version}',
+  'about.github': 'GitHub',
+  'about.releaseNotes': 'Release notes',
+  'about.checkUpdates': 'Check for updates',
+  'about.checking': 'Checking…',
+  'about.features': 'What Orbit can do',
+  'about.tech': 'Technologies',
+
+  // Update
+  'update.ready': 'Update ready',
+  'update.readyDesc': 'Restart Orbit to install it.',
+  'update.restart': 'Restart and install',
+  'update.later': 'Later',
+  'update.downloading': 'Downloading update… {percent}%',
+  'update.available': 'Update {version} available',
+
+  // Settings — language
+  'settings.language': 'Language',
+  'settings.language.auto': 'Automatic (system)',
+  'dg.title': 'Diagnostic log',
+  'dg.desc':
+    'App incidents since Orbit started: failed loads, pages that stopped responding, lost sessions, automatic sleep. Useful when an app signs out or freezes for no apparent reason.',
+  'dg.allApps': 'All apps',
+  'dg.copy': 'Copy',
+  'dg.clear': 'Clear',
+  'dg.empty': 'No incidents recorded. Good sign.',
+  'dg.note':
+    'The log is not kept: it starts empty every time Orbit launches, and never leaves your machine.',
+  'st.tab.diagnostics': 'Diagnostics',
+  // Synchronisation entre machines
+  'sync.title': 'Sync across devices',
+  'sync.desc':
+    'Keep profiles, apps, containers and settings identical on every machine. Orbit hosts nothing: it drops an encrypted file in a folder you pick (Drive, Nextcloud, Dropbox, a network share…) and that service carries it across.',
+  'sync.enable': 'Enable sync',
+  'sync.choose': 'Choose…',
+  'sync.folderPlaceholder': 'No folder selected',
+  'sync.passphrasePlaceholder': 'Passphrase (the same on every machine)',
+  'sync.encNote':
+    'Encrypted before it is written: whoever hosts the folder sees nothing. Without the passphrase the file is unreadable — by you too.',
+  'sync.auto': 'Sync automatically (every 5 minutes)',
+  'sync.now': 'Sync now',
+  'sync.last': 'Last sync: {when}',
+  'sync.thisDevice': 'This device: {name}',
+  'sync.published': 'State published — run a sync on your other machines.',
+  'sync.upToDate': 'Already up to date.',
+  'sync.applied': '{a} added, {m} updated, {s} removed.',
+  'sync.noFolder': 'Pick a sync folder first.',
+  'sync.needsPassword': 'This folder is encrypted: enter the passphrase.',
+  'sync.readFailed': 'Could not read it (wrong passphrase or corrupted file).',
+  'sync.writeFailed': 'Could not write: check the folder permissions.',
+  'sync.noBridge': 'Sync is unavailable in this window.',
+  // Automatisations
+  'st.tab.rules': 'Automations',
+  'eb.title': 'Something went wrong',
+  'eb.desc':
+    'The interface hit an unexpected problem. Your profiles, apps and sessions are intact — reloading usually fixes it.',
+
+  // Lock
+  'lock.setTitle': 'Set a code',
+  'lock.lockedTitle': 'Orbit is locked',
+  'lock.confirm': 'Confirm the code',
+  'lock.choose': 'Choose a code (digits or text)',
+  'lock.enter': 'Enter your code to continue',
+  'lock.clear': 'Clear',
+  'lock.validate': 'Confirm',
+  'lock.tooShort': 'Code too short (4 characters minimum)',
+  'lock.tooShort2': 'Code too short',
+  'lock.mismatch': 'The two codes do not match',
+  'lock.wrong': 'Wrong code',
+
+  // Settings — tabs
+  'st.tab.general': 'General',
+  'st.tab.downloads': 'Downloads',
+  'st.tab.appearance': 'Appearance',
+  'st.tab.display': 'Display',
+  'st.tab.profiles': 'Profiles',
+  'st.tab.shortcuts': 'Shortcuts',
+  'st.tab.extensions': 'Extensions',
+  'st.tab.security': 'Security',
+  'st.tab.privacy': 'Privacy',
+  'st.tab.backup': 'Backup',
+  'st.tab.notifications': 'Notifications',
+  'st.tab.about': 'About',
+
+  // Settings — updates
+  'st.upd.unsupported': 'Auto-update unavailable in this mode (AppImage only).',
+  'st.upd.cantCheck': 'Unable to check right now.',
+  'st.upd.available': 'Version {version} available — downloading…',
+  'st.upd.upToDate': 'Orbit is up to date.',
+  'st.upd.check': 'Check for updates',
+  'st.updates': 'Updates',
+  'st.installedVersion': 'Installed version:',
+
+  // Settings — General
+  'st.startup': 'Startup',
+  'st.startMinimized': 'Start minimized',
+  'st.startupApp': 'App on startup',
+  'st.resumeLast': 'Resume last app',
+  'st.startupNone': 'None (home screen)',
+  'st.tray': 'System tray',
+  'st.closeToTray': 'Minimize to system tray',
+  'st.closeToTrayDesc': 'Closing the window keeps Orbit in the background (tray icon) instead of quitting',
+  'st.globalHotkey': 'Global summon shortcut',
+  'st.globalHotkeyDesc': 'Show / hide Orbit from anywhere',
+  'st.hotkeyUnavailable':
+    'This shortcut is unavailable (already used by the system?). Try another one, e.g. CommandOrControl+Shift+O.',
+  'st.hotkeyUnavailable2': 'This shortcut is unavailable. Try another combination.',
+  'st.interface': 'Interface',
+  'st.hideTopbar': 'Hide the top bar',
+  'st.hideTopbarDesc': 'In fullscreen mode',
+  'st.autoPip': 'Automatic Picture-in-Picture',
+  'st.autoPipDesc': 'Pops the video into a floating mini-window when you switch apps',
+  'st.mediaKeys': 'Keyboard media keys',
+  'st.mediaKeysDesc': 'The ⏯ ⏭ ⏮ keys control current playback (even outside Orbit)',
+  'st.resources': 'Resources',
+  'st.resourcesDesc':
+    'Puts inactive apps to sleep to free memory. The active app, split screen and apps playing sound are never put to sleep.',
+  'st.autoSleep': 'Automatic sleep',
+  'st.sleepOff': 'Disabled',
+  'st.sleep15': 'After 15 minutes',
+  'st.sleep30': 'After 30 minutes',
+  'st.sleep60': 'After 1 hour',
+  'st.sleep120': 'After 2 hours',
+
+  // Settings — Display
+  'st.fontSize': 'Font size',
+  'st.small': 'Small',
+  'st.medium': 'Medium',
+  'st.large': 'Large',
+  'st.xlarge': 'Very large',
+  'st.fontFamily': 'Font family',
+  'st.fontFamilyDesc': 'The change applies instantly across the whole interface',
+  'st.uiZoom': 'Interface zoom',
+  'st.displayOptions': 'Display options',
+  'st.compact': 'Compact mode',
+  'st.compactDesc': 'Reduces spacing between elements',
+  'st.animations': 'Animations',
+  'st.animationsDesc': 'Enables transitions and animations',
+  'st.appIcons': 'App icons',
+  'st.appIconsDesc': 'Shows colored icons in the sidebar',
+
+  // Settings — Appearance
+  'st.theme': 'Theme',
+  'st.themeDark': '🌙 Dark',
+  'st.themeLight': '☀️ Light',
+  'st.themeAuto': '🌓 Auto',
+  'st.accentColor': 'Accent color',
+  'st.accentPerProfile': 'Accent per profile',
+  'st.accentPerProfileDesc':
+    'The accent follows the color chosen for each profile (in Profiles → each profile has its palette). Visual work/personal cue.',
+
+  // Settings — Profiles
+  'st.profilesDesc': 'Create and manage your workspaces',
+  'st.manage': 'Manage',
+  'st.profilesDesc2':
+    'Profiles let you separate your apps into distinct spaces (Work, Personal, Projects, etc.)',
+
+  // Page dialogs & site permissions
+  'dlg.message': 'Message',
+  'dlg.confirm': 'Confirmation',
+  'dlg.prompt': 'Input',
+  'dlg.answerPlaceholder': 'Your answer…',
+  'dlg.cancel': 'Cancel',
+  'dlg.ok': 'OK',
+  'dlg.close': 'Close',
+  'dlg.silence': 'Prevent this page from opening more dialogs',
+  'st.permTitle': 'Site permissions',
+  'st.permDesc':
+    'Camera, microphone, location, notifications… Orbit asks before granting, then remembers your choice for that site.',
+  'st.permMode': 'When an app requests access',
+  'st.permMode.ask': 'Ask for each new site (recommended)',
+  'st.permMode.allow': 'Always allow without asking',
+  'st.permMode.deny': 'Always deny without asking',
+  'st.permSaved': 'Saved decisions',
+  'st.permEmpty': 'No decisions yet. They will appear here as soon as an app requests access.',
+  'st.permForget': 'Forget',
+  'st.permForgetAll': 'Forget all',
+  'st.permAllowed': 'Allowed',
+  'st.permBlocked': 'Blocked',
+
+  // Settings — Privacy
+  'st.adblockTitle': 'Ad & tracker blocker',
+  'st.adblockDesc':
+    'Built-in native blocking (EasyList-style lists), at the network level, for all apps and profiles — no extension. More effective and reliable than blocking extensions, which do not work in Orbit.',
+  'st.adblockEnable': 'Enable blocking',
+  'st.adblockEnableDesc': 'Blocks known ads and trackers',
+  'st.adblockHint':
+    'Master switch for the blocking engine. After changing this, reload an already-open app (⟳ button) for the effect to apply. The first activation downloads the lists (then they are cached, including offline). Individual sites can turn it off on their own, under “Shields” above.',
+  'st.search.title': 'Search (Alt+K)',
+  'st.search.desc':
+    'What the palette looks through, on top of apps, profiles, actions, calculations and conversions — which are always available.',
+  'st.search.history': 'Previously visited pages',
+  'st.search.historyDesc': 'Find a page without remembering which app it was in.',
+  'st.search.openPages': 'Pages currently open',
+  'st.search.openPagesDesc': 'Searches each app’s current title, not just its name.',
+  'st.search.vault': 'Credentials from unlocked vaults',
+  'st.search.vaultDesc':
+    'Copy a password straight from the palette, without opening settings. Locked vaults never show up.',
+  'st.search.vaultTotp': 'One-time code (TOTP)',
+  'st.search.vaultTotpDesc': 'Adds a copy button for the code on entries that have one.',
+  'st.search.hint':
+    'A credential only appears once two characters are typed, never when the palette opens. The password does not pass through the interface: Orbit writes it to the clipboard itself and clears it after 30 seconds.',
+  'st.hist.title': 'Browsing history',
+  'st.hist.desc':
+    'Pages visited in your apps feed the Alt+K search (“that page I saw yesterday”). The history stays on this machine: it is not part of sync.',
+  'st.hist.record': 'Remember visited pages',
+  'st.hist.recordDesc': 'When off, nothing new is recorded — the existing history is kept.',
+  'st.hist.count': '{n} pages remembered',
+  'st.hist.empty': 'No page remembered.',
+  'st.hist.lastHour': 'Forget the last hour',
+  'st.hist.today': 'Forget the last 24 hours',
+  'st.hist.clearAll': 'Clear everything',
+  'st.hist.confirm': 'Confirm?',
+  'st.hist.hint':
+    'Login pages and token-bearing addresses are never recorded. Neither the address nor the title of a page ever leaves this machine.',
+  'st.proxyTitle': 'Proxy / VPN',
+  'st.proxyDesc':
+    'Routes traffic through a proxy (SOCKS5 or HTTP) — handy for using a VPN. Global proxy here; overridable per profile (Profiles) and per app (right-click → Edit). Empty = direct connection.',
+  'st.proxyHint':
+    'e.g. socks5://host:port, http://host:port, or with credentials socks5://user:pass@host:port. A VPN’s SOCKS5, a local proxy (Mullvad), or your own server. Reload the app after changing.',
+  'st.translateTitle': 'Translation & text-to-speech',
+  'st.translateDesc':
+    'Right-click a page → “Translate selection” or “Read aloud” (built-in, no extension).',
+  'st.translateLang': 'Translation language',
+  'st.lang.fr': 'French',
+  'st.lang.en': 'English',
+  'st.lang.es': 'Spanish',
+  'st.lang.de': 'German',
+  'st.lang.it': 'Italian',
+  'st.lang.pt': 'Portuguese',
+  'st.lang.ar': 'Arabic',
+  'st.lang.zh': 'Chinese (simplified)',
+  'st.lang.ru': 'Russian',
+  'st.lang.ja': 'Japanese',
+  'st.translateEngine': 'Translation engine',
+  'st.engineGoogleDesc': 'Fast, no setup',
+  'st.engineLibreDesc': 'Private / self-hosted',
+  'st.libreUrlPlaceholder': 'Server URL (e.g. http://localhost:5000)',
+  'st.libreKeyPlaceholder': 'API key (optional)',
+  'st.libreHint':
+    'LibreTranslate is open-source and self-hostable (Docker: libretranslate/libretranslate). With a local server, your text never leaves your machine.',
+  'st.googleHint':
+    'The Google engine sends the selected text to Google for translation. For private processing, choose LibreTranslate.',
+
+  // Settings — Notifications
+  'st.notifSystem': 'System notifications',
+  'st.notifSystemDesc':
+    'Shows a system notification when an app receives new messages (unless it is open or asleep)',
+  'st.dndNow': 'Enable now',
+  'st.dndNowDesc': 'Mutes all notifications',
+  'st.quietHours': 'Quiet hours',
+  'st.quietHoursDesc': 'Automatically mutes notifications over a time range (e.g. at night)',
+  'st.from': 'From',
+  'st.to': 'to',
+  'st.notifSound': 'Notification sound',
+  'st.notifSoundDesc': 'Customize the sound played when a message arrives. Empty = system sound.',
+  'st.customSound': 'Custom sound',
+  'st.systemSound': 'System sound (default)',
+  'st.chooseSound': 'Choose a sound…',
+  'st.testSound': 'Test',
+  'st.defaultSound': 'Default',
+  'st.soundTooHeavy': 'Sound too heavy (max 1 MB). Choose a short sound.',
+  'st.notifCenter': 'Notification center',
+  'st.notifCenterDesc':
+    'Click the 🔔 bell in the top bar to see all your apps with unread messages and jump to them in one click.',
+
+  // Settings — About
+  'st.license': 'License',
+  'st.licenseText': 'Orbit is open-source software under the MIT license.',
+
+  // Backup
+  'bk.invalid': 'Invalid backup file',
+  'bk.saved': 'Backup saved.',
+  'bk.savedEnc': 'Backup saved (encrypted).',
+  'bk.exportFail': 'Export failed',
+  'bk.restored': 'Configuration restored. Reloading…',
+  'bk.importFail': 'Import failed',
+  'bk.wrongPwd': 'Wrong password',
+  'bk.exportTitle': 'Export configuration',
+  'bk.exportDesc':
+    'Saves your profiles, apps and settings to a file. Ideal as a backup or to migrate to another PC. Logged-in sessions/accounts are not included (they stay on the machine).',
+  'bk.exportPwdPlaceholder': 'Password (optional, to encrypt)',
+  'bk.export': 'Export',
+  'bk.encNote': 'The file will be encrypted (AES-256). Without this password, it will be unreadable.',
+  'bk.fullLabel': 'Include sessions and keychains',
+  'bk.fullDesc':
+    'Cookies, signed-in accounts and vaults — the same apps already open and signed in on another computer. Required to get your complete workspace back.',
+  'bk.fullNeedsPwd':
+    'A backup with sessions requires a password: it contains your sign-in cookies.',
+  'bk.restarting': 'Restoring — Orbit is restarting…',
+  'bk.importTitle': 'Import / restore',
+  'bk.importDesc': 'Replaces the current configuration with the one from the file. Orbit then reloads.',
+  'bk.filePwdPlaceholder': 'File password',
+  'bk.unlock': 'Unlock',
+  'bk.chooseFile': 'Choose a file…',
+
+  // Security
+  'sec.appLockTitle': 'Lock Orbit on startup',
+  'sec.appLockDesc':
+    'A code is required each time Orbit opens. Without it, nobody can see your logged-in accounts. The code is never stored in plain text.',
+  'sec.newCode': 'New code',
+  'sec.changeCode': 'Change code',
+  'sec.lockNow': 'Lock now',
+  'sec.disableLockTitle': 'Disable lock',
+  'sec.enterCurrentConfirm': 'Enter the current code to confirm',
+  'sec.disable': 'Disable',
+  'sec.enableLock': 'Enable lock',
+  'sec.autoLock': 'Automatic lock',
+  'sec.autoLockDesc': 'Locks Orbit after a period of inactivity (requires a global code).',
+  'sec.disabled': 'Disabled',
+  'sec.after5': 'After 5 minutes',
+  'sec.after10': 'After 10 minutes',
+  'sec.profileLockTitle': 'Lock a profile',
+  'sec.profileLockDesc':
+    'A locked profile stays hidden (its apps do not load) until its code is entered. Ideal to separate “personal” and “work”.',
+  'sec.lockedUnlockedSession': 'Locked · unlocked for this session',
+  'sec.locked': 'Locked',
+  'sec.notLocked': 'Not locked',
+  'sec.relockNow': 'Re-lock now',
+  'sec.unlockProfileTitle': 'Unlock “{name}”',
+  'sec.enterCurrentRemove': 'Enter the current code to remove the lock',
+  'sec.removeCode': 'Remove code',
+  'sec.codeForProfile': 'Code for “{name}”',
+
+  'st.topbarTitle': 'Header',
+  'st.topbarDesc': 'Choose what shows in the top bar, and where.',
+  'st.topbarReset': 'Reset',
+  'st.topbarHint':
+    'Drag a module to move it, across zones if you like. Window buttons always stay on the right.',
+  'st.bottombarTitle': 'Bottom bar',
+  'st.bottombarDesc': 'Add a bar at the bottom of the window and choose what it shows.',
+  'st.bottombarEnable': 'Show the bottom bar',
+  'st.zone.left': 'Left',
+  'st.zone.center': 'Center',
+  'st.zone.right': 'Right',
+  'st.zoneEmpty': 'Drop a module here',
+  'st.addModule': 'Add',
+  'st.clockTitle': 'Clock',
+  'st.clockFormat': 'Format',
+  'st.clock24': '24-hour',
+  'st.clock12': '12-hour (AM/PM)',
+  'st.clockSeconds': 'Show seconds',
+  'st.clockDate': 'Show the date',
+  'st.clockZones': 'Extra time zones (comma separated)',
+  'st.weatherTitle': 'Weather',
+  'st.weatherDesc': 'Open-Meteo data — no key, no account, no silent geolocation.',
+  'st.weatherCity': 'City',
+  'st.weatherUnits': 'Units',
+  'st.weatherMetric': 'Celsius, km/h',
+  'st.weatherImperial': 'Fahrenheit, mph',
+  'st.focusTitle': 'Focus timer',
+  'st.focusDesc': 'Pomodoro session lengths (minutes). A long break comes every 4 sessions.',
+  'st.focusWork': 'Work',
+  'st.focusShort': 'Break',
+  'st.focusLong': 'Long break',
+  'st.focusAuto': 'Start the next phase automatically',
+  'st.popupTitle': 'Secondary windows',
+  'st.popupDesc':
+    'App pop-ups (Google sign-in, links opened in a new window…) — how Orbit displays them.',
+  'st.popupOrbit': 'Orbit styling',
+  'st.popupOrbitDesc': 'Rounded corners, clean header in your theme’s colors',
+  'st.popupNative': 'System window',
+  'st.popupNativeDesc': 'Your operating system’s standard decoration',
+  'st.popupExternal': 'External browser',
+  'st.popupExternalDesc': 'Open in your default browser (sign-in may fail)',
+  'sys.tooltip': 'CPU ({cores} cores) and memory — {mem}',
+  'profile.switch': 'Switch profile',
+  'st.focusWorkSound': 'End-of-session sound (Pomodoro)',
+  'st.focusWorkSoundDesc': 'Played when a work session ends — the break starts.',
+  'st.focusBreakSound': 'End-of-break sound (Pomodoro)',
+  'st.focusBreakSoundDesc': 'Played when the break ends — back to work.',
+  'st.focusSoundEnabled': 'Timer sounds',
+  'st.focusSoundEnabledDesc': 'Play a sound at the end of every session or break.',
+  'st.soundVolume': 'Sound volume',
+  'st.soundVolumeDesc': 'Shared volume for every sound Orbit plays.',
+  'st.noSound': 'No sound',
+   // --- Password vault ---
+  'st.tab.passwords': 'Passwords',
+  'st.zen': 'Zen mode (hidden bars)',
+  'st.zenDesc':
+    'The chosen bars disappear and slide back when the mouse reaches the edge of the screen.',
+  'st.zen.top': 'Header',
+  'st.zen.left': 'Sidebar',
+  'st.zen.bottom': 'Bottom bar',
+  'st.zenHint':
+    'A bar stays open while any of its menus is expanded or keyboard focus is inside it — so a notifications panel cannot slip away while you read it. Alt+⇧+H summons them from the keyboard, Esc sends them back.',
+  'st.tab.assistant': 'AI assistant',
+  'st.nativeCtxMenu': 'System context menu',
+  'st.nativeCtxMenuDesc':
+    "Use the system's right-click menu instead of Orbit's (no icons or sections).",
+  // --- Text to speech ---
+  'st.tab.voice': 'Read aloud',
+
+  'st.shieldsTitle': 'Shields',
+  'st.shieldsDesc':
+    'Protections applied per site. These values apply to every site you haven’t customized; each site can then be adjusted from its icon in the top bar.',
+  'st.shieldsDefaults': 'Default values',
+  'st.shieldsDefaultsHint':
+    'Apply to sites with no setting of their own. “Enable Shields” turns everything off for the site; “Block ads and trackers” only turns off ads, keeping HTTPS, cookies and fingerprinting.',
+  'st.shieldsCustom': 'Customized sites',
+  'st.shieldsEmpty': 'No customized site yet.',
+  'st.shieldsInherited': '(default)',
+  'st.shieldsReset': 'Back to default values',
+  'st.shieldsForgetAll': 'Reset all',
+  'st.homeTitle': 'Home page',
+  'st.homeDesc':
+    'Shown in a profile when no app is open: a customizable background, the Alt+K search field and a few widgets. Keep it airy to enjoy the background.',
+  'st.homeProfile': 'These settings apply only to the “{name}” profile.',
+  'st.homeBackground': 'Background',
+  'st.homeCustomImage': 'Custom image',
+  'st.homeImageUrl': 'https://example.com/image.jpg',
+  'st.homeChooseImage': 'Choose…',
+  'st.homeImageTooLarge': 'Choose an image no larger than 3 MB.',
+  'st.homeImageFormat': 'Supported formats: PNG, JPEG, WebP, and GIF.',
+  'st.homeImageReadError': 'Could not read this image.',
+  'st.homeRemoveImage': 'Remove image',
+  'st.homeBlur': 'Blur',
+  'st.homeDim': 'Dim',
+  'st.homeWidgets': 'Shown widgets',
+  'st.homeWidgetClock': 'Time and date',
+  'st.homeWidgetWeather': 'Weather',
+  'st.homeWidgetApps': 'Quick app access',
+
+  // --- "Open with" (system integration) ---
+  // Downloads
+  'st.dl.title': 'Where to save downloads',
+  'st.dl.desc':
+    'By default files go to your system Downloads folder. You can pick another folder, or be asked where to save each time.',
+  'st.dl.folder': 'Save folder',
+  'st.dl.folderSystem': 'System Downloads folder (default)',
+  'st.dl.choose': 'Choose a folder…',
+  'st.dl.reset': 'Restore default folder',
+  'st.dl.open': 'Open folder',
+  'st.dl.ask': 'Ask where to save each download',
+  'st.dl.askHint': 'The system save dialog opens, pre-filled with the folder above.',
+  'st.dl.askFallback':
+    'Cancelling saves nothing. If no folder is set, the dialog opens on the system Downloads folder.',
+
+  'st.sysint.title': 'Open links with Orbit',
+  'st.sysint.desc':
+    'Orbit can appear in your system’s “Open with” list, for web links and .html files. Nothing changes until you enable it here: Orbit takes NOTHING by default, and a link handed to it opens as a free page — never inside one of your accounts.',
+  'st.sysint.web': 'Web links (http / https)',
+  'st.sysint.html': '.html files',
+  'st.sysint.proposed': 'Offered',
+  'st.sysint.notProposed': 'Not offered',
+  'st.sysint.isDefault': 'Default',
+  'st.sysint.enable': 'Offer Orbit',
+  'st.sysint.disable': 'Remove the offer',
+  'st.sysint.alreadyInstalled': 'Already offered by the installed app — nothing to do.',
+  'st.sysint.linuxHint':
+    'Once enabled, “Open with → Orbit” shows up for links and HTML pages, and opens them as a free page. Making Orbit your default browser is your desktop’s decision (Orbit never does that on its own).',
+  'st.sysint.macHint':
+    'On macOS the system offers “Open With”: the installed app already appears there, so there is nothing to toggle here. To make it the default, use System Settings → Default apps.',
+  'st.sysint.winHint':
+    'On Windows 10/11 a program cannot add itself to “Open with” without becoming the default handler: use “Open with → Choose another app”, then pin Orbit (Browse… to the installed program).',
+  'st.sysint.unpackaged':
+    'You are running the development build: the association would point at this Electron binary. Prefer the installed app.',
+  'st.sysint.errFileExists':
+    'An orbit.desktop file already exists and does not belong to Orbit: we do not overwrite it.',
+  'st.sysint.errUnsupported':
+    'This system does not allow doing that from the app (see the note above).',
+  'st.sysint.errFailed': 'Could not change the association: {error}',
+};

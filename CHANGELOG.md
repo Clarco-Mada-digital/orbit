@@ -8,6 +8,71 @@ Format : une section `## [X.Y.Z] — AAAA-MM-JJ` par version, puis des
 sous-sections `### Ajouté` / `### Modifié` / `### Corrigé` / `### Sécurité`.
 La plus récente en premier.
 
+## [1.17.0] — 2026-11-01
+
+### Ajouté
+- **Rapatriement KeePassXC** : un bouton recopie les identifiants de la base
+  KeePassXC ouverte dans un trousseau Orbit, sans doublon (rapprochement par
+  domaine et nom d'utilisateur, avec choix fusionner / écraser). Nécessite
+  l'option « Allow limited access to all entries in connected databases » dans
+  KeePassXC. Les entrées sans URL, que le protocole ne permet pas de récupérer,
+  sont listées à la fin du rapatriement.
+- **Sauvegarde chiffrée du coffre** : export `.orbitvault` en AES-256-GCM, clé
+  dérivée par scrypt d'une phrase de passe dédiée, et restauration depuis
+  l'application. L'archive conserve tout le trousseau (catégories, URLs
+  secondaires, favoris, historique des mots de passe), contrairement au CSV.
+- **Mots de passe dans la palette** : `Alt+K` cherche aussi dans les trousseaux
+  déverrouillés et copie un mot de passe — ou un code TOTP — sans ouvrir les
+  réglages. Le secret ne passe pas par l'interface : le processus principal
+  écrit dans le presse-papiers et le vide après 30 s.
+- **Vidage de l'historique** : oubli d'une page depuis `Alt+K` (bouton ou
+  `Maj+Suppr`), commandes « oublier la dernière heure » et « vider tout
+  l'historique », et une section Réglages → Confidentialité qui affiche ce qui
+  est mémorisé, permet d'arrêter l'enregistrement et de vider par période.
+- **Rendu markdown enrichi** (visionneuse de documents) : formules
+  mathématiques TeX (`$…$`, `$$…$$`, `\(…\)`, `\[…\]`) mises en forme par
+  KaTeX, lecteurs audio et vidéo (chargés seulement au clic), notes de bas de
+  page numérotées avec aller-retour, titres soulignés, alertes GitHub
+  (`> [!NOTE]`), échappements `\*` et adresses web reconnues sans crochets.
+- **Sauvegarde automatique chiffrée du coffre** : archive `.orbitvault` écrite
+  à intervalle régulier dans un dossier au choix, avec rotation des N dernières.
+  La phrase de passe est confiée au trousseau du système ; sans trousseau
+  disponible, Orbit refuse d'activer la fonction plutôt que d'écrire la phrase
+  en clair. Seuls les trousseaux déverrouillés sont archivés, et l'écran le dit.
+- **Déverrouillage sans saisie** (facultatif, par trousseau) : le mot de passe
+  maître peut être confié au trousseau du système de la machine. L'écran
+  explique ce que ça implique. La mémorisation est oubliée automatiquement si le
+  mot de passe maître change ou si le trousseau est supprimé.
+- **Code 2FA dans les pages** : après un remplissage, un bouton ⏱ remplit le
+  champ de code du site — ou le copie par le processus principal si le champ
+  n'existe pas encore, auquel cas le code n'entre jamais dans la page. Orbit
+  revérifie que l'entrée demandée appartient bien au domaine affiché.
+- **Réglages → Général → Recherche** : chaque source de la palette `Alt+K`
+  (pages visitées, pages ouvertes, identifiants, code 2FA) s'active ou se coupe
+  séparément.
+
+### Corrigé
+- **Alignement des colonnes de tableau** dans la visionneuse de documents :
+  `|---:|` était analysé mais jamais appliqué, une colonne de nombres restait
+  collée à gauche.
+
+### Modifié
+- L'écran d'export distingue la sauvegarde chiffrée (recommandée) de l'export
+  CSV / JSON en clair, désormais présenté comme un outil de migration.
+- **`npm test` passe au vert sans `node_modules`** : `shields-rules` n'a plus
+  besoin de `tldts` (son module testé ne dépend de rien), et les trois fichiers
+  qui exercent une vraie bibliothèque (react-markdown, zustand) sont ignorés
+  avec une raison lisible au lieu d'échouer. La construction d'une page volante
+  sort du magasin vers `src/lib/flyPages.js`, désormais testée sans dépendance.
+- **Dictionnaire i18n découpé par domaine** (`src/lib/i18n/`) : le fichier
+  unique dépassait 3 900 lignes. L'API ne change pas, et le test vérifie en
+  plus qu'aucune clé n'est définie dans deux modules — un doublon y serait
+  silencieux.
+- Le choix des sources d'identifiants porte aussi le bouton de code 2FA des
+  pages, pour que la décision reste au même endroit.
+- Les notes de bas de page des réponses de l'assistant sont mises en valeur au
+  lieu de se confondre avec le dernier paragraphe.
+
 ## [1.16.2] — 2026-10-27
 
 ### Ajouté

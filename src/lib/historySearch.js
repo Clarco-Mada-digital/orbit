@@ -32,6 +32,34 @@ export function shouldRecord(url) {
   return true;
 }
 
+// --- Oubli ----------------------------------------------------------------
+// Les filtres d'oubli vivent ici, et pas dans le magasin, pour la même raison
+// que `shouldRecord` : ils sont testables sans zustand. Un historique qu'on ne
+// peut pas vider est un historique qu'on finit par subir — ces deux fonctions
+// sont le pendant exact de l'enregistrement.
+
+export function withoutUrl(entries, url) {
+  if (!url) return entries || [];
+  return (entries || []).filter((e) => e && e.url !== url);
+}
+
+// `since` est un horodatage : on garde ce qui est ANTÉRIEUR. Une entrée sans
+// date est traitée comme très ancienne (0), donc conservée — mieux vaut garder
+// une entrée douteuse que supprimer au-delà de ce qui a été demandé.
+export function withoutSince(entries, since) {
+  const from = Number(since);
+  if (!Number.isFinite(from)) return entries || [];
+  return (entries || []).filter((e) => e && (e.at || 0) < from);
+}
+
+// Combien d'entrées un bouton « oublier la dernière heure » effacerait-il ?
+// Afficher le nombre AVANT de cliquer évite le vidage à l'aveugle.
+export function countSince(entries, since) {
+  const from = Number(since);
+  if (!Number.isFinite(from)) return 0;
+  return (entries || []).filter((e) => e && (e.at || 0) >= from).length;
+}
+
 // Retire accents et casse : « Réunion » doit se trouver en tapant « reunion ».
 export function normalize(str) {
   return String(str || '')

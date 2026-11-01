@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { optionalImport, missingDepsReason } from './helpers/optional-dep.mjs';
 
 // `useStore` persiste via localStorage. zustand lit précisément
 // `window.localStorage` — il n'y a pas de `window` sous Node, donc on pose un
@@ -15,7 +16,21 @@ const localStorageStub = {
 globalThis.window = { localStorage: localStorageStub };
 globalThis.localStorage = localStorageStub;
 
-const { useStore } = await import('../src/stores/useStore.js');
+// Le magasin repose sur zustand, absent pendant `npm test` (contrainte du
+// projet : la suite tourne sans `node_modules`). On ne le simule PAS — on
+// testerait notre imitation plutôt que le magasin. Les tests sont donc ignorés
+// avec une raison lisible quand le paquet manque, et s'exécutent normalement
+// dès que les dépendances sont installées (donc en CI).
+//
+// La logique PURE que ces tests effleuraient vit désormais dans des modules
+// sans dépendance, vérifiés sans rien installer : lib/flyPages.js
+// (test/flyPages.test.js) et lib/assistantSessions.js
+// (test/assistantSessions.test.js).
+const store = await optionalImport(
+  new URL('../src/stores/useStore.js', import.meta.url).href
+);
+const skip = store ? false : missingDepsReason('zustand');
+const useStore = store?.useStore ?? { getState: () => ({}) };
 
 const flyPage = (id) => useStore.getState().flyPages.find((p) => p.id === id);
 
@@ -26,7 +41,7 @@ const flyPage = (id) => useStore.getState().flyPages.find((p) => p.id === id);
 // Chaque page porte sa NATURE (`kind`), qui décide de l'affichage : les formats
 // texte passent par la visionneuse d'Orbit, les autres par le <webview>.
 
-test('openFlyPage : un lien web garde son domaine comme nom', () => {
+test('openFlyPage : un lien web garde son domaine comme nom', { skip }, () => {
   const id = useStore.getState().openFlyPage('https://www.exemple.com/article');
   const page = flyPage(id);
   assert.equal(page.name, 'exemple.com');
@@ -38,7 +53,7 @@ test('openFlyPage : un lien web garde son domaine comme nom', () => {
   assert.equal(page.private, false);
 });
 
-test('openFlyPage : un fichier .html local devient une page volante', () => {
+test('openFlyPage : un fichier .html local devient une page volante', { skip }, () => {
   const id = useStore.getState().openFlyPage('file:///home/lea/Documents/rapport%20final.html');
   const page = flyPage(id);
   assert.ok(page, 'la page doit être créée');
@@ -51,7 +66,7 @@ test('openFlyPage : un fichier .html local devient une page volante', () => {
   assert.equal(page.scope, 'all');
 });
 
-test('openFlyPage : un document texte local part en VISIONNEUSE', () => {
+test('openFlyPage : un document texte local part en VISIONNEUSE', { skip }, () => {
   // C'est le cas qui affichait une page blanche : le moteur ne sait pas rendre
   // un markdown (et sur beaucoup de serveurs il en fait un téléchargement).
   const cases = [
@@ -71,7 +86,7 @@ test('openFlyPage : un document texte local part en VISIONNEUSE', () => {
   }
 });
 
-test('openFlyPage : un document texte distant n’a pas de chemin local', () => {
+test('openFlyPage : un document texte distant n’a pas de chemin local', { skip }, () => {
   const id = useStore.getState().openFlyPage('https://exemple.com/docs/guide.md');
   const page = flyPage(id);
   assert.equal(page.kind, 'markdown');
@@ -79,25 +94,25 @@ test('openFlyPage : un document texte distant n’a pas de chemin local', () => 
   assert.equal(page.filePath, null);
 });
 
-test('openFlyPage : un PDF et une image restent confiés au moteur', () => {
+test('openFlyPage : un PDF et une image restent confiés au moteur', { skip }, () => {
   assert.equal(flyPage(useStore.getState().openFlyPage('file:///tmp/rapport.pdf')).kind, 'pdf');
   assert.equal(flyPage(useStore.getState().openFlyPage('file:///tmp/photo.png')).kind, 'image');
 });
 
-test('openFlyPage : réutilise la page déjà ouverte sur la même adresse', () => {
+test('openFlyPage : réutilise la page déjà ouverte sur la même adresse', { skip }, () => {
   const first = useStore.getState().openFlyPage('https://exemple.com/x');
   const again = useStore.getState().openFlyPage('https://exemple.com/x');
   assert.equal(again, first, 'pas de doublon');
 });
 
-test('openFlyPage : un lien reçu en page privée ne réutilise pas la normale', () => {
+test('openFlyPage : un lien reçu en page privée ne réutilise pas la normale', { skip }, () => {
   const normal = useStore.getState().openFlyPage('https://prive.example/y');
   const priv = useStore.getState().openFlyPage('https://prive.example/y', { private: true });
   assert.notEqual(priv, normal, 'deux sessions distinctes');
   assert.equal(flyPage(priv).private, true);
 });
 
-test('openFlyPage : refuse ce qui donnerait une page blanche', () => {
+test('openFlyPage : refuse ce qui donnerait une page blanche', { skip }, () => {
   // Ni un binaire, ni une archive, ni un document bureautique : le moteur en
   // ferait un téléchargement silencieux, donc un cadre vide. Mieux vaut refuser
   // (le lien s'ouvre alors dans le navigateur du système).
@@ -115,7 +130,7 @@ test('openFlyPage : refuse ce qui donnerait une page blanche', () => {
   }
 });
 
-test('JAMAIS SILENCIEUX : un document refusé est confié au navigateur système', () => {
+test('JAMAIS SILENCIEUX : un document refusé est confié au navigateur système', { skip }, () => {
   // Le principe se vérifie ici de bout en bout : le store refuse d'ouvrir un
   // onglet (.docx → aucun rendu ici), MAIS il ne reste pas muet — il demande
   // au processus principal d'ouvrir le lien dans le navigateur, qui le
@@ -142,7 +157,7 @@ test('JAMAIS SILENCIEUX : un document refusé est confié au navigateur système
   }
 });
 
-test('les pages volantes ne sont pas persistées (éphémères par construction)', () => {
+test('les pages volantes ne sont pas persistées (éphémères par construction)', { skip }, () => {
   // Le store écrit bien dans le stockage fourni (c'est le chemin de
   // l'application), mais `partialize` en EXCLUT `flyPages` : un lien reçu de
   // l'extérieur ne doit pas survivre à la fermeture d'Orbit.

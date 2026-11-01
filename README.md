@@ -76,6 +76,15 @@ Récupérez la dernière version sur la page des **[Releases](https://github.com
 - 💾 **Sauvegarde/restauration chiffrée** de la configuration
 - 🎬 **Téléchargement vidéo/audio** (yt-dlp) depuis n'importe quel site
 - 🛡️ **Bloqueur de pub** intégré et **remplissage KeePassXC**
+- 🔑 **Coffre-fort de mots de passe** — trousseaux chiffrés (AES-256-GCM + scrypt),
+  TOTP (y compris un bouton ⏱ dans les pages), contrôle de santé,
+  **rapatriement de la base KeePassXC en un clic**, **sauvegarde chiffrée
+  `.orbitvault`** manuelle ou automatique, et déverrouillage facultatif par le
+  trousseau du système (l'export CSV/JSON reste disponible pour migrer vers un
+  autre gestionnaire)
+- 🔎 **Palette `Alt+K` configurable** — apps, calculs, conversions, pages
+  visitées, pages ouvertes et mots de passe : chaque source s'active ou se coupe
+  dans les réglages
 - 🔄 **Mises à jour automatiques** (AppImage / Windows)
 - 🎨 **Thèmes** clair/sombre/auto, polices et couleur d'accent
 

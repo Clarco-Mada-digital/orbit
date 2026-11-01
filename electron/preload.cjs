@@ -106,6 +106,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   // Source des identifiants proposés dans les pages : 'both' | 'keepass' | 'vault' | 'none'
   credentialsSetSource: (source) => ipcRenderer.invoke('credentials:setSource', source),
+  // Bouton « code 2FA » proposé dans les pages après un remplissage
+  credentialsSetTotpOffer: (enabled) => ipcRenderer.invoke('credentials:setTotpOffer', enabled),
   // Raccourcis globaux interceptés par le main process (même dans les apps)
   onShortcut: (callback) => {
     const listener = (_event, action) => callback(action);
@@ -318,6 +320,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     state: () => ipcRenderer.invoke('vault:state'),
     create: (payload) => ipcRenderer.invoke('vault:create', payload),
     unlock: (id, password) => ipcRenderer.invoke('vault:unlock', { id, password }),
+    // Déverrouillage sans saisie, si le mot de passe maître a été confié au
+    // trousseau de l'OS pour cet appareil.
+    unlockRemembered: (id) => ipcRenderer.invoke('vault:unlockRemembered', { id }),
+    remember: (id, password) => ipcRenderer.invoke('vault:remember', { id, password }),
+    forgetRemembered: (id) => ipcRenderer.invoke('vault:forgetRemembered', { id }),
     lock: (id) => ipcRenderer.invoke('vault:lock', { id }),
     update: (id, patch) => ipcRenderer.invoke('vault:update', { id, ...patch }),
     changeMaster: (id, current, next) =>
@@ -335,8 +342,26 @@ contextBridge.exposeInMainWorld('electronAPI', {
     strength: (password) => ipcRenderer.invoke('vault:strength', { password }),
     generate: (opts) => ipcRenderer.invoke('vault:generate', opts),
     importFile: (id) => ipcRenderer.invoke('vault:import', { id }),
-    exportFile: (id, password, format) =>
-      ipcRenderer.invoke('vault:export', { id, password, format }),
+    exportFile: (id, password, format, passphrase) =>
+      ipcRenderer.invoke('vault:export', { id, password, format, passphrase }),
+    // Rapatrie la base KeePassXC ouverte dans ce trousseau
+    importKeepass: (id) => ipcRenderer.invoke('vault:importKeepass', { id }),
+    onKeepassImportProgress: (callback) => {
+      const handler = (_event, payload) => callback(payload);
+      ipcRenderer.on('vault:importKeepassProgress', handler);
+      return () => ipcRenderer.removeListener('vault:importKeepassProgress', handler);
+    },
+    // Restaure une archive chiffrée (.orbitvault)
+    importArchive: (id, passphrase) =>
+      ipcRenderer.invoke('vault:importArchive', { id, passphrase }),
+    // Sauvegarde automatique chiffrée. `configure({ passphrase })` l'envoie au
+    // trousseau de l'OS ; aucune lecture n'est possible dans l'autre sens.
+    backupState: () => ipcRenderer.invoke('vaultBackup:state'),
+    configureBackup: (payload) => ipcRenderer.invoke('vaultBackup:configure', payload),
+    forgetBackupPassphrase: () => ipcRenderer.invoke('vaultBackup:forgetPassphrase'),
+    runBackup: () => ipcRenderer.invoke('vaultBackup:run'),
+    pickBackupDir: () => ipcRenderer.invoke('vaultBackup:pickDir'),
+    revealBackupDir: () => ipcRenderer.invoke('vaultBackup:reveal'),
     ignored: () => ipcRenderer.invoke('vault:ignored'),
     unignore: (domain) => ipcRenderer.invoke('vault:unignore', { domain }),
   },

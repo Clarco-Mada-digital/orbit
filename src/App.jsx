@@ -729,6 +729,12 @@ const [editUrlFor, setEditUrlFor] = useState(null); // { id, url } — boîte «
     window.electronAPI?.keepassSetEnabled?.(source === 'both' || source === 'keepass');
   }, [settings.credentials?.source]);
 
+  // Même raison pour le bouton « code 2FA » des pages : le processus principal
+  // le propose par défaut, il faut lui dire si l'utilisateur l'a écarté.
+  useEffect(() => {
+    window.electronAPI?.credentialsSetTotpOffer?.(settings.credentials?.totp !== false);
+  }, [settings.credentials?.totp]);
+
   // Fenêtres secondaires : style choisi + thème courant, pour que les pop-ups
   // (connexion Google, liens externes…) soient habillées comme la fenêtre.
   useEffect(() => {

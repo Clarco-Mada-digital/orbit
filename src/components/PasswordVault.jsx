@@ -19,9 +19,14 @@ import {
   X,
   Check,
   Settings2,
+  Database,
+  Archive,
+  Loader2,
+  ArrowDownUp,
 } from 'lucide-react';
 import { useT } from '../lib/i18n';
 import CredentialSource from './CredentialSource';
+import VaultBackupSettings from './VaultBackupSettings';
 
 // ---------------------------------------------------------------------------
 // Coffre-fort de mots de passe (Réglages → Mots de passe)
@@ -205,15 +210,41 @@ function UnlockVault({ vault, onUnlocked }) {
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 
+  // Mémoriser le mot de passe sur cet appareil : coché ICI, au moment où on
+  // le saisit, plutôt que dans un écran de réglages où il faudrait le retaper.
+  const [remember, setRemember] = useState(false);
+
   const submit = async () => {
     if (!password) return;
     setBusy(true);
     setError('');
     const res = await api()?.unlock(vault.id, password);
+    if (res?.success && remember) {
+      // Mémorisation après un déverrouillage réussi : le mot de passe est donc
+      // déjà vérifié. Un refus (pas de trousseau système) ne doit pas annuler
+      // le déverrouillage, qui a bien eu lieu.
+      const kept = await api()?.remember(vault.id, password);
+      if (!kept?.success) setError(t('pv.remember.failed'));
+    }
     setBusy(false);
     setPassword('');
     if (!res?.success) {
       setError(t('pv.err.badPassword'));
+      return;
+    }
+    onUnlocked();
+  };
+
+  // Déverrouillage sans saisie : le mot de passe vient du trousseau de l'OS,
+  // il ne passe pas par cet écran.
+  const unlockRemembered = async () => {
+    setBusy(true);
+    setError('');
+    const res = await api()?.unlockRemembered(vault.id);
+    setBusy(false);
+    if (!res?.success) {
+      setError(t(res?.error === 'not-remembered' ? 'pv.remember.gone' : 'pv.err.badPassword'));
+      onUnlocked(); // rafraîchit l'état : la mémorisation a pu être effacée
       return;
     }
     onUnlocked();
@@ -226,17 +257,56 @@ function UnlockVault({ vault, onUnlocked }) {
         <h4 className="font-semibold">{vault.name}</h4>
         <p className="text-sm text-text-muted mt-1">{t('pv.lockedDesc')}</p>
       </div>
+
+      {vault.remembered && (
+        <>
+          <button onClick={unlockRemembered} disabled={busy} className="btn btn-primary w-full">
+            <Unlock size={16} /> {busy ? t('pv.unlocking') : t('pv.remember.unlock')}
+          </button>
+          <button
+            onClick={async () => {
+              await api()?.forgetRemembered(vault.id);
+              onUnlocked();
+            }}
+            className="btn btn-ghost btn-sm"
+          >
+            {t('pv.remember.forget')}
+          </button>
+          <div className="text-xs text-text-muted">{t('pv.remember.orType')}</div>
+        </>
+      )}
+
       <SecretInput
         value={password}
         onChange={setPassword}
         onEnter={submit}
-        autoFocus
+        autoFocus={!vault.remembered}
         placeholder={t('pv.masterPassword')}
       />
       {error && <div className="text-sm text-error">{error}</div>}
-      <button onClick={submit} disabled={busy || !password} className="btn btn-primary w-full">
+      <button
+        onClick={submit}
+        disabled={busy || !password}
+        className={`btn w-full ${vault.remembered ? 'btn-secondary' : 'btn-primary'}`}
+      >
         <Unlock size={16} /> {busy ? t('pv.unlocking') : t('pv.unlock')}
       </button>
+
+      {!vault.remembered && (
+        <label className="flex items-start gap-2 text-left text-xs text-text-muted">
+          <input
+            type="checkbox"
+            checked={remember}
+            onChange={(e) => setRemember(e.target.checked)}
+            className="mt-0.5 accent-accent-primary"
+          />
+          <span>
+            <span className="block font-medium text-text-secondary">{t('pv.remember.label')}</span>
+            {t('pv.remember.warning')}
+          </span>
+        </label>
+      )}
+
       <p className="text-xs text-text-muted">{t('pv.unlockSlowHint')}</p>
     </div>
   );
@@ -560,6 +630,73 @@ function EntryRow({ vaultId, entry, categories, onEdit, onDeleted, onToast }) {
 }
 
 // ---------------------------------------------------------------------------
+// Menu « Importer / Exporter »
+// ---------------------------------------------------------------------------
+// Quatre actions rares (import fichier, rapatriement KeePassXC, restauration
+// d'archive, export) partagent un seul bouton : alignées dans la barre, elles
+// faisaient sept icônes à la suite, que plus personne ne distingue.
+function TransferMenu({ busy, onImportFile, onImportKeepass, onRestoreArchive, onExport }) {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+
+  // Un clic ailleurs referme le menu — y compris dans la page derrière lui.
+  useEffect(() => {
+    if (!open) return undefined;
+    const close = () => setOpen(false);
+    // `capture` : on veut fermer même si l'élément cliqué arrête la propagation.
+    window.addEventListener('click', close, true);
+    return () => window.removeEventListener('click', close, true);
+  }, [open]);
+
+  const items = [
+    { id: 'importFile', icon: Upload, label: t('pv.import'), run: onImportFile },
+    { id: 'importKeepass', icon: Database, label: t('pv.kpImport.action'), run: onImportKeepass },
+    { id: 'restore', icon: Archive, label: t('pv.restoreArchive'), run: onRestoreArchive },
+    { id: 'export', icon: Download, label: t('pv.export'), run: onExport },
+  ];
+
+  return (
+    <div className="relative">
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          setOpen((v) => !v);
+        }}
+        className="btn btn-secondary btn-sm"
+        aria-haspopup="menu"
+        aria-expanded={open}
+        title={t('pv.transfer')}
+      >
+        {busy ? <Loader2 size={14} className="animate-spin" /> : <ArrowDownUp size={14} />}
+        {t('pv.transfer')}
+      </button>
+      {open && (
+        <div
+          role="menu"
+          className="absolute right-0 z-20 mt-1 w-64 rounded-lg border border-border bg-bg-elevated shadow-lg p-1"
+        >
+          {items.map(({ id, icon: Icon, label, run }) => (
+            <button
+              key={id}
+              role="menuitem"
+              disabled={busy}
+              onClick={() => {
+                setOpen(false);
+                run();
+              }}
+              className="w-full flex items-center gap-2 px-3 py-2 rounded-md text-sm text-left hover:bg-bg-hover disabled:opacity-50"
+            >
+              <Icon size={14} className="flex-shrink-0 text-text-muted" />
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
 // Panneau principal
 // ---------------------------------------------------------------------------
 export default function PasswordVault() {
@@ -583,7 +720,14 @@ export default function PasswordVault() {
   const [checkingBreaches, setCheckingBreaches] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [exportPassword, setExportPassword] = useState('');
+  const [exportPassphrase, setExportPassphrase] = useState('');
   const [exportError, setExportError] = useState('');
+  const [restoring, setRestoring] = useState(false);
+  const [restorePassphrase, setRestorePassphrase] = useState('');
+  const [restoreError, setRestoreError] = useState('');
+  const [keepassImport, setKeepassImport] = useState(null); // { done, total } pendant le rapatriement
+  const [keepassError, setKeepassError] = useState('');
+  const [keepassReport, setKeepassReport] = useState(null);
   const [managing, setManaging] = useState(false);
   const entriesRequestRef = useRef(0);
 
@@ -678,6 +822,13 @@ export default function PasswordVault() {
     setCategories([]);
     setAudit(null);
     setBreachAudit(null);
+    setKeepassReport(null);
+    setKeepassError('');
+    setRestoring(false);
+    setRestorePassphrase('');
+    setExporting(false);
+    setExportPassword('');
+    setExportPassphrase('');
     await api()?.lock(id);
     refreshVaults();
   };
@@ -739,17 +890,97 @@ export default function PasswordVault() {
     }
   };
 
+  // Rapatriement de la base KeePassXC ouverte vers ce trousseau. Les mots de
+  // passe ne traversent pas cet écran : le processus principal parle à
+  // KeePassXC et écrit directement dans le trousseau chiffré, on n'en reçoit
+  // qu'un compte-rendu chiffré en nombres.
+  const doKeepassImport = async () => {
+    setKeepassError('');
+    setKeepassReport(null);
+    setKeepassImport({ done: 0, total: 0 });
+    const stop = api()?.onKeepassImportProgress?.((p) => setKeepassImport(p));
+    try {
+      const res = await api()?.importKeepass(activeId);
+      if (res?.success) {
+        setKeepassReport(res);
+        setAudit(null);
+        setBreachAudit(null);
+        if (showEntries) refreshEntries(activeId);
+      } else if (res?.error && res.error !== 'canceled') {
+        setKeepassError(
+          res.error === 'all-entries-denied'
+            ? t('pv.kpImport.denied')
+            : res.error === 'database-locked-or-empty'
+              ? t('pv.kpImport.dbLocked')
+              : res.error === 'not-associated'
+                ? t('pv.kpImport.notAssociated')
+                : res.error === 'locked'
+                  ? t('pv.err.locked')
+                  : res.error
+        );
+      }
+    } catch (error) {
+      console.error('[vault] rapatriement KeePassXC échoué:', error);
+      setKeepassError(String(error?.message || error));
+    } finally {
+      stop?.();
+      setKeepassImport(null);
+    }
+  };
+
   const doExport = async (format) => {
     setExportError('');
-    const res = await api()?.exportFile(activeId, exportPassword, format);
+    // Vérifié ici AUSSI pour ne pas faire retaper le mot de passe maître (que
+    // l'appel efface) à cause d'une phrase de passe trop courte.
+    if (format === 'archive' && exportPassphrase && exportPassphrase.length < 8) {
+      setExportError(t('pv.err.weakPassphrase'));
+      return;
+    }
+    const res = await api()?.exportFile(
+      activeId,
+      exportPassword,
+      format,
+      format === 'archive' ? exportPassphrase : undefined
+    );
     setExportPassword('');
+    setExportPassphrase('');
     if (res?.success) {
       setExporting(false);
-      setToast(t('pv.exported', { n: res.count }));
+      setToast(t(res.encrypted ? 'pv.archiveSaved' : 'pv.exported', { n: res.count }));
     } else if (res?.error === 'bad-password') {
       setExportError(t('pv.err.badPassword'));
+    } else if (res?.error === 'weak-passphrase') {
+      setExportError(t('pv.err.weakPassphrase'));
     } else if (res?.error !== 'canceled') {
       setExporting(false);
+    }
+  };
+
+  const doRestore = async () => {
+    setRestoreError('');
+    const res = await api()?.importArchive(activeId, restorePassphrase);
+    if (res?.success) {
+      setRestoring(false);
+      setRestorePassphrase('');
+      setToast(
+        t('pv.imported', {
+          n: res.imported,
+          merged: res.merged || 0,
+          overwritten: res.overwritten || 0,
+          skipped: res.skipped || 0,
+        })
+      );
+      setAudit(null);
+      setBreachAudit(null);
+      if (showEntries) refreshEntries(activeId);
+    } else if (res?.error === 'bad-passphrase') {
+      setRestoreError(t('pv.err.badPassphrase'));
+    } else if (res?.error === 'not-an-archive') {
+      setRestoreError(t('pv.err.notAnArchive'));
+    } else if (res?.error === 'unsupported-version') {
+      setRestoreError(t('pv.err.archiveTooNew'));
+    } else if (res?.error && res.error !== 'canceled') {
+      setRestoreError(t('pv.importFailed'));
     }
   };
 
@@ -824,6 +1055,15 @@ export default function PasswordVault() {
                 setAuditError('');
                 setBreachAudit(null);
                 setBreachError('');
+                setKeepassReport(null);
+                setKeepassError('');
+                setRestoring(false);
+                setRestorePassphrase('');
+                setRestoreError('');
+                setExporting(false);
+                setExportPassword('');
+                setExportPassphrase('');
+                setExportError('');
               }
               setActiveId(v.id);
             }}
@@ -902,12 +1142,16 @@ export default function PasswordVault() {
               {audit ? <ShieldCheck size={14} /> : <ShieldAlert size={14} />}
               {t(auditing ? 'pv.auditRunning' : 'pv.audit')}
             </button>
-            <button onClick={doImport} className="btn btn-secondary btn-sm" title={t('pv.import')}>
-              <Upload size={14} />
-            </button>
-            <button onClick={() => setExporting(true)} className="btn btn-secondary btn-sm" title={t('pv.export')}>
-              <Download size={14} />
-            </button>
+            {/* Import et export derrière UN seul menu : quatre icônes de plus
+                dans la barre devenaient indéchiffrables, et ce sont des gestes
+                rares comparés à la recherche ou à l'ajout d'une entrée. */}
+            <TransferMenu
+              busy={Boolean(keepassImport)}
+              onImportFile={doImport}
+              onImportKeepass={doKeepassImport}
+              onRestoreArchive={() => setRestoring((v) => !v)}
+              onExport={() => setExporting(true)}
+            />
             <button onClick={() => setManaging((v) => !v)} className="btn btn-secondary btn-sm" title={t('pv.vaultSettings')}>
               <Settings2 size={14} />
             </button>
@@ -929,29 +1173,145 @@ export default function PasswordVault() {
             />
           )}
 
+          {/* Rapatriement KeePassXC : avancement, puis compte-rendu. Une base
+              de 300 entrées prend un moment (une requête par site), l'écran ne
+              doit pas rester muet pendant ce temps. */}
+          {keepassImport && (
+            <div className="card flex items-center gap-3">
+              <Loader2 size={16} className="animate-spin text-accent-primary flex-shrink-0" />
+              <div className="text-sm">
+                <div className="font-medium">{t('pv.kpImport.running')}</div>
+                <p className="text-xs text-text-muted">
+                  {keepassImport.total
+                    ? t('pv.kpImport.progress', { done: keepassImport.done, total: keepassImport.total })
+                    : t('pv.kpImport.scanning')}
+                </p>
+              </div>
+            </div>
+          )}
+          {keepassError && (
+            <div className="card text-sm text-error">{keepassError}</div>
+          )}
+          {keepassReport && (
+            <div className="card space-y-2">
+              <div className="flex items-start justify-between gap-3">
+                <div className="text-sm">
+                  <div className="font-medium flex items-center gap-2">
+                    <Database size={14} /> {t('pv.kpImport.doneTitle')}
+                  </div>
+                  <p className="text-xs text-text-muted mt-1">
+                    {t('pv.kpImport.summary', {
+                      scanned: keepassReport.scanned || 0,
+                      n: keepassReport.imported || 0,
+                      merged: keepassReport.merged || 0,
+                      overwritten: keepassReport.overwritten || 0,
+                    })}
+                  </p>
+                  {/* Une entrée KeePassXC sans URL est injoignable par le
+                      protocole : on la nomme au lieu de la perdre en silence. */}
+                  {keepassReport.withoutUrl?.length > 0 && (
+                    <p className="text-xs text-warning mt-2">
+                      {t('pv.kpImport.withoutUrl', { n: keepassReport.withoutUrl.length })}{' '}
+                      {keepassReport.withoutUrl.slice(0, 8).join(', ')}
+                      {keepassReport.withoutUrl.length > 8 ? '…' : ''}
+                    </p>
+                  )}
+                  {keepassReport.failed > 0 && (
+                    <p className="text-xs text-warning mt-1">
+                      {t('pv.kpImport.failed', { n: keepassReport.failed })}
+                    </p>
+                  )}
+                </div>
+                <button onClick={() => setKeepassReport(null)} className="btn btn-secondary btn-sm">
+                  <X size={14} />
+                </button>
+              </div>
+            </div>
+          )}
+
+          {/* Restauration d'une archive chiffrée */}
+          {restoring && (
+            <div className="card space-y-3">
+              <div>
+                <h4 className="font-semibold text-sm">{t('pv.restoreArchive')}</h4>
+                <p className="text-xs text-text-muted mt-1">{t('pv.restoreArchiveHint')}</p>
+              </div>
+              <SecretInput
+                value={restorePassphrase}
+                onChange={setRestorePassphrase}
+                placeholder={t('pv.archivePassphrase')}
+                onEnter={restorePassphrase ? doRestore : undefined}
+              />
+              {restoreError && <div className="text-sm text-error">{restoreError}</div>}
+              <div className="flex gap-2">
+                <button onClick={doRestore} disabled={!restorePassphrase} className="btn btn-primary btn-sm flex-1">
+                  <Archive size={14} /> {t('pv.chooseArchive')}
+                </button>
+                <button
+                  onClick={() => { setRestoring(false); setRestorePassphrase(''); setRestoreError(''); }}
+                  className="btn btn-secondary btn-sm"
+                >
+                  {t('common.cancel')}
+                </button>
+              </div>
+            </div>
+          )}
+
           {exporting && (
             <div className="card space-y-3">
               <div>
                 <h4 className="font-semibold text-sm">{t('pv.export')}</h4>
-                <p className="text-xs text-warning mt-1">{t('pv.exportWarning')}</p>
+                <p className="text-xs text-text-muted mt-1">{t('pv.exportIntro')}</p>
               </div>
               <SecretInput
                 value={exportPassword}
                 onChange={setExportPassword}
                 placeholder={t('pv.masterPassword')}
               />
-              {exportError && <div className="text-sm text-error">{exportError}</div>}
-              <div className="flex gap-2">
-                <button onClick={() => doExport('csv')} disabled={!exportPassword} className="btn btn-primary btn-sm flex-1">
-                  CSV
-                </button>
-                <button onClick={() => doExport('json')} disabled={!exportPassword} className="btn btn-primary btn-sm flex-1">
-                  JSON
-                </button>
-                <button onClick={() => { setExporting(false); setExportPassword(''); setExportError(''); }} className="btn btn-secondary btn-sm">
-                  {t('common.cancel')}
+
+              {/* Sauvegarde chiffrée : le choix par défaut. Elle garde tout le
+                  trousseau (catégories, historique) et se relit dans Orbit. */}
+              <div className="rounded-lg border border-border p-3 space-y-2">
+                <div className="text-sm font-medium flex items-center gap-2">
+                  <Archive size={14} /> {t('pv.exportArchive')}
+                </div>
+                <p className="text-xs text-text-muted">{t('pv.exportArchiveHint')}</p>
+                <SecretInput
+                  value={exportPassphrase}
+                  onChange={setExportPassphrase}
+                  placeholder={t('pv.archivePassphraseOptional')}
+                />
+                <button
+                  onClick={() => doExport('archive')}
+                  disabled={!exportPassword}
+                  className="btn btn-primary btn-sm w-full"
+                >
+                  {t('pv.exportArchiveAction')}
                 </button>
               </div>
+
+              {/* CSV / JSON : utiles pour MIGRER vers un autre gestionnaire,
+                  en clair par construction — d'où l'avertissement. */}
+              <div className="rounded-lg border border-border p-3 space-y-2">
+                <div className="text-sm font-medium">{t('pv.exportPlain')}</div>
+                <p className="text-xs text-warning">{t('pv.exportWarning')}</p>
+                <div className="flex gap-2">
+                  <button onClick={() => doExport('csv')} disabled={!exportPassword} className="btn btn-secondary btn-sm flex-1">
+                    CSV
+                  </button>
+                  <button onClick={() => doExport('json')} disabled={!exportPassword} className="btn btn-secondary btn-sm flex-1">
+                    JSON
+                  </button>
+                </div>
+              </div>
+
+              {exportError && <div className="text-sm text-error">{exportError}</div>}
+              <button
+                onClick={() => { setExporting(false); setExportPassword(''); setExportPassphrase(''); setExportError(''); }}
+                className="btn btn-secondary btn-sm w-full"
+              >
+                {t('common.cancel')}
+              </button>
             </div>
           )}
 
@@ -1014,6 +1374,8 @@ export default function PasswordVault() {
       {/* Le même choix qu'à l'onglet KeePassXC : on ne décide pas à deux
           endroits différents ce qu'Orbit propose dans les pages. */}
       <CredentialSource />
+
+      <VaultBackupSettings />
 
       {toast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[10002] px-4 py-2 rounded-lg bg-bg-elevated border border-border shadow-lg text-sm">

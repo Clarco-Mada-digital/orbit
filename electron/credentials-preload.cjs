@@ -221,6 +221,9 @@ let keyBtn = null;
 let hintEl = null;
 let hintTimer = null;
 let btnTimer = null;
+// Bouton « code 2FA », proposé après le remplissage d'un compte qui en a un
+let totpBtn = null;
+let totpTimer = null;
 let pickerEl = null;
 let pickerOpenedAt = 0; // anti-course : clic qui a ouvert le sélecteur
 
@@ -395,6 +398,126 @@ function fillEntry(fields, entry) {
   }
   removeKeyBtn();
   removePicker();
+  // Compte à double facteur : on propose le code juste après avoir rempli,
+  // c'est l'instant exact où il va servir. Le code n'est PAS demandé tout de
+  // suite — il expire en 30 s, l'obtenir avant que le champ existe le
+  // périmerait souvent avant la validation.
+  if (entry.hasTotp) showTotpBtn(entry);
+}
+
+// Champ de code à usage unique. Les sites le balisent de plus en plus
+// (`autocomplete="one-time-code"`), mais pas tous : on complète par les
+// indices habituels, en excluant un champ déjà rempli.
+const TOTP_HINT = /(otp|one-?time|2fa|mfa|totp|verification|authenticator|code|jeton|token)/i;
+
+function findTotpField() {
+  const inputs = deepQueryAll(document, 'input').filter(reallyVisible);
+  const marked = inputs.find((i) => /one-time-code/i.test(i.autocomplete || ''));
+  if (marked) return marked;
+  return (
+    inputs.find(
+      (i) =>
+        /^(text|tel|number)$/.test(i.type || '') &&
+        TOTP_HINT.test(
+          `${i.name || ''} ${i.id || ''} ${i.autocomplete || ''} ${i.getAttribute('placeholder') || ''} ${
+            (i.getAttribute && i.getAttribute('aria-label')) || ''
+          }`
+        ) &&
+        // Un champ de recherche nommé « code » ne doit pas recevoir un TOTP :
+        // on exige une longueur plausible quand elle est déclarée.
+        (!i.maxLength || i.maxLength <= 0 || (i.maxLength >= 4 && i.maxLength <= 10))
+    ) || null
+  );
+}
+
+function removeTotpBtn() {
+  if (totpBtn) {
+    totpBtn.remove();
+    totpBtn = null;
+  }
+  clearTimeout(totpTimer);
+}
+
+function showTotpBtn(entry) {
+  removeTotpBtn();
+  totpBtn = document.createElement('button');
+  totpBtn.type = 'button';
+  totpBtn.textContent = '⏱ Code 2FA';
+  totpBtn.title = 'Remplir ou copier le code à usage unique (Orbit)';
+  Object.assign(totpBtn.style, {
+    position: 'fixed',
+    zIndex: '2147483647',
+    height: '26px',
+    padding: '0 9px',
+    border: 'none',
+    borderRadius: '7px',
+    background: '#6366f1',
+    color: '#fff',
+    cursor: 'pointer',
+    font: '500 12px/26px system-ui, sans-serif',
+    boxShadow: '0 2px 8px rgba(0,0,0,0.35)',
+    display: 'block',
+  });
+  totpBtn.addEventListener('click', async (e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      const field = findTotpField();
+      const res = await ipcRenderer.invoke('credentials:totp', {
+        vaultId: entry.vaultId,
+        entryId: entry.entryId,
+        // Sans champ à remplir, le code est copié par Orbit et n'entre jamais
+        // dans le contexte de la page.
+        copy: !field,
+      });
+      if (!res || !res.success) {
+        totpBtn.textContent = '⏱ indisponible';
+        return;
+      }
+      if (field && res.code) {
+        setValue(field, res.code);
+        highlight(field);
+        removeTotpBtn();
+      } else {
+        // Le site montre souvent le champ à l'étape SUIVANTE : on annonce la
+        // copie plutôt que de ne rien faire.
+        totpBtn.textContent = '⏱ copié';
+      }
+    } catch (err) {
+      dbg('totp a échoué : ' + String((err && err.message) || err));
+    }
+  });
+  document.body.appendChild(totpBtn);
+  positionTotpBtn();
+  // Un bouton flottant qui reste indéfiniment finit par gêner la page. 60 s
+  // plutôt que les 8 s du bouton 🔑 : l'étape 2FA arrive souvent après un
+  // chargement de page et un SMS qu'on attend.
+  totpTimer = setTimeout(removeTotpBtn, 60000);
+}
+
+function positionTotpBtn() {
+  if (!totpBtn) return;
+  const anchor = findTotpField() || currentFields?.pass || currentFields?.user;
+  if (!anchor) {
+    // Aucun champ sous la main : on se range en bas à droite plutôt que de
+    // se coller au coin supérieur gauche, où les sites mettent leur logo.
+    totpBtn.style.right = '14px';
+    totpBtn.style.bottom = '14px';
+    totpBtn.style.left = 'auto';
+    totpBtn.style.top = 'auto';
+    return;
+  }
+  try {
+    const rect = anchor.getBoundingClientRect();
+    let left = rect.right + 5;
+    if (left + 90 > window.innerWidth) left = Math.max(4, rect.left - 91);
+    totpBtn.style.left = left + 'px';
+    totpBtn.style.top = Math.max(4, rect.top + rect.height / 2 - 13) + 'px';
+    totpBtn.style.right = 'auto';
+    totpBtn.style.bottom = 'auto';
+  } catch {
+    /* ignore */
+  }
 }
 
 function getStoredLogin() {

@@ -27,6 +27,8 @@ import {
   PanelsTopLeft,
   History,
   Bot,
+  Trash2,
+  KeyRound,
 } from 'lucide-react';
 import { useStore } from '../stores/useStore';
 import AppIcon from './AppIcon';
@@ -34,7 +36,8 @@ import { shortcutKeys } from '../lib/shortcuts';
 import { useT, resolveLang } from '../lib/i18n';
 import { useSmartResults, detectUrl } from '../lib/smartSearch';
 import { useHistoryStore } from '../lib/historyStore';
-import { searchHistory, searchOpenPages, hostLabel } from '../lib/historySearch';
+import { searchHistory, searchOpenPages, hostLabel, countSince } from '../lib/historySearch';
+import { searchVaultEntries } from '../lib/vaultSearch';
 import { navigateApp } from '../lib/webviewRegistry';
 
 // Icône + couleur de chaque type de résultat instantané (calcul, conversion…)
@@ -58,6 +61,13 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
   const assistantChatEnabled = useStore((s) => s.settings?.assistantChatEnabled !== false);
   const assistantChatShortcutEnabled = useStore((s) => s.settings?.assistantChatShortcutEnabled !== false);
   const assistantChatShortcutKey = useStore((s) => s.settings?.assistantChatShortcutKey);
+  // Sources que l'utilisateur laisse interroger (Réglages → Général →
+  // Recherche). Absence de réglage = tout actif, comme à l'installation.
+  const searchSources = useStore((s) => s.settings?.search);
+  const searchHistoryOn = searchSources?.history !== false;
+  const searchOpenPagesOn = searchSources?.openPages !== false;
+  const searchVault = searchSources?.vault !== false;
+  const searchVaultTotp = searchSources?.vaultTotp !== false;
   const locale = lang === 'en' ? 'en-US' : 'fr-FR';
   const {
     apps,
@@ -81,6 +91,65 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
   // Historique de navigation (recherche transverse). Local à la machine : il
   // n'entre pas dans la synchronisation.
   const history = useHistoryStore((s) => s.entries);
+  const forgetPage = useHistoryStore((s) => s.forget);
+  const forgetSince = useHistoryStore((s) => s.forgetSince);
+  const clearHistory = useHistoryStore((s) => s.clear);
+  // Vider l'historique est irréversible : la commande demande confirmation
+  // dans la palette elle-même (un second Entrée), sans fenêtre modale qui
+  // couperait le fil du clavier.
+  //
+  // La confirmation retient la RECHERCHE à laquelle elle appartient, et on la
+  // considère caduque dès que la saisie change. C'est plus sûr qu'une remise à
+  // zéro dans un effet : celle-ci laisse un rendu pendant lequel la recherche a
+  // changé alors que la confirmation est encore armée — un « Entrée » rapide
+  // pouvait y tomber.
+  const [pendingClear, setPendingClear] = useState(null); // { mode, query } | null
+  // Heure relevée APRÈS le premier rendu : lire l'horloge pendant le rendu
+  // donne une valeur différente à chaque passage. La palette ne vit que le
+  // temps d'une recherche, un seul relevé à l'ouverture suffit.
+  const [openedAt, setOpenedAt] = useState(0);
+  useEffect(() => {
+    setOpenedAt(Date.now());
+  }, []);
+
+  // Identifiants des trousseaux DÉVERROUILLÉS. Le geste le plus fréquent d'un
+  // gestionnaire de mots de passe — « copie-moi celui de ce site » — imposait
+  // jusqu'ici d'ouvrir les réglages et de dérouler le coffre.
+  //
+  // Ce que la palette reçoit : titre, identifiant, site. JAMAIS le mot de
+  // passe : la copie est demandée au processus principal, qui écrit lui-même
+  // dans le presse-papiers et le vide au bout de 30 s. Un trousseau verrouillé
+  // n'apparaît pas du tout (le coffre ne répond rien à son sujet).
+  const [vaultEntries, setVaultEntries] = useState([]);
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      // Source désactivée dans les réglages : on ne demande même pas la liste
+      // au coffre, plutôt que de la charger pour ne pas l'afficher.
+      if (!searchVault) return;
+      const api = window.electronAPI?.vault;
+      if (!api) return;
+      try {
+        const state = await api.state();
+        const unlocked = (state?.vaults || []).filter((v) => v.unlocked);
+        const found = [];
+        for (const v of unlocked) {
+          const res = await api.entries(v.id);
+          if (!res?.success) continue;
+          for (const e of res.entries) {
+            found.push({ ...e, vaultId: v.id, vaultName: v.name, vaultIcon: v.icon });
+          }
+        }
+        if (!cancelled) setVaultEntries(found);
+      } catch {
+        /* coffre indisponible : la palette fonctionne sans */
+      }
+    };
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [searchVault]);
 
   useEffect(() => {
     inputRef.current?.focus();
@@ -91,6 +160,10 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
   const isHelpQuery =
     /^(help|aide|raccourci|shortcut|\?)$/.test(trimmed) ||
     /(raccourci|aide|help|shortcut)/.test(trimmed);
+
+  // Nature de la confirmation en cours, UNIQUEMENT si elle porte encore sur la
+  // recherche affichée (déclarée après `trimmed`, dont elle dépend).
+  const confirmClear = pendingClear && pendingClear.query === trimmed ? pendingClear.mode : null;
 
   // Actions disponibles (recherchables)
   const actions = useMemo(() => {
@@ -212,6 +285,59 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
         keywords: ['notification', 'lu', 'badge', 'marquer'],
         run: () => markAllRead(),
       },
+      // Historique : l'oubli vit ICI, là où l'historique est consulté. Il
+      // était jusqu'ici impossible de vider quoi que ce soit depuis
+      // l'interface, alors que la palette propose les pages visitées.
+      ...(history.length
+        ? [
+            {
+              id: 'history-hour',
+              name:
+                confirmClear === 'hour'
+                  ? t('qs.history.confirm')
+                  : t('qs.history.forgetHour', {
+                      n: openedAt ? countSince(history, openedAt - 3600 * 1000) : '…',
+                    }),
+              subtitle:
+                confirmClear === 'hour' ? t('qs.history.confirmSub') : t('qs.history.forgetHourSub'),
+              icon: <History size={22} />,
+              color: '#f59e0b',
+              keywords: ['historique', 'history', 'oublier', 'effacer', 'vider', 'heure', 'recent'],
+              keepOpen: true,
+              run: () => {
+                if (confirmClear !== 'hour') {
+                  setPendingClear({ mode: 'hour', query: trimmed });
+                  return;
+                }
+                // Même instant que celui annoncé par le compteur ci-dessus :
+                // la commande efface exactement ce qu'elle a chiffré.
+                forgetSince(openedAt - 3600 * 1000);
+                setPendingClear(null);
+              },
+            },
+            {
+              id: 'history-clear',
+              name:
+                confirmClear === 'all'
+                  ? t('qs.history.confirm')
+                  : t('qs.history.clear', { n: history.length }),
+              subtitle:
+                confirmClear === 'all' ? t('qs.history.confirmSub') : t('qs.history.clearSub'),
+              icon: <Trash2 size={22} />,
+              color: '#ef4444',
+              keywords: ['historique', 'history', 'vider', 'effacer', 'supprimer', 'tout', 'clear'],
+              keepOpen: true,
+              run: () => {
+                if (confirmClear !== 'all') {
+                  setPendingClear({ mode: 'all', query: trimmed });
+                  return;
+                }
+                clearHistory();
+                setPendingClear(null);
+              },
+            },
+          ]
+        : []),
       // Espaces de travail enregistrés : ouvrables directement depuis la palette
       ...workspaces.map((ws) => ({
         id: `ws-${ws.id}`,
@@ -242,6 +368,12 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
     onOpenStore,
     onOpenProfileManager,
     assistantChatEnabled,
+    history,
+    confirmClear,
+    trimmed,
+    forgetSince,
+    clearHistory,
+    openedAt,
   ]);
 
   // Résultats instantanés (calcul, conversions, couleurs, dates, devises)
@@ -256,6 +388,20 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
       setTimeout(() => setCopied(null), 1200);
     } catch {
       /* presse-papiers refusé : on ne bloque pas la palette */
+    }
+  };
+
+  // Copie d'un secret du coffre. Rien n'est lu ici : on demande au processus
+  // principal d'écrire dans le presse-papiers (il le vide 30 s plus tard).
+  const copySecret = async (id, vaultId, entryId, field) => {
+    try {
+      const res = await window.electronAPI?.vault?.copy(vaultId, entryId, field);
+      if (res?.success) {
+        setCopied(id);
+        setTimeout(() => setCopied(null), 1500);
+      }
+    } catch {
+      /* trousseau refermé entre-temps : rien à copier */
     }
   };
 
@@ -362,7 +508,7 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
     // Pages OUVERTES en ce moment : on cherche dans le titre courant de chaque
     // webview. C'est ce qui permet de retrouver « la facture » ouverte dans un
     // onglet Drive, alors que l'app s'appelle juste « Drive ».
-    searchOpenPages(apps, trimmed).forEach((app) =>
+    (searchOpenPagesOn ? searchOpenPages(apps, trimmed) : []).forEach((app) =>
       list.push({
         type: 'openPage',
         id: `open-${app.id}`,
@@ -376,16 +522,44 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
       })
     );
 
+    // Identifiants du coffre. Jamais sans recherche explicite : en dessous de
+    // deux caractères `searchVaultEntries` ne rend rien, pour ne pas dérouler
+    // la liste des comptes sur un écran laissé sans surveillance.
+    if (searchVault) {
+      searchVaultEntries(vaultEntries, q).forEach((entry) =>
+        list.push({
+          type: 'vault',
+          id: `vault-${entry.vaultId}-${entry.id}`,
+          name: entry.title,
+          subtitle: `${entry.username || t('qs.vault.noUser')} — ${entry.vaultIcon || '🔐'} ${entry.vaultName}`,
+          color: '#f59e0b',
+          keepOpen: true,
+          copyId: `vault-${entry.id}`,
+          // La copie est faite par le processus principal : le mot de passe
+          // ne traverse pas cette fenêtre.
+          action: () => copySecret(`vault-${entry.id}`, entry.vaultId, entry.id, 'password'),
+          totp:
+            entry.hasTotp && searchVaultTotp
+              ? () => copySecret(`totp-${entry.id}`, entry.vaultId, entry.id, 'totp')
+              : null,
+          totpId: `totp-${entry.id}`,
+        })
+      );
+    }
+
     // Historique : « cette page vue hier », sans se rappeler dans quelle app.
     // Un clic rouvre la page dans SON app d'origine si elle existe encore,
     // sinon en page volante — l'app a pu être désinstallée depuis.
-    searchHistory(history, trimmed).forEach((entry) =>
+    (searchHistoryOn ? searchHistory(history, trimmed) : []).forEach((entry) =>
       list.push({
         type: 'history',
         id: `hist-${entry.url}`,
         name: entry.title || hostLabel(entry.url),
         subtitle: `${hostLabel(entry.url)}${entry.appName ? ` — ${entry.appName}` : ''}`,
         color: '#8b5cf6',
+        // Oubli d'une seule page, depuis la liste où elle apparaît : c'est là
+        // qu'on se rend compte qu'on ne veut pas la garder.
+        forget: () => forgetPage(entry.url),
         action: () => {
           const owner = apps.find((a) => a.id === entry.appId);
           if (owner) {
@@ -402,7 +576,8 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
     return list.slice(0, 12);
   }, [
     trimmed, isHelpQuery, smart, url, t, apps, profiles, actions,
-    setActiveApp, setActiveProfile, openFlyPage, history,
+    setActiveApp, setActiveProfile, openFlyPage, history, forgetPage, vaultEntries,
+    searchHistoryOn, searchOpenPagesOn, searchVault, searchVaultTotp,
   ]);
 
   // Navigation clavier
@@ -419,6 +594,12 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
         const r = results[selected];
         r.action();
         if (!r.keepOpen) onClose();
+      } else if ((e.key === 'Delete' || e.key === 'Backspace') && e.shiftKey && results[selected]?.forget) {
+        // Maj+Suppr sur une page d'historique : on l'oublie sans quitter la
+        // palette ni la souris. Maj est exigé pour ne pas effacer une page en
+        // voulant corriger la recherche.
+        e.preventDefault();
+        results[selected].forget();
       } else if (e.key === 'Escape') {
         if (isHelpQuery && query.trim()) {
           setQuery('');
@@ -561,6 +742,8 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
                         <PanelsTopLeft size={22} style={{ color: result.color }} />
                       ) : result.type === 'history' ? (
                         <History size={22} style={{ color: result.color }} />
+                      ) : result.type === 'vault' ? (
+                        <KeyRound size={22} style={{ color: result.color }} />
                       ) : result.type === 'action' ? (
                         result.icon
                       ) : (
@@ -581,7 +764,52 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
                       </div>
                       <div className="text-sm text-text-muted truncate">{result.subtitle}</div>
                     </div>
-                    {result.type === 'smart' && !result.card.disabled ? (
+                    {/* Oubli d'une page d'historique. Un <span> et non un
+                        <button> : la ligne entière EST déjà un bouton, et
+                        imbriquer deux boutons donne un HTML invalide. */}
+                    {result.forget && (
+                      <span
+                        role="button"
+                        tabIndex={-1}
+                        aria-label={t('qs.history.forgetOne')}
+                        title={t('qs.history.forgetOne')}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          result.forget();
+                        }}
+                        className="flex-shrink-0 p-1.5 rounded-lg text-text-muted hover:text-error hover:bg-error/10"
+                      >
+                        <Trash2 size={16} />
+                      </span>
+                    )}
+                    {/* Code à usage unique, quand l'entrée en a un : un
+                        second geste à portée de main, sans quitter la palette. */}
+                    {result.totp && (
+                      <span
+                        role="button"
+                        tabIndex={-1}
+                        aria-label={t('qs.vault.copyTotp')}
+                        title={t('qs.vault.copyTotp')}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          result.totp();
+                        }}
+                        className="flex-shrink-0 px-2 py-1 rounded-lg border border-border text-[11px] text-text-muted hover:text-accent-primary hover:border-accent-primary"
+                      >
+                        {copied === result.totpId ? t('qs.copied') : 'TOTP'}
+                      </span>
+                    )}
+                    {result.type === 'vault' ? (
+                      copied === result.copyId ? (
+                        <span className="flex items-center gap-1 text-xs text-success flex-shrink-0">
+                          <Check size={16} /> {t('qs.vault.copied')}
+                        </span>
+                      ) : (
+                        <span className="flex items-center gap-1 text-xs text-text-muted flex-shrink-0">
+                          <Copy size={16} /> {t('qs.vault.copy')}
+                        </span>
+                      )
+                    ) : result.type === 'smart' && !result.card.disabled ? (
                       copied === result.card.id ? (
                         <span className="flex items-center gap-1 text-xs text-success flex-shrink-0">
                           <Check size={16} /> {t('qs.copied')}
