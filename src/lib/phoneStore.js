@@ -13,6 +13,7 @@ export const usePhoneStore = create((set) => ({
   open: false,
   // Notifications Android affichées, poussées par le processus principal.
   notifications: [],
+  incomingCall: null,
   // Appareil qui les a produites : indispensable pour agir dessus (ouvrir
   // l'app, écarter, déplier le volet) depuis le panneau d'Orbit.
   serial: null,
@@ -36,6 +37,7 @@ export const usePhoneStore = create((set) => ({
         serial: payload?.serial || null,
       };
     }),
+  setIncomingCall: (incomingCall) => set({ incomingCall }),
   removeNotification: (key) =>
     set((state) => ({ notifications: state.notifications.filter((n) => n.key !== key) })),
   setError: (error) => set({ error: String(error || '') }),

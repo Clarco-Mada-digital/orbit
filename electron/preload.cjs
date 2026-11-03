@@ -110,7 +110,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   credentialsSetTotpOffer: (enabled) => ipcRenderer.invoke('credentials:setTotpOffer', enabled),
   // Raccourcis globaux interceptés par le main process (même dans les apps)
   onShortcut: (callback) => {
-    const listener = (_event, action) => callback(action);
+    const listener = (_event, action, payload) => callback(action, payload);
     ipcRenderer.on('orbit:shortcut', listener);
     return () => ipcRenderer.removeListener('orbit:shortcut', listener);
   },
@@ -251,8 +251,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
       return () => ipcRenderer.removeListener('orbit:context-menu', listener);
     },
   },
+  screenshots: {
+    capture: (wcId, mode, copyDirect, source) =>
+      ipcRenderer.invoke('screenshot:capture', { wcId, mode, copyDirect, source }),
+    save: (id) => ipcRenderer.invoke('screenshot:save', { id }),
+    copy: (id) => ipcRenderer.invoke('screenshot:copy', { id }),
+    cancel: (id) => ipcRenderer.invoke('screenshot:cancel', { id }),
+    onPreview: (callback) => {
+      const listener = (_event, payload) => callback(payload);
+      ipcRenderer.on('orbit:screenshot-preview', listener);
+      return () => ipcRenderer.removeListener('orbit:screenshot-preview', listener);
+    },
+  },
   assistant: {
     state: () => ipcRenderer.invoke('assistant:state'),
+    refreshCatalog: () => ipcRenderer.invoke('assistant:refreshCatalog'),
     setChatShortcut: (key) => ipcRenderer.invoke('assistant:set-chat-shortcut', key),
     installModel: (modelKey) => ipcRenderer.invoke('assistant:installModel', { modelKey }),
     removeModel: (modelKey) => ipcRenderer.invoke('assistant:removeModel', { modelKey }),

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Bot, Cpu, Download, HardDrive, KeyRound, Keyboard, MessageSquareText, Plus, RefreshCw, ShieldCheck, Trash2 } from 'lucide-react';
+import { Bot, Cpu, Download, HardDrive, KeyRound, Keyboard, MessageSquareText, Plus, RefreshCw, Search, ShieldCheck, Trash2 } from 'lucide-react';
 import { useStore } from '../stores/useStore';
 import { resolveLang, translate, useT } from '../lib/i18n';
 import { assessAssistantModel, getBestAssistantModel } from '../lib/assistantRecommendations';
@@ -35,10 +35,12 @@ export default function AssistantSettings() {
   const language = resolveLang(settings.language);
   const [state, setState] = useState(null);
   const [busy, setBusy] = useState('');
+  const [catalogBusy, setCatalogBusy] = useState(false);
+  const [modelSearch, setModelSearch] = useState('');
   const [progress, setProgress] = useState(null);
   const [error, setError] = useState('');
   const [newWord, setNewWord] = useState('');
-  const [webGPUAvailable, setWebGPUAvailable] = useState(null);
+  const [webGPUAvailable, setWebGPUAvailable] = useState(false);
   const [providerId, setProviderId] = useState(settings.assistantProvider || 'local');
   const [providerState, setProviderState] = useState(null);
   const [providerDrafts, setProviderDrafts] = useState({});
@@ -89,10 +91,6 @@ export default function AssistantSettings() {
         if (!active) return;
         if (result?.success) setState(result);
         else setError(translate(language, 'assistant.settings.error'));
-        return supportsWebGPU();
-      })
-      .then((available) => {
-        if (active && typeof available === 'boolean') setWebGPUAvailable(available);
       })
       .catch((err) => {
         if (!active) return;
@@ -198,9 +196,36 @@ export default function AssistantSettings() {
     : null;
   const hardware = state?.hardware;
   const recommendation = getBestAssistantModel(state?.models || {}, hardware, webGPUAvailable);
+  const modelOrder = [
+    ...MODEL_ORDER,
+    ...Object.keys(state?.models || {})
+      .filter((modelKey) => !MODEL_ORDER.includes(modelKey))
+      .sort((a, b) => (state.models[a]?.label || a).localeCompare(state.models[b]?.label || b)),
+  ];
+  const filteredModelOrder = modelOrder.filter((modelKey) => {
+    const label = MODEL_LABELS[modelKey] ? t(MODEL_LABELS[modelKey]) : state?.models?.[modelKey]?.label || modelKey;
+    return label.toLocaleLowerCase().includes(modelSearch.trim().toLocaleLowerCase());
+  });
   const refreshDeviceInfo = async () => {
     await refresh();
     setWebGPUAvailable(await supportsWebGPU());
+  };
+  const refreshModelCatalog = async () => {
+    setCatalogBusy(true);
+    setError('');
+    try {
+      const result = await api()?.refreshCatalog();
+      if (!result?.success) {
+        setError(result?.error || translate(language, 'assistant.settings.catalogError'));
+        return;
+      }
+      setState(result);
+    } catch (err) {
+      console.error('[orbit] actualisation du catalogue de modèles assistant échouée:', err);
+      setError(translate(language, 'assistant.settings.catalogError'));
+    } finally {
+      setCatalogBusy(false);
+    }
   };
   const saveProvider = async () => {
     setProviderBusy(true);
@@ -657,6 +682,7 @@ export default function AssistantSettings() {
         <div>
           <h4 className="mb-1 font-semibold">{t('assistant.settings.models')}</h4>
           <p className="text-sm text-text-muted">{t('assistant.settings.modelHint')}</p>
+          <p className="mt-1 text-xs text-text-muted">{t('assistant.settings.catalogHint')}</p>
         </div>
         <div className="rounded-xl border border-border bg-bg-hover/40 p-4">
           <div className="flex items-center justify-between gap-3">
@@ -664,16 +690,28 @@ export default function AssistantSettings() {
               <Cpu size={17} className="text-accent-primary" />
               <h5 className="font-medium">{t('assistant.settings.deviceTitle')}</h5>
             </div>
-            <button
-              type="button"
-              className="btn btn-ghost btn-sm"
-              onClick={refreshDeviceInfo}
-              disabled={Boolean(busy)}
-              aria-label={t('assistant.settings.refreshDevice')}
-              title={t('assistant.settings.refreshDevice')}
-            >
-              <RefreshCw size={14} />
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={refreshModelCatalog}
+                disabled={Boolean(busy) || catalogBusy}
+                aria-label={t('assistant.settings.refreshCatalog')}
+                title={t('assistant.settings.refreshCatalog')}
+              >
+                <Search size={14} className={catalogBusy ? 'animate-pulse' : ''} />
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                onClick={refreshDeviceInfo}
+                disabled={Boolean(busy) || catalogBusy}
+                aria-label={t('assistant.settings.refreshDevice')}
+                title={t('assistant.settings.refreshDevice')}
+              >
+                <RefreshCw size={14} />
+              </button>
+            </div>
           </div>
           {hardware ? (
             <p className="mt-2 text-xs text-text-muted">
@@ -695,16 +733,29 @@ export default function AssistantSettings() {
           {recommendation && (
             <p className="mt-2 text-sm font-medium text-accent-primary">
               {t('assistant.settings.bestMatch', {
-                model: t(MODEL_LABELS[recommendation]),
+                model: MODEL_LABELS[recommendation]
+                  ? t(MODEL_LABELS[recommendation])
+                  : state?.models?.[recommendation]?.label || recommendation,
               })}
             </p>
           )}
         </div>
-        {MODEL_ORDER.map((modelKey) => {
+        <label className="relative block">
+          <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
+          <input
+            type="search"
+            value={modelSearch}
+            onChange={(event) => setModelSearch(event.target.value)}
+            className="input w-full pl-9"
+            placeholder={t('assistant.settings.searchModels')}
+            aria-label={t('assistant.settings.searchModels')}
+          />
+        </label>
+        {filteredModelOrder.map((modelKey) => {
           const model = state?.models?.[modelKey];
           const selected = selectedModel === modelKey;
           const downloading = busy === modelKey;
-          const label = t(MODEL_LABELS[modelKey]);
+          const label = MODEL_LABELS[modelKey] ? t(MODEL_LABELS[modelKey]) : model?.label || modelKey;
           const fit = model
             ? assessAssistantModel(model, hardware, webGPUAvailable)
             : 'unknown';
@@ -786,6 +837,11 @@ export default function AssistantSettings() {
             </div>
           );
         })}
+        {filteredModelOrder.length === 0 && (
+          <p role="status" className="rounded-xl border border-border px-4 py-6 text-center text-sm text-text-muted">
+            {t('assistant.settings.noModelsFound')}
+          </p>
+        )}
         {error && <p role="alert" className="text-sm text-error">{error}</p>}
       </div>
 

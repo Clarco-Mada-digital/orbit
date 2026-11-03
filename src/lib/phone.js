@@ -173,6 +173,7 @@ const bool = (value, fallback) => (typeof value === 'boolean' ? value : fallback
 
 const PACKAGE_LIST = (list) =>
   Array.isArray(list) ? [...new Set(list.filter((p) => packageValid(p)))].slice(0, 64) : [];
+export const MAX_PINNED_PHONE_APPS = 8;
 
 // Réglages de l'app Téléphone. Ils ne viennent pas seulement du disque : la
 // page les écrit par IPC. Plusieurs finissent sur la ligne de commande de
@@ -181,6 +182,7 @@ const PACKAGE_LIST = (list) =>
 export const DEFAULT_PHONE_SETTINGS = {
   serial: null,
   favoritePackages: [],
+  pinnedPackages: [],
   recentPackages: [],
   showSystemApps: false,
   openMode: 'integrated', // integrated | mirror
@@ -278,6 +280,7 @@ export function normalizePhoneSettings(raw) {
     ...DEFAULT_PHONE_SETTINGS,
     serial: current && deviceAddressValid(current) ? current : null,
     favoritePackages: PACKAGE_LIST(s.favoritePackages),
+    pinnedPackages: PACKAGE_LIST(s.pinnedPackages).slice(0, MAX_PINNED_PHONE_APPS),
     recentPackages: PACKAGE_LIST(s.recentPackages),
     showSystemApps: bool(s.showSystemApps, DEFAULT_PHONE_SETTINGS.showSystemApps),
     openMode: OPEN_MODES.has(s.openMode) ? s.openMode : DEFAULT_PHONE_SETTINGS.openMode,
@@ -430,12 +433,18 @@ export function parseAndroidNotifications(dump) {
       title: t,
       text: b,
       when: when ? Number(when[1]) : null,
-      category: category ? category[1] : null,
+      category: category ? category[1].toLowerCase() : null,
     });
   }
   // Les plus récentes d'abord ; celles sans horodatage ferment la marche.
   items.sort((a, b) => (b.when || 0) - (a.when || 0));
   return items;
+}
+
+export function phoneCallKey(action) {
+  if (action === 'answer') return 'call';
+  if (action === 'reject') return 'end_call';
+  return null;
 }
 
 // Android n'expose pas de « dismiss » en ADB : `cmd notification` ne connaît

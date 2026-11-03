@@ -7,6 +7,7 @@ import {
   mergeProofreadingIssues,
 } from '../lib/languageTool';
 import { resolveLang, translate, useT } from '../lib/i18n';
+import { detectTextLanguage } from '../lib/detectTextLanguage';
 import { useStore } from '../stores/useStore';
 
 const errorKeys = {
@@ -63,8 +64,8 @@ export default function OfflineProofreader() {
 
   useEffect(() => {
     const off = window.electronAPI?.contextMenu?.onProofread?.((payload) => {
-      const nextLanguage = resolveLang(setting);
       const nextText = payload?.text || '';
+      const nextLanguage = detectTextLanguage(nextText, resolveLang(setting));
       setRequest(payload);
       const initialIssues = analyzeText(nextText, nextLanguage);
       setEnhancedIssues(null);

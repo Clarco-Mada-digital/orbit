@@ -66,6 +66,14 @@ Sans elle :
   et peut alerter le bureau. Actions : ouvrir l'app concernée sur le téléphone,
   écarter (sommeil 24 h côté Android — seule action permise par ADB), voir le
   volet sur le mobile.
+- **Appels entrants** : les notifications Android de catégorie `call` affichent
+  un toast au-dessus de l'interface Orbit, avec les actions **Décrocher** et
+  **Refuser**. Ces commandes utilisent les touches d'appel Android via ADB ; le
+  résultat dépend des permissions et du constructeur du téléphone.
+- **Applications épinglées** : l'icône punaise des applications ajoute jusqu'à
+  huit raccourcis à une barre flottante toujours accessible dans Orbit. Cliquez
+  sur une icône pour ouvrir son application dans une fenêtre scrcpy ; utilisez
+  le petit bouton × de la bulle pour la désépingler.
 - **Réglages** : moteur scrcpy, résolution et fréquence de l'aperçu, taille des
   icônes, orientation et densité des fenêtres d'applications, adaptation au
   redimensionnement, widgets et ambiance de l'accueil, alertes de bureau,

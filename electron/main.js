@@ -1466,8 +1466,7 @@ async function translateSelection(wc, text) {
 // ---------------------------------------------------------------------------
 // Trois modes : la zone VISIBLE (ce qu'on voit), la PAGE ENTIÈRE (au-delà du
 // défilement, via le protocole DevTools) et une SÉLECTION dessinée à la souris.
-// Le PNG part dans « Images/Orbit » ET dans le presse-papiers (coller direct
-// dans un mail, un chat…), avec une entrée dans le panneau Téléchargements.
+// L'image est prévisualisée avant d'être copiée ou enregistrée.
 
 // Sélecteur de zone injecté DANS la page : superposition + rectangle tiré à la
 // souris. Résout {x,y,width,height} en pixels CSS, ou null si annulé (Échap,
@@ -1486,11 +1485,12 @@ const PICK_REGION_JS = `(() => new Promise((resolve) => {
     ov.appendChild(box);
     ov.appendChild(hint);
 
-    let sx = 0, sy = 0, dragging = false, rect = null;
+    let sx = 0, sy = 0, dragging = false, rect = null, modifierHeld = false;
     const cleanup = () => {
       window.__orbitPickCancel__ = null;
       ov.remove();
       document.removeEventListener('keydown', onKey, true);
+      document.removeEventListener('keyup', onKeyUp, true);
     };
     // Deux rendus d'attente : la page doit être REPEINTE sans la superposition
     // avant que le processus principal ne déclenche la capture.
@@ -1505,7 +1505,13 @@ const PICK_REGION_JS = `(() => new Promise((resolve) => {
       box.style.width = w + 'px'; box.style.height = h + 'px';
       rect = { x: x, y: y, width: w, height: h };
     };
-    const onKey = (e) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(null); } };
+    const onKey = (e) => {
+      if (e.key === 'Control' || e.key === 'Meta') modifierHeld = true;
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(null); }
+    };
+    const onKeyUp = (e) => {
+      if (e.key === 'Control' || e.key === 'Meta') modifierHeld = false;
+    };
     ov.addEventListener('mousedown', (e) => {
       e.preventDefault();
       dragging = true; sx = e.clientX; sy = e.clientY;
@@ -1518,9 +1524,12 @@ const PICK_REGION_JS = `(() => new Promise((resolve) => {
       if (!dragging) return;
       dragging = false;
       draw(e);
-      done(rect && rect.width > 4 && rect.height > 4 ? rect : null);
+      done(rect && rect.width > 4 && rect.height > 4
+        ? { rect, copyDirect: modifierHeld || e.ctrlKey || e.metaKey }
+        : null);
     });
     document.addEventListener('keydown', onKey, true);
+    document.addEventListener('keyup', onKeyUp, true);
     window.__orbitPickCancel__ = () => done(null);
     (document.body || document.documentElement).appendChild(ov);
   } catch (e) { resolve(null); }
@@ -1592,8 +1601,9 @@ async function captureFullPage(wc) {
 // Sélection : coordonnées rendues en pixels CSS → converties en points
 // indépendants du périphérique (ce qu'attend capturePage) via le zoom de la page.
 async function pickRegion(wc) {
-  const r = await wc.executeJavaScript(PICK_REGION_JS, true);
-  if (!r) return null;
+  const selection = await wc.executeJavaScript(PICK_REGION_JS, true);
+  if (!selection?.rect) return null;
+  const r = selection.rect;
   const zoom = typeof wc.getZoomFactor === 'function' ? wc.getZoomFactor() : 1;
   const rect = {
     x: Math.round(r.x * zoom),
@@ -1601,58 +1611,164 @@ async function pickRegion(wc) {
     width: Math.round(r.width * zoom),
     height: Math.round(r.height * zoom),
   };
-  return rect.width > 2 && rect.height > 2 ? rect : null;
+  return rect.width > 2 && rect.height > 2
+    ? { rect, copyDirect: selection.copyDirect === true }
+    : null;
 }
 
-async function captureGuestPage(wc, mode) {
+const pendingScreenshots = new Map();
+let activeScreenshotId = null;
+
+function announceSavedScreenshot(savePath, url, bytes) {
+  broadcastDownload({
+    id: `shot-${Date.now()}`,
+    filename: path.basename(savePath),
+    savePath,
+    url,
+    totalBytes: bytes,
+    receivedBytes: bytes,
+    state: 'completed',
+    event: 'done',
+  });
+
+  if (Notification.isSupported()) {
+    const notif = new Notification({
+      title: 'Capture enregistrée',
+      body: path.basename(savePath),
+      silent: true,
+    });
+    notif.on('click', () => shell.showItemInFolder(savePath));
+    keepNotificationAlive(notif);
+    notif.show();
+  }
+}
+
+async function captureGuestPage(wc, mode, copyDirect = false) {
   try {
     let image;
     if (mode === 'full') {
       image = await captureFullPage(wc);
     } else if (mode === 'selection') {
-      const rect = await pickRegion(wc);
-      if (!rect) return; // annulé par l'utilisateur : rien à signaler
-      image = await wc.capturePage(rect);
+      const selection = await pickRegion(wc);
+      if (!selection) return { success: false, cancelled: true };
+      copyDirect ||= selection.copyDirect;
+      image = await wc.capturePage(selection.rect);
     } else {
       image = await wc.capturePage();
     }
     if (!image || image.isEmpty()) throw new Error('image vide');
 
-    const savePath = uniquePath(path.join(screenshotDir(), screenshotName()));
-    const png = image.toPNG();
-    fs.writeFileSync(savePath, png);
-    clipboard.writeImage(image);
-
-    // Réutilise le panneau Téléchargements : la capture y apparaît terminée,
-    // avec « ouvrir » / « afficher dans le dossier ».
-    broadcastDownload({
-      id: `shot-${Date.now()}`,
-      filename: path.basename(savePath),
-      savePath,
-      url: wc.getURL(),
-      totalBytes: png.length,
-      receivedBytes: png.length,
-      state: 'completed',
-      event: 'done',
-    });
-
-    if (Notification.isSupported()) {
-      const notif = new Notification({
-        title: 'Capture enregistrée',
-        body: `${path.basename(savePath)} — également copiée dans le presse-papiers`,
-        silent: true,
-      });
-      notif.on('click', () => shell.showItemInFolder(savePath));
-      keepNotificationAlive(notif); // sinon le clic « ouvrir le dossier » se perd
-      notif.show();
+    if (copyDirect) {
+      clipboard.writeImage(image);
+      if (Notification.isSupported()) {
+        const notif = new Notification({
+          title: 'Capture copiée',
+          body: 'L’image est disponible dans le presse-papiers.',
+          silent: true,
+        });
+        keepNotificationAlive(notif);
+        notif.show();
+      }
+      return { success: true };
     }
+
+    if (!mainWindow || mainWindow.isDestroyed()) throw new Error('fenêtre Orbit indisponible');
+    if (activeScreenshotId) pendingScreenshots.delete(activeScreenshotId);
+    const id = crypto.randomUUID();
+    pendingScreenshots.set(id, { image, url: wc.getURL() });
+    activeScreenshotId = id;
+    mainWindow.show();
+    mainWindow.focus();
+    mainWindow.webContents.send('orbit:screenshot-preview', {
+      id,
+      filename: screenshotName(),
+      dataUrl: image.toDataURL(),
+    });
+    return { success: true };
   } catch (err) {
     console.error('[orbit] capture échouée:', err);
     if (Notification.isSupported()) {
       new Notification({ title: 'Capture impossible', body: err.message }).show();
     }
+    return { success: false, error: 'capture-failed' };
   }
 }
+
+handleFromUi('screenshot:copy', (_event, { id } = {}) => {
+  const pending = pendingScreenshots.get(id);
+  if (!pending) return { success: false, error: 'capture-expired' };
+  clipboard.writeImage(pending.image);
+  pendingScreenshots.delete(id);
+  if (activeScreenshotId === id) activeScreenshotId = null;
+  return { success: true };
+});
+
+handleFromUi('screenshot:capture', async (_event, { wcId, mode, copyDirect, source } = {}) => {
+  const captureOrbitUi = source === 'orbit';
+  const wc = captureOrbitUi
+    ? mainWindow?.webContents
+    : webContents.fromId(Number(wcId));
+  const isEmbeddedPage = wc && !wc.isDestroyed() && wc.getType() === 'webview' && orbitUiFor(wc);
+  const detachedWindow = wc && !wc.isDestroyed() && [...detachedWindows.values()]
+    .find((win) => !win.isDestroyed() && win.webContents.id === wc.id);
+  const isDetachedPage = Boolean(detachedWindow);
+  const isOrbitUiPage = captureOrbitUi && mainWindow && !mainWindow.isDestroyed()
+    && wc === mainWindow.webContents;
+  if (!isEmbeddedPage && !isDetachedPage && !isOrbitUiPage) {
+    return { success: false, error: 'invalid-page' };
+  }
+  if (!['visible', 'full', 'selection'].includes(mode)) {
+    return { success: false, error: 'invalid-capture-mode' };
+  }
+  if (detachedWindow) {
+    detachedWindow.show();
+    detachedWindow.focus();
+  } else if (isOrbitUiPage) {
+    mainWindow.show();
+    mainWindow.focus();
+  } else {
+    mainWindow?.show();
+    mainWindow?.focus();
+  }
+  wc.focus();
+  if (captureOrbitUi) {
+    await wc.executeJavaScript(
+      'new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))',
+      true
+    );
+  }
+  return captureGuestPage(wc, mode, copyDirect === true);
+});
+
+handleFromUi('screenshot:cancel', (_event, { id } = {}) => {
+  pendingScreenshots.delete(id);
+  if (activeScreenshotId === id) activeScreenshotId = null;
+  return { success: true };
+});
+
+handleFromUi('screenshot:save', async (_event, { id } = {}) => {
+  const pending = pendingScreenshots.get(id);
+  if (!pending) return { success: false, error: 'capture-expired' };
+  try {
+    const defaultPath = uniquePath(path.join(screenshotDir(), screenshotName()));
+    const result = await dialog.showSaveDialog(mainWindow, {
+      title: 'Enregistrer la capture',
+      defaultPath,
+      filters: [{ name: 'Image PNG', extensions: ['png'] }],
+    });
+    if (result.canceled || !result.filePath) return { success: false, cancelled: true };
+    const savePath = path.extname(result.filePath) ? result.filePath : `${result.filePath}.png`;
+    const png = pending.image.toPNG();
+    fs.writeFileSync(savePath, png);
+    pendingScreenshots.delete(id);
+    if (activeScreenshotId === id) activeScreenshotId = null;
+    announceSavedScreenshot(savePath, pending.url, png.length);
+    return { success: true, savePath };
+  } catch (error) {
+    console.error('[orbit] enregistrement de la capture échoué:', error);
+    return { success: false, error: String(error.message || error) };
+  }
+});
 
 // ---------------------------------------------------------------------------
 // Menu contextuel des pages (clic droit) — absent par défaut dans un <webview>
@@ -1708,7 +1824,12 @@ function buildGuestContextMenu(wc, params) {
   }
 
   if (params.hasImageContents) {
-    t.push({ label: "Copier l'image", click: () => wc.copyImageAt(params.x, params.y) });
+    t.push({
+      label: "Copier l'image",
+      click: async () => {
+        if (await focusGuestContents(wc) && !wc.isDestroyed()) wc.copyImageAt(params.x, params.y);
+      },
+    });
     t.push({ label: "Copier l'adresse de l'image", click: () => clipboard.writeText(params.srcURL) });
     if (isDownloadableUrl(params.srcURL)) {
       t.push({ label: "Enregistrer l'image…", click: () => wc.downloadURL(params.srcURL) });
@@ -1745,7 +1866,13 @@ function buildGuestContextMenu(wc, params) {
     t.push({ label: 'Rétablir', enabled: can('canRedo'), click: () => wc.redo() });
     t.push({ type: 'separator' });
     t.push({ label: 'Couper', enabled: can('canCut'), click: () => wc.cut() });
-    t.push({ label: 'Copier', enabled: can('canCopy'), click: () => wc.copy() });
+    t.push({
+      label: 'Copier',
+      enabled: can('canCopy'),
+      click: async () => {
+        if (await focusGuestContents(wc) && !wc.isDestroyed()) wc.copy();
+      },
+    });
     t.push({ label: 'Coller', enabled: can('canPaste'), click: () => wc.paste() });
     t.push({ label: 'Tout sélectionner', click: () => wc.selectAll() });
     if (params.inputFieldType === 'password') {
@@ -1796,7 +1923,12 @@ function buildGuestContextMenu(wc, params) {
       click: () => requestAssistantSelection(wc, params),
     });
     t.push({ type: 'separator' });
-    t.push({ label: 'Copier', click: () => wc.copy() });
+    t.push({
+      label: 'Copier',
+      click: async () => {
+        if (await focusGuestContents(wc) && !wc.isDestroyed()) wc.copy();
+      },
+    });
     t.push({
       label: `Traduire la sélection (→ ${translateConfig.target})`,
       click: () => translateSelection(wc, sel),
@@ -2350,6 +2482,7 @@ let popupStyle = 'orbit';
 // Thème/accent poussés par l'interface pour habiller les pop-ups à l'identique
 let popupTheme = { theme: 'dark', accent: '#6366f1' };
 const orbitPopups = new Set();
+const orbitPopupRestoredBounds = new WeakMap();
 
 ipcMain.handle('popup:setStyle', (_e, payload) => {
   if (payload && typeof payload.style === 'string') popupStyle = payload.style;
@@ -2370,10 +2503,16 @@ ipcMain.handle('popup:minimize', (e) => {
 });
 ipcMain.handle('popup:maximize', (e) => {
   const win = senderWindow(e);
-  if (win) (win.isMaximized() ? win.unmaximize() : win.maximize());
-  // L'habillage masque ses poignées de redimensionnement quand la fenêtre est
-  // agrandie : il a besoin de connaître le nouvel état.
-  return { success: true, maximized: Boolean(win?.isMaximized()) };
+  if (!win || win.isDestroyed()) return { success: false, maximized: false };
+  const restoredBounds = orbitPopupRestoredBounds.get(win);
+  if (restoredBounds) {
+    win.setBounds(restoredBounds);
+    orbitPopupRestoredBounds.delete(win);
+    return { success: true, maximized: false };
+  }
+  orbitPopupRestoredBounds.set(win, win.getBounds());
+  win.setBounds(screen.getDisplayMatching(win.getBounds()).workArea);
+  return { success: true, maximized: true };
 });
 ipcMain.handle('popup:openExternal', (_e, url) => {
   if (typeof url === 'string' && /^https?:\/\//i.test(url)) shell.openExternal(url);
@@ -2507,6 +2646,8 @@ function openInAppPopup(guestContents, url) {
         parent: mainWindow,
         width: 920,
         height: 720,
+        maximizable: true,
+        fullscreenable: true,
         autoHideMenuBar: true,
         backgroundColor: '#0a0a0f',
         webPreferences: {
@@ -2580,6 +2721,8 @@ function openInAppPopup(guestContents, url) {
       height: 720,
       minWidth: 480,
       minHeight: 420,
+      maximizable: true,
+      fullscreenable: true,
       autoHideMenuBar: true,
       backgroundColor: '#0a0a0f',
       webPreferences: {
@@ -3225,7 +3368,7 @@ function attachPageShortcuts(contents) {
     }
 
     if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send('orbit:shortcut', action);
+      mainWindow.webContents.send('orbit:shortcut', action, { wcId: contents.id });
     }
   });
 }
@@ -3396,6 +3539,7 @@ handleFromUi('ctx:action', async (_event, { wcId, action, value } = {}) => {
       clipboard.writeText(pageUrl);
       break;
     case 'copy':
+      if (!(await focusGuestContents(wc))) return { success: false, error: 'focus-failed' };
       wc.copy();
       break;
     case 'cut':
@@ -3561,6 +3705,7 @@ handleFromUi('ctx:action', async (_event, { wcId, action, value } = {}) => {
       if (isDownloadableUrl(params.linkURL)) wc.downloadURL(params.linkURL);
       break;
     case 'copyImage':
+      if (!(await focusGuestContents(wc))) return { success: false, error: 'focus-failed' };
       wc.copyImageAt(params.x, params.y);
       break;
     case 'copyImageUrl':
@@ -3598,7 +3743,13 @@ handleFromUi('ctx:action', async (_event, { wcId, action, value } = {}) => {
       startMediaDownload(pageUrl, 'audio');
       break;
     case 'screenshot':
-      captureGuestPage(wc, value === 'full' || value === 'selection' ? value : 'visible');
+      captureGuestPage(
+        wc,
+        typeof value === 'string'
+          ? value === 'full' || value === 'selection' ? value : 'visible'
+          : value?.mode === 'full' || value?.mode === 'selection' ? value.mode : 'visible',
+        value?.copyDirect === true
+      );
       break;
     case 'pip':
       wc
@@ -3690,6 +3841,9 @@ async function loadAssistant() {
 }
 
 handleFromUi('assistant:state', async () => (await loadAssistant()).getAssistantState());
+handleFromUi('assistant:refreshCatalog', async () =>
+  (await loadAssistant()).refreshAssistantModelCatalog()
+);
 handleFromUi('assistant:installModel', async (_event, { modelKey } = {}) =>
   (await loadAssistant()).installAssistantModel(modelKey)
 );
@@ -5134,6 +5288,8 @@ ipcMain.handle('app:openDetached', async (_e, { appId, url, partition, title } =
     height: 780,
     minWidth: 600,
     minHeight: 400,
+    maximizable: true,
+    fullscreenable: true,
     title: title || 'Orbit',
     backgroundColor: '#0a0a0f',
     autoHideMenuBar: true,
@@ -5163,6 +5319,8 @@ ipcMain.handle('app:openDetached', async (_e, { appId, url, partition, title } =
           parent: parentWindow,
           width: 920,
           height: 720,
+          maximizable: true,
+          fullscreenable: true,
           autoHideMenuBar: true,
           backgroundColor: '#0a0a0f',
           webPreferences: {
@@ -5718,7 +5876,10 @@ async function pollPhoneNotifications() {
   const keys = await phone.listNotificationKeys({ serial: phoneNotifSerial });
   const known = new Set(keys);
   const added = keys.filter((k) => !phoneNotifKnown.has(k));
-  if (!added.length && known.size === phoneNotifKnown.size) return;
+  if (!added.length && known.size === phoneNotifKnown.size) {
+    if (!phoneNotifPrimed && known.size === 0) phoneNotifPrimed = true;
+    return;
+  }
   phoneNotifKnown = known;
 
   const res = await phone.listNotifications({ serial: phoneNotifSerial });

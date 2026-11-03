@@ -8,6 +8,22 @@ Format : une section `## [X.Y.Z] — AAAA-MM-JJ` par version, puis des
 sous-sections `### Ajouté` / `### Modifié` / `### Corrigé` / `### Sécurité`.
 La plus récente en premier.
 
+## [1.17.3] — 2026-11-03
+
+### Ajouté
+- **Appels et applications épinglées dans Orbit Phone** : un toast global
+  propose de décrocher ou refuser les appels entrants ; jusqu'à huit
+  applications Android peuvent être épinglées dans une barre flottante.
+- **Aperçu des captures d'écran** : choisir de sauvegarder, copier ou annuler
+  après la capture, avec un délai réglable pour préparer l'écran.
+- **Catalogue des modèles IA locaux** : actualiser les modèles disponibles et
+  suivre leur téléchargement depuis les réglages.
+
+### Modifié
+- La correction orthographique tient compte de la langue détectée dans le texte,
+  au lieu d'imposer la langue de l'interface.
+- Les contrôles et erreurs de l'assistant IA sont rapprochés de la conversation.
+
 ## [1.17.2] — 2026-11-01
 
 ### Ajouté

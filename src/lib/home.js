@@ -30,6 +30,10 @@ export const HOME_BACKGROUNDS = [
   { id: 'plum', css: 'linear-gradient(135deg, #2e1065 0%, #7e22ce 50%, #ec4899 100%)' },
   { id: 'mono', css: 'linear-gradient(135deg, #111827 0%, #1f2937 55%, #374151 100%)' },
   { id: 'plain', css: 'linear-gradient(135deg, #0b0b12 0%, #16161f 100%)' },
+  { id: 'photo-stars', imageUrl: 'https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&w=1920&q=85' },
+  { id: 'photo-forest', imageUrl: 'https://images.unsplash.com/photo-1448375240586-882707db888b?auto=format&fit=crop&w=1920&q=85' },
+  { id: 'photo-ocean', imageUrl: 'https://images.unsplash.com/photo-1518837695005-2083093ee35b?auto=format&fit=crop&w=1920&q=85' },
+  { id: 'photo-mountain', imageUrl: 'https://images.unsplash.com/photo-1470770841072-f978cf4d019e?auto=format&fit=crop&w=1920&q=85' },
 ];
 
 export const DEFAULT_HOME = {
@@ -68,6 +72,7 @@ export function resolveBackground(home) {
   // Une image personnalisée prime : c'est un choix explicite de l'utilisateur.
   if (h.imageUrl) return { kind: 'image', imageUrl: h.imageUrl };
   const preset = HOME_BACKGROUNDS.find((b) => b.id === h.background);
+  if (preset?.imageUrl) return { kind: 'image', imageUrl: preset.imageUrl };
   if (preset && preset.css) return { kind: 'gradient', css: preset.css };
   // Inconnu, ou preset « accent » → dégradé dynamique.
   return { kind: 'gradient', css: ACCENT_BACKGROUND };

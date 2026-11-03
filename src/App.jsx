@@ -19,8 +19,10 @@ const AppStore = lazy(() => import('./components/AppStore'));
 // L'espace Téléphone vient d'une extension : bureau, aperçu et réglages ne
 // sont chargés qu'à la première ouverture, si l'extension est installée.
 const PhoneOverlay = lazy(() => import('./components/PhoneOverlay'));
+const PhoneFloatingAccess = lazy(() => import('./components/PhoneFloatingAccess'));
 import WebView from './components/WebView';
 import GuestContextMenu from './components/GuestContextMenu';
+import ScreenshotPreview from './components/ScreenshotPreview';
 import OfflineProofreader from './components/OfflineProofreader';
 import WebDialogHost from './components/WebDialogHost';
 import EditUrlDialog from './components/EditUrlDialog';
@@ -155,6 +157,7 @@ function mixWithWhite(rgb, amount) {
 export default function App() {
   const [showQuickSwitcher, setShowQuickSwitcher] = useState(false);
   const phoneOpen = usePhoneStore((s) => s.open);
+  const phoneEnabled = useStore((s) => s.nativeApps.includes('phone'));
   const [showSettings, setShowSettings] = useState(false);
   const [showProfileManager, setShowProfileManager] = useState(false);
   const [showAppStore, setShowAppStore] = useState(false);
@@ -686,7 +689,22 @@ const [editUrlFor, setEditUrlFor] = useState(null); // { id, url } — boîte «
   // unique, même si l'extension n'est pas installée (aucun événement alors).
   useEffect(() => {
     const api = window.electronAPI?.phone;
-    const off = api?.onNotifications?.((payload) => usePhoneStore.getState().setNotifications(payload));
+    const off = api?.onNotifications?.((payload) => {
+      const state = usePhoneStore.getState();
+      const knownKeys = new Set(state.notifications.map((item) => item.key));
+      const incomingCall = Array.isArray(payload?.items)
+        ? payload.items.find((item) => item.category === 'call' && !knownKeys.has(item.key))
+        : null;
+      state.setNotifications(payload);
+      if (incomingCall) {
+        state.setIncomingCall({ serial: payload.serial, notification: incomingCall });
+      } else if (
+        state.incomingCall &&
+        !payload?.items?.some((item) => item.key === state.incomingCall.notification.key)
+      ) {
+        state.setIncomingCall(null);
+      }
+    });
     const pending = api?.notifications?.();
     if (pending?.then) {
       pending
@@ -911,7 +929,13 @@ const openEditUrl = useCallback((id) => {
 }, []);
 
   // Exécute une action de raccourci (nom centralisé dans lib/shortcuts.js)
-  const runShortcut = useCallback((action) => {
+  const runShortcut = useCallback((action, payload) => {
+    if (action === 'screenshot') {
+      window.dispatchEvent(new CustomEvent('orbit:screenshot-open', {
+        detail: payload?.wcId ? payload : { ...payload, source: 'orbit' },
+      }));
+      return;
+    }
     if (action === 'assistant-chat') {
       if (useStore.getState().settings.assistantChatEnabled !== false) {
         window.dispatchEvent(new Event('orbit:assistant-chat-open'));
@@ -1494,6 +1518,12 @@ const openEditUrl = useCallback((id) => {
       )}
       {/* Menu contextuel des apps embarquées (remplace le menu natif) */}
       <GuestContextMenu />
+      {phoneEnabled && (
+        <Suspense fallback={null}>
+          <PhoneFloatingAccess />
+        </Suspense>
+      )}
+      <ScreenshotPreview />
       <OfflineProofreader />
       <AssistantHost />
 

@@ -881,7 +881,7 @@ export default function Settings({ onClose }) {
                       {t('st.homeProfile', { name: currentProfile?.name || '' })}
                     </p>
 
-                    {/* Fonds proposés (dégradés) */}
+                    {/* Fonds proposés */}
                     <div className="text-sm font-medium mb-2">{t('st.homeBackground')}</div>
                     <div className="flex flex-wrap gap-3">
                       {HOME_BACKGROUNDS.map((b) => {
@@ -893,17 +893,22 @@ export default function Settings({ onClose }) {
                               updateHome({ background: b.id, imageUrl: '' })
                             }
                             title={t(`home.bg.${b.id}`)}
-                            className={`w-12 h-12 rounded-xl border-2 transition-all ${
+                            aria-label={t(`home.bg.${b.id}`)}
+                            className={`h-12 w-20 rounded-xl border-2 transition-all ${
                               selected ? 'border-white scale-105' : 'border-transparent hover:scale-105'
                             }`}
                             style={{
-                              backgroundImage: b.accent ? ACCENT_BACKGROUND : b.css,
+                              backgroundImage: b.imageUrl
+                                ? `url("${b.imageUrl}")`
+                                : (b.accent ? ACCENT_BACKGROUND : b.css),
                               backgroundSize: 'cover',
+                              backgroundPosition: 'center',
                             }}
                           />
                         );
                       })}
                     </div>
+                    <p className="mt-2 text-xs text-text-muted">{t('st.homeImagePresetsNote')}</p>
 
                     {/* Image personnalisée : URL ou fichier local */}
                     <div className="mt-5 pt-4 border-t border-border space-y-3">

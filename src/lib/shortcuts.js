@@ -57,6 +57,7 @@ export function matchShortcut(e, assistantChatShortcutKey = 'a') {
   if (shift && chatKey && k === chatKey) {
     return 'assistant-chat';
   }
+  if (shift && k === 's') return 'screenshot';
   if (shift && k === 'e') return 'proofread-editor';
   if (shift && k === 'i') return 'assistant-editor';
   if (k === 'k') return 'search';
@@ -114,6 +115,7 @@ export function matchShortcutInput(input, assistantChatShortcutKey = 'a') {
   if (shift && chatKey && k === chatKey) {
     return 'assistant-chat';
   }
+  if (shift && k === 's') return 'screenshot';
   if (shift && k === 'e') return 'proofread-editor';
   if (shift && k === 'i') return 'assistant-editor';
   if (k === 'k') return 'search';
@@ -187,5 +189,9 @@ export function shortcutKeys(t, assistantOptions = {}) {
       desc: d('sc.assistantChat', 'Ouvrir la discussion avec l’assistant IA Orbit'),
     });
   }
+  shortcuts.splice(2, 0, {
+    keys: [M, '⇧', 'S'],
+    desc: d('sc.screenshot', 'Capturer l’écran de l’app active'),
+  });
   return shortcuts;
 }

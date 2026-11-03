@@ -9,6 +9,10 @@ import {
   assistantModelIntegrityMatches,
   hasValidAssistantModelIntegrityMetadata,
 } from './assistant-model-integrity.js';
+import {
+  discoverCompatibleAssistantModels,
+  isValidDiscoveredAssistantModel,
+} from './assistant-catalog.js';
 
 const MODEL_FILES = [
   'added_tokens.json',
@@ -87,6 +91,8 @@ let installPromise = null;
 let progressReporter = () => {};
 let modelServer;
 let modelServerStart;
+let discoveredModels;
+let discoveredModelsLoaded = false;
 
 export function setAssistantProgressReporter(reporter) {
   if (typeof reporter !== 'function') throw new TypeError('Progress reporter must be a function');
@@ -98,8 +104,57 @@ function modelRoot() {
   return root;
 }
 
+function discoveredModelMap() {
+  if (discoveredModelsLoaded) return discoveredModels;
+  discoveredModelsLoaded = true;
+  discoveredModels = new Map();
+  const catalogPath = path.join(app.getPath('userData'), 'orbit-assistant-catalog.json');
+  try {
+    const saved = JSON.parse(fs.readFileSync(catalogPath, 'utf8'));
+    if (!Array.isArray(saved)) throw new TypeError('Invalid model catalog');
+    for (const model of saved) {
+      if (isValidDiscoveredAssistantModel(model) && !ASSISTANT_MODELS[model.key]) {
+        discoveredModels.set(model.key, model);
+      }
+    }
+  } catch (error) {
+    if (error.code !== 'ENOENT') {
+      console.error('[orbit] catalogue local des modèles assistant illisible:', error);
+    }
+  }
+  return discoveredModels;
+}
+
+function getModel(modelKey) {
+  return ASSISTANT_MODELS[modelKey] || discoveredModelMap().get(modelKey);
+}
+
+function allModels() {
+  return { ...ASSISTANT_MODELS, ...Object.fromEntries(discoveredModelMap()) };
+}
+
+function persistDiscoveredModels(models) {
+  const catalogPath = path.join(app.getPath('userData'), 'orbit-assistant-catalog.json');
+  const temporaryPath = `${catalogPath}.part`;
+  fs.writeFileSync(temporaryPath, JSON.stringify([...models.values()]));
+  fs.renameSync(temporaryPath, catalogPath);
+}
+
+export async function refreshAssistantModelCatalog() {
+  const models = discoveredModelMap();
+  const excludedIds = Object.values(ASSISTANT_MODELS).map((model) => model.id);
+  const discovered = await discoverCompatibleAssistantModels((url, options) => net.fetch(url, options), excludedIds);
+  for (const model of discovered) {
+    const installedVersion = models.get(model.key);
+    if (installedVersion && isModelInstalled(model.key, installedVersion)) continue;
+    models.set(model.key, model);
+  }
+  persistDiscoveredModels(models);
+  return getAssistantState();
+}
+
 function modelPath(modelKey) {
-  const model = ASSISTANT_MODELS[modelKey];
+  const model = getModel(modelKey);
   if (!model) throw new RangeError(`Unknown Orbit assistant model: ${modelKey}`);
   return path.join(modelRoot(), model.id);
 }
@@ -108,22 +163,26 @@ function markerPath(modelKey) {
   return path.join(modelPath(modelKey), 'orbit-model.json');
 }
 
+function isModelInstalled(modelKey, model) {
+  try {
+    const marker = JSON.parse(fs.readFileSync(markerPath(modelKey), 'utf8'));
+    const weights = path.join(modelPath(modelKey), model.weight);
+    return marker.revision === model.revision
+      && (!marker.sha256 || marker.sha256 === model.sha256)
+      && fs.statSync(weights).size === model.size;
+  } catch {
+    return false;
+  }
+}
+
 export function getAssistantState() {
   const cpus = os.cpus();
+  const models = allModels();
   return {
     success: true,
     models: Object.fromEntries(
-      Object.entries(ASSISTANT_MODELS).map(([key, model]) => {
-        let installed = false;
-        try {
-          const marker = JSON.parse(fs.readFileSync(markerPath(key), 'utf8'));
-          const weights = path.join(modelPath(key), model.weight);
-          installed =
-            marker.revision === model.revision &&
-            fs.statSync(weights).size === model.size;
-        } catch {
-          installed = false;
-        }
+      Object.entries(models).map(([key, model]) => {
+        const installed = isModelInstalled(key, model);
         return [key, {
           id: model.id,
           label: model.label,
@@ -175,7 +234,7 @@ function serveModelFile(request, response) {
     return;
   }
   const [modelKey, ...requested] = segments;
-  const model = ASSISTANT_MODELS[modelKey];
+  const model = getModel(modelKey);
   if (!model) {
     response.writeHead(404, headers).end();
     return;
@@ -286,7 +345,7 @@ async function ensureModelServer() {
 }
 
 export async function getAssistantModelBaseUrl(modelKey) {
-  if (!ASSISTANT_MODELS[modelKey]) return { success: false, error: 'unknown-model' };
+  if (!getModel(modelKey)) return { success: false, error: 'unknown-model' };
   if (!getAssistantState().models[modelKey].installed) {
     return { success: false, error: 'model-not-installed' };
   }
@@ -367,7 +426,7 @@ async function downloadFile(modelKey, model, file, fileIndex, fileCount) {
 
 export async function installAssistantModel(modelKey) {
   if (installPromise) return { success: false, error: 'busy' };
-  const model = ASSISTANT_MODELS[modelKey];
+  const model = getModel(modelKey);
   if (!model) return { success: false, error: 'unknown-model' };
   if (getAssistantState().models[modelKey].installed) return { success: true, alreadyInstalled: true };
 
@@ -388,7 +447,12 @@ export async function installAssistantModel(modelKey) {
       }
       fs.writeFileSync(
         markerPath(modelKey),
-        JSON.stringify({ modelKey, revision: model.revision, installedAt: new Date().toISOString() })
+        JSON.stringify({
+          modelKey,
+          revision: model.revision,
+          sha256: model.sha256,
+          installedAt: new Date().toISOString(),
+        })
       );
       return { success: true };
     } catch (error) {
@@ -403,7 +467,7 @@ export async function installAssistantModel(modelKey) {
 }
 
 export async function removeAssistantModel(modelKey) {
-  const model = ASSISTANT_MODELS[modelKey];
+  const model = getModel(modelKey);
   if (!model) return { success: false, error: 'unknown-model' };
   if (installPromise) return { success: false, error: 'busy' };
 

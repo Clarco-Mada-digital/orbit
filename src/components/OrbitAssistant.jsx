@@ -17,7 +17,10 @@ import {
 import { getAssistantAgent } from '../lib/assistantAgents';
 import { appendSessionMessages, createAssistantSession } from '../lib/assistantSessions';
 import { downloadAssistantMarkdown } from '../lib/assistantExport';
+import { detectTextLanguage } from '../lib/detectTextLanguage';
 import AssistantWorkspaceSidebar from './AssistantWorkspaceSidebar';
+import wasmUrl from 'onnxruntime-web/ort-wasm-simd-threaded.asyncify.wasm?url';
+import wasmFactoryUrl from 'onnxruntime-web/ort-wasm-simd-threaded.asyncify.mjs?url';
 
 const AssistantMarkdown = lazy(() => import('./AssistantMarkdown'));
 
@@ -129,6 +132,21 @@ export default function OrbitAssistant({ onReady }) {
   const isOpen = Boolean(request);
   const isChat = mode === 'chat';
   const selectedModel = modelState?.models?.[modelKey];
+  const installedModelOptions = Object.entries(modelState?.models || {})
+    .filter(([, model]) => model?.installed)
+    .sort(([a], [b]) => {
+      const aIndex = Object.keys(MODEL_LABEL_KEYS).indexOf(a);
+      const bIndex = Object.keys(MODEL_LABEL_KEYS).indexOf(b);
+      if (aIndex !== -1 || bIndex !== -1) {
+        if (aIndex === -1) return 1;
+        if (bIndex === -1) return -1;
+        return aIndex - bIndex;
+      }
+      return (modelState.models[a]?.label || a).localeCompare(modelState.models[b]?.label || b);
+    });
+  const selectedInstalledModel = installedModelOptions.some(([key]) => key === modelKey)
+    ? modelKey
+    : '';
   const activeProvider = getAiProvider(providerId);
   const usesOrbitModel = providerId === 'local';
   const providerReady = usesOrbitModel || Boolean(
@@ -661,7 +679,9 @@ export default function OrbitAssistant({ onReady }) {
       const messagesForRequest = createAssistantMessages({
         mode: submittedMode,
         text: submittedText,
-        language,
+        language: submittedMode === 'correct' || submittedMode === 'rewrite' || chatCommandId === 'fix'
+          ? detectTextLanguage(submittedText, language)
+          : language,
         dictionary,
         rewriteStyle,
         context: contextKind,
@@ -719,6 +739,13 @@ export default function OrbitAssistant({ onReady }) {
         const { env, pipeline } = await import('@huggingface/transformers');
         env.localModelPath = modelUrl.url;
         env.allowLocalModels = true;
+        env.useBrowserCache = false;
+        if (env.backends.onnx?.wasm) {
+          env.backends.onnx.wasm.wasmPaths = {
+            wasm: wasmUrl,
+            mjs: wasmFactoryUrl,
+          };
+        }
         // Transformers.js also checks file metadata through its remote-model
         // path; this URL is Orbit's loopback-only model server, not Hugging Face.
         env.allowRemoteModels = true;
@@ -1011,7 +1038,7 @@ export default function OrbitAssistant({ onReady }) {
             <div className="flex shrink-0 items-center gap-2">
               {usesOrbitModel ? (
                 <select
-                  value={modelKey}
+                  value={selectedInstalledModel}
                   onChange={(event) => {
                     updateSettings({ assistantModel: event.target.value });
                     setResultText('');
@@ -1021,8 +1048,16 @@ export default function OrbitAssistant({ onReady }) {
                   className="max-w-44 rounded-full border border-border bg-bg-primary/60 px-3 py-2 text-xs text-text-primary outline-none focus:border-accent-primary disabled:opacity-60"
                   aria-label={t('assistant.settings.models')}
                 >
-                  {Object.entries(MODEL_LABEL_KEYS).map(([key, labelKey]) => {
-                    const candidate = modelState?.models?.[key];
+                  {!selectedInstalledModel && (
+                    <option value="" disabled>
+                      {!modelState
+                        ? t('assistant.settings.loadingModels')
+                        : installedModelOptions.length === 0
+                          ? t('assistant.settings.noInstalledModels')
+                          : t('assistant.settings.chooseInstalledModel')}
+                    </option>
+                  )}
+                  {installedModelOptions.map(([key, candidate]) => {
                     const candidateFit = candidate
                       ? assessAssistantModel(candidate, modelState?.hardware, webGPUAvailable)
                       : 'unknown';
@@ -1030,10 +1065,9 @@ export default function OrbitAssistant({ onReady }) {
                       <option
                         key={key}
                         value={key}
-                        disabled={!candidate?.installed || candidateFit === 'unsupported'}
+                        disabled={candidateFit === 'unsupported'}
                       >
-                        {modelState?.models?.[key]?.label || t(labelKey)}
-                        {!candidate?.installed ? ` · ${t('assistant.settings.notInstalled')}` : ''}
+                        {candidate?.label || (MODEL_LABEL_KEYS[key] ? t(MODEL_LABEL_KEYS[key]) : key)}
                       </option>
                     );
                   })}
@@ -1111,7 +1145,7 @@ export default function OrbitAssistant({ onReady }) {
             <span>{t('assistant.settings.models')}</span>
             {usesOrbitModel ? (
               <select
-                value={modelKey}
+                value={selectedInstalledModel}
                 onChange={(event) => {
                   updateSettings({ assistantModel: event.target.value });
                   setResultText('');
@@ -1121,8 +1155,16 @@ export default function OrbitAssistant({ onReady }) {
                 className="max-w-44 rounded-lg border border-border bg-bg-elevated px-2 py-1.5 text-xs text-text-primary outline-none focus:border-accent-primary disabled:opacity-60"
                 aria-label={t('assistant.settings.models')}
               >
-                {Object.entries(MODEL_LABEL_KEYS).map(([key, labelKey]) => {
-                  const candidate = modelState?.models?.[key];
+                {!selectedInstalledModel && (
+                  <option value="" disabled>
+                    {!modelState
+                      ? t('assistant.settings.loadingModels')
+                      : installedModelOptions.length === 0
+                        ? t('assistant.settings.noInstalledModels')
+                        : t('assistant.settings.chooseInstalledModel')}
+                  </option>
+                )}
+                {installedModelOptions.map(([key, candidate]) => {
                   const candidateFit = candidate
                     ? assessAssistantModel(candidate, modelState?.hardware, webGPUAvailable)
                     : 'unknown';
@@ -1130,10 +1172,9 @@ export default function OrbitAssistant({ onReady }) {
                     <option
                       key={key}
                       value={key}
-                      disabled={!candidate?.installed || candidateFit === 'unsupported'}
+                      disabled={candidateFit === 'unsupported'}
                     >
-                      {modelState?.models?.[key]?.label || t(labelKey)}
-                      {!candidate?.installed ? ` · ${t('assistant.settings.notInstalled')}` : ''}
+                      {candidate?.label || (MODEL_LABEL_KEYS[key] ? t(MODEL_LABEL_KEYS[key]) : key)}
                     </option>
                   );
                 })}
@@ -1225,51 +1266,6 @@ export default function OrbitAssistant({ onReady }) {
           {usesOrbitModel && installed && modelFit === 'unsupported' && (
             <div role="alert" className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-text-secondary">
               {t('assistant.error.modelNotSuitable')}
-            </div>
-          )}
-
-          {error && (
-            <div role="alert" className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">
-              <p>{error}</p>
-              {canSuggestSmallerModel && (
-                <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-                  <p className="text-xs">{t('assistant.error.memoryHint')}</p>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (smallerModelInstalled) {
-                        updateSettings({ assistantModel: 'qwen3-0.6b' });
-                        setError('');
-                      } else {
-                        cancelBookmark(request);
-                        setRequest(null);
-                        window.dispatchEvent(new Event('orbit:assistant-open-settings'));
-                      }
-                    }}
-                    className="rounded-lg bg-red-500/15 px-3 py-1.5 text-xs font-semibold text-red-300 transition-colors hover:bg-red-500/25"
-                  >
-                    {t(smallerModelInstalled ? 'assistant.error.useSmallModel' : 'assistant.error.installSmallModel')}
-                  </button>
-                </div>
-              )}
-            </div>
-          )}
-          {working && (
-            <div className="flex items-center gap-2 rounded-lg border border-border bg-bg-primary/40 px-3 py-2 text-xs text-text-muted">
-              <LoaderCircle size={14} className="animate-spin text-accent-primary" />
-              <span className="min-w-0 flex-1 truncate">
-                {usesOrbitModel && modelProgress?.file
-                  ? modelProgress.file
-                  : t(generationStage === 'loading'
-                    ? 'assistant.loadingModel'
-                    : 'assistant.generating')}
-              </span>
-              {usesOrbitModel && Number.isFinite(modelProgress?.progress) && (
-                <span>{Math.round(modelProgress.progress)}%</span>
-              )}
-              {generationStage === 'generating' && (
-                <span>{t('assistant.elapsed', { seconds: generationElapsed })}</span>
-              )}
             </div>
           )}
 
@@ -1555,6 +1551,54 @@ export default function OrbitAssistant({ onReady }) {
         <footer className={`border-t border-border p-4 ${
           chatOnly ? 'bg-bg-elevated/95 sm:px-8 sm:py-5' : ''
         }`}>
+          {(error || working) && (
+            <div className={`mx-auto mb-3 w-full space-y-2 ${chatOnly ? 'max-w-5xl' : ''}`} aria-live="polite">
+              {error && (
+                <div role="alert" className="rounded-lg border border-red-500/30 bg-red-500/10 px-3 py-2 text-sm text-red-400">
+                  <p>{error}</p>
+                  {canSuggestSmallerModel && (
+                    <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
+                      <p className="text-xs">{t('assistant.error.memoryHint')}</p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (smallerModelInstalled) {
+                            updateSettings({ assistantModel: 'qwen3-0.6b' });
+                            setError('');
+                          } else {
+                            cancelBookmark(request);
+                            setRequest(null);
+                            window.dispatchEvent(new Event('orbit:assistant-open-settings'));
+                          }
+                        }}
+                        className="rounded-lg bg-red-500/15 px-3 py-1.5 text-xs font-semibold text-red-300 transition-colors hover:bg-red-500/25"
+                      >
+                        {t(smallerModelInstalled ? 'assistant.error.useSmallModel' : 'assistant.error.installSmallModel')}
+                      </button>
+                    </div>
+                  )}
+                </div>
+              )}
+              {working && (
+                <div className="flex items-center gap-2 rounded-lg border border-border bg-bg-primary/40 px-3 py-2 text-xs text-text-muted">
+                  <LoaderCircle size={14} className="animate-spin text-accent-primary" />
+                  <span className="min-w-0 flex-1 truncate">
+                    {usesOrbitModel && modelProgress?.file
+                      ? modelProgress.file
+                      : t(generationStage === 'loading'
+                        ? 'assistant.loadingModel'
+                        : 'assistant.generating')}
+                  </span>
+                  {usesOrbitModel && Number.isFinite(modelProgress?.progress) && (
+                    <span>{Math.round(modelProgress.progress)}%</span>
+                  )}
+                  {generationStage === 'generating' && (
+                    <span>{t('assistant.elapsed', { seconds: generationElapsed })}</span>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
           {isChat ? (
             <div className={`relative mx-auto w-full ${chatOnly ? 'max-w-5xl' : ''}`}>
               {commandDraft.command && (

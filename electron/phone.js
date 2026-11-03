@@ -927,6 +927,8 @@ export async function captureScreen({ serial, maxWidth, displayId } = {}) {
 
 const ALLOWED_KEYS = {
   back: 4,
+  call: 5,
+  end_call: 6,
   home: 3,
   recents: 187,
   power: 26,

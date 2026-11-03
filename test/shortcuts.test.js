@@ -13,6 +13,8 @@ test('Alt+Maj+E → relecture locale du champ actif', () =>
   assert.equal(alt('e', { shift: true }), 'proofread-editor'));
 test('Alt+Maj+I → assistant IA sur le champ actif', () =>
   assert.equal(alt('i', { shift: true }), 'assistant-editor'));
+test('Alt+Maj+S → options de capture d’écran', () =>
+  assert.equal(alt('s', { shift: true }), 'screenshot'));
 test('Alt+Maj+A → ouvrir la discussion avec l’assistant IA', () =>
   assert.equal(alt('a', { shift: true }), 'assistant-chat'));
 test('la touche de discussion peut être changée et la combinaison précédente redevient disponible', () => {
@@ -27,6 +29,7 @@ test('la liste des raccourcis suit le réglage choisi et peut masquer la discuss
     assistantChatShortcutEnabled: true,
     assistantChatShortcutKey: 'u',
   });
+  assert.ok(configured.some((item) => item.desc === 'sc.screenshot' && item.keys.includes('S')));
   assert.ok(configured.some((item) => item.desc === 'sc.assistantChat' && item.keys.includes('U')));
   const disabled = shortcutKeys((key) => key, {
     assistantChatEnabled: false,

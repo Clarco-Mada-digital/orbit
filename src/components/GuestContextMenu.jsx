@@ -100,8 +100,11 @@ export default function GuestContextMenu() {
   }, [menu]);
 
   const run = useCallback(
-    (action, value) => {
-      if (menu) window.electronAPI?.contextMenu?.run?.(menu.wcId, action, value);
+    (action, value, copyDirect = false) => {
+      const actionValue = action === 'screenshot'
+        ? { mode: value || 'visible', copyDirect }
+        : value;
+      if (menu) window.electronAPI?.contextMenu?.run?.(menu.wcId, action, actionValue);
       close();
     },
     [menu, close]
@@ -270,7 +273,7 @@ export default function GuestContextMenu() {
         const item = items[active];
         if (item && item !== 'sep') {
           if (item.expand) setShots((v) => !v);
-          else run(item.action, item.value);
+          else run(item.action, item.value, e.ctrlKey || e.metaKey);
         }
         return;
       }
@@ -287,7 +290,7 @@ export default function GuestContextMenu() {
 
   const IconAction = ({ icon: Icon, label, action, disabled }) => (
     <button
-      onClick={() => !disabled && run(action)}
+      onClick={(event) => !disabled && run(action, undefined, event.ctrlKey || event.metaKey)}
       disabled={disabled}
       title={label}
       aria-label={label}
@@ -334,7 +337,9 @@ export default function GuestContextMenu() {
             <button
               key={item.key}
               onMouseEnter={() => setActive(i)}
-              onClick={() => (item.expand ? setShots((v) => !v) : run(item.action, item.value))}
+              onClick={(event) => (item.expand
+                ? setShots((v) => !v)
+                : run(item.action, item.value, event.ctrlKey || event.metaKey))}
               disabled={item.disabled}
               className={`w-full flex items-center gap-2.5 px-3 py-1.5 text-sm text-left transition-colors ${
                 item.sub ? 'pl-9' : ''

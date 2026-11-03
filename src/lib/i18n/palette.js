@@ -132,6 +132,7 @@ export const fr = {
   'sc.search': 'Rechercher partout (ce panneau)',
   'sc.proofreadEditor': 'Relire tout le texte du champ actif (sans IA)',
   'sc.assistantEditor': 'Relire tout le texte du champ actif avec l’IA',
+  'sc.screenshot': 'Capturer l’écran de l’app active',
   'sc.assistantChat': 'Ouvrir la discussion avec l’assistant IA Orbit',
   'sc.reload': "Recharger la page de l'app active (⇧ : ignorer le cache)",
   'sc.settings': 'Paramètres',
@@ -177,6 +178,10 @@ export const fr = {
   'home.bg.plum': 'Prune',
   'home.bg.mono': 'Gris',
   'home.bg.plain': 'Sombre',
+  'home.bg.photo-stars': 'Ciel étoilé',
+  'home.bg.photo-forest': 'Forêt sombre',
+  'home.bg.photo-ocean': 'Océan',
+  'home.bg.photo-mountain': 'Lac de montagne',
 };
 
 export const en = {
@@ -302,6 +307,7 @@ export const en = {
   'sc.search': 'Search everywhere (this panel)',
   'sc.proofreadEditor': 'Proofread all text in the active field (no AI)',
   'sc.assistantEditor': 'Proofread all text in the active field with AI',
+  'sc.screenshot': 'Capture the active app screen',
   'sc.assistantChat': 'Open a conversation with Orbit AI assistant',
   'sc.reload': 'Reload the active app’s page (⇧: bypass cache)',
   'sc.settings': 'Settings',
@@ -347,4 +353,8 @@ export const en = {
   'home.bg.plum': 'Plum',
   'home.bg.mono': 'Grey',
   'home.bg.plain': 'Dark',
+  'home.bg.photo-stars': 'Starry sky',
+  'home.bg.photo-forest': 'Dark forest',
+  'home.bg.photo-ocean': 'Ocean',
+  'home.bg.photo-mountain': 'Mountain lake',
 };

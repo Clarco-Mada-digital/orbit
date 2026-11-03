@@ -72,10 +72,18 @@ test('resolveBackground : un fond prêt à l’emploi renvoie son dégradé', ()
 
 test('resolveBackground : tous les fonds non-accent ont un dégradé CSS', () => {
   for (const b of HOME_BACKGROUNDS) {
-    if (b.accent) continue;
+    if (b.accent || b.imageUrl) continue;
     assert.equal(typeof b.css, 'string');
     assert.ok(b.css.includes('gradient'), `${b.id} devrait être un dégradé`);
   }
+});
+
+test('resolveBackground : un fond photo prêt à l’emploi renvoie son image', () => {
+  const preset = HOME_BACKGROUNDS.find((b) => b.id === 'photo-stars');
+  assert.deepEqual(resolveBackground({ background: preset.id }), {
+    kind: 'image',
+    imageUrl: preset.imageUrl,
+  });
 });
 
 test('resolveBackground : une image prime sur le dégradé choisi', () => {

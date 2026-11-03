@@ -20,6 +20,8 @@ import {
   pngSize,
   isLauncherPackage,
   parseAndroidNotifications,
+  phoneCallKey,
+  MAX_PINNED_PHONE_APPS,
   notificationSnoozeCommand,
   virtualDisplaySize,
   scaledSize,
@@ -188,6 +190,11 @@ test('normalizePhoneSettings : bornes, types et listes propres', () => {
   assert.equal(s.showSystemApps, false);
   assert.equal(s.homeWidgets.quickControls, false);
   assert.equal(normalizePhoneSettings({}).homeWidgets.quickControls, true);
+  const pinned = normalizePhoneSettings({
+    pinnedPackages: ['com.whatsapp', 'invalid package', ...Array.from({ length: 10 }, (_, i) => `org.example.app${i}`)],
+  }).pinnedPackages;
+  assert.equal(pinned.length, MAX_PINNED_PHONE_APPS);
+  assert.equal(pinned[0], 'com.whatsapp');
   assert.equal(normalizePhoneSettings({ homeBackground: 'mountains' }).homeBackground, 'mountains');
   assert.equal(normalizePhoneSettings({ homeBackground: 'invalid' }).homeBackground, 'aurora');
   assert.equal(
@@ -307,6 +314,12 @@ test('parseAndroidNotifications : paquet, titre, texte, clé et catégorie', () 
   // Les notifications sans texte exploitable sont écartées.
   assert.equal(items.some((i) => i.package === 'com.example.empty'), false);
   assert.deepEqual(parseAndroidNotifications(''), []);
+});
+
+test('phoneCallKey : maps answering and rejecting to Android call key events', () => {
+  assert.equal(phoneCallKey('answer'), 'call');
+  assert.equal(phoneCallKey('reject'), 'end_call');
+  assert.equal(phoneCallKey('unknown'), null);
 });
 
 test('notificationSnoozeCommand : clé échappée pour le shell Android', () => {

@@ -16,6 +16,7 @@ import {
   Monitor,
   Power,
   Palette,
+  Pin,
   Plus,
   RefreshCw,
   Search,
@@ -39,6 +40,7 @@ import {
   initialsOf,
   normalizePhoneSettings,
   PHONE_HOME_BACKGROUNDS,
+  MAX_PINNED_PHONE_APPS,
   scrcpyCapabilities,
   sortPhoneApps,
 } from '../lib/phone';
@@ -252,6 +254,7 @@ export default function PhoneApp({ visible, onClose }) {
   const [sortMode, setSortMode] = useState('name');
 
   const [favorites, setFavorites] = useState([]);
+  const [pinnedPackages, setPinnedPackages] = useState([]);
   const [recents, setRecents] = useState([]);
 
   const [screen, setScreen] = useState(null);
@@ -307,6 +310,7 @@ export default function PhoneApp({ visible, onClose }) {
     setSettings(normalizePhoneSettings(res.settings || {}));
     setWallpaperUrl(res.settings?.homeBackgroundImage || '');
     setFavorites(Array.isArray(res.settings?.favoritePackages) ? res.settings.favoritePackages : []);
+    setPinnedPackages(Array.isArray(res.settings?.pinnedPackages) ? res.settings.pinnedPackages : []);
     setRecents(Array.isArray(res.settings?.recentPackages) ? res.settings.recentPackages : []);
     setMirrorRunning(!!res.mirror?.running);
     // Vérification de mise à jour : une seule fois par ouverture, en tâche de
@@ -449,6 +453,21 @@ export default function PhoneApp({ visible, onClose }) {
   useEffect(() => {
     if (visible) refreshStatus();
   }, [visible, refreshStatus]);
+
+  useEffect(() => {
+    const refreshPins = async () => {
+      try {
+        const result = await apiRef.current?.getSettings?.();
+        if (result?.success) {
+          setPinnedPackages(Array.isArray(result.settings?.pinnedPackages) ? result.settings.pinnedPackages : []);
+        }
+      } catch (err) {
+        console.error('[orbit] actualisation des applications téléphone épinglées échouée:', err);
+      }
+    };
+    window.addEventListener('orbit:phone-pins-changed', refreshPins);
+    return () => window.removeEventListener('orbit:phone-pins-changed', refreshPins);
+  }, []);
 
   // Souscription aux événements du processus principal (progression moteur et
   // fermeture de la fenêtre miroir).
@@ -637,6 +656,32 @@ export default function PhoneApp({ visible, onClose }) {
       }
     },
     [favorites]
+  );
+
+  const togglePinned = useCallback(
+    async (pkg) => {
+      const next = pinnedPackages.includes(pkg)
+        ? pinnedPackages.filter((item) => item !== pkg)
+        : [...pinnedPackages, pkg].slice(0, MAX_PINNED_PHONE_APPS);
+      if (!pinnedPackages.includes(pkg) && pinnedPackages.length >= MAX_PINNED_PHONE_APPS) {
+        setError(`Vous pouvez épingler jusqu'à ${MAX_PINNED_PHONE_APPS} applications.`);
+        return;
+      }
+      setPinnedPackages(next);
+      try {
+        const result = await apiRef.current?.setSettings({ pinnedPackages: next });
+        if (!result?.success) {
+          setPinnedPackages(pinnedPackages);
+          setError(result?.error || 'Impossible d’enregistrer les applications épinglées.');
+          return;
+        }
+        window.dispatchEvent(new Event('orbit:phone-pins-changed'));
+      } catch (err) {
+        setPinnedPackages(pinnedPackages);
+        setError(String(err.message || err));
+      }
+    },
+    [pinnedPackages]
   );
 
   const launch = useCallback(
@@ -892,6 +937,19 @@ export default function PhoneApp({ visible, onClose }) {
         title={favorites.includes(app.package) ? 'Retirer des favoris' : 'Ajouter aux favoris'}
       >
         <Star size={12} fill={favorites.includes(app.package) ? 'currentColor' : 'none'} />
+      </button>
+      <button
+        type="button"
+        onClick={() => togglePinned(app.package)}
+        className={`absolute left-1 top-1 rounded-full p-1 transition-opacity ${compact ? '' : 'opacity-0 group-hover:opacity-100'} ${
+          pinnedPackages.includes(app.package)
+            ? 'text-sky-300 opacity-100'
+            : 'text-text-muted hover:text-text-primary'
+        }`}
+        title={pinnedPackages.includes(app.package) ? 'Retirer de la barre flottante' : 'Épingler dans la barre flottante'}
+        aria-label={pinnedPackages.includes(app.package) ? 'Retirer de la barre flottante' : 'Épingler dans la barre flottante'}
+      >
+        <Pin size={12} fill={pinnedPackages.includes(app.package) ? 'currentColor' : 'none'} />
       </button>
     </div>
   );
@@ -1916,7 +1974,7 @@ export default function PhoneApp({ visible, onClose }) {
               </h3>
               <Toggle
                 label="Alerte du bureau à chaque notification"
-                hint="Cliquer sur l'alerte ouvre Orbit sur l'app concernée. Les notifications restent consultables dans la cloche d'Orbit."
+                hint="Les appels entrants affichent aussi un toast Orbit avec Décrocher et Refuser. Les notifications restent consultables dans la cloche d'Orbit."
                 checked={settings.desktopNotifications}
                 onChange={(v) => saveSettings({ desktopNotifications: v })}
               />
