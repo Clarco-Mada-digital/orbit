@@ -1,16 +1,72 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Phone, PhoneOff, Pin, X } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Grip, Loader2, Phone, PhoneOff, Pin, X } from 'lucide-react';
 import { usePhoneStore } from '../lib/phoneStore';
 import { phoneCallKey } from '../lib/phone';
 
 const api = () => window.electronAPI?.phone;
+const DOCK_POSITION_KEY = 'orbit.phone.pinned-dock-position.v1';
+const DOCK_SIZE = 52;
+const DOCK_MARGIN = 12;
+
+function readDockPosition() {
+  try {
+    const saved = JSON.parse(window.localStorage.getItem(DOCK_POSITION_KEY) || 'null');
+    if (Number.isFinite(saved?.x) && Number.isFinite(saved?.y)) {
+      return { x: Math.max(0, Math.min(1, saved.x)), y: Math.max(0, Math.min(1, saved.y)) };
+    }
+  } catch (err) {
+    console.warn('[orbit] position des applications épinglées indisponible:', err);
+  }
+  return { x: 1, y: 1 };
+}
 
 export default function PhoneFloatingAccess() {
   const incomingCall = usePhoneStore((state) => state.incomingCall);
+  const notifications = usePhoneStore((state) => state.notifications);
   const [serial, setSerial] = useState(null);
   const [apps, setApps] = useState([]);
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
+  const [expanded, setExpanded] = useState(false);
+  const [dockPosition, setDockPosition] = useState(readDockPosition);
+  const [viewport, setViewport] = useState(() => ({
+    width: window.innerWidth,
+    height: window.innerHeight,
+  }));
+  const dockRef = useRef(null);
+  const dragRef = useRef(null);
+  const suppressClickRef = useRef(false);
+  const notificationCounts = useMemo(() => {
+    const pinnedPackages = new Set(apps.map((app) => app.package));
+    const counts = new Map();
+    for (const notification of notifications) {
+      if (pinnedPackages.has(notification.package)) {
+        counts.set(notification.package, (counts.get(notification.package) || 0) + 1);
+      }
+    }
+    return counts;
+  }, [apps, notifications]);
+  const pinnedNotificationCount = [...notificationCounts.values()].reduce((total, count) => total + count, 0);
+
+  const maxLeft = Math.max(0, viewport.width - DOCK_SIZE);
+  const maxTop = Math.max(0, viewport.height - DOCK_SIZE);
+  const dockLeft = Math.round(dockPosition.x * maxLeft);
+  const dockTop = Math.round(dockPosition.y * maxTop);
+  const panelWidth = Math.max(1, Math.min(264, viewport.width - DOCK_MARGIN * 2));
+  const panelHeight = Math.max(1, Math.min(232, viewport.height - DOCK_MARGIN * 2));
+  const panelLeft = Math.max(
+    DOCK_MARGIN,
+    Math.min(viewport.width - panelWidth - DOCK_MARGIN, dockLeft + DOCK_SIZE / 2 - panelWidth / 2)
+  );
+  const panelTop = Math.max(
+    DOCK_MARGIN,
+    Math.min(
+      viewport.height - panelHeight - DOCK_MARGIN,
+      dockTop > panelHeight + DOCK_MARGIN * 2
+        ? dockTop - panelHeight - DOCK_MARGIN
+        : dockTop + DOCK_SIZE + DOCK_MARGIN
+    )
+  );
 
   const refresh = useCallback(async () => {
     try {
@@ -18,12 +74,14 @@ export default function PhoneFloatingAccess() {
       if (!state?.success) {
         setSerial(null);
         setApps([]);
+        setExpanded(false);
         return;
       }
       const activeSerial = state.serial || null;
       setSerial(activeSerial);
       if (!activeSerial || !state.settings?.pinnedPackages?.length) {
         setApps([]);
+        setExpanded(false);
         return;
       }
       const result = await api()?.listApps({
@@ -32,6 +90,7 @@ export default function PhoneFloatingAccess() {
       });
       if (!result?.success) {
         setApps([]);
+        setExpanded(false);
         return;
       }
       const byPackage = new Map((result.apps || []).map((app) => [app.package, app]));
@@ -52,24 +111,94 @@ export default function PhoneFloatingAccess() {
       console.error('[orbit] chargement des applications épinglées impossible:', err);
       setSerial(null);
       setApps([]);
+      setExpanded(false);
     }
   }, []);
 
   useEffect(() => {
     Promise.resolve().then(refresh);
     const onPinsChanged = () => refresh();
+    const onResize = () => setViewport({ width: window.innerWidth, height: window.innerHeight });
     window.addEventListener('orbit:phone-pins-changed', onPinsChanged);
+    window.addEventListener('resize', onResize);
     const timer = window.setInterval(refresh, 20000);
     return () => {
       window.removeEventListener('orbit:phone-pins-changed', onPinsChanged);
+      window.removeEventListener('resize', onResize);
       window.clearInterval(timer);
     };
   }, [refresh]);
+
+  useEffect(() => {
+    if (!expanded) return undefined;
+    const closeOnOutsideClick = (event) => {
+      if (!dockRef.current?.contains(event.target)) setExpanded(false);
+    };
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') setExpanded(false);
+    };
+    window.addEventListener('pointerdown', closeOnOutsideClick);
+    window.addEventListener('keydown', closeOnEscape);
+    return () => {
+      window.removeEventListener('pointerdown', closeOnOutsideClick);
+      window.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [expanded]);
+
+  const onDockPointerDown = (event) => {
+    if (event.button !== 0) return;
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    dragRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startY: event.clientY,
+      startLeft: dockLeft,
+      startTop: dockTop,
+      lastPosition: dockPosition,
+      moved: false,
+    };
+  };
+
+  const onDockPointerMove = (event) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    const deltaX = event.clientX - drag.startX;
+    const deltaY = event.clientY - drag.startY;
+    if (!drag.moved && Math.hypot(deltaX, deltaY) < 6) return;
+    drag.moved = true;
+    suppressClickRef.current = true;
+    const next = {
+      x: maxLeft ? Math.max(0, Math.min(1, (drag.startLeft + deltaX) / maxLeft)) : 0,
+      y: maxTop ? Math.max(0, Math.min(1, (drag.startTop + deltaY) / maxTop)) : 0,
+    };
+    drag.lastPosition = next;
+    setDockPosition(next);
+  };
+
+  const onDockPointerUp = (event) => {
+    const drag = dragRef.current;
+    if (!drag || drag.pointerId !== event.pointerId) return;
+    dragRef.current = null;
+    if (drag.moved) {
+      try {
+        window.localStorage.setItem(DOCK_POSITION_KEY, JSON.stringify(drag.lastPosition));
+      } catch (err) {
+        console.error('[orbit] mémorisation de la position des applications épinglées échouée:', err);
+      }
+    }
+  };
+
+  const onDockPointerCancel = (event) => {
+    onDockPointerUp(event);
+    suppressClickRef.current = false;
+  };
 
   const launch = async (app) => {
     if (!serial || busy) return;
     setBusy(app.package);
     setError('');
+    setExpanded(false);
     try {
       const result = await api()?.startApp({
         serial,
@@ -94,6 +223,7 @@ export default function PhoneFloatingAccess() {
       const result = await api()?.setSettings({ pinnedPackages });
       if (!result?.success) throw new Error(result?.error || 'Impossible de retirer cette application.');
       setApps((items) => items.filter((item) => item.package !== app.package));
+      if (apps.length <= 1) setExpanded(false);
       window.dispatchEvent(new Event('orbit:phone-pins-changed'));
     } catch (err) {
       console.error('[orbit] retrait d’une application téléphone épinglée échoué:', err);
@@ -173,39 +303,108 @@ export default function PhoneFloatingAccess() {
         </section>
       )}
       {apps.length > 0 && serial && (
-        <nav
-          aria-label="Applications Android épinglées"
-          className="fixed bottom-5 right-5 z-[11000] flex max-w-[calc(100vw-2.5rem)] items-center gap-2 rounded-2xl border border-white/15 bg-slate-950/75 p-2 shadow-xl shadow-black/25 backdrop-blur-2xl"
+        <div
+          ref={dockRef}
+          className="fixed z-[11000] h-[52px] w-[52px]"
+          style={{ left: dockLeft, top: dockTop }}
         >
-          {apps.map((app) => (
-            <div key={app.package} className="group relative">
-              <button
-                type="button"
-                onClick={() => launch(app)}
-                disabled={Boolean(busy)}
-                title={`Ouvrir ${app.name}`}
-                aria-label={`Ouvrir ${app.name}`}
-                className="grid h-12 w-12 place-items-center overflow-hidden rounded-xl border border-white/10 bg-white/10 text-xs font-semibold text-white/80 transition hover:-translate-y-0.5 hover:bg-white/20 disabled:opacity-50"
+          {expanded && (
+            <nav
+              aria-label="Applications Android épinglées"
+              className="absolute rounded-2xl border border-white/15 bg-slate-950/85 p-3 text-white shadow-2xl shadow-black/35 backdrop-blur-2xl"
+              style={{
+                left: panelLeft - dockLeft,
+                top: panelTop - dockTop,
+                width: panelWidth,
+                maxHeight: panelHeight,
+              }}
+            >
+              <div className="mb-3 flex items-center justify-between gap-2">
+                <span className="flex items-center gap-2 text-xs font-semibold text-white/80">
+                  <Pin size={13} className="text-violet-300" />
+                  Applications épinglées
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setExpanded(false)}
+                  aria-label="Fermer les applications épinglées"
+                  className="rounded-lg p-1 text-white/50 transition hover:bg-white/10 hover:text-white"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+              <div className="grid grid-cols-4 gap-2 overflow-y-auto">
+                {apps.map((app) => (
+                  <div key={app.package} className="group relative min-w-0 text-center">
+                    {notificationCounts.get(app.package) > 0 && (
+                      <span
+                        aria-label={`${notificationCounts.get(app.package)} notification${notificationCounts.get(app.package) === 1 ? '' : 's'}`}
+                        className="absolute -right-1 -top-1 z-10 grid h-[18px] min-w-[18px] place-items-center rounded-full border border-slate-950 bg-rose-500 px-1 text-[9px] font-bold text-white"
+                      >
+                        {notificationCounts.get(app.package) > 99 ? '99+' : notificationCounts.get(app.package)}
+                      </span>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => launch(app)}
+                      disabled={Boolean(busy)}
+                      title={`Ouvrir ${app.name}`}
+                      aria-label={`Ouvrir ${app.name}`}
+                      className="mx-auto grid h-10 w-10 place-items-center overflow-hidden rounded-xl border border-white/10 bg-white/10 text-[10px] font-semibold text-white/80 transition hover:-translate-y-0.5 hover:bg-white/20 disabled:opacity-50"
+                    >
+                      {busy === app.package
+                        ? <Loader2 size={16} className="animate-spin" />
+                        : app.icon
+                          ? <img src={app.icon} alt="" draggable={false} className="h-full w-full object-contain" />
+                          : app.name.slice(0, 2).toUpperCase()}
+                    </button>
+                    <span className="mt-1 block truncate text-[10px] text-white/65">{app.name}</span>
+                    <button
+                      type="button"
+                      onClick={() => unpin(app)}
+                      title={`Désépingler ${app.name}`}
+                      aria-label={`Désépingler ${app.name}`}
+                      className="absolute -right-1 -top-1 grid h-5 w-5 place-items-center rounded-full border border-white/20 bg-slate-800 text-white/70 opacity-0 transition hover:bg-rose-500 hover:text-white focus:opacity-100 group-hover:opacity-100"
+                    >
+                      <X size={11} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </nav>
+          )}
+          <button
+            type="button"
+            onPointerDown={onDockPointerDown}
+            onPointerMove={onDockPointerMove}
+            onPointerUp={onDockPointerUp}
+            onPointerCancel={onDockPointerCancel}
+            onClick={() => {
+              if (suppressClickRef.current) {
+                suppressClickRef.current = false;
+                return;
+              }
+              setExpanded((value) => !value);
+            }}
+            aria-label={expanded ? 'Fermer les applications épinglées' : `Ouvrir les ${apps.length} applications épinglées`}
+            aria-expanded={expanded}
+            title="Déplacer ou ouvrir les applications épinglées"
+            className="group relative grid h-[52px] w-[52px] touch-none place-items-center overflow-hidden rounded-[19px] border border-white/20 bg-slate-950/85 p-1 text-white shadow-xl shadow-black/35 backdrop-blur-2xl transition hover:scale-105 hover:border-white/35 focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-300"
+          >
+            {apps[0]?.icon
+              ? <img src={apps[0].icon} alt="" draggable={false} className="h-full w-full rounded-[14px] object-contain" />
+              : <Pin size={21} className="text-violet-200" />}
+            {pinnedNotificationCount > 0 && (
+              <span
+                aria-label={`${pinnedNotificationCount} notification${pinnedNotificationCount === 1 ? '' : 's'} dans les applications épinglées`}
+                className="absolute -right-0.5 -top-0.5 grid h-[19px] min-w-[19px] place-items-center rounded-full border border-slate-950 bg-rose-500 px-1 text-[10px] font-bold text-white"
               >
-                {app.icon
-                  ? <img src={app.icon} alt="" className="h-full w-full object-contain" />
-                  : app.name.slice(0, 2).toUpperCase()}
-              </button>
-              <button
-                type="button"
-                onClick={() => unpin(app)}
-                title={`Désépingler ${app.name}`}
-                aria-label={`Désépingler ${app.name}`}
-                className="absolute -right-1.5 -top-1.5 grid h-5 w-5 place-items-center rounded-full border border-white/20 bg-slate-800 text-white/70 opacity-0 transition hover:bg-rose-500 hover:text-white focus:opacity-100 group-hover:opacity-100"
-              >
-                <X size={11} />
-              </button>
-            </div>
-          ))}
-          <span className="ml-1 border-l border-white/15 pl-2 text-[10px] text-white/45">
-            <Pin size={12} />
-          </span>
-        </nav>
+                {pinnedNotificationCount > 99 ? '99+' : pinnedNotificationCount}
+              </span>
+            )}
+            <Grip size={12} className="absolute bottom-1 left-1 text-white/60 opacity-0 transition group-hover:opacity-100" />
+          </button>
+        </div>
       )}
     </>
   );
