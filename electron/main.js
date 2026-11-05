@@ -842,20 +842,31 @@ function setupPermissions(ses) {
       if (!cb) return;
       const details = b || {};
 
-      // Capture d'écran du STUDIO d'Orbit, et elle seule.
+      // Capture d'écran et périphériques du STUDIO d'Orbit, et eux seuls.
       //
-      // Trois conditions, toutes nécessaires : la demande vient de la fenêtre
-      // d'Orbit (pas d'une page embarquée), elle porte sur `media`, et un
-      // jeton de source est armé — c'est-à-dire que l'utilisateur vient de
-      // désigner lui-même l'écran à filmer en cliquant sa vignette, il y a
-      // moins de quinze secondes.
+      // Le critère est l'ÉMETTEUR : la fenêtre d'Orbit elle-même, jamais une
+      // page embarquée, et uniquement pour la permission `media`.
       //
-      // Sans cette porte, l'utilisateur voyait une demande « caméra et
-      // microphone » pour une capture d'écran qu'il venait de demander, et la
-      // refuser — réflexe sain — faisait échouer l'enregistrement. Les pages
-      // embarquées, elles, gardent intégralement le circuit normal ci-dessous.
-      if (permission === 'media' && studio.hasPendingSource() && fromOrbitUi({ sender: wc })) {
-        permLog('media — studio Orbit, source déjà choisie par l’utilisateur : accordé');
+      // C'est indispensable pour deux chemins distincts du studio :
+      //   • la capture d'écran, où l'utilisateur vient de désigner sa source
+      //     en cliquant sa vignette (le jeton ci-dessus évite qu'on lui
+      //     repose la question) ;
+      //   • la caméra et le micro, réclamés quand il clique « Activer la
+      //     caméra et le micro ».
+      //
+      // Pour ce second chemin, la politique par site ci-dessous ne pouvait
+      // PAS fonctionner : l'interface d'Orbit est chargée en `file://`, donc
+      // sans origine, et `!origin` mène droit à « refusé » — la question
+      // n'était jamais posée. C'est ce qui faisait échouer toute webcam,
+      // DroidCam comprise, avant même le premier clic sur la liste des
+      // périphériques. Les pages embarquées gardent intégralement le circuit
+      // normal ci-dessous.
+      if (permission === 'media' && fromOrbitUi({ sender: wc })) {
+        permLog(
+          studio.hasPendingSource()
+            ? 'media — studio Orbit, source déjà choisie par l’utilisateur : accordé'
+            : 'media — studio Orbit (caméra/micro) : accordé'
+        );
         return cb(true);
       }
 
@@ -901,7 +912,12 @@ function setupPermissions(ses) {
     });
 
     // Vérifications synchrones (navigator.permissions.query, Notification.permission…)
-    ses.setPermissionCheckHandler((_wc, permission, requestingOrigin) => {
+    ses.setPermissionCheckHandler((wc, permission, requestingOrigin) => {
+      // Même raison que pour les demandes : sans origine (`file://`),
+      // l'interface d'Orbit passait pour un site non identifiable, donc non
+      // autorisé. Résultat : `enumerateDevices` ne livrait que des entrées
+      // anonymes — aucune webcam nommable, DroidCam incluse.
+      if (permission === 'media' && fromOrbitUi({ sender: wc })) return true;
       const origin = sitePermissions.originOf(requestingOrigin || '');
       return permissionCheckAllowed(
         permission,
