@@ -181,12 +181,19 @@ test('raccourci de la palette : ne tombe pas sur ceux des autres extensions', ()
   // Les autres extensions livrées écoutent des combinaisons Alt+lettre dans la
   // page. On relit leurs sources plutôt que de recopier une liste qui
   // vieillirait en silence.
+  //
+  // ATTENTION : `.gitignore` ne suit que les sources des extensions livrées
+  // avec Orbit — un clone neuf (et donc la CI) n'a pas les autres. Le test
+  // vérifie alors ce qu'il PEUT vérifier, au lieu d'échouer sur une absence
+  // qui n'est pas une régression.
   const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'electron', 'extensions');
   const taken = new Set();
+  let scanned = 0;
   for (const name of fs.readdirSync(root)) {
     if (name === 'mouse-scroll') continue;
     const file = path.join(root, name, 'content.js');
     if (!fs.existsSync(file)) continue;
+    scanned += 1;
     const source = fs.readFileSync(file, 'utf8');
     // Formes rencontrées : `e.altKey && (e.key === 'c' || e.key === 'C')`,
     // avec ou sans `e.shiftKey`.
@@ -194,9 +201,14 @@ test('raccourci de la palette : ne tombe pas sur ceux des autres extensions', ()
       taken.add(`${match[1] ? 'alt+shift+' : 'alt+'}${match[2].toLowerCase()}`);
     }
   }
-  assert.ok(taken.size >= 4, `on attend plusieurs raccourcis d'extensions, trouvé ${taken.size}`);
   const ours = `alt+shift+${LIB.PALETTE_SHORTCUT.key}`;
   assert.equal(taken.has(ours), false, `${ours} est déjà pris par une autre extension`);
+  // Sur une copie de travail complète, la liste doit être fournie : si elle se
+  // vidait alors que les sources sont là, c'est que la détection a cessé de
+  // fonctionner et que ce test ne garantirait plus rien.
+  if (scanned >= 4) {
+    assert.ok(taken.size >= 4, `détection cassée : ${scanned} sources lues, ${taken.size} raccourcis trouvés`);
+  }
 });
 
 test('ORBIT_ALT_SHIFT_KEYS : la liste documentée colle au vrai matcher d\'Orbit', () => {
