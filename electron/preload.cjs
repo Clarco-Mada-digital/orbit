@@ -328,6 +328,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
     setMode: (mode) => ipcRenderer.invoke('permissions:setMode', mode),
     forget: (origin, permission) => ipcRenderer.invoke('permissions:forget', { origin, permission }),
   },
+  // Studio d'enregistrement (écran + caméra, composition et export)
+  studio: {
+    sources: () => ipcRenderer.invoke('studio:sources'),
+    prepare: (id) => ipcRenderer.invoke('studio:prepare', { id }),
+    cancelPrepare: () => ipcRenderer.invoke('studio:cancelPrepare'),
+    // Appelé à la cadence de l'animation pendant le zoom suivi : volontairement
+    // minimal, il ne fait que lire la position du pointeur.
+    cursor: () => ipcRenderer.invoke('studio:cursor'),
+    setThrottling: (enabled) => ipcRenderer.invoke('studio:throttling', { enabled }),
+    save: (data, name) => ipcRenderer.invoke('studio:save', { data, name }),
+    saveAs: (path) => ipcRenderer.invoke('studio:saveAs', { path }),
+    reveal: (path) => ipcRenderer.invoke('studio:reveal', { path }),
+    hasFfmpeg: () => ipcRenderer.invoke('studio:hasFfmpeg'),
+    toMp4: (path) => ipcRenderer.invoke('studio:toMp4', { path }),
+  },
   // Coffre-fort de mots de passe intégré (trousseaux chiffrés)
   vault: {
     state: () => ipcRenderer.invoke('vault:state'),

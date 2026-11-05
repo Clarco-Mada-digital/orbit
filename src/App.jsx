@@ -23,6 +23,7 @@ const PhoneFloatingAccess = lazy(() => import('./components/PhoneFloatingAccess'
 import WebView from './components/WebView';
 import GuestContextMenu from './components/GuestContextMenu';
 import ScreenshotPreview from './components/ScreenshotPreview';
+import RecordingStudio from './components/RecordingStudio';
 import OfflineProofreader from './components/OfflineProofreader';
 import WebDialogHost from './components/WebDialogHost';
 import EditUrlDialog from './components/EditUrlDialog';
@@ -156,6 +157,9 @@ function mixWithWhite(rgb, amount) {
 
 export default function App() {
   const [showQuickSwitcher, setShowQuickSwitcher] = useState(false);
+  // Studio d'enregistrement (écran + caméra). Monté seulement à l'ouverture :
+  // il tient des flux média, il n'a rien à faire en mémoire le reste du temps.
+  const [showStudio, setShowStudio] = useState(false);
   const phoneOpen = usePhoneStore((s) => s.open);
   const phoneEnabled = useStore((s) => s.nativeApps.includes('phone'));
   const [showSettings, setShowSettings] = useState(false);
@@ -737,6 +741,13 @@ const [editUrlFor, setEditUrlFor] = useState(null); // { id, url } — boîte «
       })
       .catch(() => {});
   }, [extensions]);
+
+  // Ouverture du studio depuis la palette de commandes.
+  useEffect(() => {
+    const open = () => setShowStudio(true);
+    window.addEventListener('orbit:studio-open', open);
+    return () => window.removeEventListener('orbit:studio-open', open);
+  }, []);
 
   // Synchroniser les sources d'identifiants proposées dans les pages. Le
   // processus principal repart de « les deux » à chaque lancement : sans cet
@@ -1524,6 +1535,7 @@ const openEditUrl = useCallback((id) => {
         </Suspense>
       )}
       <ScreenshotPreview />
+      {showStudio && <RecordingStudio onClose={() => setShowStudio(false)} />}
       <OfflineProofreader />
       <AssistantHost />
 

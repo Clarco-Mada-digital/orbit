@@ -8,6 +8,41 @@ Format : une section `## [X.Y.Z] — AAAA-MM-JJ` par version, puis des
 sous-sections `### Ajouté` / `### Modifié` / `### Corrigé` / `### Sécurité`.
 La plus récente en premier.
 
+## [Non publié]
+
+### Ajouté
+- **Studio d'enregistrement** (`Alt+K` → « Studio », ou `Alt+Maj+S` → `4`) :
+  filme un écran ou une fenêtre, avec ou sans caméra, et le met en scène —
+  fond uni ou dégradé, marge, coins arrondis, ombre portée. Tout est composé
+  sur un canvas, et c'est ce canvas qui est enregistré : l'aperçu EST la vidéo.
+  - **Dispositions** : écran + pastille, caméra seule, côte à côte,
+    présentation (caméra ronde qui chevauche le bord de la capture). La
+    présentation existe aussi **sans caméra** : la capture est alors réduite et
+    centrée, à la manière d'une diapositive.
+  - **Caméra** : cercle ou arrondi, quatre coins, côté gauche/droite, taille,
+    effet miroir.
+  - **Mouvement** : halo qui met le curseur en valeur, zoom qui suit le
+    pointeur en douceur.
+  - **Raccourcis** pendant la prise : `F` fond, `D` disposition, `C` coin,
+    `Z` zoom, `H` halo, `M` miroir, `P` pause, `S` arrêt, `R` réduire.
+  - **Fenêtre réduite** : le studio se replie en une barre (chronomètre, pause,
+    arrêt) — c'est ce qui permet de filmer Orbit lui-même.
+  - **Définition et cadence réglables** (720p/1080p, 15/24/30 img/s) avec la
+    cadence RÉELLEMENT tenue affichée pendant l'enregistrement : l'encodage se
+    fait par le processeur, et une vidéo saccadée se découvre sinon à la
+    relecture.
+  - Sortie WebM dans « Vidéos/Orbit », conversion MP4 facultative si ffmpeg est
+    présent.
+
+### Modifié
+- Le menu de capture (`Alt+Maj+S`) propose une quatrième voie, « Enregistrer
+  une vidéo » : la question posée est la même, et on ne sait pas toujours
+  d'avance si une image suffira.
+- Orbit ne laisse plus Chromium endormir sa fenêtre quand elle passe en
+  arrière-plan. C'est sans effet visible à l'usage, mais indispensable au
+  studio : on filme son écran POUR montrer autre chose, donc Orbit passe
+  derrière — et la vidéo tombait alors à deux ou trois images par seconde.
+
 ## [1.17.3] — 2026-11-03
 
 ### Ajouté

@@ -20,6 +20,7 @@ import * as shieldRules from './shields-rules.js';
 import * as vault from './vault.js';
 import * as vaultBackup from './vault-backup.js';
 import { readDatabase as readKdbx } from './kdbx.js';
+import * as studio from './studio.js';
 import * as sitePermissions from './site-permissions.js';
 import * as tts from './tts.js';
 import * as downloader from './downloader.js';
@@ -410,6 +411,20 @@ function setSummonHotkey(accelerator) {
     return { success: false, error: String(err.message || err) };
   }
 }
+
+// Chromium met en sommeil les fenêtres qu'il croit invisibles : il cesse de
+// les peindre et aligne leurs minuteries sur environ six battements par
+// seconde. C'est une excellente idée pour une app qu'on a réduite… et
+// exactement le contraire de ce qu'il faut au studio d'enregistrement : on
+// filme son écran POUR montrer autre chose, donc Orbit passe derrière dès la
+// première seconde. Sans ces deux commutateurs, la vidéo sortait à deux ou
+// trois images par seconde — saccadée au point d'être inutilisable.
+//
+// Le coût est modeste : Orbit continue de rafraîchir son interface quand elle
+// est cachée. Le réglage par fenêtre (`setBackgroundThrottling`) ne suffit
+// pas, il ne couvre pas l'occultation.
+app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
+app.commandLine.appendSwitch('disable-renderer-backgrounding');
 
 // Instance unique : relancer Orbit ne crée pas une 2e fenêtre mais RAMÈNE
 // l'existante au premier plan (filet de sécurité si la fenêtre est masquée).
@@ -827,6 +842,23 @@ function setupPermissions(ses) {
       if (!cb) return;
       const details = b || {};
 
+      // Capture d'écran du STUDIO d'Orbit, et elle seule.
+      //
+      // Trois conditions, toutes nécessaires : la demande vient de la fenêtre
+      // d'Orbit (pas d'une page embarquée), elle porte sur `media`, et un
+      // jeton de source est armé — c'est-à-dire que l'utilisateur vient de
+      // désigner lui-même l'écran à filmer en cliquant sa vignette, il y a
+      // moins de quinze secondes.
+      //
+      // Sans cette porte, l'utilisateur voyait une demande « caméra et
+      // microphone » pour une capture d'écran qu'il venait de demander, et la
+      // refuser — réflexe sain — faisait échouer l'enregistrement. Les pages
+      // embarquées, elles, gardent intégralement le circuit normal ci-dessous.
+      if (permission === 'media' && studio.hasPendingSource() && fromOrbitUi({ sender: wc })) {
+        permLog('media — studio Orbit, source déjà choisie par l’utilisateur : accordé');
+        return cb(true);
+      }
+
       // De quel site vient la demande ? On préfère l'URL portée par la demande
       // (une iframe peut demander pour son propre compte) et on retombe sur
       // l'adresse de la page.
@@ -891,6 +923,19 @@ function setupPermissions(ses) {
               callback({});
               return;
             }
+
+            // Studio d'enregistrement : l'utilisateur vient de choisir sa
+            // source en cliquant sa vignette. Le jeton déposé juste avant
+            // (electron/studio.js) évite de reposer la même question. Il est à
+            // usage unique et expire vite : une page embarquée qui demanderait
+            // l'écran ensuite repasse par le choix explicite ci-dessous.
+            const chosen = await studio.takePendingSource();
+            if (chosen) {
+              permLog(`partage d'écran — source choisie dans le studio : ${chosen.name}`);
+              callback({ video: chosen });
+              return;
+            }
+
             const sources = await desktopCapturer.getSources({ types: ['screen'] });
             if (sources.length === 0 || !mainWindow || mainWindow.isDestroyed()) {
               callback({});
@@ -6188,6 +6233,28 @@ function handleFromUi(channel, fn) {
     return fn(event, ...args);
   });
 }
+
+// ---------------------------------------------------------------------------
+// IPC — Studio d'enregistrement
+// ---------------------------------------------------------------------------
+// Réservé à l'interface d'Orbit : une page embarquée ne doit jamais pouvoir
+// énumérer les écrans, lire la position du curseur, ni écrire une vidéo.
+handleFromUi('studio:sources', () => studio.listSources());
+// Dépose le choix de source juste avant la capture (voir studio.js).
+handleFromUi('studio:prepare', (_e, { id } = {}) => studio.setPendingSource(id));
+handleFromUi('studio:cancelPrepare', () => studio.clearPendingSource());
+handleFromUi('studio:cursor', () => studio.cursorPoint());
+// Pendant l'enregistrement seulement : voir setThrottling dans studio.js.
+handleFromUi('studio:throttling', (e, { enabled } = {}) =>
+  studio.setThrottling({ enabled, window: vaultWindow(e) })
+);
+handleFromUi('studio:save', (_e, payload = {}) => studio.saveRecording(payload));
+handleFromUi('studio:saveAs', (e, payload = {}) =>
+  studio.saveRecordingAs({ ...payload, window: vaultWindow(e) })
+);
+handleFromUi('studio:reveal', (_e, payload = {}) => studio.revealRecording(payload));
+handleFromUi('studio:hasFfmpeg', () => ({ success: true, available: studio.hasFfmpeg() }));
+handleFromUi('studio:toMp4', (_e, payload = {}) => studio.convertToMp4(payload));
 
 handleFromUi('vault:state', () => vault.getState());
 handleFromUi('vault:create', (_e, payload) => vault.create(payload));

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Camera, Copy, Crop, Download, Expand, LoaderCircle, X } from 'lucide-react';
+import { Camera, Clapperboard, Copy, Crop, Download, Expand, LoaderCircle, X } from 'lucide-react';
 import { useT } from '../lib/i18n';
 import { getWebContentsIdFor } from '../lib/webviewRegistry';
 import { useStore } from '../stores/useStore';
@@ -84,12 +84,17 @@ export default function ScreenshotPreview() {
   useEffect(() => {
     if (!chooseMode && !capture && countdown === null) return undefined;
     const onKeyDown = (event) => {
-      if (chooseMode && !busy && countdown === null && /^[1-3]$/.test(event.key)) {
+      if (chooseMode && !busy && countdown === null && /^[1-4]$/.test(event.key)) {
         const target = event.target;
         if (target instanceof HTMLElement && target.closest('input, select, textarea, [contenteditable="true"]')) {
           return;
         }
         event.preventDefault();
+        if (event.key === '4') {
+          setChooseMode(false);
+          window.dispatchEvent(new Event('orbit:studio-open'));
+          return;
+        }
         const modes = ['visible', 'full', 'selection'];
         chooseCaptureMode(modes[Number(event.key) - 1], false);
         return;
@@ -201,17 +206,29 @@ export default function ScreenshotPreview() {
               ))}
             </select>
           </label>
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {[
               { mode: 'visible', label: t('cm.screenshotCurrent'), icon: Camera },
               { mode: 'full', label: t('cm.screenshotFullPage'), icon: Expand },
               { mode: 'selection', label: t('cm.screenshotSelection'), icon: Crop },
+              // Quatrième voie : filmer plutôt que figer. Elle a sa place ici
+              // parce que la question que l'on se pose est la même — « je veux
+              // montrer ce que j'ai à l'écran » — et qu'on ne sait pas
+              // toujours d'avance si une image suffira.
+              { mode: 'record', label: t('cm.screenshotRecord'), icon: Clapperboard },
             ].map(({ mode, label, icon: Icon }, index) => (
               <button
                 key={mode}
                 type="button"
                 disabled={busy}
-                onClick={(event) => chooseCaptureMode(mode, event.ctrlKey || event.metaKey)}
+                onClick={(event) => {
+                  if (mode === 'record') {
+                    setChooseMode(false);
+                    window.dispatchEvent(new Event('orbit:studio-open'));
+                    return;
+                  }
+                  chooseCaptureMode(mode, event.ctrlKey || event.metaKey);
+                }}
                 className="group flex min-h-28 flex-col items-start justify-between rounded-2xl border border-white/15 bg-white/[0.07] p-4 text-left transition hover:-translate-y-0.5 hover:border-white/30 hover:bg-white/[0.14] disabled:opacity-50"
               >
                 <span className="flex w-full items-start justify-between">

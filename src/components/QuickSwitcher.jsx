@@ -29,6 +29,7 @@ import {
   Bot,
   Trash2,
   KeyRound,
+  Clapperboard,
 } from 'lucide-react';
 import { useStore } from '../stores/useStore';
 import AppIcon from './AppIcon';
@@ -276,6 +277,15 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
             },
           ]
         : []),
+      {
+        id: 'studio',
+        name: t('studio.title'),
+        subtitle: t('studio.paletteHint'),
+        icon: <Clapperboard size={22} />,
+        color: '#ec4899',
+        keywords: ['enregistrer', 'record', 'video', 'vidéo', 'ecran', 'écran', 'camera', 'caméra', 'studio', 'capture', 'demo', 'tuto'],
+        run: () => window.dispatchEvent(new Event('orbit:studio-open')),
+      },
       {
         id: 'readall',
         name: t('qs.readall'),
