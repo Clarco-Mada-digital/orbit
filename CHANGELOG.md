@@ -23,8 +23,14 @@ La plus récente en premier.
     effet miroir.
   - **Mouvement** : halo qui met le curseur en valeur, zoom qui suit le
     pointeur en douceur.
-  - **Raccourcis** pendant la prise : `F` fond, `D` disposition, `C` coin,
-    `Z` zoom, `H` halo, `M` miroir, `P` pause, `S` arrêt, `R` réduire.
+  - **Raccourcis** pendant la prise. Accès DIRECT : `1`–`5` vont à une
+    disposition, `Maj`+`1`–`8` à un fond, et les flèches placent la caméra un
+    axe à la fois (`↑`/`↓` haut ou bas, `←`/`→` gauche ou droite). Les lettres
+    font défiler quand on cherche encore : `F` fond, `D` disposition, `C` coin,
+    `Z` zoom, `H` halo, `M` miroir. Et `P` pause, `S` arrêt, `R` réduire.
+  - **« Écran seul »** garde la caméra branchée sans l'afficher : on explique
+    en plein écran, puis on se réaffiche d'une touche, sans rechoisir le
+    périphérique.
   - **Fenêtre réduite** : le studio se replie en une barre (chronomètre, pause,
     arrêt) — c'est ce qui permet de filmer Orbit lui-même.
   - **Définition et cadence réglables** (720p/1080p, 15/24/30 img/s) avec la

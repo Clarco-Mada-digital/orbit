@@ -36,6 +36,7 @@ import {
   FRAME_RATES,
   fpsHealth,
   applyStudioKey,
+  directStudioKey,
   STUDIO_KEYS,
 } from '../lib/studioLayout';
 import { drawFrame } from '../lib/studioRenderer';
@@ -559,16 +560,28 @@ export default function RecordingStudio({ onClose }) {
       // Mise en scène : modifiable à tout moment, y compris en plein
       // enregistrement — c'est tout l'intérêt.
       if (step === 'setup' || step === 'recording') {
-        const patch = applyStudioKey(key, style, { hasCamera: Boolean(cameraId) });
-        if (patch) {
-          e.preventDefault();
-          setStyle((cur) => ({ ...cur, ...patch }));
-        }
+        // Touche de mise en scène ? (chiffres et flèches pour l'accès direct,
+        // lettres pour faire défiler)
+        const styleAction = STUDIO_KEYS[key];
+        const parcourt = !e.shiftKey && styleAction && !['pause', 'stop', 'minimize'].includes(styleAction);
+        if (!/^[1-9]$/.test(e.key) && !e.key.startsWith('Arrow') && !parcourt) return;
+        e.preventDefault();
+
+        // Le calcul se fait DANS la mise à jour, sur l'état le plus récent.
+        // Deux flèches enchaînées dans le même instant lisaient sinon la même
+        // valeur périmée : « ↑ » puis « → » donnait « en bas à droite », le
+        // second appui ignorant le premier.
+        setStyle((cur) => {
+          const patch =
+            directStudioKey(e.key, { shift: e.shiftKey }, cur, { hasCamera: Boolean(cameraId) }) ||
+            (e.shiftKey ? null : applyStudioKey(key, cur, { hasCamera: Boolean(cameraId) }));
+          return patch ? { ...cur, ...patch } : cur;
+        });
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [step, stopRecording, onClose, style, cameraId]);
+  }, [step, stopRecording, onClose, cameraId]);
 
   // Libération des ressources : la caméra et le micro doivent s'éteindre à la
   // fermeture, sans exception.
@@ -672,32 +685,39 @@ export default function RecordingStudio({ onClose }) {
 
         <div className="flex-1 flex min-h-0">
           {/* Aperçu : c'est exactement ce qui est enregistré */}
-          <div className="flex-1 min-w-0 flex flex-col items-center justify-center p-5 bg-bg-primary/40">
-            <div className="relative w-full max-w-4xl">
+          {/* Colonne de l'aperçu : elle ne défile JAMAIS. Seuls les réglages,
+              à droite, défilent — l'image qu'on est en train de composer doit
+              rester sous les yeux pendant qu'on la règle. Le canvas s'adapte
+              donc à la hauteur disponible au lieu de pousser le reste. */}
+          <div className="flex-1 min-w-0 min-h-0 flex flex-col items-center justify-center gap-3 p-5 overflow-hidden bg-bg-primary/40">
+            <div className="relative min-h-0 flex-1 w-full max-w-4xl flex items-center justify-center">
               <canvas
                 ref={canvasRef}
                 width={OUTPUT.width}
                 height={OUTPUT.height}
-                className="w-full rounded-xl border border-border shadow-lg bg-black"
+                className="max-w-full max-h-full rounded-xl border border-border shadow-lg bg-black"
               />
               {step === 'countdown' && (
-                <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-black/50">
+                <div className="absolute inset-0 flex items-center justify-center rounded-xl bg-black/50 pointer-events-none">
                   <span className="text-7xl font-bold text-white tabular-nums">{countdown}</span>
                 </div>
               )}
             </div>
 
-            {error && <p className="mt-3 text-sm text-error max-w-2xl text-center">{error}</p>}
+            {error && <p className="text-sm text-error max-w-2xl text-center">{error}</p>}
 
             {/* Les raccourcis sont rappelés sous l'aperçu : changer de fond ou
                 de disposition sans rouvrir le panneau, c'est ce qui permet de
                 le faire SANS sortir du cadre pendant qu'on parle. */}
             {(step === 'setup' || step === 'recording') && (
-              <p className="mt-3 flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[11px] text-text-muted">
+              <p className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[11px] text-text-muted">
                 {[
-                  ['F', t('studio.background')],
-                  ['D', t('studio.layout')],
-                  ['C', t('studio.corner')],
+                  ['1–5', t('studio.layout')],
+                  ['⇧1–8', t('studio.background')],
+                  ['↑↓←→', t('studio.corner')],
+                  ['F', `${t('studio.background')} ▸`],
+                  ['D', `${t('studio.layout')} ▸`],
+                  ['C', `${t('studio.corner')} ▸`],
                   ['Z', t('studio.zoom')],
                   ['H', t('studio.halo')],
                   ['M', t('studio.mirror')],
@@ -714,7 +734,7 @@ export default function RecordingStudio({ onClose }) {
             )}
 
             {/* Commandes */}
-            <div className="mt-5 flex items-center gap-3">
+            <div className="flex items-center gap-3">
               {step === 'setup' && (
                 <button onClick={startCountdown} disabled={!sourceId} className="btn btn-primary">
                   <Circle size={14} fill="currentColor" /> {t('studio.start')}
@@ -867,11 +887,11 @@ export default function RecordingStudio({ onClose }) {
 
               <label className="block text-xs text-text-muted mb-1">{t('studio.background')}</label>
               <div className="flex flex-wrap gap-2 mb-3">
-                {Object.keys(BACKGROUNDS).map((key) => (
+                {Object.keys(BACKGROUNDS).map((key, i) => (
                   <button
                     key={key}
                     onClick={() => set({ background: key })}
-                    title={t(`studio.bg.${key}`)}
+                    title={`${t(`studio.bg.${key}`)} — Maj+${i + 1}`}
                     aria-pressed={style.background === key}
                     className={`w-8 h-8 rounded-lg border-2 ${
                       style.background === key ? 'border-accent-primary' : 'border-border'
@@ -906,15 +926,18 @@ export default function RecordingStudio({ onClose }) {
               <Section title={t('studio.cameraLook')}>
                 <label className="block text-xs text-text-muted mb-1">{t('studio.layout')}</label>
                 <div className="grid grid-cols-2 gap-2 mb-3">
-                  {LAYOUTS.map((l) => (
+                  {LAYOUTS.map((l, i) => (
                     <button
                       key={l}
                       onClick={() => set({ layout: l })}
-                      className={`px-2 py-1.5 rounded-lg border text-xs ${
+                      className={`flex items-center justify-between gap-1 px-2 py-1.5 rounded-lg border text-xs ${
                         style.layout === l ? 'border-accent-primary bg-accent-primary/10' : 'border-border hover:bg-bg-hover'
                       }`}
                     >
-                      {t(`studio.layout.${l}`)}
+                      <span className="truncate">{t(`studio.layout.${l}`)}</span>
+                      {/* Le numéro de la touche est écrit sur le bouton : on
+                          l'apprend en s'en servant, sans mémoriser une liste. */}
+                      <kbd className="flex-shrink-0 px-1 rounded border border-border text-[10px] text-text-muted">{i + 1}</kbd>
                     </button>
                   ))}
                 </div>

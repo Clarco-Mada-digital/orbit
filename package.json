@@ -18,7 +18,8 @@
     "release:local": "sh scripts/release.sh",
     "release:ci": "npm run icons && npm run build && electron-builder --publish always",
     "export:extensions": "node scripts/export-extensions.cjs",
-    "export:fake-data": "node scripts/export-fake-data.cjs"
+    "export:fake-data": "node scripts/export-fake-data.cjs",
+    "dev:fresh": "concurrently \"npm run dev\" \"wait-on http://localhost:5173 && electron . --user-data-dir=.dev-profile\""
   },
   "keywords": [
     "electron",

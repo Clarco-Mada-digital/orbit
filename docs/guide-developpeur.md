@@ -45,6 +45,7 @@ transmises et réutiliser les contrôles d’accès existants.
 
 ```bash
 npm run electron:dev       # interface Vite + Electron
+npm run dev:fresh          # idem, mais sur un profil de données VIERGE
 npm run build              # build du renderer
 npm test                   # suite de tests Node
 npm run lint               # ESLint avec le plafond défini par le projet
@@ -52,6 +53,34 @@ npm run electron:build     # icônes + renderer + packages de la plateforme
 npm run export:extensions  # régénère les ZIP des extensions locales
 npm run export:fake-data   # régénère le ZIP Fake Data Filler
 ```
+
+### Lancer sur un profil VIERGE
+
+```bash
+npm run dev:fresh
+```
+
+Démarre Vite puis Electron sur `--user-data-dir=.dev-profile` : un dossier de
+données neuf, séparé de votre Orbit installé. Pas de cache, pas de cookies,
+pas de réglages, pas de trousseau — l'application se comporte comme à sa
+première installation. Supprimez `.dev-profile/` pour repartir de zéro.
+
+Deux conséquences utiles :
+
+- votre Orbit habituel n'est pas touché, et le **verrou d'instance unique** ne
+  s'y oppose pas : les deux peuvent tourner en même temps, puisque le verrou
+  porte sur le dossier de données ;
+- pour piloter l'application de l'extérieur (tests manuels, captures), ajoutez
+  `--remote-debugging-port=9222` et parlez-lui en DevTools Protocol.
+
+```bash
+npm run dev                       # dans un terminal : le serveur Vite
+./node_modules/electron/dist/electron . \
+  --user-data-dir=/tmp/orbit-essai \
+  --remote-debugging-port=9222    # dans un autre : l'application
+```
+
+`npm run electron:dev` reste le lancement normal, sur vos vraies données.
 
 La compilation finale dépend de la plateforme et des outils de packaging
 disponibles. La CI release exécute des builds Linux, Windows et macOS séparés.
@@ -126,7 +155,7 @@ Trois fichiers de tests font exception, parce qu’ils exercent une vraie
 bibliothèque et que la simuler ne prouverait rien : `assistantMarkdown`
 (react-markdown + KaTeX), `fly-pages` et `assistantHistoryStore` (zustand). Ils
 sont **ignorés avec une raison lisible** quand le paquet manque, via
-`test/helpers/optional-dep.mjs`, et s’exécutent normalement en CI. Ne pas les
+`test/helpers/optional-dep.js`, et s’exécutent normalement en CI. Ne pas les
 transformer en tests sur des imitations : préférer extraire la logique dans un
 module pur, comme `src/lib/flyPages.js`.
 

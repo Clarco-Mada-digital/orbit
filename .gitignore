@@ -47,3 +47,6 @@ coverage
 # dist/extensions/ est suivi en git pour les ZIPs d'extensions distribuables
 # Ces ZIPs sont partagés avec les utilisateurs pour installation manuelle
 # Mais ils ne sont PAS inclus dans le build de l'application (release)
+
+# Profil jetable de « npm run dev:fresh » (données vierges à chaque essai)
+.dev-profile/

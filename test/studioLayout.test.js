@@ -16,6 +16,7 @@ import {
   fpsHealth,
   haloPoint,
   applyStudioKey,
+  directStudioKey,
   nextInList,
   BACKGROUNDS,
 } from '../src/lib/studioLayout.js';
@@ -355,4 +356,70 @@ test('« présentation » existe aussi sans caméra : la capture est mise en sc�
     Math.round(pleinCadre.screen.x + pleinCadre.screen.w / 2),
     'elle doit rester centrée'
   );
+});
+
+// --- Accès direct ----------------------------------------------------------
+// Faire défiler convient quand on cherche ; quand on SAIT ce qu'on veut, il
+// faut y aller d'un coup — surtout en plein enregistrement.
+
+test('les chiffres mènent directement à une disposition', () => {
+  assert.deepEqual(directStudioKey('1', {}, {}, { hasCamera: true }), { layout: 'screenOnly' });
+  assert.deepEqual(directStudioKey('2', {}, {}, { hasCamera: true }), { layout: 'screen' });
+  assert.deepEqual(directStudioKey('5', {}, {}, { hasCamera: true }), { layout: 'presentation' });
+  // Au-delà de la liste, on ne change rien plutôt que de retomber au hasard.
+  assert.equal(directStudioKey('9', {}, {}, { hasCamera: true }), null);
+});
+
+test('sans caméra, les chiffres ne proposent que ce qui a un sens', () => {
+  assert.deepEqual(directStudioKey('1', {}, {}, { hasCamera: false }), { layout: 'screen' });
+  assert.deepEqual(directStudioKey('2', {}, {}, { hasCamera: false }), { layout: 'presentation' });
+  assert.equal(directStudioKey('3', {}, {}, { hasCamera: false }), null);
+});
+
+test('Maj + chiffre mène directement à un fond', () => {
+  const fonds = Object.keys(BACKGROUNDS);
+  assert.deepEqual(directStudioKey('1', { shift: true }, {}), { background: fonds[0] });
+  assert.deepEqual(directStudioKey('8', { shift: true }, {}), { background: fonds[7] });
+  assert.equal(directStudioKey('9', { shift: true }, {}), null);
+});
+
+test('les flèches placent la caméra un axe à la fois', () => {
+  // ↑ ne touche qu'à la verticale : le côté gauche/droite est conservé.
+  assert.deepEqual(directStudioKey('ArrowUp', {}, { cameraCorner: 'bottom-left' }), {
+    cameraCorner: 'top-left',
+  });
+  assert.deepEqual(directStudioKey('ArrowDown', {}, { cameraCorner: 'top-right' }), {
+    cameraCorner: 'bottom-right',
+  });
+  // ← et → règlent AUSSI le côté, qui sert aux dispositions à deux zones.
+  assert.deepEqual(directStudioKey('ArrowRight', {}, { cameraCorner: 'top-left' }), {
+    cameraCorner: 'top-right',
+    cameraSide: 'right',
+  });
+  assert.deepEqual(directStudioKey('ArrowLeft', {}, { cameraCorner: 'bottom-right' }), {
+    cameraCorner: 'bottom-left',
+    cameraSide: 'left',
+  });
+});
+
+test('une touche sans rôle ne modifie rien', () => {
+  assert.equal(directStudioKey('q', {}, {}), null);
+  assert.equal(directStudioKey('Enter', {}, {}), null);
+});
+
+// --- Écran seul ------------------------------------------------------------
+test('« écran seul » masque la pastille sans débrancher la caméra', () => {
+  // On explique en plein écran, puis on se réaffiche : le périphérique reste
+  // choisi, seule la composition change.
+  const plan = composeLayout({
+    outW: 1280, outH: 720, hasCamera: true,
+    style: { ...DEFAULT_STYLE, layout: 'screenOnly' },
+  });
+  assert.equal(plan.camera, null, 'aucune pastille dessinée');
+  const pleinCadre = composeLayout({
+    outW: 1280, outH: 720, hasCamera: true,
+    style: { ...DEFAULT_STYLE, layout: 'screen' },
+  });
+  assert.equal(plan.screen.w, pleinCadre.screen.w, 'la capture garde toute la place');
+  assert.ok(pleinCadre.camera, 'la disposition voisine, elle, affiche bien la pastille');
 });

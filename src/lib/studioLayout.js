@@ -29,7 +29,9 @@ export const BACKGROUNDS = {
   accent: { kind: 'accent' },
 };
 
-export const LAYOUTS = ['screen', 'camera', 'split', 'presentation'];
+// L'ordre compte : il donne les touches 1 à 5, et va du plus sobre au plus
+// mis en scène.
+export const LAYOUTS = ['screenOnly', 'screen', 'camera', 'split', 'presentation'];
 // Côté où se place la caméra dans les dispositions à deux zones.
 export const CAMERA_SIDES = ['left', 'right'];
 export const CAMERA_CORNERS = ['bottom-left', 'bottom-right', 'top-left', 'top-right'];
@@ -137,6 +139,14 @@ export function composeLayout({ outW, outH, style, hasCamera, screenSize, camera
   // largement entourée de fond. C'est l'allure d'une diapositive, et elle vaut
   // d'exister seule.
   const layout = hasCamera ? s.layout : s.layout === 'presentation' ? 'presentation' : 'screen';
+
+  // « Écran seul » : la caméra reste sélectionnée et son flux reste ouvert,
+  // mais elle n'est pas dessinée. C'est le geste qu'on veut pendant une
+  // explication en plein écran — et la pastille revient d'une touche pour la
+  // suite, sans avoir à rechoisir le périphérique.
+  if (layout === 'screenOnly') {
+    return { screen: { x: box.x, y: box.y, w: box.w, h: box.h, fit: 'contain' }, camera: null };
+  }
 
   if (layout === 'presentation' && !hasCamera) {
     const scale = 0.82;
@@ -306,6 +316,45 @@ export function nextInList(list, current) {
   if (items.length === 0) return current;
   const i = items.indexOf(current);
   return items[(i + 1) % items.length];
+}
+
+// Raccourcis DIRECTS : aller d'un coup à la disposition ou au fond voulu,
+// plutôt que de faire défiler jusqu'à lui.
+//
+//   1–5            → disposition (dans l'ordre de LAYOUTS)
+//   Maj + 1–8      → fond (dans l'ordre de BACKGROUNDS)
+//   flèches        → place la caméra, un axe à la fois : ↑/↓ choisissent le
+//                    haut ou le bas, ←/→ la gauche ou la droite. Deux touches
+//                    pour un coin, mais chacune va DIRECTEMENT où on pense.
+//
+// Les flèches servent aussi de côté en « côte à côte » et « présentation »,
+// où il n'y a pas de coin mais une gauche et une droite.
+export function directStudioKey(key, { shift = false } = {}, style = {}, { hasCamera = false } = {}) {
+  const s = { ...DEFAULT_STYLE, ...style };
+
+  if (/^[1-9]$/.test(key)) {
+    const index = Number(key) - 1;
+    if (shift) {
+      const fonds = Object.keys(BACKGROUNDS);
+      return index < fonds.length ? { background: fonds[index] } : null;
+    }
+    const choix = hasCamera ? LAYOUTS : LAYOUTS.filter((l) => l === 'screen' || l === 'presentation');
+    return index < choix.length ? { layout: choix[index] } : null;
+  }
+
+  const [vertical, horizontal] = String(s.cameraCorner || 'bottom-left').split('-');
+  switch (key) {
+    case 'ArrowUp':
+      return { cameraCorner: `top-${horizontal}` };
+    case 'ArrowDown':
+      return { cameraCorner: `bottom-${horizontal}` };
+    case 'ArrowLeft':
+      return { cameraCorner: `${vertical}-left`, cameraSide: 'left' };
+    case 'ArrowRight':
+      return { cameraCorner: `${vertical}-right`, cameraSide: 'right' };
+    default:
+      return null;
+  }
 }
 
 // Applique un raccourci au style courant. Rend le style SUIVANT, ou null quand
