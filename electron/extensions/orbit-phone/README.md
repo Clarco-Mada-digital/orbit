@@ -70,6 +70,31 @@ Sans elle :
   un toast au-dessus de l'interface Orbit, avec les actions **Décrocher** et
   **Refuser**. Ces commandes utilisent les touches d'appel Android via ADB ; le
   résultat dépend des permissions et du constructeur du téléphone.
+  Le toast dit **qui** appelle : beaucoup de dialers titrent « Appel entrant »
+  et laissent l'identité ailleurs, Orbit lit donc aussi les autres champs de la
+  notification (dont les numéros portés par `android.people`), interroge la
+  radio au besoin, puis cherche le nom dans les **contacts du téléphone**
+  (`phone_lookup`). À défaut, il annonce franchement un appelant inconnu
+  plutôt que d'afficher un libellé qui ne nomme personne.
+- **Appels récents** (widget d'accueil) : le journal d'appels du téléphone,
+  appels manqués en évidence, avec la durée et l'horodatage. **Rappeler** lance
+  l'appel depuis le mobile (`ACTION_CALL`) ; **Préparer** ouvre son clavier avec
+  le numéro prêt, à confirmer sur l'appareil (`ACTION_DIAL`) — un appel ne part
+  jamais par surprise. Un numéro masqué est signalé comme tel, sans bouton
+  mort. Lecture seule du journal, via le shell ADB (`READ_CALL_LOG`).
+- **Envoyer un fichier** (contrôles rapides de l'accueil) : `adb push` vers les
+  téléchargements du téléphone. Le sélecteur de fichiers est ouvert par le
+  processus principal — l'interface ne transmet jamais de chemin — et le nom
+  distant est assaini. Les dossiers sont refusés (un envoi récursif réserverait
+  des surprises).
+- **Le presse-papiers partagé** n'a pas d'implémentation ADB sur Android
+  moderne : seule l'application au premier plan peut lire le presse-papiers.
+  Dans une fenêtre miroir, scrcpy assure déjà la synchronisation dans les deux
+  sens — c'est la voie à utiliser.
+- **Répondre à un SMS depuis Orbit n'est pas possible**, et ce n'est pas un
+  oubli : l'action « Répondre » d'une notification Android est un `RemoteInput`,
+  qu'ADB ne peut pas déclencher. La voie « pré-remplir puis valider » dépend du
+  clavier et de l'application de messagerie, donc ne marcherait qu'ici ou là.
 - **Applications épinglées** : l'icône punaise des applications ajoute jusqu'à
   huit raccourcis à une barre flottante toujours accessible dans Orbit. Cliquez
   sur une icône pour ouvrir son application dans une fenêtre scrcpy ; utilisez

@@ -307,6 +307,9 @@ export const STUDIO_KEYS = {
   p: 'pause',
   s: 'stop',
   r: 'minimize',
+  // Annoter l'écran : une couche de dessin par-dessus tout, utile surtout
+  // quand le studio est réduit et qu'on montre autre chose.
+  a: 'annotate',
 };
 
 // Élément suivant d'une liste, en boucle. Sert à « la touche fait défiler les

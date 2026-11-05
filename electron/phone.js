@@ -40,10 +40,24 @@ import {
   buildMirrorArgs,
   normalizePhoneSettings,
   parseAndroidNotifications,
+  describeCallNotification,
+  contactLookupCommand,
+  parseContactLookup,
+  parseIncomingCallNumber,
   notificationSnoozeCommand,
+  callLogCommand,
+  parseCallLog,
+  dialCommand,
+  sanitizePhoneNumber,
+  phonePushTarget,
+  PHONE_PUSH_DIR,
   pngSize,
   scaledSize,
 } from '../src/lib/phone.js';
+
+// Le processus principal n'importe pas `src/lib/phone.js` (le module natif est
+// chargé à la demande) : il passe par le runtime du téléphone.
+export { describeCallNotification } from '../src/lib/phone.js';
 
 const require = createRequire(import.meta.url);
 const { IconStore } = require('./phone-icons.cjs');
@@ -825,6 +839,62 @@ export async function listNotificationKeys({ serial } = {}) {
     .filter((line) => line.includes('|'));
 }
 
+// Nom lisible d'une application, SANS appeler le téléphone : seulement si
+// l'inventaire est déjà en mémoire. Un appel qui sonne ne doit pas attendre un
+// `scrcpy --list-apps` (plusieurs secondes).
+function cachedAppName(serial, pkg) {
+  const apps = appsCache.get(serial)?.apps;
+  if (!Array.isArray(apps)) return '';
+  return apps.find((app) => app.package === pkg)?.name || '';
+}
+
+// Numéro → nom de contact. Un appel qui sonne produit plusieurs sondages : le
+// cache évite de relancer `content query` à chaque tour.
+const contactNames = new Map();
+
+async function lookupContactName(serial, number) {
+  const command = contactLookupCommand(number);
+  if (!command) return null;
+  const cacheKey = `${serial}|${number}`;
+  if (contactNames.has(cacheKey)) return contactNames.get(cacheKey);
+  const out = await deviceShell(serial, command, { timeout: 8000 });
+  const name = out.ok ? parseContactLookup(out.stdout) : null;
+  if (contactNames.size > 200) contactNames.clear();
+  contactNames.set(cacheKey, name);
+  return name;
+}
+
+// « Qui appelle ? » — l'information que la notification ne donne pas toujours.
+//
+// Beaucoup de dialers titrent « Appel entrant » et laissent l'identité dans un
+// extra (`android.people`), voire nulle part. On complète donc : numéro de la
+// notification, sinon celui de la radio, puis recherche inverse dans les
+// contacts du téléphone. Tout échec est silencieux : on rend l'item tel quel,
+// l'interface sait afficher un appelant inconnu.
+async function resolveCallIdentity(serial, item) {
+  try {
+    const described = describeCallNotification(item, cachedAppName(serial, item.package));
+    const appName = cachedAppName(serial, item.package);
+    const number =
+      described.number ||
+      (described.named
+        ? null
+        : parseIncomingCallNumber(
+            (await deviceShell(serial, 'dumpsys telephony.registry', { timeout: 8000 })).stdout
+          ));
+    const callerName = described.named ? null : number ? await lookupContactName(serial, number) : null;
+    if (!number && !callerName && !appName) return item;
+    return {
+      ...item,
+      ...(appName ? { appName } : {}),
+      ...(number ? { callNumber: number } : {}),
+      ...(callerName ? { callerName } : {}),
+    };
+  } catch {
+    return item;
+  }
+}
+
 export async function listNotifications({ serial } = {}) {
   if (!serial) return { success: false, error: 'aucun appareil', items: [] };
   const out = await deviceShell(serial, 'dumpsys notification --noredact', { timeout: 20000 });
@@ -832,7 +902,13 @@ export async function listNotifications({ serial } = {}) {
     return { success: false, error: 'notifications illisibles sur cet appareil', items: [] };
   }
   try {
-    return { success: true, items: parseAndroidNotifications(out.stdout) };
+    const items = parseAndroidNotifications(out.stdout);
+    // Seuls les appels sont enrichis (il n'y en a qu'un ou deux à la fois) :
+    // les autres notifications portent déjà leur titre.
+    const resolved = await Promise.all(
+      items.map((item) => (item.category === 'call' ? resolveCallIdentity(serial, item) : item))
+    );
+    return { success: true, items: resolved };
   } catch (err) {
     return { success: false, error: String(err.message || err), items: [] };
   }
@@ -860,6 +936,103 @@ export async function dismissNotifications({ serial, keys } = {}) {
     count: dismissedKeys.length,
     dismissedKeys,
     ...(success ? {} : { error: 'Certaines notifications n’ont pas pu être écartées.' }),
+  };
+}
+
+// --- Envoi de fichiers ------------------------------------------------------
+
+// `adb push` vers le dossier des téléchargements du téléphone. Les chemins
+// locaux viennent d'un sélecteur de fichiers du système (jamais d'une page),
+// et le nom distant est assaini : il sert de chemin sur l'appareil.
+export async function pushFiles({ serial, paths } = {}) {
+  if (!serial) return { success: false, error: 'aucun appareil', sent: [] };
+  const list = (Array.isArray(paths) ? paths : []).filter((p) => typeof p === 'string' && p);
+  if (!list.length) return { success: false, error: 'aucun fichier', sent: [] };
+  if (list.length > 20) return { success: false, error: 'trop de fichiers (20 au plus)', sent: [] };
+
+  const sent = [];
+  const failed = [];
+  for (const localPath of list) {
+    const target = phonePushTarget(path.basename(localPath));
+    if (!target) {
+      failed.push(path.basename(localPath));
+      continue;
+    }
+    let stat = null;
+    try {
+      stat = fs.statSync(localPath);
+    } catch {
+      failed.push(path.basename(localPath));
+      continue;
+    }
+    // Un dossier ne se pousse pas tel quel (adb le ferait récursivement, avec
+    // des surprises) : on s'en tient aux fichiers.
+    if (!stat.isFile()) {
+      failed.push(path.basename(localPath));
+      continue;
+    }
+    const out = await adb(serial, ['push', localPath, target], { timeout: 10 * 60 * 1000 });
+    const text = `${out.stdout}${out.stderr}`;
+    if (out.ok && !/error|failed|no such file|permission denied/i.test(text)) {
+      sent.push({ name: path.basename(localPath), target, bytes: stat.size });
+    } else {
+      failed.push(path.basename(localPath));
+    }
+  }
+
+  return {
+    success: sent.length > 0 && failed.length === 0,
+    sent,
+    failed,
+    directory: PHONE_PUSH_DIR,
+    ...(failed.length
+      ? { error: `Non transféré${failed.length > 1 ? 's' : ''} : ${failed.join(', ')}` }
+      : {}),
+  };
+}
+
+// --- Journal d'appels -------------------------------------------------------
+
+// Les appels récents du téléphone. Le journal Android porte déjà le nom du
+// contact (`name`) quand il était connu au moment de l'appel ; sinon, on fait
+// la recherche inverse — c'est exactement ce dont un appel manqué a besoin.
+export async function listCallLog({ serial, limit } = {}) {
+  if (!serial) return { success: false, error: 'aucun appareil', entries: [] };
+  const out = await deviceShell(serial, callLogCommand(limit), { timeout: 12000 });
+  if (!out.ok) {
+    return { success: false, error: 'journal d\'appels illisible sur cet appareil', entries: [] };
+  }
+  try {
+    const entries = parseCallLog(out.stdout);
+    const resolved = await Promise.all(
+      entries.map(async (entry) => {
+        if (entry.name || !entry.number) return entry;
+        const name = await lookupContactName(serial, entry.number).catch(() => null);
+        return name ? { ...entry, name } : entry;
+      })
+    );
+    return { success: true, entries: resolved };
+  } catch (err) {
+    return { success: false, error: String(err.message || err), entries: [] };
+  }
+}
+
+// Rappeler. `mode: 'dial'` (défaut) ouvre le clavier du téléphone avec le
+// numéro prêt ; `mode: 'call'` lance l'appel. Le numéro est assaini AVANT de
+// toucher à la ligne de commande.
+export async function placeCall({ serial, number, mode } = {}) {
+  if (!serial) return { success: false, error: 'aucun appareil' };
+  const safe = sanitizePhoneNumber(number);
+  if (!safe) return { success: false, error: 'numéro inutilisable' };
+  const command = dialCommand(safe, mode === 'call' ? 'call' : 'dial');
+  const out = await deviceShell(serial, command, { timeout: 12000 });
+  const text = `${out.stdout}${out.stderr}`;
+  const ok = out.ok && !/Error|Exception|Permission Denial/i.test(text);
+  return {
+    success: ok,
+    number: safe,
+    mode: mode === 'call' ? 'call' : 'dial',
+    error: ok ? undefined : 'le téléphone a refusé de composer ce numéro',
   };
 }
 

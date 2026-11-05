@@ -17,6 +17,8 @@
     "release": "node scripts/release.js",
     "release:local": "sh scripts/release.sh",
     "release:ci": "npm run icons && npm run build && electron-builder --publish always",
+    "docs": "node scripts/build-docs.js",
+    "docs:html": "node scripts/build-docs.js --html",
     "export:extensions": "node scripts/export-extensions.cjs",
     "export:fake-data": "node scripts/export-fake-data.cjs",
     "dev:fresh": "concurrently \"npm run dev\" \"wait-on http://localhost:5173 && electron . --user-data-dir=.dev-profile\""
@@ -105,6 +107,8 @@
       "src/lib/downloadOptions.js",
       "src/lib/javaRuntime.js",
       "src/lib/phone.js",
+      "src/lib/annotate.js",
+      "src/lib/sensitive.js",
       "src/lib/aiProviders.js",
       "build/icon.png",
       "package.json"

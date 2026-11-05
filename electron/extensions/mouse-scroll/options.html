@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <title>Souris & Défilement — Options</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 24px;
+      background: #0b0e14;
+      color: #f3f4f6;
+      font-family: system-ui, -apple-system, sans-serif;
+      font-size: 14px;
+    }
+    h1 { font-size: 18px; margin: 0 0 4px; }
+    h2 { font-size: 14px; margin: 0 0 12px; }
+    .sub { color: #9ca3af; font-size: 13px; margin-bottom: 20px; }
+    .card {
+      background: #111827;
+      border: 1px solid #374151;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 16px;
+      max-width: 760px;
+    }
+    .field { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+    .field > span.name { width: 190px; color: #d1d5db; flex: none; }
+    .field input[type="range"] { flex: 1; min-width: 120px; accent-color: #6366f1; }
+    .field output { width: 64px; text-align: right; color: #9ca3af; font-variant-numeric: tabular-nums; }
+    .check { display: flex; align-items: center; gap: 8px; color: #d1d5db; margin-bottom: 10px; }
+    select, input[type="text"], input[type="number"] {
+      background: #1f2937;
+      border: 1px solid #374151;
+      color: #f3f4f6;
+      border-radius: 8px;
+      padding: 7px 10px;
+      font-size: 13px;
+    }
+    .btn {
+      border: none;
+      border-radius: 8px;
+      padding: 8px 14px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      background: #6366f1;
+      color: #fff;
+    }
+    .btn.ghost { background: transparent; border: 1px solid #374151; color: #9ca3af; }
+    .btn.danger { background: transparent; border: 1px solid #7f1d1d; color: #f87171; }
+    .saved { color: #10b981; font-size: 13px; margin-left: 10px; display: none; }
+    .hint { color: #6b7280; font-size: 12px; margin-top: 8px; line-height: 1.5; }
+    .row { display: flex; gap: 8px; align-items: center; margin-bottom: 8px; }
+    .row .host { flex: 1; min-width: 140px; font-family: ui-monospace, monospace; }
+    kbd {
+      background: #1f2937;
+      border: 1px solid #374151;
+      border-radius: 6px;
+      padding: 1px 6px;
+      font-family: ui-monospace, monospace;
+      font-size: 12px;
+    }
+    table { width: 100%; border-collapse: collapse; }
+    td { padding: 4px 0; }
+  </style>
+</head>
+<body>
+  <h1>🖱️ Souris &amp; Défilement</h1>
+  <p class="sub">
+    Défilement lissé réglable, défilement automatique au clic du milieu, et aides à la présentation.
+    Tout reste sur cette machine.
+  </p>
+
+  <div class="card">
+    <label class="check"><input type="checkbox" id="enabled" /> Extension activée</label>
+    <label class="check"><input type="checkbox" id="smooth" /> Défilement lissé (la page glisse au lieu de sauter)</label>
+
+    <div class="field">
+      <span class="name">Souplesse</span>
+      <input type="range" id="intensity" min="5" max="60" step="1" />
+      <output id="intensity-out"></output>
+    </div>
+    <div class="field">
+      <span class="name">Pixels par cran</span>
+      <input type="range" id="step" min="40" max="400" step="5" />
+      <output id="step-out"></output>
+    </div>
+    <div class="field">
+      <span class="name">Vitesse</span>
+      <input type="range" id="speed" min="25" max="400" step="5" />
+      <output id="speed-out"></output>
+    </div>
+
+    <label class="check"><input type="checkbox" id="invert" /> Inverser le sens du défilement</label>
+    <label class="check"><input type="checkbox" id="horizontal" /> <kbd>Maj</kbd> + molette = défilement horizontal</label>
+    <label class="check">
+      <input type="checkbox" id="trackpadPassthrough" />
+      Ne pas toucher au pavé tactile (il défile déjà en continu)
+    </label>
+
+    <div class="field">
+      <span class="name">Défilement rapide</span>
+      <select id="fastModifier">
+        <option value="none">Désactivé</option>
+        <option value="alt">Alt + molette</option>
+        <option value="shift">Maj + molette</option>
+        <option value="ctrl">Ctrl + molette</option>
+      </select>
+      <input type="range" id="fastFactor" min="15" max="80" step="5" />
+      <output id="fastFactor-out"></output>
+    </div>
+    <p class="hint">
+      Si le défilement horizontal est actif, <kbd>Maj</kbd> lui reste réservé — le défilement rapide
+      bascule alors sur <kbd>Alt</kbd>.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Défilement automatique</h2>
+    <div class="field">
+      <span class="name">Déclencheur</span>
+      <select id="autoScroll">
+        <option value="off">Désactivé</option>
+        <option value="middle">Clic du milieu maintenu</option>
+      </select>
+      <input type="range" id="autoScrollSpeed" min="30" max="300" step="10" />
+      <output id="autoScrollSpeed-out"></output>
+    </div>
+    <p class="hint">
+      Maintenez le clic du milieu et éloignez la souris : la page défile seule, d'autant plus vite
+      que vous vous éloignez. Un clic du milieu SANS mouvement garde son comportement habituel.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Palette de présentation</h2>
+    <p style="margin: 0 0 10px; color: #d1d5db;">
+      Sur n'importe quelle page : <kbd>Alt+Maj+D</kbd> ouvre la palette. Tout s'y choisit —
+      pointeur laser, stylo, surligneur, flèche, rectangle, ellipse, <strong>couleur</strong> et
+      <strong>épaisseur</strong>, spot lumineux, halo de clic, curseur mis en évidence, annuler,
+      effacer. La palette se déplace par sa poignée <code>⠿</code> et retient sa position.
+    </p>
+    <p class="hint">
+      Un seul raccourci, et c'est volontaire : Orbit intercepte les combinaisons <kbd>Alt</kbd>
+      avant la page et s'en réserve déjà beaucoup (<kbd>Alt+Maj+P</kbd> profils,
+      <kbd>Alt+Maj+H</kbd> barres, <kbd>Alt+Maj+M</kbd> tout marquer comme lu,
+      <kbd>Alt+Maj+S</kbd> capture…). Un raccourci d'extension posé sur l'un des siens
+      n'arriverait jamais jusqu'ici.<br />
+      Avec un outil de dessin actif, la page ne reçoit plus les clics — <kbd>Échap</kbd> lui rend la
+      main, un second <kbd>Échap</kbd> ferme la palette. Les tracés ne sont pas enregistrés : ils
+      disparaissent à la fermeture.
+    </p>
+  </div>
+
+  <div class="card">
+    <h2>Sites particuliers</h2>
+    <div id="sites"></div>
+    <div class="row" style="margin-top: 12px;">
+      <input type="text" class="host" id="new-host" placeholder="exemple.fr ou *.exemple.fr" />
+      <button class="btn ghost" id="add">+ Ajouter ce site</button>
+    </div>
+    <p class="hint">
+      Le motif le plus précis gagne : une règle sur <code>mail.google.com</code> l'emporte sur
+      <code>*.google.com</code>. Raccourci <kbd>Alt+Maj+M</kbd> sur une page : couper ou rétablir le
+      lissage pour ce site.<br />
+      Les applications qui pilotent elles-mêmes la molette (cartes, Figma, éditeurs de code) sont
+      déjà laissées tranquilles, sans réglage.
+    </p>
+  </div>
+
+  <div class="row">
+    <button class="btn" id="save">Enregistrer</button>
+    <button class="btn ghost" id="reset">Réinitialiser</button>
+    <span class="saved" id="saved">✓ Enregistré</span>
+  </div>
+
+  <script src="lib.js"></script>
+  <script src="options.js"></script>
+</body>
+</html>

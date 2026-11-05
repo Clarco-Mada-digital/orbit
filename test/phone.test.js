@@ -20,7 +20,25 @@ import {
   pngSize,
   isLauncherPackage,
   parseAndroidNotifications,
+  parseNotificationPeople,
+  isGenericCallLabel,
+  looksLikePhoneNumber,
+  telNumberOf,
+  describeCallNotification,
+  contactLookupCommand,
+  parseContactLookup,
+  parseIncomingCallNumber,
   phoneCallKey,
+  callLogCommand,
+  parseCallLog,
+  describeCallLogEntry,
+  formatCallDuration,
+  sanitizePhoneNumber,
+  dialCommand,
+  MAX_CALL_LOG_ENTRIES,
+  phoneRemoteName,
+  phonePushTarget,
+  PHONE_PUSH_DIR,
   MAX_PINNED_PHONE_APPS,
   notificationSnoozeCommand,
   virtualDisplaySize,
@@ -314,6 +332,233 @@ test('parseAndroidNotifications : paquet, titre, texte, clé et catégorie', () 
   // Les notifications sans texte exploitable sont écartées.
   assert.equal(items.some((i) => i.package === 'com.example.empty'), false);
   assert.deepEqual(parseAndroidNotifications(''), []);
+});
+
+test('parseAndroidNotifications : appel CallStyle — numéro lu dans android.people', () => {
+  const dump = [
+    'NotificationRecord(0x0b30 pkg=com.google.android.dialer user=0):',
+    '  when=1700000005000',
+    '  category=call',
+    '    android.title=String (Appel entrant)',
+    '    android.text=String (Mobile)',
+    '    android.people=String[] (1)',
+    '      [0] tel:+33612345678',
+    '    android.callType=Int (1)',
+    '    key=0|com.google.android.dialer|7|null|10042',
+  ].join('\n');
+
+  const [item] = parseAndroidNotifications(dump);
+  assert.deepEqual(item.people, ['tel:+33612345678']);
+  // Le titre du dialer ne dit pas qui appelle : le numéro prend le relais.
+  const caller = describeCallNotification(item, 'Téléphone');
+  assert.equal(caller.who, '+33612345678');
+  assert.equal(caller.number, '+33612345678');
+  assert.equal(caller.unknown, false);
+});
+
+test('parseNotificationPeople : lignes indentées du tableau d\'extras', () => {
+  const scope = [
+    '    android.people.list=ArrayList (2)',
+    '      [0] tel:0612345678',
+    '      [1] null',
+    '    android.title=String (Appel)',
+  ].join('\n');
+  assert.deepEqual(parseNotificationPeople(scope), ['tel:0612345678']);
+  assert.deepEqual(parseNotificationPeople(''), []);
+});
+
+test('isGenericCallLabel : écarte les titres qui ne nomment personne', () => {
+  for (const label of ['Appel', 'Appel entrant', 'Appel en cours', 'Incoming call', 'appel vidéo',
+    'Numéro inconnu', 'Unknown number', 'Appel WhatsApp', '']) {
+    assert.equal(isGenericCallLabel(label), true, label);
+  }
+  for (const label of ['Maman', 'Alice Durand', 'Bureau — Clarco', 'Dr. Ratsimba']) {
+    assert.equal(isGenericCallLabel(label), false, label);
+  }
+});
+
+test('looksLikePhoneNumber / telNumberOf', () => {
+  assert.equal(looksLikePhoneNumber('+33 6 12 34 56 78'), true);
+  assert.equal(looksLikePhoneNumber('0341234567'), true);
+  assert.equal(looksLikePhoneNumber('Maman'), false);
+  assert.equal(looksLikePhoneNumber('Salle 12'), false);
+  assert.equal(telNumberOf('tel:+261%2034%20123%2045'), '+2613412345');
+  assert.equal(telNumberOf('content://com.android.contacts/contacts/12'), null);
+});
+
+test('describeCallNotification : le contact résolu passe avant tout le reste', () => {
+  const caller = describeCallNotification(
+    {
+      package: 'com.google.android.dialer',
+      title: 'Appel entrant',
+      text: 'Mobile',
+      callNumber: '+33612345678',
+      callerName: 'Maman',
+    },
+    'Téléphone'
+  );
+  assert.equal(caller.who, 'Maman');
+  assert.equal(caller.named, true);
+  // La ligne secondaire complète sans répéter : numéro + application.
+  assert.equal(caller.detail, '+33612345678 · Téléphone');
+});
+
+test('describeCallNotification : nom porté par le texte, pas par le titre', () => {
+  const caller = describeCallNotification(
+    { package: 'com.whatsapp', title: 'Appel WhatsApp', text: 'Alice Durand' },
+    'WhatsApp'
+  );
+  assert.equal(caller.who, 'Alice Durand');
+  assert.equal(caller.detail, 'WhatsApp');
+  assert.equal(caller.number, null);
+});
+
+test('describeCallNotification : aucune identité transmise', () => {
+  const caller = describeCallNotification({ package: 'com.whatsapp', title: 'Appel entrant' }, 'WhatsApp');
+  assert.equal(caller.unknown, true);
+  assert.equal(caller.who, 'WhatsApp');
+  assert.equal(describeCallNotification({}).who, 'Appelant inconnu');
+});
+
+test('contactLookupCommand : numéro assaini, URI phone_lookup', () => {
+  assert.equal(
+    contactLookupCommand('+33 6 12-34.56 78'),
+    'content query --uri content://com.android.contacts/phone_lookup/%2B33612345678 --projection display_name'
+  );
+  assert.equal(contactLookupCommand(''), null);
+  assert.equal(contactLookupCommand('; rm -rf /'), null);
+});
+
+test('parseContactLookup : première ligne exploitable de content query', () => {
+  assert.equal(parseContactLookup('Row: 0 display_name=Maman\n'), 'Maman');
+  assert.equal(parseContactLookup('Row: 0 display_name=NULL'), null);
+  assert.equal(parseContactLookup('No result found.'), null);
+});
+
+test('parseIncomingCallNumber : numéro de la radio', () => {
+  assert.equal(parseIncomingCallNumber('  mCallIncomingNumber=+261340000000,'), '+261340000000');
+  assert.equal(parseIncomingCallNumber('mCallIncomingNumber=null'), null);
+  assert.equal(parseIncomingCallNumber(''), null);
+});
+
+test('callLogCommand : projection, tri décroissant et limite bornée', () => {
+  assert.match(callLogCommand(5), /content:\/\/call_log\/calls/);
+  assert.match(callLogCommand(5), /--sort 'date DESC LIMIT 5'/);
+  // Une limite absurde ne doit pas rapatrier le journal entier.
+  assert.match(callLogCommand(99999), new RegExp(`LIMIT ${MAX_CALL_LOG_ENTRIES}'`));
+  assert.match(callLogCommand(0), /LIMIT 1'/);
+  assert.match(callLogCommand(), /LIMIT 15'/);
+});
+
+test('parseCallLog : lignes de content query, types et numéros masqués', () => {
+  const output = [
+    'Row: 0 number=+33612345678, name=Maman, date=1700000005000, duration=42, type=1',
+    'Row: 1 number=0612345678, name=NULL, date=1700000004000, duration=0, type=3',
+    'Row: 2 number=-1, name=NULL, date=1700000003000, duration=0, type=3',
+    // Un nom contenant une virgule ne doit pas couper la ligne en deux champs.
+    'Row: 3 number=0145000000, name=Durand, Alice, date=1700000002000, duration=125, type=2',
+    'bruit ignoré',
+  ].join('\n');
+
+  const entries = parseCallLog(output);
+  assert.equal(entries.length, 4);
+  assert.deepEqual(entries[0], {
+    number: '+33612345678',
+    name: 'Maman',
+    at: 1700000005000,
+    duration: 42,
+    type: 'incoming',
+  });
+  // `NULL` devient une chaîne vide, pas le texte « NULL ».
+  assert.equal(entries[1].name, '');
+  assert.equal(entries[1].type, 'missed');
+  // Numéro masqué : Android écrit « -1 », rien à rappeler.
+  assert.equal(entries[2].number, '');
+  assert.equal(entries[3].name, 'Durand, Alice');
+  assert.equal(entries[3].type, 'outgoing');
+  assert.deepEqual(parseCallLog(''), []);
+});
+
+test('describeCallLogEntry : qui, rappelable, et appel manqué', () => {
+  const named = describeCallLogEntry({ name: 'Maman', number: '+33612345678', type: 'incoming' });
+  assert.equal(named.who, 'Maman');
+  assert.equal(named.detail, '+33612345678');
+  assert.equal(named.callable, true);
+  assert.equal(named.missed, false);
+
+  // Sans nom, le numéro fait office d'identité (et ne se répète pas dessous).
+  const anonymous = describeCallLogEntry({ number: '0612345678', type: 'missed' });
+  assert.equal(anonymous.who, '0612345678');
+  assert.equal(anonymous.detail, '');
+  assert.equal(anonymous.missed, true);
+
+  // Numéro masqué : aucun bouton de rappel ne doit être proposé.
+  const hidden = describeCallLogEntry({ number: '', type: 'rejected' });
+  assert.equal(hidden.callable, false);
+  assert.equal(hidden.who, 'Appelant inconnu');
+  assert.equal(hidden.missed, true);
+});
+
+test('formatCallDuration : lisible, et vide pour un appel non décroché', () => {
+  assert.equal(formatCallDuration(0), '');
+  assert.equal(formatCallDuration(42), '42 s');
+  assert.equal(formatCallDuration(125), '2 min 05');
+  assert.equal(formatCallDuration(3725), '1 h 02');
+});
+
+test('sanitizePhoneNumber : ce numéro part sur une ligne de commande', () => {
+  assert.equal(sanitizePhoneNumber('+33 6 12 34 56 78'), '+33612345678');
+  assert.equal(sanitizePhoneNumber('(01) 45.00.00-00'), '0145000000');
+  // Le « + » ne vaut qu'en tête.
+  assert.equal(sanitizePhoneNumber('06+12'), '0612');
+  // Tout ce qui pourrait s'échapper du `tel:` est refusé.
+  assert.equal(sanitizePhoneNumber("0612345678'; rm -rf /"), '0612345678');
+  assert.equal(sanitizePhoneNumber('$(reboot)'), null);
+  assert.equal(sanitizePhoneNumber('sans chiffre'), null);
+  assert.equal(sanitizePhoneNumber(''), null);
+  assert.equal(sanitizePhoneNumber('1'.repeat(40)), null);
+});
+
+test('dialCommand : préparer (DIAL) et appeler (CALL) sont deux intentions', () => {
+  assert.equal(dialCommand('+33612345678'), "am start -a android.intent.action.DIAL -d 'tel:+33612345678'");
+  assert.equal(
+    dialCommand('+33612345678', 'call'),
+    "am start -a android.intent.action.CALL -d 'tel:+33612345678'"
+  );
+  // Un mode inconnu ne doit JAMAIS lancer un appel par surprise.
+  assert.match(dialCommand('0612345678', 'nimporte quoi'), /action\.DIAL/);
+  assert.equal(dialCommand('abc'), null);
+});
+
+test('phoneRemoteName : ce nom devient un chemin sur le téléphone', () => {
+  assert.equal(phoneRemoteName('rapport.pdf'), 'rapport.pdf');
+  // Les espaces restent (le chemin distant est cité), les accents aussi.
+  assert.equal(phoneRemoteName('Rapport final été.pdf'), 'Rapport final été.pdf');
+  // Aucune remontée de dossier, aucun séparateur : seul le nom de base.
+  assert.equal(phoneRemoteName('../../etc/passwd'), 'passwd');
+  assert.equal(phoneRemoteName('C:\\Windows\\notes.txt'), 'notes.txt');
+  assert.equal(phoneRemoteName('/sdcard/../../root/cle'), 'cle');
+  // Un nom qui commence par un point se cacherait sur l'appareil.
+  assert.equal(phoneRemoteName('...bashrc'), 'bashrc');
+  // Ce qui pourrait s'échapper des apostrophes du shell est retiré.
+  // Le découpage sur « / » agit d'abord : il ne reste que le dernier segment,
+  // débarrassé de ses apostrophes.
+  assert.equal(phoneRemoteName("note'; rm -rf /tmp; '.txt"), 'tmp; .txt');
+  assert.equal(phoneRemoteName('$(reboot).txt'), '(reboot).txt');
+  assert.equal(phoneRemoteName('a`b`.txt'), 'ab.txt');
+  // Rien d'exploitable : null, pour que l'appelant n'écrive pas un chemin vide.
+  assert.equal(phoneRemoteName('/'), null);
+  assert.equal(phoneRemoteName('...'), null);
+  assert.equal(phoneRemoteName(''), null);
+  // Nom démesuré : tronqué.
+  assert.equal(phoneRemoteName('a'.repeat(300)).length, 120);
+});
+
+test('phonePushTarget : destination dans les téléchargements du téléphone', () => {
+  assert.equal(phonePushTarget('photo.jpg'), `${PHONE_PUSH_DIR}/photo.jpg`);
+  assert.equal(phonePushTarget('photo.jpg', '/sdcard/Documents'), '/sdcard/Documents/photo.jpg');
+  assert.equal(phonePushTarget('../../../etc/shadow'), `${PHONE_PUSH_DIR}/shadow`);
+  assert.equal(phonePushTarget(''), null);
 });
 
 test('phoneCallKey : maps answering and rejecting to Android call key events', () => {

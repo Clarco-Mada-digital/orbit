@@ -16,6 +16,7 @@ import {
   fpsHealth,
   haloPoint,
   applyStudioKey,
+  STUDIO_KEYS,
   directStudioKey,
   nextInList,
   BACKGROUNDS,
@@ -312,6 +313,17 @@ test('sans caméra, la touche « disposition » saute celles qui en exigent une'
   assert.deepEqual(applyStudioKey('d', { layout: 'presentation' }, { hasCamera: false }), { layout: 'screen' });
   // Avec caméra, les quatre sont parcourues.
   assert.deepEqual(applyStudioKey('d', { layout: 'screen' }, { hasCamera: true }), { layout: 'camera' });
+});
+
+test('« A » annote l\'écran : une action du composant, pas de la mise en scène', () => {
+  // La couche d'annotation est une FENÊTRE du processus principal : elle ne
+  // change rien au style de la vidéo, donc `applyStudioKey` ne renvoie rien —
+  // c'est le composant qui agit.
+  assert.equal(STUDIO_KEYS.a, 'annotate');
+  assert.equal(applyStudioKey('a', { zoom: false }), null);
+  // Et elle ne doit marcher sur aucune autre action déjà attribuée.
+  const actions = Object.values(STUDIO_KEYS);
+  assert.equal(new Set(actions).size, actions.length, 'deux touches pour la même action');
 });
 
 test('les interrupteurs basculent, et les touches inconnues ne font rien', () => {

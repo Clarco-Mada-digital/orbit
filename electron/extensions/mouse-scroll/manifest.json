@@ -1,0 +1,26 @@
+{
+  "manifest_version": 3,
+  "name": "Souris & Défilement",
+  "version": "1.1.0",
+  "description": "Défilement lissé et réglable (vitesse, sens, par site), défilement automatique au clic du milieu, et une palette de présentation (Alt+Maj+D) : pointeur laser, stylo, surligneur, flèche, couleurs, épaisseurs, spot lumineux, halo de clic. 100% local, configurable (⚙️).",
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["lib.js", "content.js"],
+      "run_at": "document_start",
+      "all_frames": true
+    }
+  ],
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
+  "permissions": ["storage"],
+  "host_permissions": []
+}

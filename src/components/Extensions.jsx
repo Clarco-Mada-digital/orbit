@@ -6,6 +6,7 @@ import { appPartition } from '../lib/session';
 import { reloadUrlFor } from '../lib/urls';
 import { useT } from '../lib/i18n';
 import { loadExtensionInfo, clearExtensionInfoCache } from '../lib/extensionInfo';
+import { bundledInstallState } from '../lib/extensionCatalog';
 import { usePhoneStore } from '../lib/phoneStore';
 
 // Recharge toutes les apps ouvertes : indispensable après un changement
@@ -491,7 +492,13 @@ export default function Extensions() {
           </p>
           <div className="space-y-2">
             {bundled.map((item) => {
-              const installed = extensions.some((e) => e.name === item.name);
+              // Une version plus récente livrée avec Orbit doit pouvoir
+              // s'installer PAR-DESSUS l'ancienne : sans ça, l'extension
+              // continue de tourner dans sa version précédente sans qu'aucun
+              // écran ne le dise.
+              const { state, installedVersion } = bundledInstallState(item, extensions);
+              const installed = state === 'installed';
+              const updatable = state === 'update';
               return (
                 <div
                   key={item.file}
@@ -517,19 +524,26 @@ export default function Extensions() {
                       <p className="line-clamp-2 text-xs text-text-muted">{item.description}</p>
                     ) : null}
                   </div>
-                  <span className="flex-shrink-0 text-xs text-text-muted">v{item.version}</span>
+                  <span className="flex-shrink-0 text-xs text-text-muted">
+                    v{item.version}
+                    {updatable ? (
+                      <span className="block text-[10px] text-accent-primary">
+                        installée : v{installedVersion}
+                      </span>
+                    ) : null}
+                  </span>
                   <button
                     type="button"
                     onClick={() => handleInstallFromZip(item.zipPath)}
                     disabled={installed || !!busy}
-                    className="btn btn-secondary flex-shrink-0 text-xs"
+                    className={`btn flex-shrink-0 text-xs ${updatable ? 'btn-primary' : 'btn-secondary'}`}
                   >
                     {busy === 'zip' && !installed ? (
                       <Loader2 size={13} className="animate-spin" />
                     ) : (
                       <Download size={13} />
                     )}
-                    {installed ? 'Installée' : 'Installer'}
+                    {installed ? 'Installée' : updatable ? 'Mettre à jour' : 'Installer'}
                   </button>
                 </div>
               );

@@ -65,8 +65,9 @@ export function mediaKind(href) {
 // Analyse un texte inline : renvoie des nœuds { type, … } que le composant
 // rend en JSX. Ordre des règles = priorité (le code inline d'abord, sinon ses
 // astérisques seraient vus comme de l'emphase).
-export function parseInline(text) {
+export function parseInline(text, options = {}) {
   const out = [];
+  // `options` est transmis tel quel aux liens et aux images (voir safeHref).
   let rest = String(text ?? '');
   // Motifs, dans l'ordre : code `…`, image ![alt](src), lien [txt](href),
   // autolien <http…>, graisse **…**, italique *…*, barré ~~…~~.
@@ -117,17 +118,17 @@ export function parseInline(text) {
     if (rule.type === 'escape') {
       out.push({ type: 'text', text: m[1] });
     } else if (rule.type === 'link') {
-      out.push({ type: 'link', text: m[1] || m[2], href: safeHref(m[2]) });
+      out.push({ type: 'link', text: m[1] || m[2], href: safeHref(m[2], options) });
     } else if (rule.type === 'image') {
       const kind = mediaKind(m[2]);
       if (kind) {
         // Audio/vidéo : un lecteur, pas une pastille d'image. Comme les
         // images, la source n'est PAS chargée tant que le lecteur ne clique
         // pas (une URL unique suffirait sinon à signaler la lecture).
-        out.push({ type: 'media', kind, alt: m[1] || '', href: safeHref(m[2]) });
+        out.push({ type: 'media', kind, alt: m[1] || '', href: safeHref(m[2], options) });
       } else {
         // Image NON chargée : on garde l'alternative, affichée comme une pastille.
-        out.push({ type: 'image', alt: m[1] || m[2], href: safeHref(m[2]) });
+        out.push({ type: 'image', alt: m[1] || m[2], href: safeHref(m[2], options) });
       }
     } else if (rule.type === 'mathDisplay' || rule.type === 'math') {
       // TeX conservé tel quel : c'est KaTeX, dans le composant, qui le met en
@@ -139,17 +140,17 @@ export function parseInline(text) {
       // « …voir https://exemple.test/page. » → le point final appartient à la
       // phrase, pas à l'adresse.
       const raw = m[0].replace(/[.,;:!?»"']+$/, '');
-      out.push({ type: 'link', text: raw, href: safeHref(raw) });
+      out.push({ type: 'link', text: raw, href: safeHref(raw, options) });
       rest = rest.slice(m.index + raw.length);
       continue;
     } else if (rule.type === 'autolink') {
-      out.push({ type: 'link', text: m[1], href: safeHref(m[1]) });
+      out.push({ type: 'link', text: m[1], href: safeHref(m[1], options) });
     } else if (rule.type === 'code') {
       // Contenu PRIS AU PIED DE LA LETTRE : on ne re-analyse pas le markdown
       // à l'intérieur d'un `code` inline.
       out.push({ type: 'code', text: m[1] });
     } else {
-      out.push({ type: rule.type, text: m[1], children: parseInline(m[1]) });
+      out.push({ type: rule.type, text: m[1], children: parseInline(m[1], options) });
     }
     rest = rest.slice(m.index + m[0].length);
   }
@@ -159,11 +160,16 @@ export function parseInline(text) {
 // Seuls http(s), mailto et les ancres internes sont des liens. Tout le reste
 // (javascript:, data:, file:…) est neutralisé — un document reçu ne doit pas
 // pouvoir faire exécuter du code ni lire un fichier local par un clic.
-export function safeHref(href) {
+export function safeHref(href, { allowRelative = false } = {}) {
   const s = String(href || '').trim();
   if (/^https?:\/\//i.test(s)) return s;
   if (/^mailto:[^\s]+$/i.test(s)) return s;
   if (/^#[\w-]*$/.test(s)) return s;
+  // `allowRelative` n'est JAMAIS activé pour un document reçu : il sert à la
+  // documentation du dépôt, écrite par nous, qui a besoin de ses images
+  // locales (`images/capture.png`) et de ses liens entre pages. Les remontées
+  // de dossier et les chemins absolus restent refusés dans tous les cas.
+  if (allowRelative && /^[\w.][\w./-]*$/.test(s) && !s.includes('..')) return s;
   return null;
 }
 

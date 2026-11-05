@@ -28,6 +28,12 @@ import electronUpdater from 'electron-updater';
 import { matchShortcutInput } from '../src/lib/shortcuts.js';
 import { matchLinkRule } from '../src/lib/rules.js';
 import { hasBinaryContent } from '../src/lib/documents.js';
+import { parsePngDataUrl, pinnedWindowBounds } from '../src/lib/annotate.js';
+import {
+  SENSITIVE_PATTERNS,
+  scaleSensitiveRects,
+  sensitiveMatchIsValid,
+} from '../src/lib/sensitive.js';
 import { savePlan } from '../src/lib/downloadPath.js';
 import { mediaFormatOptions, parseDownloadUrl } from '../src/lib/downloadOptions.js';
 import { getDomain } from 'tldts-experimental';
@@ -1596,6 +1602,98 @@ const PICK_REGION_JS = `(() => new Promise((resolve) => {
   } catch (e) { resolve(null); }
 }))()`;
 
+// Repérage des données sensibles DANS LA PAGE, avant la capture.
+//
+// C'est le seul endroit où l'information existe encore : une fois l'image
+// produite, un e-mail n'est plus qu'un ensemble de pixels (il faudrait de la
+// reconnaissance de caractères). Ici, chaque nœud de texte visible est
+// confronté aux motifs de `src/lib/sensitive.js`, et l'occurrence trouvée est
+// mesurée au `Range` près — pas le bloc entier, juste les mots concernés.
+//
+// La page rapporte aussi SES dimensions : le facteur d'échelle vers l'image est
+// ensuite mesuré, pas déduit du zoom et de la densité d'écran.
+const SCAN_SENSITIVE_JS = (patterns, fullPage) => `(function(){
+  try {
+    const PATTERNS = ${JSON.stringify(patterns)};
+    const scrollX = ${fullPage ? 'window.scrollX' : '0'};
+    const scrollY = ${fullPage ? 'window.scrollY' : '0'};
+    const viewportWidth = window.innerWidth;
+    const viewportHeight = window.innerHeight;
+    const pageWidth = ${fullPage}
+      ? Math.max(document.documentElement.scrollWidth, viewportWidth)
+      : viewportWidth;
+    const rects = [];
+    const walker = document.createTreeWalker(document.body || document.documentElement, NodeFilter.SHOW_TEXT);
+    let node;
+    let scanned = 0;
+    while ((node = walker.nextNode()) && rects.length < 200 && scanned < 20000) {
+      const text = node.nodeValue;
+      if (!text || text.length < 6 || !/\\S/.test(text)) continue;
+      scanned += 1;
+      const parent = node.parentElement;
+      if (!parent) continue;
+      const tag = parent.tagName;
+      if (tag === 'SCRIPT' || tag === 'STYLE' || tag === 'NOSCRIPT' || tag === 'TITLE') continue;
+      let matches = null;
+      for (const pattern of PATTERNS) {
+        const regex = new RegExp(pattern.source, pattern.flags);
+        let found;
+        while ((found = regex.exec(text)) !== null) {
+          if (!found[0]) { regex.lastIndex += 1; continue; }
+          (matches || (matches = [])).push({ kind: pattern.kind, start: found.index, end: found.index + found[0].length, value: found[0] });
+        }
+      }
+      if (!matches) continue;
+      // Style lu seulement quand il y a quelque chose à masquer : getComputedStyle
+      // sur chaque nœud de texte d'une grande page coûte cher.
+      const style = window.getComputedStyle(parent);
+      if (style.visibility === 'hidden' || style.display === 'none' || Number(style.opacity) === 0) continue;
+      for (const match of matches) {
+        const range = document.createRange();
+        try {
+          range.setStart(node, match.start);
+          range.setEnd(node, match.end);
+        } catch (e) { continue; }
+        for (const box of range.getClientRects()) {
+          if (box.width < 2 || box.height < 2) continue;
+          // Hors de la zone capturée : rien à masquer.
+          if (!${fullPage} && (box.bottom < 0 || box.top > viewportHeight || box.right < 0 || box.left > viewportWidth)) continue;
+          rects.push({
+            kind: match.kind,
+            value: match.value,
+            x: box.left + scrollX,
+            y: box.top + scrollY,
+            width: box.width,
+            height: box.height,
+          });
+        }
+      }
+    }
+    return { pageWidth: pageWidth, rects: rects };
+  } catch (e) {
+    return null;
+  }
+})()`;
+
+// Zones sensibles d'une page, en pixels de l'image capturée. Toute erreur est
+// silencieuse : la capture doit aboutir même si le repérage échoue (page
+// protégée, document vide, cadre distant).
+async function scanSensitiveRegions(wc, mode, image) {
+  if (mode !== 'visible' && mode !== 'full') return [];
+  try {
+    const report = await wc.executeJavaScript(
+      SCAN_SENSITIVE_JS(SENSITIVE_PATTERNS, mode === 'full'),
+      true
+    );
+    if (!report?.rects?.length) return [];
+    const valid = report.rects.filter((rect) => sensitiveMatchIsValid(rect.kind, rect.value));
+    return scaleSensitiveRects(valid, report.pageWidth, image.getSize().width);
+  } catch (err) {
+    console.error('[orbit] repérage des données sensibles indisponible:', err.message);
+    return [];
+  }
+}
+
 // Dossier des captures : « Images/Orbit », repli sur les téléchargements si le
 // système n'expose pas de dossier Images (certains Linux minimalistes).
 function screenshotDir() {
@@ -1744,6 +1842,9 @@ async function captureGuestPage(wc, mode, copyDirect = false) {
       id,
       filename: screenshotName(),
       dataUrl: image.toDataURL(),
+      // Zones repérées dans la page : l'aperçu propose de les masquer, il ne
+      // le fait jamais tout seul (un faux positif masquerait l'essentiel).
+      sensitive: await scanSensitiveRegions(wc, mode, image),
     });
     return { success: true };
   } catch (err) {
@@ -1755,10 +1856,26 @@ async function captureGuestPage(wc, mode, copyDirect = false) {
   }
 }
 
-handleFromUi('screenshot:copy', (_event, { id } = {}) => {
+// Capture annotée dans l'aperçu : l'image à écrire ou à copier vient alors du
+// renderer. On n'accepte qu'un PNG en data URL, de taille plausible — rien
+// d'autre ne doit pouvoir devenir un fichier sur le disque. Toute donnée
+// douteuse est ignorée au profit de l'image d'origine, jamais écrite à l'aveugle.
+function screenshotImageFor(pending, dataUrl) {
+  const base64 = parsePngDataUrl(dataUrl);
+  if (!base64) return pending.image;
+  try {
+    const edited = nativeImage.createFromBuffer(Buffer.from(base64, 'base64'));
+    return edited.isEmpty() ? pending.image : edited;
+  } catch (err) {
+    console.error('[orbit] capture annotée illisible, image d’origine conservée:', err);
+    return pending.image;
+  }
+}
+
+handleFromUi('screenshot:copy', (_event, { id, dataUrl } = {}) => {
   const pending = pendingScreenshots.get(id);
   if (!pending) return { success: false, error: 'capture-expired' };
-  clipboard.writeImage(pending.image);
+  clipboard.writeImage(screenshotImageFor(pending, dataUrl));
   pendingScreenshots.delete(id);
   if (activeScreenshotId === id) activeScreenshotId = null;
   return { success: true };
@@ -1801,13 +1918,237 @@ handleFromUi('screenshot:capture', async (_event, { wcId, mode, copyDirect, sour
   return captureGuestPage(wc, mode, copyDirect === true);
 });
 
+// ---------------------------------------------------------------------------
+// Captures ÉPINGLÉES — une capture qui flotte au-dessus de tout.
+//
+// Le geste qui manquait après une capture : la garder sous les yeux pour la
+// comparer à autre chose. Chaque épinglage est sa propre fenêtre (on peut en
+// poser plusieurs côte à côte) ; l'image reste du côté du processus principal,
+// la fenêtre n'en a qu'une data URL pour l'afficher.
+// ---------------------------------------------------------------------------
+const pinnedShots = new Map(); // webContents.id → { win, image, filename }
+
+function pinnedShotFor(event) {
+  const entry = pinnedShots.get(event?.sender?.id);
+  return entry && !entry.win.isDestroyed() ? entry : null;
+}
+
+function openPinnedShot(image, filename) {
+  const size = image.getSize();
+  const workArea = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
+  const bounds = pinnedWindowBounds(size, workArea, pinnedShots.size);
+  const win = new BrowserWindow({
+    ...bounds,
+    frame: false,
+    transparent: true,
+    backgroundColor: '#00000000',
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    fullscreenable: false,
+    minWidth: 160,
+    minHeight: 120,
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'pinned-shot-preload.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  // « floating » : au-dessus des fenêtres ordinaires, mais pas des alertes
+  // système — une capture épinglée ne doit pas masquer un dialogue.
+  win.setAlwaysOnTop(true, 'floating');
+  win.setAspectRatio(size.width / size.height);
+  win.loadFile(path.join(__dirname, 'pinned-shot.html'));
+  // L'identifiant est retenu MAINTENANT : dans `closed`, la fenêtre est déjà
+  // détruite et lire `win.webContents` lève « Object has been destroyed » —
+  // une exception non rattrapée dans le processus principal, donc une boîte
+  // d'erreur à chaque fermeture d'une capture épinglée.
+  const wcId = win.webContents.id;
+  pinnedShots.set(wcId, { win, image, filename });
+  win.webContents.once('did-finish-load', () => {
+    if (win.isDestroyed()) return;
+    win.webContents.send('orbit:pin:image', { dataUrl: image.toDataURL(), filename });
+    win.show();
+  });
+  win.on('closed', () => {
+    pinnedShots.delete(wcId);
+  });
+  return win;
+}
+
+// ---------------------------------------------------------------------------
+// Annotation de l'écran — couche plein écran, au-dessus de tout.
+//
+// Elle n'est PAS composée par le studio : c'est une vraie fenêtre, donc une
+// capture d'écran ou un enregistrement la reprennent naturellement, et elle
+// sert aussi bien à commenter une démonstration en direct qu'à filmer.
+//
+// Tout l'équilibre tient au pointeur : avec un outil de dessin, la fenêtre
+// capte la souris ; en mode pointeur, elle devient TRAVERSANTE pour qu'on
+// continue de travailler dans les applications, la palette restant cliquable.
+// ---------------------------------------------------------------------------
+let annotateWindow = null;
+let annotateMode = 'pointer';
+let annotateHover = false;
+
+function applyAnnotatePointer() {
+  if (!annotateWindow || annotateWindow.isDestroyed()) return;
+  const capture = annotateMode === 'draw' || annotateHover;
+  // `forward: true` : même traversante, la fenêtre continue de recevoir les
+  // mouvements de souris — sans quoi elle ne saurait jamais que le pointeur
+  // est entré dans la palette, et celle-ci deviendrait incliquable.
+  annotateWindow.setIgnoreMouseEvents(!capture, { forward: true });
+}
+
+function createAnnotateOverlay() {
+  const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
+  const area = display.bounds;
+  annotateMode = 'pointer';
+  annotateHover = false;
+  annotateWindow = new BrowserWindow({
+    x: area.x,
+    y: area.y,
+    width: area.width,
+    height: area.height,
+    frame: false,
+    transparent: true,
+    backgroundColor: '#00000000',
+    resizable: false,
+    movable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    hasShadow: false,
+    show: false,
+    webPreferences: {
+      preload: path.join(__dirname, 'annotate-overlay-preload.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+    },
+  });
+  // « screen-saver » : au-dessus des fenêtres plein écran, sinon l'application
+  // qu'on est en train de montrer passerait devant les annotations.
+  annotateWindow.setAlwaysOnTop(true, 'screen-saver');
+  annotateWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+  annotateWindow.loadFile(path.join(__dirname, 'annotate-overlay.html'));
+  annotateWindow.once('ready-to-show', () => {
+    if (annotateWindow?.isDestroyed()) return;
+    annotateWindow.show();
+    applyAnnotatePointer();
+  });
+  annotateWindow.on('closed', () => {
+    annotateWindow = null;
+    for (const win of BrowserWindow.getAllWindows()) {
+      try {
+        if (!win.isDestroyed()) win.webContents.send('orbit:annotate-state', { open: false });
+      } catch {
+        /* fenêtre en cours de fermeture */
+      }
+    }
+  });
+  return annotateWindow;
+}
+
+handleFromUi('annotate:toggle', () => {
+  if (annotateWindow && !annotateWindow.isDestroyed()) {
+    annotateWindow.close();
+    return { success: true, open: false };
+  }
+  createAnnotateOverlay();
+  return { success: true, open: true };
+});
+
+ipcMain.handle('annotate:mode', (event, mode) => {
+  if (!annotateWindow || event.sender !== annotateWindow.webContents) return { success: false };
+  annotateMode = mode === 'draw' ? 'draw' : 'pointer';
+  applyAnnotatePointer();
+  return { success: true, mode: annotateMode };
+});
+
+ipcMain.handle('annotate:hover', (event, hovering) => {
+  if (!annotateWindow || event.sender !== annotateWindow.webContents) return { success: false };
+  annotateHover = hovering === true;
+  applyAnnotatePointer();
+  return { success: true };
+});
+
+ipcMain.handle('annotate:close', (event) => {
+  if (annotateWindow && event.sender === annotateWindow.webContents) annotateWindow.close();
+  return { success: true };
+});
+
+handleFromUi('screenshot:pin', (_event, { id, dataUrl } = {}) => {
+  const pending = pendingScreenshots.get(id);
+  if (!pending) return { success: false, error: 'capture-expired' };
+  try {
+    const image = screenshotImageFor(pending, dataUrl);
+    if (!image || image.isEmpty()) return { success: false, error: 'image vide' };
+    openPinnedShot(image, screenshotName());
+    pendingScreenshots.delete(id);
+    if (activeScreenshotId === id) activeScreenshotId = null;
+    return { success: true };
+  } catch (error) {
+    console.error('[orbit] épinglage de la capture échoué:', error);
+    return { success: false, error: String(error.message || error) };
+  }
+});
+
+ipcMain.handle('pin:copy', (event) => {
+  const entry = pinnedShotFor(event);
+  if (!entry) return { success: false, error: 'fenêtre inconnue' };
+  clipboard.writeImage(entry.image);
+  return { success: true };
+});
+
+ipcMain.handle('pin:save', async (event) => {
+  const entry = pinnedShotFor(event);
+  if (!entry) return { success: false, error: 'fenêtre inconnue' };
+  try {
+    const defaultPath = uniquePath(path.join(screenshotDir(), entry.filename || screenshotName()));
+    const result = await dialog.showSaveDialog(entry.win, {
+      title: 'Enregistrer la capture',
+      defaultPath,
+      filters: [{ name: 'Image PNG', extensions: ['png'] }],
+    });
+    if (result.canceled || !result.filePath) return { success: false, cancelled: true };
+    const savePath = path.extname(result.filePath) ? result.filePath : `${result.filePath}.png`;
+    const png = entry.image.toPNG();
+    fs.writeFileSync(savePath, png);
+    announceSavedScreenshot(savePath, null, png.length);
+    return { success: true, savePath };
+  } catch (error) {
+    console.error('[orbit] enregistrement de la capture épinglée échoué:', error);
+    return { success: false, error: String(error.message || error) };
+  }
+});
+
+ipcMain.handle('pin:opacity', (event, value) => {
+  const entry = pinnedShotFor(event);
+  if (!entry) return { success: false };
+  // Bornes volontaires : une fenêtre totalement transparente ne se retrouve
+  // plus pour être refermée.
+  const opacity = Math.min(1, Math.max(0.25, Number(value) || 1));
+  entry.win.setOpacity(opacity);
+  return { success: true, opacity };
+});
+
+ipcMain.handle('pin:close', (event) => {
+  const entry = pinnedShotFor(event);
+  if (entry) entry.win.close();
+  return { success: true };
+});
+
 handleFromUi('screenshot:cancel', (_event, { id } = {}) => {
   pendingScreenshots.delete(id);
   if (activeScreenshotId === id) activeScreenshotId = null;
   return { success: true };
 });
 
-handleFromUi('screenshot:save', async (_event, { id } = {}) => {
+handleFromUi('screenshot:save', async (_event, { id, dataUrl } = {}) => {
   const pending = pendingScreenshots.get(id);
   if (!pending) return { success: false, error: 'capture-expired' };
   try {
@@ -1819,7 +2160,7 @@ handleFromUi('screenshot:save', async (_event, { id } = {}) => {
     });
     if (result.canceled || !result.filePath) return { success: false, cancelled: true };
     const savePath = path.extname(result.filePath) ? result.filePath : `${result.filePath}.png`;
-    const png = pending.image.toPNG();
+    const png = screenshotImageFor(pending, dataUrl).toPNG();
     fs.writeFileSync(savePath, png);
     pendingScreenshots.delete(id);
     if (activeScreenshotId === id) activeScreenshotId = null;
@@ -5972,9 +6313,16 @@ function announcePhoneNotification(serial, item) {
   try {
     if (!Notification.isSupported()) return;
     const call = item.category === 'call';
+    // Un appel s'annonce par QUI appelle : le titre de la notification Android
+    // est souvent générique (« Appel entrant »), l'identité est ailleurs.
+    const caller = call ? phoneRuntime.describeCallNotification(item, item.appName) : null;
     const notification = new Notification({
-      title: call ? `Appel — ${item.title || item.package}` : item.title || item.package,
-      body: item.text || (call ? 'Appel en cours' : item.package),
+      title: call
+        ? `Appel — ${caller.unknown ? 'appelant inconnu' : caller.who}`
+        : item.title || item.package,
+      body: call
+        ? [caller.detail, item.text].filter(Boolean).join(' · ') || 'Appel entrant'
+        : item.text || item.package,
       urgency: call ? 'critical' : 'normal',
       icon: resourcePath(path.join('build', 'icon.png')),
     });
@@ -6105,6 +6453,27 @@ ipcMain.handle(
   })
 );
 ipcMain.handle('phone:expandShade', phoneGuard((p, phone) => phone.expandNotificationShade(p)));
+
+// --- Journal d'appels -------------------------------------------------------
+ipcMain.handle('phone:callLog', phoneGuard((p, phone) => phone.listCallLog(p)));
+ipcMain.handle('phone:placeCall', phoneGuard((p, phone) => phone.placeCall(p)));
+
+// --- Envoi de fichiers vers le téléphone ------------------------------------
+// Les chemins ne viennent JAMAIS du renderer : il demande l'envoi, le
+// processus principal ouvre le sélecteur du système et ne pousse que ce que
+// l'utilisateur y a désigné.
+ipcMain.handle(
+  'phone:sendFiles',
+  phoneGuard(async ({ serial } = {}, phone) => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Envoyer au téléphone',
+      buttonLabel: 'Envoyer',
+      properties: ['openFile', 'multiSelections', 'dontAddToRecent'],
+    });
+    if (result.canceled || !result.filePaths?.length) return { success: false, cancelled: true };
+    return phone.pushFiles({ serial, paths: result.filePaths });
+  })
+);
 
 // ---------------------------------------------------------------------------
 // IPC — KeePassXC (pont natif : auto-remplissage des identifiants)

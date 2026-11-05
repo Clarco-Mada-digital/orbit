@@ -18,6 +18,7 @@ import {
   ZoomIn,
   MousePointer2,
   Minimize2,
+  PenLine,
   Maximize2,
   RefreshCw,
 } from 'lucide-react';
@@ -99,6 +100,28 @@ export default function RecordingStudio({ onClose }) {
   // C'est ce qui permet de filmer Orbit lui-même — impossible tant que le
   // studio occupe tout l'écran.
   const [minimized, setMinimized] = useState(false);
+  // Couche d'annotation de l'écran : une VRAIE fenêtre au-dessus de tout, donc
+  // reprise telle quelle par la capture d'écran — le studio n'a rien à
+  // composer, et elle sert aussi bien hors enregistrement.
+  const [annotating, setAnnotating] = useState(false);
+  const toggleAnnotate = useCallback(async () => {
+    const result = await window.electronAPI?.screenshots?.toggleAnnotate?.();
+    if (result?.success) setAnnotating(result.open === true);
+  }, []);
+  // Le gestionnaire de touches est posé une fois : il lit la bascule par une
+  // ref plutôt que de se réabonner à chaque rendu.
+  const toggleAnnotateRef = useRef(toggleAnnotate);
+  useEffect(() => {
+    toggleAnnotateRef.current = toggleAnnotate;
+  }, [toggleAnnotate]);
+  useEffect(() => {
+    const off = window.electronAPI?.screenshots?.onAnnotateState?.((state) => {
+      setAnnotating(state?.open === true);
+    });
+    return () => {
+      if (typeof off === 'function') off();
+    };
+  }, []);
 
   // Ressources vivantes : volontairement dans des refs, pas dans l'état. Un
   // flux média n'est pas une donnée d'affichage, et le relâcher au mauvais
@@ -556,6 +579,11 @@ export default function RecordingStudio({ onClose }) {
           return;
         }
       }
+      if (action === 'annotate') {
+        e.preventDefault();
+        toggleAnnotateRef.current?.();
+        return;
+      }
 
       // Mise en scène : modifiable à tout moment, y compris en plein
       // enregistrement — c'est tout l'intérêt.
@@ -563,7 +591,8 @@ export default function RecordingStudio({ onClose }) {
         // Touche de mise en scène ? (chiffres et flèches pour l'accès direct,
         // lettres pour faire défiler)
         const styleAction = STUDIO_KEYS[key];
-        const parcourt = !e.shiftKey && styleAction && !['pause', 'stop', 'minimize'].includes(styleAction);
+        const parcourt =
+          !e.shiftKey && styleAction && !['pause', 'stop', 'minimize', 'annotate'].includes(styleAction);
         if (!/^[1-9]$/.test(e.key) && !e.key.startsWith('Arrow') && !parcourt) return;
         e.preventDefault();
 
@@ -630,6 +659,16 @@ export default function RecordingStudio({ onClose }) {
         <button onClick={stopRecording} className="btn-icon w-7 h-7 text-error" title={t('studio.stop')}>
           <Square size={12} fill="currentColor" />
         </button>
+        {/* Annoter l'écran EN COURS d'enregistrement : c'est justement quand le
+            studio est réduit qu'on en a besoin. */}
+        <button
+          onClick={toggleAnnotate}
+          className={`btn-icon w-7 h-7 ${annotating ? 'text-accent-primary' : ''}`}
+          aria-pressed={annotating}
+          title={t('studio.annotateHint')}
+        >
+          <PenLine size={13} />
+        </button>
         <button onClick={() => setMinimized(false)} className="btn-icon w-7 h-7" title={t('studio.restore')}>
           <Maximize2 size={13} />
         </button>
@@ -669,6 +708,14 @@ export default function RecordingStudio({ onClose }) {
             </span>
           )}
           <div className="flex-1" />
+          <button
+            onClick={toggleAnnotate}
+            className={`btn btn-sm ${annotating ? 'btn-primary' : 'btn-secondary'}`}
+            aria-pressed={annotating}
+            title={t('studio.annotateHint')}
+          >
+            <PenLine size={14} /> {t('studio.annotate')}
+          </button>
           {step === 'recording' && (
             <button
               onClick={() => setMinimized(true)}

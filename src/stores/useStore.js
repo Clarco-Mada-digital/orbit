@@ -832,6 +832,30 @@ export const useStore = create(
             splitView: ws.splitView ? { ...ws.splitView } : null,
           };
         }),
+      // Réenregistre un espace EXISTANT sur l'état courant. Sans ça, ajuster
+      // un espace obligeait à le supprimer puis à le recréer sous le même nom
+      // — et il repassait en fin de liste.
+      updateWorkspace: (id) =>
+        set((state) => ({
+          workspaces: state.workspaces.map((ws) =>
+            ws.id === id
+              ? {
+                  ...ws,
+                  profileId: state.activeProfile,
+                  activeApp: state.activeApp,
+                  splitView: state.splitView ? { ...state.splitView } : null,
+                }
+              : ws
+          ),
+        })),
+      renameWorkspace: (id, name) =>
+        set((state) => {
+          const label = String(name || '').trim();
+          if (!label) return {};
+          return {
+            workspaces: state.workspaces.map((ws) => (ws.id === id ? { ...ws, name: label } : ws)),
+          };
+        }),
       deleteWorkspace: (id) =>
         set((state) => ({ workspaces: state.workspaces.filter((w) => w.id !== id) })),
 

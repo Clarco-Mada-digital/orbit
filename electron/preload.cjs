@@ -83,6 +83,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     dismissNotification: (payload) => ipcRenderer.invoke('phone:dismissNotification', payload),
     dismissNotifications: (payload) => ipcRenderer.invoke('phone:dismissNotifications', payload),
     expandShade: (payload) => ipcRenderer.invoke('phone:expandShade', payload),
+    // Journal d'appels et rappel (`mode: 'dial' | 'call'`).
+    callLog: (payload) => ipcRenderer.invoke('phone:callLog', payload),
+    placeCall: (payload) => ipcRenderer.invoke('phone:placeCall', payload),
+    // Envoi de fichiers : le sélecteur est ouvert PAR le processus principal.
+    sendFiles: (payload) => ipcRenderer.invoke('phone:sendFiles', payload),
     onNotifications: (callback) => {
       const listener = (_event, payload) => callback(payload);
       ipcRenderer.on('phone:notifications', listener);
@@ -254,8 +259,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
   screenshots: {
     capture: (wcId, mode, copyDirect, source) =>
       ipcRenderer.invoke('screenshot:capture', { wcId, mode, copyDirect, source }),
-    save: (id) => ipcRenderer.invoke('screenshot:save', { id }),
-    copy: (id) => ipcRenderer.invoke('screenshot:copy', { id }),
+    // `dataUrl` : la capture annotée dans l'aperçu. Absent = image d'origine.
+    save: (id, dataUrl) => ipcRenderer.invoke('screenshot:save', { id, dataUrl }),
+    copy: (id, dataUrl) => ipcRenderer.invoke('screenshot:copy', { id, dataUrl }),
+    // Épingle la capture (annotée si elle l'est) en fenêtre flottante.
+    pin: (id, dataUrl) => ipcRenderer.invoke('screenshot:pin', { id, dataUrl }),
+    // Couche d'annotation plein écran (dessiner PAR-DESSUS tout l'écran).
+    toggleAnnotate: () => ipcRenderer.invoke('annotate:toggle'),
+    onAnnotateState: (callback) => {
+      const listener = (_event, state) => callback(state);
+      ipcRenderer.on('orbit:annotate-state', listener);
+      return () => ipcRenderer.removeListener('orbit:annotate-state', listener);
+    },
     cancel: (id) => ipcRenderer.invoke('screenshot:cancel', { id }),
     onPreview: (callback) => {
       const listener = (_event, payload) => callback(payload);

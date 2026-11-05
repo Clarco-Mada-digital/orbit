@@ -502,6 +502,36 @@ export const fr = {
   'cm.screenshotDelaySeconds': '{count} s',
   'cm.screenshotCountdown': 'Capture dans {count} s · Échap pour annuler',
   'cm.inspect': 'Inspecter',
+
+  // Annotation d'une capture (avant enregistrement)
+  'annotate.toolArrow': 'Flèche',
+  'annotate.toolRect': 'Rectangle',
+  'annotate.toolEllipse': 'Ellipse',
+  'annotate.toolPen': 'Dessin libre',
+  'annotate.toolHighlight': 'Surligneur',
+  'annotate.toolText': 'Texte',
+  'annotate.toolStep': 'Étape numérotée (1, 2, 3…)',
+  'annotate.toolBlur': 'Masquer (pixelliser)',
+  'annotate.toolCrop': 'Recadrer',
+  'annotate.cropReset': 'Tout l’écran',
+  'annotate.cropResetHint': 'Revenir à la capture entière (les annotations sont conservées)',
+  'annotate.maskSensitive': 'Masquer {count} donnée(s) sensible(s)',
+  'annotate.maskSensitiveDone': 'Données sensibles masquées',
+  'annotate.maskSensitiveHint':
+    'Adresses e-mail, IBAN, numéros de carte et de téléphone repérés dans la page avant la capture. Chaque masque reste annulable.',
+  'annotate.color': 'Couleur',
+  'annotate.width': 'Épaisseur',
+  'annotate.adjust': 'Image',
+  'annotate.brightness': 'Luminosité',
+  'annotate.contrast': 'Contraste',
+  'annotate.saturation': 'Saturation',
+  'annotate.resetAdjust': 'Réinitialiser les réglages',
+  'annotate.undo': 'Annuler la dernière annotation',
+  'annotate.clear': 'Tout effacer',
+  'annotate.textPlaceholder': 'Votre texte… (Entrée pour valider)',
+  'cm.pinScreenshot': 'Épingler',
+  'cm.pinScreenshotHint':
+    'Garder la capture au-dessus de tout, dans une petite fenêtre flottante (déplaçable, translucide au besoin)',
 };
 
 export const en = {
@@ -960,6 +990,36 @@ export const en = {
   'cm.screenshotDelaySeconds': '{count} sec',
   'cm.screenshotCountdown': 'Capturing in {count} sec · Esc to cancel',
   'cm.inspect': 'Inspect',
+
+  // Screenshot annotation (before saving)
+  'annotate.toolArrow': 'Arrow',
+  'annotate.toolRect': 'Rectangle',
+  'annotate.toolEllipse': 'Ellipse',
+  'annotate.toolPen': 'Freehand',
+  'annotate.toolHighlight': 'Highlighter',
+  'annotate.toolText': 'Text',
+  'annotate.toolStep': 'Numbered step (1, 2, 3…)',
+  'annotate.toolBlur': 'Redact (pixelate)',
+  'annotate.toolCrop': 'Crop',
+  'annotate.cropReset': 'Whole screenshot',
+  'annotate.cropResetHint': 'Back to the full screenshot (annotations are kept)',
+  'annotate.maskSensitive': 'Redact {count} sensitive item(s)',
+  'annotate.maskSensitiveDone': 'Sensitive data redacted',
+  'annotate.maskSensitiveHint':
+    'Email addresses, IBANs, card and phone numbers spotted in the page before the capture. Every mask stays undoable.',
+  'annotate.color': 'Colour',
+  'annotate.width': 'Thickness',
+  'annotate.adjust': 'Image',
+  'annotate.brightness': 'Brightness',
+  'annotate.contrast': 'Contrast',
+  'annotate.saturation': 'Saturation',
+  'annotate.resetAdjust': 'Reset adjustments',
+  'annotate.undo': 'Undo last annotation',
+  'annotate.clear': 'Clear all',
+  'annotate.textPlaceholder': 'Your text… (Enter to confirm)',
+  'cm.pinScreenshot': 'Pin',
+  'cm.pinScreenshotHint':
+    'Keep the screenshot above everything, in a small floating window (movable, translucent if needed)',
 
   'shields.title': 'Shields',
   'shields.module': 'Shields',

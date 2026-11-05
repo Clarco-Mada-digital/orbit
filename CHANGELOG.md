@@ -8,9 +8,66 @@ Format : une section `## [X.Y.Z] — AAAA-MM-JJ` par version, puis des
 sous-sections `### Ajouté` / `### Modifié` / `### Corrigé` / `### Sécurité`.
 La plus récente en premier.
 
-## [Non publié]
+## [1.18.0] — 2026-11-05
 
 ### Ajouté
+- **Annotation des captures avant enregistrement** : l'aperçu devient un
+  éditeur — flèche, rectangle, ellipse, dessin libre, surligneur, texte,
+  **étapes numérotées** (la pastille suivante se numérote toute seule, même
+  après une annulation), **recadrage**, **masquage par pixellisation** (un flou
+  se devine sur du texte, des blocs non), plus luminosité, contraste et
+  saturation. Tout est dessiné DANS l'image : « Enregistrer » et « Copier »
+  rendent exactement ce qui est affiché, et une capture non retouchée part
+  telle quelle, sans ré-encodage. Le recadrage ne déplace pas les annotations :
+  il change la fenêtre regardée, et « Tout l'écran » revient en arrière.
+- **Masquage assisté des données sensibles** : adresses e-mail, IBAN, numéros
+  de carte et de téléphone sont repérés **dans la page**, avant la capture —
+  seul moment où le texte est encore du texte, avec ses coordonnées. Un bouton
+  les masque d'un coup ; chaque masque reste une forme annulable. Les numéros
+  de carte sont validés par la clé de Luhn et les IBAN par le modulo 97, pour
+  ne pas masquer une référence de commande. L'échelle page → image est
+  **mesurée**, jamais déduite du zoom et de la densité d'écran : un masque mal
+  placé serait pire que pas de masque.
+- **Épingler une capture** : la capture (annotée ou non) passe dans une petite
+  fenêtre flottante toujours visible, déplaçable, redimensionnable et
+  translucide au besoin (quatre niveaux) — pour la garder sous les yeux pendant
+  qu'on travaille. Plusieurs épinglages se décalent en cascade. `Ctrl+C`
+  copie, `Ctrl+S` enregistre, `Échap` ferme.
+- **Qui appelle, dans le toast d'appel entrant** : le titre des notifications
+  Android est souvent générique (« Appel entrant »). Orbit lit désormais les
+  autres champs de la notification (dont les numéros portés par
+  `android.people`), interroge la radio au besoin, puis **cherche le nom dans
+  les contacts du téléphone**. Le toast affiche l'appelant, son numéro,
+  l'application qui sonne et depuis combien de temps ça sonne ; à défaut, il
+  dit franchement qu'aucune identité n'a été transmise.
+- **Appels récents du téléphone** (widget d'accueil du Téléphone) : le journal
+  d'appels du mobile, appels manqués en évidence, avec durée et horodatage.
+  **Rappeler** lance l'appel depuis le téléphone, **Préparer** ouvre son clavier
+  avec le numéro prêt (à confirmer sur l'appareil) — un appel ne part jamais par
+  surprise. Les numéros inconnus du journal sont rapprochés des contacts, et un
+  numéro masqué est signalé comme tel au lieu d'offrir un bouton mort.
+- **Annoter l'écran** (studio : bouton « Annoter l'écran » ou touche `A`) :
+  une couche de dessin plein écran, au-dessus de tout — stylo, surligneur,
+  flèche, rectangle, ellipse, pointeur laser, six couleurs, trois épaisseurs,
+  annuler, tout effacer. C'est une **vraie fenêtre**, donc l'enregistrement et
+  les captures la reprennent telles quelles, sans que le studio ait à la
+  composer, et elle fonctionne par-dessus n'importe quelle application. En mode
+  pointeur, la couche est traversante : les clics vont aux applications et les
+  tracés restent affichés. `Échap` rend la main, un second `Échap` ferme.
+- **Envoyer un fichier au téléphone** : bouton dans les contrôles rapides de
+  l'accueil du Téléphone. Le sélecteur est ouvert par le processus principal —
+  aucun chemin ne vient de l'interface — et les fichiers arrivent dans les
+  téléchargements du mobile. Le nom distant est assaini (ni séparateur, ni
+  remontée de dossier, ni caractère de contrôle) ; les dossiers sont refusés.
+- **Extension « Souris & Défilement »** (optionnelle, dans Extensions → 
+  Extensions Orbit) : défilement lissé réglable (souplesse, pixels par cran,
+  vitesse, sens, `Maj`+molette horizontal, défilement rapide), défilement
+  automatique au clic du milieu, et une **palette de présentation**
+  (`Alt+Maj+D`) — pointeur laser, stylo, surligneur, flèche, rectangle,
+  ellipse, couleurs, épaisseurs, spot lumineux, halo de clic, curseur mis en
+  évidence. Le pavé tactile est laissé tranquille (il défile déjà en continu)
+  et les applications qui pilotent la molette elles-mêmes (cartes, Figma,
+  éditeurs de code) ne sont jamais touchées.
 - **Studio d'enregistrement** (`Alt+K` → « Studio », ou `Alt+Maj+S` → `4`) :
   filme un écran ou une fenêtre, avec ou sans caméra, et le met en scène —
   fond uni ou dégradé, marge, coins arrondis, ombre portée. Tout est composé
@@ -41,6 +98,17 @@ La plus récente en premier.
     présent.
 
 ### Modifié
+- **Un espace de travail peut être réenregistré** sur la disposition actuelle
+  (icône disquette, au survol de sa ligne) : l'ajuster n'oblige plus à le
+  supprimer puis à le recréer sous le même nom.
+- **La documentation se construit, elle ne se recopie plus.**
+  `docs/guide-utilisateur.md` est la seule source ; `npm run docs` en dérive le
+  HTML et le PDF (`scripts/build-docs.js`). Auparavant les trois fichiers
+  vivaient leur vie séparément, et leur contenu divergeait. `test/docs.test.js`
+  confronte en plus le guide aux listes qui vivent dans le code (outils
+  d'annotation, raccourcis du studio, widgets du Téléphone, données sensibles,
+  extensions du catalogue) : livrer une fonctionnalité sans la documenter fait
+  désormais échouer `npm test`. La démarche est décrite dans `docs/README.md`.
 - Le menu de capture (`Alt+Maj+S`) propose une quatrième voie, « Enregistrer
   une vidéo » : la question posée est la même, et on ne sait pas toujours
   d'avance si une image suffira.
@@ -48,6 +116,21 @@ La plus récente en premier.
   arrière-plan. C'est sans effet visible à l'usage, mais indispensable au
   studio : on filme son écran POUR montrer autre chose, donc Orbit passe
   derrière — et la vidéo tombait alors à deux ou trois images par seconde.
+
+### Corrigé
+- **Fermer une capture épinglée ouvrait une boîte « A JavaScript error occurred
+  in the main process ».** Le gestionnaire `closed` lisait
+  `win.webContents.id` alors que la fenêtre était déjà détruite
+  (« Object has been destroyed »). L'identifiant est désormais retenu à la
+  création.
+- **Une extension Orbit livrée en version plus récente ne pouvait pas être mise
+  à jour.** Le catalogue comparait les seuls NOMS et grisait le bouton dès
+  qu'une extension du même nom était installée : l'ancienne version continuait
+  de tourner — avec ses anciens raccourcis — sans qu'aucun écran ne le dise.
+  Le catalogue compare maintenant les versions (numériquement : `1.10.0` est
+  bien postérieur à `1.9.3`) et propose **« Mettre à jour »**, en affichant la
+  version installée. Il ne propose jamais de revenir en arrière si la copie
+  installée est plus récente que l'archive livrée.
 
 ## [1.17.3] — 2026-11-03
 

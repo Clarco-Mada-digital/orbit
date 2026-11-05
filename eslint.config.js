@@ -82,10 +82,10 @@ export default [
     },
   },
 
-  // popup.js est chargé par popup.html DANS la fenêtre secondaire : c'est du
-  // code de rendu, pas du processus principal.
+  // Ces deux-là sont chargés par un .html DANS une fenêtre secondaire : c'est
+  // du code de rendu, pas du processus principal.
   {
-    files: ['electron/popup.js'],
+    files: ['electron/popup.js', 'electron/pinned-shot.js', 'electron/annotate-overlay.js'],
     languageOptions: { globals: { ...globals.browser } },
   },
 

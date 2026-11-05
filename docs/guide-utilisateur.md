@@ -1,12 +1,29 @@
 # Orbit — guide utilisateur
 
-**Un espace de travail pour vos applications web**<br />
-Développé par **Clarco RAHERINANDRASANA**<br />
-Documentation française · édition 2026
+## Présentation
 
-> Les libellés, extensions et raccourcis peuvent évoluer selon la version. Les
-> raccourcis affichés dans **Réglages → Raccourcis** font foi pour votre
-> installation.
+**Orbit rassemble vos applications web dans une seule fenêtre.** Au lieu de
+vingt onglets et trois navigateurs ouverts, un espace unique où chaque service
+a sa place, sa session et ses réglages — et autour, les outils qui manquent
+toujours : capture et annotation, enregistrement d'écran, coffre-fort,
+assistant, et jusqu'à votre téléphone Android.
+
+Ce guide est écrit pour être lu dans l'ordre la première fois, puis consulté par
+section. Chaque fonctionnalité y est décrite de la même façon : **à quoi elle
+sert**, **comment y accéder** (bouton *et* raccourci clavier), et **ce qu'elle
+donne**.
+
+| | |
+| --- | --- |
+| **Application** | Orbit — Windows, macOS, Linux |
+| **Auteur** | Clarco RAHERINANDRASANA |
+| **Ce document** | Guide utilisateur complet, en français |
+| **Mise à jour** | Généré à partir du dépôt à chaque version |
+
+> **Conventions.** Les touches sont écrites `Alt+K`. Sur macOS, le modificateur
+> **Alt** devient généralement **⌘**. Les libellés, extensions et raccourcis
+> peuvent évoluer : ceux affichés dans **Réglages → Raccourcis** font foi pour
+> votre installation.
 
 ## 1. Découvrir Orbit
 
@@ -52,6 +69,8 @@ Au premier démarrage, l’écran de bienvenue permet d’ajouter une première 
 de commencer avec un espace vide. Installez vos applications via la boutique
 intégrée ou ajoutez une URL web.
 
+![L’écran de bienvenue au premier démarrage d’Orbit](images/orbit-bienvenue.png)
+
 ## 3. Organiser son espace
 
 ### Applications
@@ -84,6 +103,22 @@ connexion.
 - Personnalisez le thème, la couleur d’accent, les polices et les modules
   affichés dans les barres.
 - Chaque profil peut avoir ses réglages d’accueil et de fond distincts.
+
+### Espaces de travail
+
+Un espace de travail mémorise **le profil, l’application affichée et l’écran
+partagé** du moment. Le bouton **Espaces de travail** de la barre du haut
+(icône en damier) les liste ; ils apparaissent aussi dans la palette `Alt+K`.
+
+| Action | Où |
+| --- | --- |
+| Enregistrer la disposition actuelle | Bouton **Enregistrer la disposition actuelle**, puis un nom |
+| Rouvrir un espace | Clic sur son nom (barre du haut ou `Alt+K`) |
+| Réenregistrer un espace sur la disposition actuelle | Icône disquette, au survol de la ligne |
+| Supprimer | Icône corbeille, au survol de la ligne |
+
+Réenregistrer évite de supprimer puis recréer un espace quand on veut
+simplement l’ajuster — il garde son nom et sa place dans la liste.
 
 ## 4. Recherche et raccourcis utiles
 
@@ -234,7 +269,138 @@ Le bouton **Exporter** propose deux choses différentes :
 Dans les deux cas, l’export exige de resaisir le mot de passe maître — un écran
 laissé sans surveillance ne doit pas pouvoir sortir les secrets d’un clic.
 
-## 7. Téléchargements et extensions
+## 7. Captures d’écran, annotation et enregistrement
+
+### Prendre une capture
+
+`Alt+Maj+S` ouvre le menu de capture. Quatre voies, parce que la question posée
+est la même — « je veux montrer ce que j’ai à l’écran » — et qu’on ne sait pas
+toujours d’avance si une image suffira :
+
+| Touche | Voie |
+| --- | --- |
+| `1` | Zone visible de la page |
+| `2` | Page entière, défilement compris |
+| `3` | Choisir une zone à la souris |
+| `4` | Enregistrer une vidéo (studio) |
+
+Un **délai** réglable (0 à 10 s) laisse le temps de préparer l’écran ; `Échap`
+annule le compte à rebours.
+
+### Annoter la capture avant de l’enregistrer
+
+L’aperçu qui suit la capture n’est pas qu’un aperçu : c’est un éditeur. Tout est
+dessiné **dans l’image**, donc « Enregistrer » et « Copier » rendent exactement
+ce qui est affiché. Une capture à laquelle on n’a pas touché part telle quelle,
+sans ré-encodage.
+
+| Outil | À quoi il sert |
+| --- | --- |
+| **Flèche** | Désigner un élément précis |
+| **Rectangle**, **Ellipse** | Entourer une zone |
+| **Dessin libre** (stylo) | Tracer à main levée |
+| **Surligneur** | Attirer l’œil sans masquer ce qui est dessous |
+| **Texte** | Écrire sur l’image (`Entrée` valide, `Maj+Entrée` passe à la ligne) |
+| **Étape numérotée** | Poser des pastilles **1**, **2**, **3**… |
+| **Masquer (pixelliser)** | Rendre une zone illisible |
+| **Recadrer** | Ne garder qu’une partie de la capture |
+
+![L’éditeur d’annotation : trois étapes numérotées (1, 2, 3), une flèche ambrée et une zone masquée par pixellisation, en bas à droite](images/orbit-editeur-annotation.png)
+
+Quelques précisions utiles :
+
+- **Les étapes numérotées** servent à documenter un parcours : chaque clic pose
+  la pastille suivante, et la numérotation se fait toute seule. Si vous annulez
+  la pastille 3, le clic suivant redonne un 3 — pas un 4. L’épaisseur choisie
+  dans la barre d’outils commande la taille de la pastille, comme elle commande
+  la taille du texte.
+- **Le masquage est une pixellisation en blocs**, pas un flou : sur du texte, un
+  flou se devine encore, des blocs non.
+- **Le recadrage ne déplace pas les annotations.** Il change la zone regardée ;
+  le bouton **Tout l’écran** revient à la capture entière sans rien perdre.
+- Les curseurs **Luminosité**, **Contraste** et **Saturation** (bouton
+  **Image**) s’appliquent à l’enregistrement comme à l’aperçu.
+- **Annuler** retire la dernière annotation, **Tout effacer** remet la capture
+  dans son état d’origine, réglages compris.
+
+### Masquer les données sensibles en un clic
+
+Partager une capture, c’est parfois partager ce qu’on n’avait pas vu. Orbit
+repère **dans la page**, avant la capture, les adresses **e-mail**, les
+**IBAN**, les numéros de **carte** bancaire et de **téléphone** — c’est le seul
+moment où le texte est encore du texte, avec ses coordonnées.
+
+Si quelque chose est trouvé, un bouton ambré **« Masquer N donnée(s)
+sensible(s) »** apparaît dans la barre d’outils. Orbit propose, vous décidez :
+chaque zone devient un masque ordinaire, que vous pouvez annuler un par un.
+
+Les numéros de carte sont vérifiés par la clé de Luhn et les IBAN par le
+modulo 97, pour ne pas masquer une référence de commande qui leur ressemble. Le
+repérage concerne les captures « zone visible » et « page entière ».
+
+### Épingler une capture
+
+Le bouton **Épingler** place la capture — annotée ou non — dans une petite
+fenêtre flottante **toujours visible**, pour la garder sous les yeux pendant
+qu’on travaille. Elle se déplace en la saisissant n’importe où, se
+redimensionne en conservant ses proportions, et plusieurs épinglages se décalent
+en cascade.
+
+Au survol, une barre apparaît : **opacité** (quatre niveaux, pour lire à
+travers), **copier**, **enregistrer**, **fermer**. Au clavier : `Ctrl+C`,
+`Ctrl+S`, `O` pour l’opacité, `Échap` pour fermer.
+
+### Enregistrer une vidéo (studio)
+
+Le studio filme un écran ou une fenêtre, avec ou sans caméra, et le met en
+scène : fond uni ou dégradé, marge, coins arrondis, ombre portée. Tout est
+composé sur un canvas, et c’est ce canvas qui est enregistré — **l’aperçu est
+la vidéo**.
+
+![Le studio d’enregistrement : choix de la source, caméra et micro, définition, cadence, mise en scène — et les raccourcis rappelés sous l’aperçu](images/orbit-studio.png)
+
+Pendant la prise, ces touches évitent de rouvrir le panneau et de sortir du
+cadre :
+
+| Touche | Effet |
+| --- | --- |
+| `1`–`5` | Aller directement à une **disposition** |
+| `Maj`+`1`–`8` | Aller directement à un **fond** |
+| `↑` `↓` `←` `→` | Placer la caméra, un axe à la fois |
+| `F` | Faire défiler les **fonds** |
+| `D` | Faire défiler les **dispositions** |
+| `C` | Changer le **coin** de la caméra |
+| `Z` | **Zoom** qui suit le pointeur |
+| `H` | **Halo** du curseur |
+| `M` | Effet **miroir** de la caméra |
+| `A` | **Annoter l’écran** (voir ci-dessous) |
+| `P` | **Pause** / reprise |
+| `S` | **Arrêt** |
+| `R` | **Réduire** le studio en une barre |
+
+« Réduire » est ce qui permet de filmer Orbit lui-même : il ne reste qu’un
+chronomètre, la pause, l’arrêt et l’annotation. La cadence **réellement tenue**
+est affichée pendant l’enregistrement — une vidéo saccadée se découvrirait
+sinon à la relecture.
+
+### Annoter l’écran pendant une démonstration
+
+La touche `A` (ou le bouton **Annoter l’écran**) ouvre une couche de dessin
+**par-dessus tout l’écran**, pas seulement par-dessus Orbit. C’est une vraie
+fenêtre : un enregistrement ou une capture la reprennent telle quelle.
+
+Dans sa palette : **pointeur laser** (avec traîne), **stylo**, **surligneur**,
+**flèche**, **rectangle**, **ellipse**, six couleurs, trois épaisseurs,
+**annuler** (`Ctrl+Z`) et **tout effacer**. La palette se déplace par sa poignée
+`⠿`.
+
+![La palette d’annotation d’écran, avec son bandeau d’avertissement quand un outil de dessin est actif](images/orbit-palette-annotation.png)
+
+Le **mode pointeur** (➤) est la clé : la couche devient traversante, vos clics
+vont aux applications qui sont dessous et les tracés restent affichés par-dessus.
+`Échap` revient au pointeur, un second `Échap` ferme la couche.
+
+## 8. Téléchargements et extensions
 
 ### Gestionnaire de téléchargements
 
@@ -255,19 +421,97 @@ Ouvrez **Réglages → Extensions**. Les extensions distribuées séparément pe
 installation et activation. Les extensions du Chrome Web Store ne sont pas
 toutes compatibles avec Electron.
 
+Les extensions livrées avec Orbit sont **inertes tant qu’elles ne sont pas
+installées** : ni leur code ni leurs fonctionnalités ne sont chargés. Quand une
+version plus récente est livrée avec une mise à jour d’Orbit, le bouton
+**Mettre à jour** apparaît en face de l’extension, avec la version installée.
+
 - **Text Snippets** : remplace les abréviations configurées (par défaut, par
   exemple `;email`) par leur texte complet dans les champs compatibles. La
   conversion se produit au fil de la saisie.
-- **Fake Data Filler** : 🎲 ou `Alt+F` remplit le champ focalisé ; `Alt+Maj+F`
-  remplit les champs visibles du formulaire actif. Les champs de connexion sont
-  ignorés. Les valeurs sont générées localement ; les champs personnalisés se
-  règlent dans Extensions.
+- **Fake Data Filler (Orbit)** : 🎲 ou `Alt+F` remplit le champ focalisé ;
+  `Alt+Maj+F` remplit les champs visibles du formulaire actif. Les champs de
+  connexion sont ignorés. Les valeurs sont générées localement ; les champs
+  personnalisés se règlent dans Extensions.
 - **Web Clipper** : conserve localement une sélection ou le contenu principal
   d’une page, puis permet de rechercher et d’exporter les captures en Markdown.
-- **Orbit Phone** : extension optionnelle pour afficher les contrôles de bureau
-  et notifications d’un Android compatible. Les widgets disponibles sur son
-  accueil sont des widgets Orbit ; les widgets Android natifs ne sont pas
-  hébergés dans cette interface.
+- **Souris & Défilement** : défilement **lissé** et réglable (souplesse, pixels
+  par cran, vitesse, sens inversé, `Maj`+molette pour l’axe horizontal,
+  défilement rapide avec `Alt`), **défilement automatique** au clic du milieu
+  maintenu, et une **palette de présentation** (`Alt+Maj+D`) : pointeur laser,
+  stylo, surligneur, flèche, rectangle, ellipse, couleurs, épaisseurs, spot
+  lumineux, halo de clic, curseur mis en évidence. Le pavé tactile est laissé
+  tranquille (il défile déjà en continu) et les applications qui pilotent la
+  molette elles-mêmes — cartes, Figma, éditeurs de code — ne sont jamais
+  touchées. Une règle par site permet de couper le lissage là où il gêne.
+- **Color Picker** : pipette de couleur intégrée, bouton flottant 🎨 ou `Alt+C`.
+- **QR Code Generator** : QR code de la page ou d’un texte, `Alt+Q`. Entièrement
+  local, aucune requête réseau.
+- **Sticky Notes** : un bloc-notes attaché au domaine courant (`Alt+N`), qui se
+  rouvre à chaque visite du site.
+- **Page to Markdown** : convertit la page en Markdown et la télécharge
+  (`Alt+M`, ou le menu contextuel).
+- **Téléphone Orbit** : extension optionnelle pour piloter un Android
+  compatible. Voir la section suivante.
+
+### Téléphone Orbit
+
+Une fois l’extension **Téléphone Orbit** installée, un bouton **Téléphone**
+apparaît dans la barre du haut, avec le nombre de notifications du mobile.
+Branchez l’appareil en USB avec le **débogage USB** activé (ou en sans-fil,
+Android 11+), puis installez le moteur scrcpy embarqué depuis le panneau :
+Orbit le télécharge dans ses propres données, sans toucher au système.
+
+L’accueil du Téléphone se compose de **widgets** que l’on ajoute ou retire
+(bouton **Ajouter un widget**) :
+
+| Widget | Ce qu’il montre |
+| --- | --- |
+| **Horloge** | Heure et date de l’appareil |
+| **Appareil et batterie** | Modèle, charge, état de la connexion |
+| **Applications favorites** | Les apps épinglées en tête |
+| **Applications récentes** | Les dernières ouvertes depuis Orbit |
+| **Notifications** | Les alertes du mobile, avec « Tout effacer » |
+| **Contrôles rapides** | Volume, Wi-Fi, Bluetooth, réglages Android, envoi de fichier |
+| **Appels récents** | Le journal d’appels, avec rappel en un clic |
+
+Ce sont des widgets **Orbit** : les widgets Android publiés par des
+applications ne sont pas hébergés ici, cela demanderait un hôte de widgets natif
+sur Android.
+
+#### Appels
+
+- **Appel entrant** : un bandeau s’affiche au-dessus d’Orbit avec **Décrocher**
+  et **Refuser**. Il dit **qui** appelle — beaucoup de téléphones titrent
+  seulement « Appel entrant » et laissent l’identité ailleurs, alors Orbit lit
+  les autres champs de la notification, interroge la radio au besoin, puis
+  cherche le nom dans **vos contacts**. Si rien n’est transmis (numéro masqué,
+  appel d’une application qui ne dit rien), il l’annonce franchement au lieu
+  d’afficher un libellé qui ne nomme personne. Le bandeau indique aussi depuis
+  combien de temps ça sonne.
+- **Appels récents** : le journal du mobile, appels manqués en évidence, avec la
+  durée et l’horodatage. **Rappeler** lance l’appel depuis le téléphone ;
+  **Préparer** ouvre son clavier avec le numéro prêt, à confirmer sur
+  l’appareil — un appel ne part jamais par surprise. Un numéro masqué est
+  signalé comme tel.
+
+![« Préparer » ouvre le clavier du téléphone avec le numéro déjà saisi : rien n’est composé tant que vous n’avez pas appuyé sur le bouton vert](images/phone-preparer.png)
+
+#### Applications et fichiers
+
+- Chaque application s’ouvre dans **sa propre fenêtre de bureau** (scrcpy 3.0+,
+  Android 11+). Le bouton **Miroir** reste une session séparée qui affiche
+  l’écran physique.
+- Jusqu’à **huit applications épinglées** dans une barre flottante toujours
+  accessible dans Orbit.
+- **Envoyer un fichier** (contrôles rapides) dépose un ou plusieurs fichiers
+  dans les **téléchargements** du téléphone.
+
+> **Répondre à un SMS depuis Orbit n’est pas possible**, et ce n’est pas un
+> oubli : l’action « Répondre » d’une notification Android est réservée à
+> l’application qui l’a posée, et ADB ne peut pas la déclencher. De même, le
+> presse-papiers partagé n’a pas d’équivalent ADB sur Android récent — dans une
+> fenêtre miroir, scrcpy le synchronise déjà dans les deux sens.
 
 ### Visionneuse de documents
 
@@ -284,7 +528,7 @@ Pour protéger votre lecture, ni les images ni les médias d’un document dista
 ne sont chargés d’office : un média s’ouvre au clic, une image reste une
 pastille qui mène au navigateur. Le bouton **Source** affiche le fichier brut.
 
-## 8. Confidentialité et sécurité
+## 9. Confidentialité et sécurité
 
 - Les profils et applications utilisent des sessions web isolées selon la
   configuration ; le SSO est facultatif.
@@ -301,7 +545,7 @@ pastille qui mène au navigateur. Le bouton **Source** affiche le fichier brut.
 Protégez votre compte système, votre mot de passe maître et vos fichiers de
 sauvegarde. Le chiffrement local ne remplace pas une sauvegarde sécurisée.
 
-## 9. Dépannage
+## 10. Dépannage
 
 **Une app reste blanche ou ne se connecte pas**
 
@@ -336,7 +580,7 @@ Consultez **Réglages → Diagnostic** puis ouvrez une
 fournissant le système, la version d’Orbit et les étapes reproductibles. Ne
 joignez pas de mots de passe, cookies ou données privées.
 
-## 10. Liens utiles
+## 11. Liens utiles
 
 - [Télécharger Orbit](https://github.com/Clarco-Mada-digital/orbit/releases/latest)
 - [Code source](https://github.com/Clarco-Mada-digital/orbit)

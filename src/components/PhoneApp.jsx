@@ -16,6 +16,10 @@ import {
   Monitor,
   Power,
   Palette,
+  PhoneCall,
+  PhoneIncoming,
+  PhoneMissed,
+  PhoneOutgoing,
   Pin,
   Plus,
   RefreshCw,
@@ -25,6 +29,7 @@ import {
   Square,
   Star,
   Trash2,
+  Upload,
   Usb,
   Wifi,
   Volume1,
@@ -36,6 +41,9 @@ import { detectUrl } from '../lib/urls';
 import { usePhoneStore } from '../lib/phoneStore';
 import {
   compareVersions,
+  describeCallNotification,
+  describeCallLogEntry,
+  formatCallDuration,
   filterPhoneApps,
   initialsOf,
   normalizePhoneSettings,
@@ -719,6 +727,70 @@ export default function PhoneApp({ visible, onClose }) {
     else setError(result?.error || "Impossible d'écarter cette notification du téléphone.");
   }, [serial]);
 
+  // Journal d'appels : lu à l'ouverture de l'accueil, puis rafraîchi quand les
+  // notifications du téléphone bougent (un appel manqué en produit une) — pas
+  // de sondage régulier pour une liste qui ne change que rarement.
+  const [callLog, setCallLog] = useState([]);
+  const [callBusy, setCallBusy] = useState('');
+  const [callsExpanded, setCallsExpanded] = useState(false);
+  const showCalls = settings.homeWidgets.calls;
+  const refreshCallLog = useCallback(async () => {
+    if (!serial) {
+      setCallLog([]);
+      return;
+    }
+    const result = await apiRef.current?.callLog?.({ serial, limit: 12 }).catch(() => null);
+    if (result?.success) setCallLog(result.entries || []);
+  }, [serial]);
+
+  useEffect(() => {
+    if (!visible || !serial || !showCalls) return;
+    // Hors du corps de l'effet : la lecture du journal met l'état à jour, et
+    // la déclencher pendant le rendu enchaîne un rendu de plus pour rien.
+    Promise.resolve().then(refreshCallLog);
+  }, [visible, serial, showCalls, phoneNotifications.length, refreshCallLog]);
+
+  // Envoi de fichiers vers le téléphone. Le compte rendu reste affiché : savoir
+  // OÙ le fichier est arrivé fait partie du service rendu.
+  const [sendingFiles, setSendingFiles] = useState(false);
+  const [sendReport, setSendReport] = useState('');
+  const sendFilesToPhone = useCallback(async () => {
+    if (!serial) return;
+    setSendingFiles(true);
+    setSendReport('');
+    try {
+      const result = await apiRef.current?.sendFiles?.({ serial });
+      if (result?.cancelled) return;
+      const count = result?.sent?.length || 0;
+      if (count) {
+        setSendReport(
+          `${count} fichier${count > 1 ? 's' : ''} envoyé${count > 1 ? 's' : ''} dans ${result.directory} du téléphone${result.error ? ` — ${result.error}` : ''}`
+        );
+      } else {
+        setError(result?.error || 'Aucun fichier n’a pu être envoyé au téléphone.');
+      }
+    } catch (err) {
+      setError(String(err?.message || err));
+    } finally {
+      setSendingFiles(false);
+    }
+  }, [serial]);
+
+  // Rappeler. Deux intentions distinctes : préparer le numéro sur le clavier
+  // du téléphone (défaut, l'utilisateur confirme sur l'appareil) ou lancer
+  // l'appel — un appel ne part donc jamais par surprise.
+  const callBack = useCallback(async (entry, mode) => {
+    if (!serial || !entry?.number) return;
+    setCallBusy(entry.number + mode);
+    setError('');
+    try {
+      const result = await apiRef.current?.placeCall?.({ serial, number: entry.number, mode });
+      if (!result?.success) setError(result?.error || 'Le téléphone n’a pas composé ce numéro.');
+    } finally {
+      setCallBusy('');
+    }
+  }, [serial]);
+
   // Demande venue d'ailleurs (alerte système, notification dans la cloche) :
   // on ouvre l'app demandée dès que l'appareil et la liste sont prêts.
   const requestedPackage = usePhoneStore((s) => s.requestedPackage);
@@ -1287,10 +1359,26 @@ export default function PhoneApp({ visible, onClose }) {
                           <Icon size={15} />
                         </button>
                       ))}
+                      <span className="mx-1 h-5 w-px bg-white/10" />
+                      {/* Envoyer un fichier : le sélecteur est ouvert par le
+                          processus principal, le fichier arrive dans les
+                          téléchargements du téléphone. */}
+                      <button
+                        type="button"
+                        onClick={sendFilesToPhone}
+                        disabled={sendingFiles}
+                        title="Envoyer un fichier dans les téléchargements du téléphone"
+                        aria-label="Envoyer un fichier au téléphone"
+                        className="flex items-center gap-1.5 rounded-xl px-2 py-2 text-xs text-white/65 transition hover:bg-white/10 hover:text-white disabled:opacity-40"
+                      >
+                        {sendingFiles ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />}
+                        <span className="hidden sm:inline">Envoyer un fichier</span>
+                      </button>
                     </>
                   ) : null}
                 </section>
               ) : null}
+              {sendReport ? <p role="status" className="rounded-xl border border-white/10 bg-slate-950/40 px-3 py-2 text-[11px] text-white/70 lg:col-span-12">{sendReport}</p> : null}
 
               {settings.homeWidgets.notifications && phoneNotifications.length > 0 ? <section className="overflow-hidden rounded-2xl border border-white/10 bg-slate-950/25 text-white shadow-lg shadow-black/10 backdrop-blur-xl lg:col-span-12">
                 <div className="flex items-center gap-2 border-b border-white/[0.07] px-4 py-3">
@@ -1304,10 +1392,18 @@ export default function PhoneApp({ visible, onClose }) {
                 <div className="max-h-[360px] divide-y divide-white/[0.06] overflow-y-auto">
                   {phoneNotifications.slice(0, notificationsExpanded ? phoneNotifications.length : 5).map((notification) => {
                     const app = apps.find((item) => item.package === notification.package);
+                    // Un appel se lit par son appelant, pas par le titre posé
+                    // par le dialer (« Appel entrant »).
+                    const caller = notification.category === 'call'
+                      ? describeCallNotification(notification, app?.name || notification.appName)
+                      : null;
+                    const heading = caller
+                      ? (caller.unknown ? 'Appel — appelant inconnu' : `Appel — ${caller.who}`)
+                      : notification.title || app?.name || 'Notification';
                     return <div key={notification.key} className="group flex items-start gap-2 px-3 py-2.5 transition hover:bg-white/[0.04]">
-                      <button type="button" onClick={() => launch({ package: notification.package, name: app?.name || notification.title || notification.package })} className="min-w-0 flex-1 rounded-lg px-1 py-0.5 text-left" title={`${notification.title || notification.package} — ouvrir l’application`}>
-                        <span className="block truncate text-xs font-medium text-white/90">{notification.title || app?.name || 'Notification'}</span>
-                        {notification.text ? <span className="mt-1 block line-clamp-2 text-[11px] leading-relaxed text-white/55">{notification.text}</span> : null}
+                      <button type="button" onClick={() => launch({ package: notification.package, name: app?.name || notification.title || notification.package })} className="min-w-0 flex-1 rounded-lg px-1 py-0.5 text-left" title={`${heading} — ouvrir l’application`}>
+                        <span className="block truncate text-xs font-medium text-white/90">{heading}</span>
+                        {caller?.detail || notification.text ? <span className="mt-1 block line-clamp-2 text-[11px] leading-relaxed text-white/55">{caller?.detail || notification.text}</span> : null}
                         <span className="mt-1.5 block truncate text-[10px] text-white/30">{app?.name || notification.package}</span>
                       </button>
                       <button type="button" onClick={() => dismissPhoneNotification(notification)} className="mt-0.5 rounded-lg p-1.5 text-white/35 opacity-60 transition hover:bg-white/10 hover:text-white sm:opacity-0 sm:group-hover:opacity-100" title="Écarter du téléphone (24 h)" aria-label="Écarter cette notification">
@@ -1317,6 +1413,39 @@ export default function PhoneApp({ visible, onClose }) {
                   })}
                 </div>
                 {phoneNotifications.length > 5 ? <button type="button" onClick={() => setNotificationsExpanded((expanded) => !expanded)} className="w-full border-t border-white/[0.07] px-3 py-2 text-[11px] font-medium text-sky-200/80 transition hover:bg-white/[0.04] hover:text-sky-100">{notificationsExpanded ? 'Afficher moins' : `Afficher les ${phoneNotifications.length - 5} autres notifications`}</button> : null}
+              </section> : null}
+
+              {/* Appels récents : savoir qui a appelé pendant qu'on n'était
+                  pas là, et rappeler sans chercher le téléphone. */}
+              {showCalls && callLog.length > 0 ? <section className="overflow-hidden rounded-2xl border border-white/10 bg-slate-950/25 text-white shadow-lg shadow-black/10 backdrop-blur-xl lg:col-span-12">
+                <div className="flex items-center gap-2 border-b border-white/[0.07] px-3 py-2">
+                  <PhoneCall size={13} className="text-emerald-200/80" />
+                  <h3 className="text-xs font-semibold">Appels récents</h3>
+                  <button type="button" onClick={refreshCallLog} className="ml-auto rounded-lg px-2 py-1 text-[10px] text-white/55 transition hover:bg-white/10 hover:text-white" title="Relire le journal d’appels du téléphone">Actualiser</button>
+                </div>
+                <div className="max-h-[300px] divide-y divide-white/[0.06] overflow-y-auto">
+                  {callLog.slice(0, callsExpanded ? callLog.length : 5).map((entry, index) => {
+                    const call = describeCallLogEntry(entry);
+                    const duration = formatCallDuration(entry.duration);
+                    const Icon = call.type === 'outgoing' ? PhoneOutgoing : call.missed ? PhoneMissed : PhoneIncoming;
+                    return <div key={`${entry.at || index}-${entry.number || index}`} className="flex items-center gap-2.5 px-3 py-2.5 transition hover:bg-white/[0.04]">
+                      <Icon size={14} className={call.missed ? 'shrink-0 text-rose-300' : 'shrink-0 text-white/45'} />
+                      <div className="min-w-0 flex-1">
+                        <span className={`block truncate text-xs font-medium ${call.missed ? 'text-rose-100' : 'text-white/90'}`}>{call.who}</span>
+                        <span className="mt-0.5 block truncate text-[10px] text-white/40">
+                          {[call.detail, entry.at ? new Date(entry.at).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }) : null, duration].filter(Boolean).join(' · ')}
+                        </span>
+                      </div>
+                      {call.callable ? <>
+                        <button type="button" onClick={() => callBack(entry, 'dial')} disabled={Boolean(callBusy)} className="rounded-lg px-2 py-1.5 text-[10px] text-white/60 transition hover:bg-white/10 hover:text-white disabled:opacity-40" title={`Préparer ${call.number} sur le clavier du téléphone`}>Préparer</button>
+                        <button type="button" onClick={() => callBack(entry, 'call')} disabled={Boolean(callBusy)} className="flex items-center gap-1 rounded-lg bg-emerald-500/20 px-2.5 py-1.5 text-[10px] font-medium text-emerald-100 transition hover:bg-emerald-500/30 disabled:opacity-40" title={`Appeler ${call.number} depuis le téléphone`}>
+                          {callBusy === entry.number + 'call' ? <Loader2 size={11} className="animate-spin" /> : <PhoneCall size={11} />} Rappeler
+                        </button>
+                      </> : <span className="text-[10px] text-white/30" title="Numéro masqué : rien à rappeler">Numéro masqué</span>}
+                    </div>;
+                  })}
+                </div>
+                {callLog.length > 5 ? <button type="button" onClick={() => setCallsExpanded((expanded) => !expanded)} className="w-full border-t border-white/[0.07] px-3 py-2 text-[11px] font-medium text-sky-200/80 transition hover:bg-white/[0.04] hover:text-sky-100">{callsExpanded ? 'Afficher moins' : `Afficher les ${callLog.length - 5} autres appels`}</button> : null}
               </section> : null}
 
               <div className="relative flex items-center justify-between gap-3 lg:col-span-12">
@@ -1343,6 +1472,7 @@ export default function PhoneApp({ visible, onClose }) {
                       ['favorites', 'Applications favorites'],
                       ['recent', 'Applications récentes'],
                       ['notifications', 'Notifications'],
+                      ['calls', 'Appels récents'],
                     ].map(([key, label]) => {
                       const enabled = settings.homeWidgets[key];
                       return (
@@ -1799,6 +1929,7 @@ export default function PhoneApp({ visible, onClose }) {
               <Toggle label="Applications récentes" checked={settings.homeWidgets.recent} onChange={(v) => saveSettings({ homeWidgets: { ...settings.homeWidgets, recent: v } })} />
               <Toggle label="Notifications du téléphone" hint="Affiche les alertes récentes. Cliquer ouvre l’application dans sa fenêtre ; « Tout effacer » les écarte du téléphone." checked={settings.homeWidgets.notifications} onChange={(v) => saveSettings({ homeWidgets: { ...settings.homeWidgets, notifications: v } })} />
               <Toggle label="Contrôles rapides" hint="Volume, Wi-Fi, Bluetooth et raccourcis vers les réglages Android." checked={settings.homeWidgets.quickControls} onChange={(v) => saveSettings({ homeWidgets: { ...settings.homeWidgets, quickControls: v } })} />
+              <Toggle label="Appels récents" hint="Journal d’appels du téléphone, appels manqués en évidence. « Rappeler » lance l’appel depuis le mobile ; « Préparer » ouvre son clavier avec le numéro, à confirmer sur l’appareil." checked={settings.homeWidgets.calls} onChange={(v) => saveSettings({ homeWidgets: { ...settings.homeWidgets, calls: v } })} />
               <div className="mt-4 border-t border-border pt-3">
                 <h4 className="mb-2 text-xs font-medium text-text-secondary">Tiroir d’applications</h4>
                 <Range label="Taille des icônes" value={settings.iconSize === 'small' ? 1 : settings.iconSize === 'large' ? 3 : 2} min={1} max={3} step={1} suffix="" onChange={(v) => saveSettings({ iconSize: v === 1 ? 'small' : v === 3 ? 'large' : 'medium' })} />

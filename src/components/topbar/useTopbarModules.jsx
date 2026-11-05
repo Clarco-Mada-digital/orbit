@@ -21,6 +21,7 @@ import {
   Smartphone,
   Home as HomeIcon,
   Plus,
+  Save,
   Trash2,
   ExternalLink,
   X,
@@ -261,6 +262,7 @@ export function useTopbarModules({ onOpenQuickSwitcher, onOpenVault, placement =
     workspaces,
     saveWorkspace,
     applyWorkspace,
+    updateWorkspace,
     deleteWorkspace,
   } = useStore();
   const t = useT();
@@ -1021,6 +1023,18 @@ const app = apps.find((a) => a.id === activeApp)
                             {ws.splitView && (
                               <span className="text-[10px] text-text-muted">split</span>
                             )}
+                          </button>
+                          {/* Réenregistrer sur l'état courant : ajuster un
+                              espace ne doit pas obliger à le recréer. */}
+                          <button
+                            onClick={() => {
+                              updateWorkspace(ws.id);
+                              setShowWsMenu(false);
+                            }}
+                            className="btn-icon w-7 h-7 opacity-0 group-hover:opacity-100"
+                            title={t('tb.workspaceUpdate')}
+                          >
+                            <Save size={14} />
                           </button>
                           <button
                             onClick={() => deleteWorkspace(ws.id)}

@@ -140,6 +140,9 @@ export const fr = {
   'studio.minimize': 'Réduire',
   'studio.minimizeHint':
     'Réduit le studio en une barre : c’est ce qui permet de filmer Orbit lui-même.',
+  'studio.annotate': 'Annoter l’écran',
+  'studio.annotateHint':
+    'Dessine PAR-DESSUS tout l’écran (A) : stylo, surligneur, flèche, formes, pointeur laser. La couche est une vraie fenêtre, donc l’enregistrement la reprend telle quelle. Échap rend la main aux applications.',
   'studio.restore': 'Rouvrir le studio',
   'studio.again': 'Nouvelle prise',
   'studio.saved': 'Enregistré · {duration} · {size} Mo',
@@ -398,6 +401,9 @@ export const en = {
   'studio.paused': 'paused',
   'studio.minimize': 'Minimise',
   'studio.minimizeHint': 'Shrinks the studio to a bar: that is what lets you record Orbit itself.',
+  'studio.annotate': 'Annotate screen',
+  'studio.annotateHint':
+    'Draw ON TOP of the whole screen (A): pen, highlighter, arrow, shapes, laser pointer. The layer is a real window, so the recording picks it up as-is. Esc hands control back to your apps.',
   'studio.restore': 'Reopen the studio',
   'studio.again': 'New take',
   'studio.saved': 'Saved · {duration} · {size} MB',

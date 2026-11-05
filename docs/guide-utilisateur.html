@@ -1,510 +1,498 @@
 <!doctype html>
 <html lang="fr">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="color-scheme" content="light" />
-    <title>Orbit — Guide utilisateur</title>
-    <style>
-      :root {
-        --ink: #15213a;
-        --muted: #61708a;
-        --line: #dce5f0;
-        --blue: #4662ea;
-        --teal: #24c8c0;
-        --paper: #fff;
-        --tint: #f3f6fb;
-      }
-      * { box-sizing: border-box; }
-      html { background: #e8edf5; }
-      body {
-        margin: 0 auto;
-        max-width: 900px;
-        color: var(--ink);
-        background: var(--paper);
-        font: 15px/1.65 Inter, "Segoe UI", Arial, sans-serif;
-        box-shadow: 0 16px 70px #1828461c;
-      }
-      a { color: #3551cc; text-decoration: none; }
-      h1, h2, h3 { line-height: 1.18; letter-spacing: -0.025em; }
-      h2 { margin: 0 0 16px; font-size: 30px; }
-      h3 { margin: 22px 0 8px; font-size: 18px; }
-      p { margin: 0 0 12px; }
-      ul, ol { padding-left: 22px; }
-      li { margin: 5px 0; }
-      .page {
-        min-height: 1120px;
-        padding: 66px 76px;
-        position: relative;
-      }
-      .cover {
-        min-height: 1120px;
-        overflow: hidden;
-        color: white;
-        background:
-          radial-gradient(ellipse at 87% 14%, #2ac7c033 0, transparent 32%),
-          radial-gradient(ellipse at 16% 82%, #6674ff4a 0, transparent 34%),
-          linear-gradient(145deg, #10182d 0%, #172545 55%, #1b2b4c 100%);
-        padding: 70px 76px;
-        display: flex;
-        flex-direction: column;
-        justify-content: space-between;
-      }
-      .cover::after {
-        content: "";
-        position: absolute;
-        width: 580px;
-        height: 580px;
-        right: -265px;
-        top: 280px;
-        border: 1px solid #ffffff24;
-        border-radius: 50%;
-        box-shadow: 0 0 0 58px #ffffff08, 0 0 0 116px #ffffff06;
-      }
-      .brand { display: flex; align-items: center; gap: 14px; font-weight: 700; font-size: 19px; }
-      .brand svg { width: 48px; height: 48px; }
-      .cover-copy { position: relative; z-index: 1; max-width: 650px; }
-      .eyebrow {
-        color: #9ce8e1;
-        font-size: 11px;
-        font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: .22em;
-      }
-      .cover h1 { margin: 20px 0 18px; font-size: 68px; letter-spacing: -.055em; }
-      .cover .lead { max-width: 540px; color: #d8e1f4; font-size: 21px; line-height: 1.5; }
-      .cover-card {
-        position: relative;
-        z-index: 1;
-        width: 100%;
-        max-width: 530px;
-        margin-top: 40px;
-        padding: 19px;
-        border: 1px solid #ffffff27;
-        border-radius: 20px;
-        background: #ffffff0d;
-        backdrop-filter: blur(12px);
-      }
-      .cover-card .apps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
-      .mini-app {
-        padding: 14px 8px;
-        border: 1px solid #ffffff17;
-        border-radius: 13px;
-        background: #ffffff0a;
-        text-align: center;
-        color: #e9effb;
-        font-size: 12px;
-      }
-      .mini-app b {
-        display: grid;
-        width: 35px;
-        height: 35px;
-        margin: 0 auto 8px;
-        place-items: center;
-        border-radius: 11px;
-        background: linear-gradient(140deg, #6d79ff, #28c6bc);
-        color: white;
-        font-size: 15px;
-      }
-      .cover-foot {
-        position: relative;
-        z-index: 1;
-        display: flex;
-        justify-content: space-between;
-        gap: 20px;
-        border-top: 1px solid #ffffff2a;
-        padding-top: 18px;
-        color: #c0cce2;
-        font-size: 12px;
-      }
-      .section-label {
-        margin-bottom: 12px;
-        color: var(--blue);
-        font-size: 11px;
-        font-weight: 800;
-        text-transform: uppercase;
-        letter-spacing: .18em;
-      }
-      .intro { margin-bottom: 24px; color: var(--muted); font-size: 17px; }
-      .callout {
-        margin: 18px 0;
-        padding: 16px 18px;
-        border-left: 4px solid var(--teal);
-        border-radius: 0 12px 12px 0;
-        background: #effaf9;
-      }
-      .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-      .card {
-        padding: 16px;
-        border: 1px solid var(--line);
-        border-radius: 14px;
-        background: linear-gradient(145deg, white, #f8faff);
-        break-inside: avoid;
-      }
-      .card h3 { margin: 0 0 7px; }
-      .card p { margin: 0; color: var(--muted); font-size: 13px; }
-      table { width: 100%; border-collapse: collapse; margin: 16px 0; }
-      th, td { padding: 10px 12px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
-      th { color: #3a4b67; background: var(--tint); font-size: 12px; text-transform: uppercase; letter-spacing: .06em; }
-      td { font-size: 13px; }
-      code {
-        padding: 2px 6px;
-        border: 1px solid #dfe5f1;
-        border-radius: 5px;
-        background: #f4f6fb;
-        color: #3649ad;
-        font: 12px ui-monospace, SFMono-Regular, Menlo, monospace;
-      }
-      .muted { color: var(--muted); }
-      .chapter { break-before: page; }
-      .small { font-size: 12px; color: var(--muted); }
-      .links { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
-      .links a { padding: 9px 13px; border-radius: 9px; background: #edf1ff; font-weight: 700; font-size: 12px; }
-      .endmark { margin-top: 38px; padding-top: 18px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
-      @page {
-        size: A4;
-        margin: 16mm 17mm 18mm;
-        @bottom-left { content: "ORBIT  ·  GUIDE UTILISATEUR"; color: #7a8799; font: 8pt Arial, sans-serif; }
-        @bottom-right { content: counter(page); color: #7a8799; font: 8pt Arial, sans-serif; }
-      }
-      @media print {
-        html, body { max-width: none; box-shadow: none; background: white; }
-        .page { min-height: auto; padding: 0; }
-        .cover { min-height: 264mm; margin: -16mm -17mm -18mm; padding: 24mm 22mm 20mm; }
-        .chapter { break-before: page; }
-        a { color: inherit; }
-      }
-      @media screen {
-        .page { margin: 24px auto; }
-      }
-    </style>
-  </head>
-  <body>
-    <section class="page cover">
-      <div class="brand">
-        <svg viewBox="0 0 64 64" aria-label="Logo Orbit">
-          <defs><linearGradient id="orb" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#7882ff"/><stop offset="1" stop-color="#9a72ff"/></linearGradient></defs>
-          <rect x="1" y="1" width="62" height="62" rx="17" fill="url(#orb)"/>
-          <circle cx="32" cy="32" r="20" fill="none" stroke="#fff" stroke-width="2.6"/>
-          <circle cx="32" cy="32" r="5" fill="#fff"/><circle cx="48.4" cy="20.5" r="6.2" fill="#c7d2fe"/>
-        </svg>
-        <span>ORBIT</span>
-      </div>
-      <div class="cover-copy">
-        <div class="eyebrow">Guide utilisateur · Édition 2026</div>
-        <h1>Toutes vos apps.<br />Un seul espace.</h1>
-        <p class="lead">
-          Le guide complet pour organiser vos applications web, profils, outils
-          de productivité et téléchargements avec Orbit.
-        </p>
-        <div class="cover-card" aria-label="Illustration d'un espace de travail Orbit">
-          <div class="apps">
-            <div class="mini-app"><b>G</b>Messagerie</div>
-            <div class="mini-app"><b>N</b>Notes & projets</div>
-            <div class="mini-app"><b>✦</b>Assistant IA</div>
-          </div>
-          <p style="margin:14px 2px 0;color:#ccdaef;font-size:12px">
-            Profils séparés · Sessions maîtrisées · Outils à portée de main
-          </p>
-        </div>
-      </div>
-      <div class="cover-foot">
-        <span>Développé par <strong>Clarco RAHERINANDRASANA</strong></span>
-        <span>Windows · macOS · Linux</span>
-      </div>
-    </section>
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Orbit — guide utilisateur</title>
+<meta name="author" content="Clarco RAHERINANDRASANA" />
+<meta name="description" content="Guide utilisateur complet d'Orbit — 1.17.3" />
+<!-- Fichier GÉNÉRÉ par scripts/build-docs.js à partir de docs/guide-utilisateur.md.
+     Toute modification faite ici serait perdue à la prochaine génération. -->
+<style>
+  /* Hauteur = zone IMPRIMABLE d'une A4 (297mm moins les marges de page), pas
+     la feuille entière : une page nommée sans marge n'est pas appliquée par
+     tous les moteurs d'impression, et le fond débordait alors d'une bande sur
+     la page suivante. Attention aussi aux accents graves dans ce commentaire :
+     il vit dans un gabarit de chaîne, ils la fermeraient. */
+  .cover {
+    position: relative;
+    height: 264mm;
+    margin: 0;
+    padding: 0 18mm;
+    border-radius: 14px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    color: #f8fafc;
+    background: #0b1020;
+    background-image:
+      radial-gradient(circle at 18% 12%, rgba(99, 102, 241, 0.55), transparent 48%),
+      radial-gradient(circle at 82% 78%, rgba(14, 165, 233, 0.42), transparent 52%),
+      linear-gradient(160deg, #0b1020 0%, #131a33 55%, #0b1020 100%);
+    overflow: hidden;
+    page-break-after: always;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  /* Halo discret : il donne de la profondeur sans charger la page. */
+  .cover-glow {
+    position: absolute;
+    inset: -30% -10% auto -10%;
+    height: 70%;
+    background: radial-gradient(ellipse at center, rgba(165, 180, 252, 0.18), transparent 70%);
+  }
+  .cover-logo {
+    width: 128px;
+    height: 128px;
+    border: none;
+    border-radius: 28px;
+    box-shadow: 0 24px 60px rgba(2, 6, 23, 0.6);
+    position: relative;
+  }
+  .cover-title {
+    margin: 26px 0 0;
+    font-size: 64px;
+    font-weight: 700;
+    letter-spacing: -2px;
+    position: relative;
+  }
+  .cover-tagline {
+    margin: 10px 0 0;
+    font-size: 18px;
+    color: #c7d2fe;
+    position: relative;
+  }
+  .cover-kind {
+    margin: 30px 0 0;
+    font-size: 15px;
+    letter-spacing: 3px;
+    text-transform: uppercase;
+    color: #94a3b8;
+    position: relative;
+  }
+  .cover-rule {
+    width: 90px;
+    height: 3px;
+    margin: 22px 0 28px;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #6366f1, #38bdf8);
+    position: relative;
+  }
+  .cover-meta {
+    display: flex;
+    gap: 42px;
+    margin: 0;
+    position: relative;
+  }
+  .cover-meta div { text-align: center; }
+  .cover-meta dt {
+    font-size: 11px;
+    letter-spacing: 1.6px;
+    text-transform: uppercase;
+    color: #8da2c0;
+  }
+  .cover-meta dd {
+    margin: 5px 0 0;
+    font-size: 15px;
+    font-weight: 600;
+    color: #e2e8f0;
+  }
 
-    <section class="page chapter">
-      <div class="section-label">Bienvenue</div>
-      <h2>Un poste de travail plus clair</h2>
-      <p class="intro">
-        Orbit réunit vos applications web dans une application de bureau et
-        fournit des outils pour mieux les organiser. Ce guide vous accompagne
-        de l’installation aux fonctions avancées.
-      </p>
-      <div class="grid">
-        <article class="card"><h3>Vos applications</h3><p>Ajoutez des services depuis la boutique intégrée ou avec une URL.</p></article>
-        <article class="card"><h3>Vos profils</h3><p>Séparez les espaces personnels et professionnels avec leurs propres sessions.</p></article>
-        <article class="card"><h3>Vos outils</h3><p>Assistant IA, relecture, coffre-fort et téléchargements dans la même interface.</p></article>
-        <article class="card"><h3>Votre contrôle</h3><p>Choisissez les extensions, les fournisseurs IA et les options de partage de session.</p></article>
-      </div>
-      <div class="callout">
-        <strong>À retenir.</strong> Orbit héberge l’interface ; les sites ajoutés
-        restent des services indépendants, avec leurs propres comptes et
-        politiques de confidentialité.
-      </div>
-      <h3>Sommaire</h3>
-      <ol>
-        <li>Installer Orbit et démarrer</li>
-        <li>Organiser applications, profils et espaces</li>
-        <li>Rechercher et utiliser les raccourcis</li>
-        <li>Assistant IA et relecture</li>
-        <li>Coffre-fort de mots de passe</li>
-        <li>Téléchargements et extensions</li>
-        <li>Confidentialité et sécurité</li>
-        <li>Dépannage et liens utiles</li>
-      </ol>
-    </section>
-
-    <section class="page chapter">
-      <div class="section-label">01 · Mise en route</div>
-      <h2>Installer Orbit</h2>
-      <p>
-        Récupérez Orbit depuis la dernière release du dépôt officiel. Choisissez
-        l’asset correspondant à votre système :
-      </p>
-      <table>
-        <thead><tr><th>Système</th><th>Fichier</th><th>À savoir</th></tr></thead>
-        <tbody>
-          <tr><td>Windows</td><td>Installateur ou portable <code>.exe</code></td><td>SmartScreen peut signaler une application non signée.</td></tr>
-          <tr><td>Linux</td><td><code>.AppImage</code> ou paquet <code>.deb</code></td><td>Le paquet Debian convient aux systèmes compatibles.</td></tr>
-          <tr><td>macOS</td><td><code>.dmg</code> ou <code>.zip</code></td><td>Gatekeeper peut demander une confirmation d’ouverture.</td></tr>
-        </tbody>
-      </table>
-      <ol>
-        <li>Ouvrez la page <a href="https://github.com/Clarco-Mada-digital/orbit/releases/latest">Releases</a> et téléchargez le fichier de votre plateforme.</li>
-        <li>Installez ou extrayez le paquet selon votre système.</li>
-        <li>Lancez Orbit et choisissez <strong>Ajouter ma première app</strong> ou commencez sans application.</li>
-        <li>Ajoutez les services nécessaires via la boutique ou une URL.</li>
-      </ol>
-      <div class="callout">
-        Téléchargez toujours les binaires depuis le dépôt officiel. En cas de
-        doute sur un avertissement de sécurité, annulez et vérifiez l’origine du
-        fichier.
-      </div>
-      <h3>Premiers repères</h3>
-      <p>
-        La barre latérale sert à choisir une app et un profil. La barre supérieure
-        donne accès aux contrôles de la page, aux outils et aux notifications.
-        Les paramètres regroupent les réglages globaux, les extensions et les
-        options du profil actif.
-      </p>
-    </section>
-
-    <section class="page chapter">
-      <div class="section-label">02 · Organisation</div>
-      <h2>Construire votre espace</h2>
-      <h3>Applications, dossiers et favoris</h3>
-      <p>
-        Installez une app depuis le catalogue, saisissez une URL personnalisée,
-        puis ordonnez la barre latérale par glisser-déposer. Les dossiers
-        regroupent les apps liées. Le menu contextuel propose les actions
-        disponibles pour chaque app, comme favori, veille, fenêtre détachée et
-        gestion des données de site.
-      </p>
-      <h3>Profils et comptes</h3>
-      <p>
-        Créez des profils Travail, Personnel ou tout autre espace. Les sessions
-        web sont séparées selon la configuration. Le partage de connexion (SSO)
-        peut être activé par profil lorsque vous souhaitez que les apps d’un
-        service suivent une même session. Les conteneurs permettent de conserver
-        plusieurs comptes indépendants.
-      </p>
-      <div class="callout">
-        L’activation du SSO peut recharger les apps et demander une nouvelle
-        connexion. Consultez la confirmation d’Orbit avant de modifier ce mode.
-      </div>
-      <h3>Espaces de travail et fenêtres</h3>
-      <ul>
-        <li>Affichez plusieurs apps en écran partagé et enregistrez une disposition.</li>
-        <li>Détachez une app pour l’afficher dans une fenêtre de bureau séparée.</li>
-        <li>Personnalisez thème, accent, polices et modules des barres.</li>
-        <li>Configurez des fonds et options d’accueil propres à chaque profil.</li>
-      </ul>
-      <h3>Recherche et calcul</h3>
-      <p>
-        La palette <code>Alt/⌘ + K</code> recherche les apps, espaces et actions.
-        Elle peut aussi calculer et convertir des valeurs ; la recherche dans
-        une page utilise <code>Ctrl + F</code> ou <code>⌘ + F</code>.
-      </p>
-    </section>
-
-    <section class="page chapter">
-      <div class="section-label">03 · Raccourcis</div>
-      <h2>Gagner du temps</h2>
-      <p>
-        Sur Windows et Linux, Orbit utilise généralement <strong>Alt</strong>.
-        Sur macOS, utilisez généralement <strong>⌘</strong>. Les apps web gardent
-        leurs propres raccourcis.
-      </p>
-      <table>
-        <thead><tr><th>Raccourci</th><th>Action</th></tr></thead>
-        <tbody>
-          <tr><td><code>Alt/⌘ + K</code></td><td>Recherche et palette de commandes</td></tr>
-          <tr><td><code>Alt/⌘ + ,</code></td><td>Réglages</td></tr>
-          <tr><td><code>Alt/⌘ + Maj + O</code></td><td>Boutique d’applications</td></tr>
-          <tr><td><code>Alt/⌘ + Maj + P</code></td><td>Gestion des profils</td></tr>
-          <tr><td><code>Alt/⌘ + L</code></td><td>Modifier l’URL de la page active</td></tr>
-          <tr><td><code>Alt/⌘ + Page ↓ / Page ↑</code></td><td>App précédente ou suivante</td></tr>
-          <tr><td><code>Alt/⌘ + Maj + Page ↓ / Page ↑</code></td><td>Profil précédent ou suivant</td></tr>
-          <tr><td><code>Alt/⌘ + Maj + E</code></td><td>Relire hors ligne le champ actif</td></tr>
-          <tr><td><code>Alt/⌘ + Maj + I</code></td><td>Ouvrir la relecture IA</td></tr>
-          <tr><td><code>Alt/⌘ + Maj + A</code></td><td>Ouvrir la discussion IA</td></tr>
-          <tr><td><code>Ctrl + R / ⌘ + R</code></td><td>Recharger la page active</td></tr>
-        </tbody>
-      </table>
-      <p class="small">
-        Les raccourcis peuvent être configurables et évoluer. La liste visible
-        dans Réglages → Raccourcis est la référence pour votre version.
-      </p>
-    </section>
-
-    <section class="page chapter">
-      <div class="section-label">04 · Aide à la rédaction</div>
-      <h2>Assistant IA et relecture</h2>
-      <p>
-        L’assistant Orbit peut aider à discuter, résumer, reformuler et travailler
-        sur un texte. Utilisez les commandes de relecture pour corriger le champ
-        actif ou ouvrir la conversation avec le texte sélectionné.
-      </p>
-      <div class="grid">
-        <article class="card"><h3>Règles locales</h3><p>La relecture rapide fonctionne sur l’appareil et couvre des erreurs fréquentes.</p></article>
-        <article class="card"><h3>LanguageTool local</h3><p>Option grammaticale plus complète ; nécessite Java 17+ et un téléchargement initial.</p></article>
-        <article class="card"><h3>Modèles locaux</h3><p>Facultatifs ; ils utilisent le stockage et les ressources matérielles de votre machine.</p></article>
-        <article class="card"><h3>Fournisseurs distants</h3><p>Ollama, fournisseurs compatibles et services configurés ; les conditions varient selon le fournisseur.</p></article>
-      </div>
-      <div class="callout">
-        Avant d’envoyer un texte à un fournisseur en ligne, vérifiez l’indication
-        et la confirmation de consentement affichées par Orbit. Les données
-        envoyées sont soumises aux règles du fournisseur choisi.
-      </div>
-      <h3>Configuration</h3>
-      <p>
-        Choisissez un fournisseur dans les paramètres de l’assistant, configurez
-        les informations nécessaires et testez la connexion. Les clés API sont
-        stockées via le mécanisme sécurisé du système lorsqu’il est disponible.
-        Les modèles locaux facultatifs se gèrent depuis les mêmes paramètres.
-      </p>
-    </section>
-
-    <section class="page chapter">
-      <div class="section-label">05 · Identifiants</div>
-      <h2>Coffre-fort de mots de passe</h2>
-      <p>
-        Le coffre-fort intégré organise les identifiants en trousseaux protégés
-        par un mot de passe maître. Déverrouillez-le pour consulter, créer,
-        rechercher ou utiliser une entrée, puis reverrouillez lorsque vous avez
-        terminé.
-      </p>
-      <h3>Rapport de santé</h3>
-      <p>
-        Le rapport peut classer les mots de passe selon leur robustesse et
-        signaler des réutilisations. Une vérification facultative des mots de
-        passe compromis utilise Have I Been Pwned. Orbit calcule localement une
-        empreinte SHA-1 et envoie uniquement les cinq premiers caractères de
-        cette empreinte ; le service reçoit tout de même l’adresse IP et l’heure
-        de la requête.
-      </p>
-      <h3>Import et export</h3>
-      <p>
-        Lorsqu’un import rencontre un trousseau existant, choisissez la fusion
-        ou le remplacement si l’option est présentée. Protégez les exports :
-        toute personne pouvant lire une sauvegarde non chiffrée pourrait en
-        consulter le contenu.
-      </p>
-      <div class="callout">
-        Choisissez un mot de passe maître robuste et conservez-le en lieu sûr.
-        Orbit ne peut pas retrouver un mot de passe maître oublié.
-      </div>
-      <h3>Connexion à KeePassXC</h3>
-      <p>
-        Le remplissage KeePassXC est disponible si KeePassXC et son intégration
-        navigateur sont correctement configurés. Le coffre-fort intégré est une
-        option distincte ; sélectionnez la source voulue dans les réglages.
-      </p>
-    </section>
-
-    <section class="page chapter">
-      <div class="section-label">06 · Téléchargements et extensions</div>
-      <h2>Les outils au quotidien</h2>
-      <h3>Gestionnaire de téléchargements</h3>
-      <p>
-        La page Téléchargements centralise les fichiers, l’historique, les
-        destinations et les téléchargements de médias pris en charge. Choisissez
-        un dossier par défaut ou demandez un emplacement à chaque fois. Un lien
-        magnet ouvre le client torrent associé par votre système ; Orbit ne
-        télécharge pas lui-même les torrents.
-      </p>
-      <p>
-        Le téléchargement de médias dépend des outils disponibles, du site
-        source et de ses conditions d’utilisation. Ne téléchargez que les contenus
-        que vous êtes autorisé à conserver.
-      </p>
-      <h3>Extensions disponibles</h3>
-      <div class="grid">
-        <article class="card"><h3>Text Snippets</h3><p>Développe des abréviations, par exemple <code>;email</code>, en texte complet au fil de la saisie.</p></article>
-        <article class="card"><h3>Fake Data Filler</h3><p><code>Alt+F</code> remplit le champ focalisé ; <code>Alt+Maj+F</code> remplit les champs visibles du formulaire actif.</p></article>
-        <article class="card"><h3>Web Clipper</h3><p>Capture une sélection ou une page et conserve les clips localement pour les rechercher ou exporter en Markdown.</p></article>
-        <article class="card"><h3>Orbit Phone</h3><p>Extension optionnelle pour contrôler des apps Android compatibles via un appareil connecté.</p></article>
-      </div>
-      <p class="small">
-        Fake Data évite les champs détectés comme identifiants de connexion.
-        Text Snippets n’a pas accès aux champs protégés par mot de passe tant que
-        cette option n’est pas explicitement activée.
-      </p>
-    </section>
-
-    <section class="page chapter">
-      <div class="section-label">07 · Protection des données</div>
-      <h2>Confidentialité et sécurité</h2>
-      <ul>
-        <li>Les sessions peuvent être isolées par app et par profil ; le SSO est facultatif.</li>
-        <li>Les versions empaquetées activent le chiffrement des cookies d’Electron et utilisent le mécanisme système lorsqu’il est disponible.</li>
-        <li>Les règles de relecture rapide, Fake Data et Text Snippets s’exécutent localement.</li>
-        <li>Les fonctionnalités basées sur un fournisseur externe transmettent les données requises à ce service selon les choix confirmés.</li>
-        <li>Les sites web continuent de recevoir les données que vous y saisissez.</li>
-      </ul>
-      <h3>Sauvegardes et changements de session</h3>
-      <p>
-        Faites des sauvegardes régulières et gardez-les dans un emplacement
-        protégé. Les options de suppression des données de site peuvent
-        déconnecter l’app concernée. L’activation du partage SSO change le mode
-        d’isolation ; relisez l’avertissement avant confirmation.
-      </p>
-      <h3>Signalement responsable</h3>
-      <p>
-        Pour signaler un problème, ouvrez une issue dans le dépôt GitHub avec
-        votre système, la version d’Orbit, les étapes de reproduction et un
-        extrait de diagnostic expurgé. Ne partagez jamais de cookies, mots de
-        passe, clés API ou données personnelles.
-      </p>
-    </section>
-
-    <section class="page chapter">
-      <div class="section-label">08 · Assistance</div>
-      <h2>Résoudre les problèmes courants</h2>
-      <h3>Une app ne charge pas</h3>
-      <p>
-        Vérifiez la connexion, la disponibilité du service et l’URL de l’app.
-        Rechargez la page. Si la session est perdue, reconnectez-vous au service.
-      </p>
-      <h3>Une extension ne réagit pas</h3>
-      <p>
-        Vérifiez qu’elle est installée et activée dans Réglages → Extensions,
-        puis rechargez l’app web. Vérifiez le déclencheur et les options de
-        l’extension. Les pages intégrées dans des contextes spéciaux peuvent
-        limiter l’accès des extensions.
-      </p>
-      <h3>L’assistant local est lent ou indisponible</h3>
-      <p>
-        Le premier téléchargement et chargement d’un modèle peut prendre du
-        temps. Vérifiez le modèle, la mémoire et le matériel requis dans les
-        réglages. Un fournisseur distant configuré constitue un chemin distinct.
-      </p>
-      <h3>La relecture complète ne démarre pas</h3>
-      <p>
-        LanguageTool requiert Java 17 ou plus récent. Installez le runtime indiqué
-        par Orbit et réessayez ; les règles rapides restent disponibles.
-      </p>
-      <div class="links">
-        <a href="https://github.com/Clarco-Mada-digital/orbit/releases/latest">Télécharger Orbit</a>
-        <a href="https://github.com/Clarco-Mada-digital/orbit">Code source</a>
-        <a href="https://github.com/Clarco-Mada-digital/orbit/issues">Signaler un problème</a>
-      </div>
-      <div class="endmark">
-        <strong>Orbit</strong> · Développé par Clarco RAHERINANDRASANA · Licence MIT<br />
-        <span>Merci d’utiliser Orbit et de contribuer à un espace de travail web plus simple.</span>
-      </div>
-    </section>
-  </body>
+  :root { color-scheme: light; }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0 auto;
+    padding: 0;
+    max-width: 960px;
+    font: 15px/1.65 system-ui, -apple-system, 'Segoe UI', sans-serif;
+    color: #111827;
+    background: #ffffff;
+  }
+  /* Le rembourrage vit ICI et non sur <body> : la couverture doit pouvoir
+     aller jusqu'au bord du papier sans marges négatives. */
+  .page { padding: 40px 48px 64px; }
+  h1 { font-size: 30px; margin: 0 0 8px; letter-spacing: -0.4px; }
+  h2 {
+    font-size: 22px;
+    margin: 42px 0 12px;
+    padding-bottom: 6px;
+    border-bottom: 2px solid #e5e7eb;
+    page-break-after: avoid;
+  }
+  h3 { font-size: 17px; margin: 26px 0 8px; page-break-after: avoid; }
+  h4 { font-size: 15px; margin: 20px 0 6px; color: #374151; page-break-after: avoid; }
+  p { margin: 10px 0; }
+  ul, ol { margin: 10px 0; padding-left: 24px; }
+  li { margin: 4px 0; }
+  a { color: #4f46e5; text-decoration: none; }
+  code {
+    background: #f3f4f6;
+    border: 1px solid #e5e7eb;
+    border-radius: 5px;
+    padding: 1px 5px;
+    font: 13px/1.4 ui-monospace, 'SFMono-Regular', Menlo, monospace;
+  }
+  pre {
+    background: #0f172a;
+    color: #e2e8f0;
+    padding: 14px 16px;
+    border-radius: 10px;
+    overflow-x: auto;
+    page-break-inside: avoid;
+  }
+  pre code { background: none; border: none; color: inherit; padding: 0; }
+  blockquote {
+    margin: 14px 0;
+    padding: 10px 16px;
+    border-left: 4px solid #6366f1;
+    background: #eef2ff;
+    border-radius: 0 8px 8px 0;
+  }
+  table { width: 100%; border-collapse: collapse; margin: 14px 0; page-break-inside: avoid; }
+  th, td { border: 1px solid #e5e7eb; padding: 7px 10px; text-align: left; vertical-align: top; }
+  th { background: #f9fafb; font-weight: 600; }
+  figure { margin: 18px 0; page-break-inside: avoid; }
+  img { max-width: 100%; border-radius: 10px; border: 1px solid #e5e7eb; }
+  figcaption { margin-top: 6px; font-size: 13px; color: #6b7280; text-align: center; }
+  hr { border: none; border-top: 1px solid #e5e7eb; margin: 32px 0; }
+  .toc {
+    margin: 28px 0 36px;
+    padding: 18px 22px;
+    background: #f9fafb;
+    border: 1px solid #e5e7eb;
+    border-radius: 12px;
+    page-break-after: always;
+  }
+  .toc h2 { margin: 0 0 10px; font-size: 17px; border: none; padding: 0; }
+  .toc ul { list-style: none; padding: 0; margin: 0; }
+  .toc li.toc-3 { padding-left: 18px; font-size: 14px; color: #4b5563; }
+  .built {
+    margin-top: 48px;
+    padding-top: 14px;
+    border-top: 1px solid #e5e7eb;
+    font-size: 12px;
+    color: #9ca3af;
+  }
+  /* Format DÉCLARÉ : sans lui, Chromium imprime en Letter (279mm) selon la
+     locale, et une couverture calculée pour une A4 déborde d'une bande sur la
+     page suivante. */
+  @page { size: A4; margin: 16mm 14mm; }
+</style>
+</head>
+<body>
+<section class="cover">
+  <div class="cover-glow" aria-hidden="true"></div>
+  <img class="cover-logo" src="data:image/png;base64,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wRcRERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERERaX3+P9A7GOLtbUr+AAAAAElFTkSuQmCC" alt="Logo Orbit" />
+  <h1 class="cover-title">Orbit</h1>
+  <p class="cover-tagline">Toutes vos applications web dans une seule fenêtre</p>
+  <p class="cover-kind">Guide utilisateur complet</p>
+  <div class="cover-rule" aria-hidden="true"></div>
+  <dl class="cover-meta">
+    <div><dt>Auteur</dt><dd>Clarco RAHERINANDRASANA</dd></div>
+    <div><dt>Version</dt><dd>Orbit 1.17.3</dd></div>
+    <div><dt>Édition</dt><dd>novembre 2026</dd></div>
+  </dl>
+</section>
+<main class="page">
+<nav class="toc"><h2>Sommaire</h2><ul><li class="toc-2"><a href="#presentation">Présentation</a></li><li class="toc-2"><a href="#1-decouvrir-orbit">1. Découvrir Orbit</a></li><li class="toc-3"><a href="#ce-qu-orbit-rassemble">Ce qu’Orbit rassemble</a></li><li class="toc-2"><a href="#2-installer-et-lancer-orbit">2. Installer et lancer Orbit</a></li><li class="toc-2"><a href="#3-organiser-son-espace">3. Organiser son espace</a></li><li class="toc-3"><a href="#applications">Applications</a></li><li class="toc-3"><a href="#profils-et-sessions">Profils et sessions</a></li><li class="toc-3"><a href="#espaces-fenetres-et-apparence">Espaces, fenêtres et apparence</a></li><li class="toc-3"><a href="#espaces-de-travail">Espaces de travail</a></li><li class="toc-2"><a href="#4-recherche-et-raccourcis-utiles">4. Recherche et raccourcis utiles</a></li><li class="toc-3"><a href="#ce-que-la-palette-sait-faire">Ce que la palette sait faire</a></li><li class="toc-3"><a href="#historique-de-navigation">Historique de navigation</a></li><li class="toc-3"><a href="#choisir-ce-que-la-palette-cherche">Choisir ce que la palette cherche</a></li><li class="toc-2"><a href="#5-assistant-ia-et-relecture">5. Assistant IA et relecture</a></li><li class="toc-2"><a href="#6-coffre-fort-de-mots-de-passe">6. Coffre-fort de mots de passe</a></li><li class="toc-3"><a href="#rapatrier-une-base-keepassxc">Rapatrier une base KeePassXC</a></li><li class="toc-3"><a href="#deverrouillage-et-code-2fa">Déverrouillage et code 2FA</a></li><li class="toc-3"><a href="#sauvegarde-automatique">Sauvegarde automatique</a></li><li class="toc-3"><a href="#sauvegarder-et-exporter-a-la-main">Sauvegarder et exporter à la main</a></li><li class="toc-2"><a href="#7-captures-d-ecran-annotation-et-enregistrement">7. Captures d’écran, annotation et enregistrement</a></li><li class="toc-3"><a href="#prendre-une-capture">Prendre une capture</a></li><li class="toc-3"><a href="#annoter-la-capture-avant-de-l-enregistrer">Annoter la capture avant de l’enregistrer</a></li><li class="toc-3"><a href="#masquer-les-donnees-sensibles-en-un-clic">Masquer les données sensibles en un clic</a></li><li class="toc-3"><a href="#epingler-une-capture">Épingler une capture</a></li><li class="toc-3"><a href="#enregistrer-une-video-studio">Enregistrer une vidéo (studio)</a></li><li class="toc-3"><a href="#annoter-l-ecran-pendant-une-demonstration">Annoter l’écran pendant une démonstration</a></li><li class="toc-2"><a href="#8-telechargements-et-extensions">8. Téléchargements et extensions</a></li><li class="toc-3"><a href="#gestionnaire-de-telechargements">Gestionnaire de téléchargements</a></li><li class="toc-3"><a href="#installer-une-extension-orbit">Installer une extension Orbit</a></li><li class="toc-3"><a href="#telephone-orbit">Téléphone Orbit</a></li><li class="toc-3"><a href="#visionneuse-de-documents">Visionneuse de documents</a></li><li class="toc-2"><a href="#9-confidentialite-et-securite">9. Confidentialité et sécurité</a></li><li class="toc-2"><a href="#10-depannage">10. Dépannage</a></li><li class="toc-2"><a href="#11-liens-utiles">11. Liens utiles</a></li></ul></nav>
+<h1 id="orbit-guide-utilisateur">Orbit — guide utilisateur</h1>
+<h2 id="presentation">Présentation</h2>
+<p><strong>Orbit rassemble vos applications web dans une seule fenêtre.</strong> Au lieu de
+vingt onglets et trois navigateurs ouverts, un espace unique où chaque service
+a sa place, sa session et ses réglages — et autour, les outils qui manquent
+toujours : capture et annotation, enregistrement d'écran, coffre-fort,
+assistant, et jusqu'à votre téléphone Android.</p>
+<p>Ce guide est écrit pour être lu dans l'ordre la première fois, puis consulté par
+section. Chaque fonctionnalité y est décrite de la même façon : <strong>à quoi elle
+sert</strong>, <strong>comment y accéder</strong> (bouton <em>et</em> raccourci clavier), et <strong>ce qu'elle
+donne</strong>.</p>
+<table><thead><tr><th></th><th></th></tr></thead><tbody><tr><td><strong>Application</strong></td><td>Orbit — Windows, macOS, Linux</td></tr><tr><td><strong>Auteur</strong></td><td>Clarco RAHERINANDRASANA</td></tr><tr><td><strong>Ce document</strong></td><td>Guide utilisateur complet, en français</td></tr><tr><td><strong>Mise à jour</strong></td><td>Généré à partir du dépôt à chaque version</td></tr></tbody></table>
+<blockquote><p><strong>Conventions.</strong> Les touches sont écrites <code>Alt+K</code>. Sur macOS, le modificateur
+<strong>Alt</strong> devient généralement <strong>⌘</strong>. Les libellés, extensions et raccourcis
+peuvent évoluer : ceux affichés dans <strong>Réglages → Raccourcis</strong> font foi pour
+votre installation.</p></blockquote>
+<h2 id="1-decouvrir-orbit">1. Découvrir Orbit</h2>
+<p>Orbit est une application de bureau pour Windows, macOS et Linux. Elle ouvre vos
+services web dans des vues intégrées et les organise dans une barre latérale.
+Chaque profil peut regrouper ses propres applications, connexions, apparence et
+espace de travail.</p>
+<h3 id="ce-qu-orbit-rassemble">Ce qu’Orbit rassemble</h3>
+<ul><li>Applications web et liens personnels dans un espace configurable.</li><li>Profils et sessions isolées, avec partage de connexion facultatif au sein d’un profil (SSO).</li><li>Conteneurs pour utiliser plusieurs comptes d’un même service.</li><li>Écran partagé, espaces de travail, fenêtres détachées et dossiers d’apps.</li><li>Recherche, assistant IA, correcteur, coffre-fort et gestionnaire de téléchargements.</li><li>Extensions optionnelles, dont Text Snippets, Fake Data Filler et Web Clipper.</li><li>Orbit Phone en extension optionnelle pour piloter un appareil Android compatible.</li></ul>
+<p>Orbit ne remplace pas les services web que vous ajoutez : leur disponibilité, les
+connexions et leurs règles de confidentialité restent celles de leurs éditeurs.</p>
+<h2 id="2-installer-et-lancer-orbit">2. Installer et lancer Orbit</h2>
+<p>Téléchargez la version publiée depuis la
+<a href="https://github.com/Clarco-Mada-digital/orbit/releases/latest">page des releases GitHub</a>.
+Choisissez le format correspondant au système :</p>
+<table><thead><tr><th>Système</th><th>Formats publiés</th></tr></thead><tbody><tr><td>Windows</td><td>Installateur <code>.exe</code> ou version portable <code>.exe</code></td></tr><tr><td>Linux</td><td><code>.AppImage</code> ou paquet Debian <code>.deb</code></td></tr><tr><td>macOS</td><td>Image disque <code>.dmg</code> ou archive <code>.zip</code></td></tr></tbody></table>
+<p>L’application n’est pas signée pour toutes les plateformes. Windows
+SmartScreen ou macOS Gatekeeper peuvent afficher un avertissement d’éditeur non
+identifié. Vérifiez que le téléchargement vient bien de la release du dépôt
+officiel avant de décider de poursuivre.</p>
+<p>Au premier démarrage, l’écran de bienvenue permet d’ajouter une première app ou
+de commencer avec un espace vide. Installez vos applications via la boutique
+intégrée ou ajoutez une URL web.</p>
+<p><img src="images/orbit-bienvenue.png" alt="L’écran de bienvenue au premier démarrage d’Orbit" /></p>
+<h2 id="3-organiser-son-espace">3. Organiser son espace</h2>
+<h3 id="applications">Applications</h3>
+<ul><li>Utilisez <strong>+</strong> ou la boutique pour ajouter une app.</li><li>Ajoutez une URL personnelle si le service n’est pas dans le catalogue.</li><li>Réorganisez la liste par glisser-déposer ; créez des dossiers pour regrouper les apps.</li><li>Le clic droit sur une app donne accès aux actions telles que favori, veille, fenêtre détachée, déplacement de profil ou gestion de session.</li></ul>
+<h3 id="profils-et-sessions">Profils et sessions</h3>
+<p>Créez des profils séparés, par exemple Travail et Personnel. Par défaut, les
+sessions sont cloisonnées pour réduire les mélanges de comptes. L’option de
+partage de connexion d’un profil rapproche le comportement d’un navigateur :
+les apps du profil peuvent partager la session d’un même service. Les conteneurs
+servent à garder plusieurs comptes séparés lorsque c’est nécessaire.</p>
+<p>Avant de changer le mode de partage, lisez l’avertissement affiché dans Orbit :
+les apps peuvent être rechargées et certaines sessions nécessiter une nouvelle
+connexion.</p>
+<h3 id="espaces-fenetres-et-apparence">Espaces, fenêtres et apparence</h3>
+<ul><li>Placez plusieurs apps côte à côte dans l’écran partagé et enregistrez une disposition dans un espace de travail.</li><li>Détachez une app dans une fenêtre séparée lorsque vous souhaitez la déplacer sur un autre écran.</li><li>Personnalisez le thème, la couleur d’accent, les polices et les modules affichés dans les barres.</li><li>Chaque profil peut avoir ses réglages d’accueil et de fond distincts.</li></ul>
+<h3 id="espaces-de-travail">Espaces de travail</h3>
+<p>Un espace de travail mémorise <strong>le profil, l’application affichée et l’écran
+partagé</strong> du moment. Le bouton <strong>Espaces de travail</strong> de la barre du haut
+(icône en damier) les liste ; ils apparaissent aussi dans la palette <code>Alt+K</code>.</p>
+<table><thead><tr><th>Action</th><th>Où</th></tr></thead><tbody><tr><td>Enregistrer la disposition actuelle</td><td>Bouton <strong>Enregistrer la disposition actuelle</strong>, puis un nom</td></tr><tr><td>Rouvrir un espace</td><td>Clic sur son nom (barre du haut ou <code>Alt+K</code>)</td></tr><tr><td>Réenregistrer un espace sur la disposition actuelle</td><td>Icône disquette, au survol de la ligne</td></tr><tr><td>Supprimer</td><td>Icône corbeille, au survol de la ligne</td></tr></tbody></table>
+<p>Réenregistrer évite de supprimer puis recréer un espace quand on veut
+simplement l’ajuster — il garde son nom et sa place dans la liste.</p>
+<h2 id="4-recherche-et-raccourcis-utiles">4. Recherche et raccourcis utiles</h2>
+<p>Sur Windows et Linux, les raccourcis Orbit utilisent généralement <strong>Alt</strong>. Sur
+macOS, le modificateur équivalent est généralement <strong>⌘</strong>. Les apps web conservent
+leurs raccourcis propres.</p>
+<table><thead><tr><th>Raccourci</th><th>Action</th></tr></thead><tbody><tr><td><code>Alt/⌘ + K</code></td><td>Recherche et palette de commandes</td></tr><tr><td><code>Alt/⌘ + ,</code></td><td>Réglages</td></tr><tr><td><code>Alt/⌘ + Maj + O</code></td><td>Boutique d’applications</td></tr><tr><td><code>Alt/⌘ + Maj + P</code></td><td>Gestion des profils</td></tr><tr><td><code>Alt/⌘ + L</code></td><td>Modifier l’URL de la page active</td></tr><tr><td><code>Alt/⌘ + Page ↓ / Page ↑</code></td><td>App suivante / précédente</td></tr><tr><td><code>Alt/⌘ + Maj + Page ↓ / Page ↑</code></td><td>Profil suivant / précédent</td></tr><tr><td><code>Ctrl + F</code> ou <code>⌘ + F</code></td><td>Rechercher dans la page</td></tr><tr><td><code>Ctrl + R</code> ou <code>⌘ + R</code></td><td>Recharger l’app active</td></tr><tr><td><code>Alt/⌘ + Maj + E</code></td><td>Relire le champ actif hors ligne</td></tr><tr><td><code>Alt/⌘ + Maj + I</code></td><td>Ouvrir la relecture IA du texte actif</td></tr><tr><td><code>Alt/⌘ + Maj + A</code></td><td>Ouvrir la discussion IA</td></tr></tbody></table>
+<p>Les raccourcis IA peuvent être configurés. La liste à jour et les réglages
+personnalisés se trouvent dans Orbit.</p>
+<h3 id="ce-que-la-palette-sait-faire">Ce que la palette sait faire</h3>
+<p><code>Alt/⌘ + K</code> ne cherche pas que des apps. Elle calcule (<code>4*4</code>, <code>20% de 150</code>),
+convertit (<code>10 km en mi</code>, <code>255 in hex</code>), ouvre une adresse, retrouve une page
+<strong>déjà visitée</strong> et, si un trousseau est déverrouillé, <strong>copie un mot de passe</strong>
+ou un code à usage unique sans passer par les réglages. Le mot de passe ne
+transite pas par l’interface : Orbit l’écrit lui-même dans le presse-papiers et
+le vide après 30 secondes. Les identifiants n’apparaissent qu’à partir de deux
+caractères saisis — jamais à l’ouverture de la palette.</p>
+<h3 id="historique-de-navigation">Historique de navigation</h3>
+<p>Les pages visitées alimentent cette recherche. Pour l’effacer :</p>
+<ul><li>dans la palette, le bouton 🗑 d’une page (ou <code>Maj + Suppr</code>) l’oublie seule ;</li><li>les commandes <strong>« oublier la dernière heure »</strong> et <strong>« vider tout l’historique »</strong> s’y trouvent aussi, avec une confirmation ;</li><li><strong>Réglages → Confidentialité → Historique de navigation</strong> indique ce qui est mémorisé, permet d’arrêter l’enregistrement et de vider par période.</li></ul>
+<p>Les pages de connexion et les adresses porteuses de jetons ne sont jamais
+enregistrées, et l’historique ne quitte pas la machine : il n’entre pas dans la
+synchronisation.</p>
+<h3 id="choisir-ce-que-la-palette-cherche">Choisir ce que la palette cherche</h3>
+<p><strong>Réglages → Général → Recherche (Alt+K)</strong> active ou coupe séparément chaque
+source : pages déjà visitées, pages ouvertes en ce moment, identifiants des
+trousseaux déverrouillés et code à usage unique. Les apps, profils, actions,
+calculs et conversions restent toujours disponibles.</p>
+<h2 id="5-assistant-ia-et-relecture">5. Assistant IA et relecture</h2>
+<p>Orbit propose un assistant de discussion, des outils de résumé et de rédaction,
+ainsi qu’une relecture. Le mode local facultatif télécharge un modèle sur
+l’appareil ; il peut demander de l’espace disque, de la mémoire et un matériel
+compatible.</p>
+<p>Des fournisseurs distants peuvent aussi être configurés. La connexion à ces
+services et le traitement des textes dépendent du fournisseur. Lisez la
+confirmation présentée par Orbit avant d’envoyer du contenu. Les clés API
+configurées sont protégées par le stockage sécurisé du système lorsqu’il est
+disponible.</p>
+<p>Le correcteur rapide fonctionne localement. Un moteur grammatical LanguageTool
+local peut être installé en option ; il nécessite Java 17 ou plus récent et un
+téléchargement initial conséquent. Les règles rapides restent disponibles si le
+moteur complet n’est pas installé.</p>
+<h2 id="6-coffre-fort-de-mots-de-passe">6. Coffre-fort de mots de passe</h2>
+<p>Le coffre-fort intégré stocke les identifiants dans des trousseaux protégés par
+un mot de passe maître. Déverrouillez uniquement lorsque vous souhaitez
+consulter ou utiliser les entrées. Les fonctions de santé du coffre peuvent
+signaler les mots de passe faibles ou réutilisés et, si vous l’activez, vérifier
+les mots de passe compromis à travers un service externe.</p>
+<p>Lors de cette vérification facultative, Orbit calcule localement une empreinte
+SHA-1 et n’envoie que les cinq premiers caractères au service Have I Been
+Pwned ; le service voit néanmoins l’adresse IP et l’heure de la requête.
+Consultez les explications affichées dans les réglages de santé avant de
+l’activer.</p>
+<h3 id="rapatrier-une-base-keepassxc">Rapatrier une base KeePassXC</h3>
+<p>Si vous utilisez KeePassXC, le bouton <strong>🗄 Rapatrier la base KeePassXC</strong> de la
+barre d’outils du trousseau recopie ses identifiants dans le trousseau Orbit
+ouvert. KeePassXC doit tourner, sa base être déverrouillée, Orbit être associé
+(Réglages → KeePassXC) et l’option <strong>« Allow limited access to all entries in
+connected databases »</strong> être cochée dans KeePassXC → Paramètres → Intégration
+navigateur → Avancé.</p>
+<p>Les entrées déjà présentes ne sont pas dupliquées : Orbit les reconnaît par
+domaine et nom d’utilisateur, puis vous demande s’il faut les fusionner
+(compléter les champs vides) ou les écraser. Les entrées KeePassXC <strong>sans URL</strong>
+ne peuvent pas être récupérées — le protocole ne rend les mots de passe que site
+par site ; Orbit en donne la liste à la fin pour que vous les repreniez à la
+main.</p>
+<h3 id="deverrouillage-et-code-2fa">Déverrouillage et code 2FA</h3>
+<p>Au déverrouillage, une case permet de <strong>mémoriser le mot de passe maître sur
+cet appareil</strong>. Il est alors gardé par le trousseau du système, jamais en clair
+sur le disque — mais quiconque ouvre une session sous votre compte pourra
+ouvrir ce trousseau sans le connaître. C’est à vous de juger ; l’option est
+désactivée par défaut, par trousseau, et s’oublie d’elle-même si vous changez
+le mot de passe maître.</p>
+<p>Pour les comptes à double facteur, un bouton <strong>⏱ Code 2FA</strong> apparaît dans la
+page après un remplissage : il remplit le champ de code, ou le copie si le
+champ n’existe pas encore. Il se coupe dans <strong>Réglages → Mots de passe</strong>, avec
+le choix des sources d’identifiants.</p>
+<h3 id="sauvegarde-automatique">Sauvegarde automatique</h3>
+<p><strong>Réglages → Mots de passe → Sauvegarde automatique chiffrée</strong> écrit à
+intervalle régulier une archive <code>.orbitvault</code> dans le dossier de votre choix,
+en ne conservant que les N dernières. Deux points à connaître :</p>
+<ul><li>la <strong>phrase de passe</strong> des archives est gardée par le trousseau du système. Notez-la ailleurs : sans elle, les archives sont illisibles, y compris pour vous ;</li><li>seuls les <strong>trousseaux déverrouillés</strong> peuvent être archivés — Orbit n’a pas la clé des autres. L’écran indique lesquels ont été laissés de côté.</li></ul>
+<p>Préférez un support différent de celui d’Orbit : une sauvegarde sur le même
+disque ne protège pas d’une panne de ce disque.</p>
+<h3 id="sauvegarder-et-exporter-a-la-main">Sauvegarder et exporter à la main</h3>
+<p>Le bouton <strong>Exporter</strong> propose deux choses différentes :</p>
+<ul><li><strong>Sauvegarde chiffrée</strong> (recommandé) : un fichier <code>.orbitvault</code> chiffré en AES-256-GCM, dont la clé est dérivée par scrypt de la phrase de passe que vous choisissez (à défaut, le mot de passe maître). C’est le format à poser sur une clé USB ou un cloud : il conserve tout le trousseau (catégories, URLs secondaires, favoris, historique des mots de passe) et se restaure dans Orbit avec le bouton <strong>🗃 Restaurer une archive chiffrée</strong>.</li><li><strong>Export en clair CSV / JSON</strong> : réservé à une migration vers un autre gestionnaire. Ces fichiers contiennent tous vos mots de passe lisibles ; supprimez-les dès la migration terminée.</li></ul>
+<p>Dans les deux cas, l’export exige de resaisir le mot de passe maître — un écran
+laissé sans surveillance ne doit pas pouvoir sortir les secrets d’un clic.</p>
+<h2 id="7-captures-d-ecran-annotation-et-enregistrement">7. Captures d’écran, annotation et enregistrement</h2>
+<h3 id="prendre-une-capture">Prendre une capture</h3>
+<p><code>Alt+Maj+S</code> ouvre le menu de capture. Quatre voies, parce que la question posée
+est la même — « je veux montrer ce que j’ai à l’écran » — et qu’on ne sait pas
+toujours d’avance si une image suffira :</p>
+<table><thead><tr><th>Touche</th><th>Voie</th></tr></thead><tbody><tr><td><code>1</code></td><td>Zone visible de la page</td></tr><tr><td><code>2</code></td><td>Page entière, défilement compris</td></tr><tr><td><code>3</code></td><td>Choisir une zone à la souris</td></tr><tr><td><code>4</code></td><td>Enregistrer une vidéo (studio)</td></tr></tbody></table>
+<p>Un <strong>délai</strong> réglable (0 à 10 s) laisse le temps de préparer l’écran ; <code>Échap</code>
+annule le compte à rebours.</p>
+<h3 id="annoter-la-capture-avant-de-l-enregistrer">Annoter la capture avant de l’enregistrer</h3>
+<p>L’aperçu qui suit la capture n’est pas qu’un aperçu : c’est un éditeur. Tout est
+dessiné <strong>dans l’image</strong>, donc « Enregistrer » et « Copier » rendent exactement
+ce qui est affiché. Une capture à laquelle on n’a pas touché part telle quelle,
+sans ré-encodage.</p>
+<table><thead><tr><th>Outil</th><th>À quoi il sert</th></tr></thead><tbody><tr><td><strong>Flèche</strong></td><td>Désigner un élément précis</td></tr><tr><td><strong>Rectangle</strong>, <strong>Ellipse</strong></td><td>Entourer une zone</td></tr><tr><td><strong>Dessin libre</strong> (stylo)</td><td>Tracer à main levée</td></tr><tr><td><strong>Surligneur</strong></td><td>Attirer l’œil sans masquer ce qui est dessous</td></tr><tr><td><strong>Texte</strong></td><td>Écrire sur l’image (<code>Entrée</code> valide, <code>Maj+Entrée</code> passe à la ligne)</td></tr><tr><td><strong>Étape numérotée</strong></td><td>Poser des pastilles <strong>1</strong>, <strong>2</strong>, <strong>3</strong>…</td></tr><tr><td><strong>Masquer (pixelliser)</strong></td><td>Rendre une zone illisible</td></tr><tr><td><strong>Recadrer</strong></td><td>Ne garder qu’une partie de la capture</td></tr></tbody></table>
+<p><img src="images/orbit-editeur-annotation.png" alt="L’éditeur d’annotation : trois étapes numérotées (1, 2, 3), une flèche ambrée et une zone masquée par pixellisation, en bas à droite" /></p>
+<p>Quelques précisions utiles :</p>
+<ul><li><strong>Les étapes numérotées</strong> servent à documenter un parcours : chaque clic pose la pastille suivante, et la numérotation se fait toute seule. Si vous annulez la pastille 3, le clic suivant redonne un 3 — pas un 4. L’épaisseur choisie dans la barre d’outils commande la taille de la pastille, comme elle commande la taille du texte.</li><li><strong>Le masquage est une pixellisation en blocs</strong>, pas un flou : sur du texte, un flou se devine encore, des blocs non.</li><li><strong>Le recadrage ne déplace pas les annotations.</strong> Il change la zone regardée ; le bouton <strong>Tout l’écran</strong> revient à la capture entière sans rien perdre.</li><li>Les curseurs <strong>Luminosité</strong>, <strong>Contraste</strong> et <strong>Saturation</strong> (bouton <strong>Image</strong>) s’appliquent à l’enregistrement comme à l’aperçu.</li><li><strong>Annuler</strong> retire la dernière annotation, <strong>Tout effacer</strong> remet la capture dans son état d’origine, réglages compris.</li></ul>
+<h3 id="masquer-les-donnees-sensibles-en-un-clic">Masquer les données sensibles en un clic</h3>
+<p>Partager une capture, c’est parfois partager ce qu’on n’avait pas vu. Orbit
+repère <strong>dans la page</strong>, avant la capture, les adresses <strong>e-mail</strong>, les
+<strong>IBAN</strong>, les numéros de <strong>carte</strong> bancaire et de <strong>téléphone</strong> — c’est le seul
+moment où le texte est encore du texte, avec ses coordonnées.</p>
+<p>Si quelque chose est trouvé, un bouton ambré <strong>« Masquer N donnée(s)
+sensible(s) »</strong> apparaît dans la barre d’outils. Orbit propose, vous décidez :
+chaque zone devient un masque ordinaire, que vous pouvez annuler un par un.</p>
+<p>Les numéros de carte sont vérifiés par la clé de Luhn et les IBAN par le
+modulo 97, pour ne pas masquer une référence de commande qui leur ressemble. Le
+repérage concerne les captures « zone visible » et « page entière ».</p>
+<h3 id="epingler-une-capture">Épingler une capture</h3>
+<p>Le bouton <strong>Épingler</strong> place la capture — annotée ou non — dans une petite
+fenêtre flottante <strong>toujours visible</strong>, pour la garder sous les yeux pendant
+qu’on travaille. Elle se déplace en la saisissant n’importe où, se
+redimensionne en conservant ses proportions, et plusieurs épinglages se décalent
+en cascade.</p>
+<p>Au survol, une barre apparaît : <strong>opacité</strong> (quatre niveaux, pour lire à
+travers), <strong>copier</strong>, <strong>enregistrer</strong>, <strong>fermer</strong>. Au clavier : <code>Ctrl+C</code>,
+<code>Ctrl+S</code>, <code>O</code> pour l’opacité, <code>Échap</code> pour fermer.</p>
+<h3 id="enregistrer-une-video-studio">Enregistrer une vidéo (studio)</h3>
+<p>Le studio filme un écran ou une fenêtre, avec ou sans caméra, et le met en
+scène : fond uni ou dégradé, marge, coins arrondis, ombre portée. Tout est
+composé sur un canvas, et c’est ce canvas qui est enregistré — <strong>l’aperçu est
+la vidéo</strong>.</p>
+<p><img src="images/orbit-studio.png" alt="Le studio d’enregistrement : choix de la source, caméra et micro, définition, cadence, mise en scène — et les raccourcis rappelés sous l’aperçu" /></p>
+<p>Pendant la prise, ces touches évitent de rouvrir le panneau et de sortir du
+cadre :</p>
+<table><thead><tr><th>Touche</th><th>Effet</th></tr></thead><tbody><tr><td><code>1</code>–<code>5</code></td><td>Aller directement à une <strong>disposition</strong></td></tr><tr><td><code>Maj</code>+<code>1</code>–<code>8</code></td><td>Aller directement à un <strong>fond</strong></td></tr><tr><td><code>↑</code> <code>↓</code> <code>←</code> <code>→</code></td><td>Placer la caméra, un axe à la fois</td></tr><tr><td><code>F</code></td><td>Faire défiler les <strong>fonds</strong></td></tr><tr><td><code>D</code></td><td>Faire défiler les <strong>dispositions</strong></td></tr><tr><td><code>C</code></td><td>Changer le <strong>coin</strong> de la caméra</td></tr><tr><td><code>Z</code></td><td><strong>Zoom</strong> qui suit le pointeur</td></tr><tr><td><code>H</code></td><td><strong>Halo</strong> du curseur</td></tr><tr><td><code>M</code></td><td>Effet <strong>miroir</strong> de la caméra</td></tr><tr><td><code>A</code></td><td><strong>Annoter l’écran</strong> (voir ci-dessous)</td></tr><tr><td><code>P</code></td><td><strong>Pause</strong> / reprise</td></tr><tr><td><code>S</code></td><td><strong>Arrêt</strong></td></tr><tr><td><code>R</code></td><td><strong>Réduire</strong> le studio en une barre</td></tr></tbody></table>
+<p>« Réduire » est ce qui permet de filmer Orbit lui-même : il ne reste qu’un
+chronomètre, la pause, l’arrêt et l’annotation. La cadence <strong>réellement tenue</strong>
+est affichée pendant l’enregistrement — une vidéo saccadée se découvrirait
+sinon à la relecture.</p>
+<h3 id="annoter-l-ecran-pendant-une-demonstration">Annoter l’écran pendant une démonstration</h3>
+<p>La touche <code>A</code> (ou le bouton <strong>Annoter l’écran</strong>) ouvre une couche de dessin
+<strong>par-dessus tout l’écran</strong>, pas seulement par-dessus Orbit. C’est une vraie
+fenêtre : un enregistrement ou une capture la reprennent telle quelle.</p>
+<p>Dans sa palette : <strong>pointeur laser</strong> (avec traîne), <strong>stylo</strong>, <strong>surligneur</strong>,
+<strong>flèche</strong>, <strong>rectangle</strong>, <strong>ellipse</strong>, six couleurs, trois épaisseurs,
+<strong>annuler</strong> (<code>Ctrl+Z</code>) et <strong>tout effacer</strong>. La palette se déplace par sa poignée
+<code>⠿</code>.</p>
+<p><img src="images/orbit-palette-annotation.png" alt="La palette d’annotation d’écran, avec son bandeau d’avertissement quand un outil de dessin est actif" /></p>
+<p>Le <strong>mode pointeur</strong> (➤) est la clé : la couche devient traversante, vos clics
+vont aux applications qui sont dessous et les tracés restent affichés par-dessus.
+<code>Échap</code> revient au pointeur, un second <code>Échap</code> ferme la couche.</p>
+<h2 id="8-telechargements-et-extensions">8. Téléchargements et extensions</h2>
+<h3 id="gestionnaire-de-telechargements">Gestionnaire de téléchargements</h3>
+<p>La page <strong>Téléchargements</strong> rassemble les fichiers, l’historique, les
+téléchargements de médias pris en charge et les réglages de destination. Vous
+pouvez choisir un dossier permanent ou demander un emplacement à chaque
+téléchargement. Les liens magnet sont transmis au client torrent associé par le
+système ; Orbit n’est pas lui-même un client torrent.</p>
+<p>La disponibilité du téléchargement de vidéos/audio dépend des outils et des
+conditions du site source. Respectez les droits d’auteur, les conditions
+d’utilisation et les lois applicables.</p>
+<h3 id="installer-une-extension-orbit">Installer une extension Orbit</h3>
+<p>Ouvrez <strong>Réglages → Extensions</strong>. Les extensions distribuées séparément peuvent
+être installées depuis leur archive ZIP. Une extension n’est activée qu’après
+installation et activation. Les extensions du Chrome Web Store ne sont pas
+toutes compatibles avec Electron.</p>
+<p>Les extensions livrées avec Orbit sont <strong>inertes tant qu’elles ne sont pas
+installées</strong> : ni leur code ni leurs fonctionnalités ne sont chargés. Quand une
+version plus récente est livrée avec une mise à jour d’Orbit, le bouton
+<strong>Mettre à jour</strong> apparaît en face de l’extension, avec la version installée.</p>
+<ul><li><strong>Text Snippets</strong> : remplace les abréviations configurées (par défaut, par exemple <code>;email</code>) par leur texte complet dans les champs compatibles. La conversion se produit au fil de la saisie.</li><li><strong>Fake Data Filler (Orbit)</strong> : 🎲 ou <code>Alt+F</code> remplit le champ focalisé ; <code>Alt+Maj+F</code> remplit les champs visibles du formulaire actif. Les champs de connexion sont ignorés. Les valeurs sont générées localement ; les champs personnalisés se règlent dans Extensions.</li><li><strong>Web Clipper</strong> : conserve localement une sélection ou le contenu principal d’une page, puis permet de rechercher et d’exporter les captures en Markdown.</li><li><strong>Souris &amp; Défilement</strong> : défilement <strong>lissé</strong> et réglable (souplesse, pixels par cran, vitesse, sens inversé, <code>Maj</code>+molette pour l’axe horizontal, défilement rapide avec <code>Alt</code>), <strong>défilement automatique</strong> au clic du milieu maintenu, et une <strong>palette de présentation</strong> (<code>Alt+Maj+D</code>) : pointeur laser, stylo, surligneur, flèche, rectangle, ellipse, couleurs, épaisseurs, spot lumineux, halo de clic, curseur mis en évidence. Le pavé tactile est laissé tranquille (il défile déjà en continu) et les applications qui pilotent la molette elles-mêmes — cartes, Figma, éditeurs de code — ne sont jamais touchées. Une règle par site permet de couper le lissage là où il gêne.</li><li><strong>Color Picker</strong> : pipette de couleur intégrée, bouton flottant 🎨 ou <code>Alt+C</code>.</li><li><strong>QR Code Generator</strong> : QR code de la page ou d’un texte, <code>Alt+Q</code>. Entièrement local, aucune requête réseau.</li><li><strong>Sticky Notes</strong> : un bloc-notes attaché au domaine courant (<code>Alt+N</code>), qui se rouvre à chaque visite du site.</li><li><strong>Page to Markdown</strong> : convertit la page en Markdown et la télécharge (<code>Alt+M</code>, ou le menu contextuel).</li><li><strong>Téléphone Orbit</strong> : extension optionnelle pour piloter un Android compatible. Voir la section suivante.</li></ul>
+<h3 id="telephone-orbit">Téléphone Orbit</h3>
+<p>Une fois l’extension <strong>Téléphone Orbit</strong> installée, un bouton <strong>Téléphone</strong>
+apparaît dans la barre du haut, avec le nombre de notifications du mobile.
+Branchez l’appareil en USB avec le <strong>débogage USB</strong> activé (ou en sans-fil,
+Android 11+), puis installez le moteur scrcpy embarqué depuis le panneau :
+Orbit le télécharge dans ses propres données, sans toucher au système.</p>
+<p>L’accueil du Téléphone se compose de <strong>widgets</strong> que l’on ajoute ou retire
+(bouton <strong>Ajouter un widget</strong>) :</p>
+<table><thead><tr><th>Widget</th><th>Ce qu’il montre</th></tr></thead><tbody><tr><td><strong>Horloge</strong></td><td>Heure et date de l’appareil</td></tr><tr><td><strong>Appareil et batterie</strong></td><td>Modèle, charge, état de la connexion</td></tr><tr><td><strong>Applications favorites</strong></td><td>Les apps épinglées en tête</td></tr><tr><td><strong>Applications récentes</strong></td><td>Les dernières ouvertes depuis Orbit</td></tr><tr><td><strong>Notifications</strong></td><td>Les alertes du mobile, avec « Tout effacer »</td></tr><tr><td><strong>Contrôles rapides</strong></td><td>Volume, Wi-Fi, Bluetooth, réglages Android, envoi de fichier</td></tr><tr><td><strong>Appels récents</strong></td><td>Le journal d’appels, avec rappel en un clic</td></tr></tbody></table>
+<p>Ce sont des widgets <strong>Orbit</strong> : les widgets Android publiés par des
+applications ne sont pas hébergés ici, cela demanderait un hôte de widgets natif
+sur Android.</p>
+<h4 id="appels">Appels</h4>
+<ul><li><strong>Appel entrant</strong> : un bandeau s’affiche au-dessus d’Orbit avec <strong>Décrocher</strong> et <strong>Refuser</strong>. Il dit <strong>qui</strong> appelle — beaucoup de téléphones titrent seulement « Appel entrant » et laissent l’identité ailleurs, alors Orbit lit les autres champs de la notification, interroge la radio au besoin, puis cherche le nom dans <strong>vos contacts</strong>. Si rien n’est transmis (numéro masqué, appel d’une application qui ne dit rien), il l’annonce franchement au lieu d’afficher un libellé qui ne nomme personne. Le bandeau indique aussi depuis combien de temps ça sonne.</li><li><strong>Appels récents</strong> : le journal du mobile, appels manqués en évidence, avec la durée et l’horodatage. <strong>Rappeler</strong> lance l’appel depuis le téléphone ; <strong>Préparer</strong> ouvre son clavier avec le numéro prêt, à confirmer sur l’appareil — un appel ne part jamais par surprise. Un numéro masqué est signalé comme tel.</li></ul>
+<p><img src="images/phone-preparer.png" alt="« Préparer » ouvre le clavier du téléphone avec le numéro déjà saisi : rien n’est composé tant que vous n’avez pas appuyé sur le bouton vert" /></p>
+<h4 id="applications-et-fichiers">Applications et fichiers</h4>
+<ul><li>Chaque application s’ouvre dans <strong>sa propre fenêtre de bureau</strong> (scrcpy 3.0+, Android 11+). Le bouton <strong>Miroir</strong> reste une session séparée qui affiche l’écran physique.</li><li>Jusqu’à <strong>huit applications épinglées</strong> dans une barre flottante toujours accessible dans Orbit.</li><li><strong>Envoyer un fichier</strong> (contrôles rapides) dépose un ou plusieurs fichiers dans les <strong>téléchargements</strong> du téléphone.</li></ul>
+<blockquote><p><strong>Répondre à un SMS depuis Orbit n’est pas possible</strong>, et ce n’est pas un
+oubli : l’action « Répondre » d’une notification Android est réservée à
+l’application qui l’a posée, et ADB ne peut pas la déclencher. De même, le
+presse-papiers partagé n’a pas d’équivalent ADB sur Android récent — dans une
+fenêtre miroir, scrcpy le synchronise déjà dans les deux sens.</p></blockquote>
+<h3 id="visionneuse-de-documents">Visionneuse de documents</h3>
+<p>Un fichier <code>.md</code>, <code>.txt</code>, <code>.json</code>, <code>.csv</code> ou un fichier de code ouvert dans
+Orbit s’affiche dans une visionneuse plutôt que d’être téléchargé. Pour le
+Markdown, le rendu couvre les titres (dièses ou soulignés), les listes et cases
+à cocher, les tableaux, le code, les citations et les <strong>alertes GitHub</strong>
+(<code>&gt; [!NOTE]</code>, <code>&gt; [!WARNING]</code>…), les <strong>formules mathématiques</strong> TeX (<code>$x^2$</code>,
+<code>$$…$$</code>, <code>\(…\)</code>, <code>\[…\]</code>), les <strong>notes de bas de page</strong> numérotées — cliquez le
+renvoi pour y aller, la flèche ↩ pour revenir — et les <strong>lecteurs audio et
+vidéo</strong>.</p>
+<p>Pour protéger votre lecture, ni les images ni les médias d’un document distant
+ne sont chargés d’office : un média s’ouvre au clic, une image reste une
+pastille qui mène au navigateur. Le bouton <strong>Source</strong> affiche le fichier brut.</p>
+<h2 id="9-confidentialite-et-securite">9. Confidentialité et sécurité</h2>
+<ul><li>Les profils et applications utilisent des sessions web isolées selon la configuration ; le SSO est facultatif.</li><li>Le stockage des cookies dans les versions empaquetées utilise le mécanisme de chiffrement d’Electron et le trousseau du système lorsqu’il est disponible.</li><li>Les données de l’assistant local et de la relecture rapide restent sur l’appareil. Les fonctions connectées envoient les données nécessaires au fournisseur choisi.</li><li>Fake Data et Text Snippets n’ont pas besoin de services externes pour fonctionner.</li><li>Les services web intégrés continuent de recevoir les données que vous saisissez directement sur leurs pages.</li></ul>
+<p>Protégez votre compte système, votre mot de passe maître et vos fichiers de
+sauvegarde. Le chiffrement local ne remplace pas une sauvegarde sécurisée.</p>
+<h2 id="10-depannage">10. Dépannage</h2>
+<p><strong>Une app reste blanche ou ne se connecte pas</strong></p>
+<p>Vérifiez votre connexion, rechargez la page, puis vérifiez que le service n’est
+pas en panne. Si une app a perdu sa session, reconnectez-vous. En dernier
+recours, utilisez les commandes de gestion de données de cette app en sachant
+qu’une suppression de cookies vous déconnectera.</p>
+<p><strong>Une extension ne réagit pas</strong></p>
+<p>Vérifiez qu’elle est installée et activée dans <strong>Réglages → Extensions</strong>. Après
+une modification d’extension, rechargez l’app web. Pour Text Snippets, vérifiez
+le déclencheur et l’abréviation dans ses options. Certaines pages, champs
+protégés et contenus fournis par des extensions tierces peuvent limiter
+l’injection.</p>
+<p><strong>L’assistant local ne démarre pas</strong></p>
+<p>Vérifiez le modèle installé, la mémoire disponible et la compatibilité GPU
+indiquée dans les réglages. Le fournisseur en ligne reste une option séparée.</p>
+<p><strong>LanguageTool ne démarre pas</strong></p>
+<p>Vérifiez que Java 17 ou plus récent est installé. Orbit indique la commande
+adaptée aux distributions prises en charge ; les règles rapides restent
+utilisables sans Java.</p>
+<p><strong>Où trouver les diagnostics et l’aide ?</strong></p>
+<p>Consultez <strong>Réglages → Diagnostic</strong> puis ouvrez une
+<a href="https://github.com/Clarco-Mada-digital/orbit/issues">discussion GitHub</a> en
+fournissant le système, la version d’Orbit et les étapes reproductibles. Ne
+joignez pas de mots de passe, cookies ou données privées.</p>
+<h2 id="11-liens-utiles">11. Liens utiles</h2>
+<ul><li><a href="https://github.com/Clarco-Mada-digital/orbit/releases/latest">Télécharger Orbit</a></li><li><a href="https://github.com/Clarco-Mada-digital/orbit">Code source</a></li><li><a href="./guide-utilisateur.pdf">Guide PDF</a></li><li><a href="./guide-developpeur.md">Guide développeur</a></li><li><a href="./index.html">Page de présentation</a></li></ul>
+<hr />
+<p><strong>Orbit</strong> · Développé par <strong>Clarco RAHERINANDRASANA</strong> · Licence MIT.</p>
+<p class="built">Orbit 1.17.3 · Clarco RAHERINANDRASANA · document généré le 2026-11-05 à partir de
+<code>docs/guide-utilisateur.md</code> (<code>npm run docs</code>).</p>
+</main>
+</body>
 </html>

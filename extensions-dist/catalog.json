@@ -18,12 +18,20 @@
       "size": 27119
     },
     {
+      "file": "mouse-scroll.zip",
+      "name": "Souris & Défilement",
+      "version": "1.1.0",
+      "description": "Défilement lissé et réglable (vitesse, sens, par site), défilement automatique au clic du milieu, et une palette de présentation (Alt+Maj+D) : pointeur laser, stylo, surligneur, flèche, couleurs, épaisseurs, spot lumineux, halo de clic. 100% local, configurable (⚙️).",
+      "nativeApp": null,
+      "size": 29727
+    },
+    {
       "file": "orbit-phone.zip",
       "name": "Téléphone Orbit",
       "version": "1.4.0",
       "description": "Ajoute le Téléphone à Orbit : fenêtres de bureau indépendantes pour les applications Android, miroir séparé, notifications du mobile et pilotage via adb/scrcpy.",
       "nativeApp": "phone",
-      "size": 10762
+      "size": 11826
     },
     {
       "file": "page-to-markdown.zip",

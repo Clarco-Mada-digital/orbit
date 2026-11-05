@@ -9,6 +9,8 @@ electron/extensions/*
 !electron/extensions/text-snippets/**
 !electron/extensions/web-clipper/
 !electron/extensions/web-clipper/**
+!electron/extensions/mouse-scroll/
+!electron/extensions/mouse-scroll/**
 extensions-src/*
 
 # Extensions distribuables (ZIPs) — dossier dédié, suivi en git

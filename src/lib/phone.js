@@ -217,6 +217,7 @@ export const DEFAULT_PHONE_SETTINGS = {
     recent: true,
     notifications: true,
     quickControls: true,
+    calls: true,
   },
   // Alerte système à chaque nouvelle notification du téléphone.
   desktopNotifications: true,
@@ -426,6 +427,17 @@ export function parseAndroidNotifications(dump) {
     const clean = (m) => (m ? m[1].replace(/\s+/g, ' ').trim() : '');
     const t = clean(title) || clean(titleBig);
     const b = clean(text);
+    // Champs secondaires : sur un appel, le nom de l'appelant n'est pas
+    // toujours dans le titre (beaucoup de dialers y mettent « Appel entrant »).
+    const extras = {
+      bigText: clean(/android\.bigText=String \(([\s\S]*?)\)\n/.exec(scope)),
+      subText: clean(/android\.subText=String \(([\s\S]*?)\)\n/.exec(scope)),
+      conversationTitle: clean(/android\.conversationTitle=String \(([\s\S]*?)\)\n/.exec(scope)),
+      ticker: clean(/^\s+tickerText=([^\n]*)$/m.exec(scope)),
+      // Les tableaux d'extras se dument ligne par ligne (« [0] tel:+33… ») :
+      // c'est là que le numéro de l'appelant se trouve le plus souvent.
+      people: parseNotificationPeople(scope),
+    };
     if (!t && !b) continue;
     items.push({
       key: key ? key[1] : `${pkg[1]}-${items.length}`,
@@ -434,11 +446,293 @@ export function parseAndroidNotifications(dump) {
       text: b,
       when: when ? Number(when[1]) : null,
       category: category ? category[1].toLowerCase() : null,
+      ...Object.fromEntries(Object.entries(extras).filter(([, v]) => v && v.length)),
     });
   }
   // Les plus récentes d'abord ; celles sans horodatage ferment la marche.
   items.sort((a, b) => (b.when || 0) - (a.when || 0));
   return items;
+}
+
+// `android.people` / `android.people.list` sont des tableaux : le dump les
+// imprime en lignes indentées « [0] tel:+33612345678 » (ou une URI de contact).
+// On ne garde que les identités lisibles.
+export function parseNotificationPeople(scope) {
+  const people = [];
+  const section = /android\.people(?:\.list)?=[\w$.[\]]+(?: \([^)]*\))?\n((?:\s+\[\d+\][^\n]*\n)+)/.exec(
+    String(scope || '')
+  );
+  if (!section) return people;
+  for (const line of section[1].split('\n')) {
+    const value = /^\s+\[\d+\]\s*(.+?)\s*$/.exec(line);
+    if (!value || value[1] === 'null') continue;
+    people.push(value[1]);
+  }
+  return people;
+}
+
+// Libellés que les dialers posent en titre ET qui ne disent PAS qui appelle.
+// Les reconnaître est tout l'enjeu : sans ça, le toast d'Orbit affiche « Appel
+// entrant » là où l'utilisateur attend « Maman ».
+const GENERIC_CALL_LABELS = [
+  /^appels?( en cours| entrant| sortant| vid[ée]o| wi-?fi| vocal)?$/i,
+  /^(?:incoming|outgoing|ongoing|current|active|video|wi-?fi|voice|internet) call$/i,
+  /^call (?:in progress|ongoing)$/i,
+  /^appel (?:en cours|entrant|masqu[ée]|inconnu|wi-?fi)$/i,
+  /^(?:num[ée]ro|appelant) (?:inconnu|masqu[ée]|priv[ée])$/i,
+  /^(?:unknown|private|blocked|restricted)(?: (?:number|caller))?$/i,
+  /^(?:appel|call) (?:whatsapp|messenger|telegram|signal|teams|meet)$/i,
+  /^(?:appel vocal|appel vid[ée]o) (?:whatsapp|messenger|telegram|signal)$/i,
+  // Étiquettes de type de numéro, posées par les dialers à la place d'un nom.
+  /^(?:mobile|portable|domicile|bureau|travail|t[ée]l[ée]phone(?: fixe)?|fixe|principal|autre|home|work|main|other)$/i,
+  /^(?:via )?sim ?[12]?$/i,
+];
+
+export function isGenericCallLabel(value) {
+  const v = String(value || '').replace(/\s+/g, ' ').trim();
+  if (!v) return true;
+  return GENERIC_CALL_LABELS.some((pattern) => pattern.test(v));
+}
+
+export function looksLikePhoneNumber(value) {
+  const v = String(value || '').trim();
+  if (!v) return false;
+  return /^[+(]?[\d][\d\s().+-]{4,}$/.test(v) && (v.match(/\d/g) || []).length >= 5;
+}
+
+// Numéro porté par une URI d'extra (`tel:+33…`) ; `null` pour une URI de
+// contact, qu'on ne sait pas résoudre sans passer par le téléphone.
+export function telNumberOf(value) {
+  const match = /^tel:(.+)$/i.exec(String(value || '').trim());
+  if (!match) return null;
+  const number = decodeURIComponent(match[1]).replace(/\s+/g, '');
+  return number && /\d/.test(number) ? number : null;
+}
+
+// Qui appelle, et quoi afficher en dessous.
+//
+// Sources par ordre de confiance : le contact résolu par Orbit (`callerName`,
+// voir `resolveCallIdentity` dans electron/phone.js), puis les champs de la
+// notification en écartant les libellés génériques, puis le numéro, puis — en
+// dernier recours seulement — le nom de l'application.
+export function describeCallNotification(notification = {}, appName = '') {
+  const n = notification || {};
+  const people = Array.isArray(n.people) ? n.people : [];
+  const number =
+    n.callNumber ||
+    people.map(telNumberOf).find(Boolean) ||
+    [n.title, n.text, n.bigText, n.subText].find((value) => looksLikePhoneNumber(value)) ||
+    null;
+
+  const named = [n.callerName, n.conversationTitle, n.title, n.text, n.bigText, n.subText, n.ticker]
+    .map((value) => String(value || '').replace(/\s+/g, ' ').trim())
+    .find((value) => value && !isGenericCallLabel(value) && !looksLikePhoneNumber(value));
+
+  const app = String(appName || '').trim();
+  const who = named || (number ? number : app || n.package || 'Appelant inconnu');
+  const unknown = !named && !number;
+
+  // La ligne secondaire ne répète jamais la principale : elle ajoute ce que le
+  // titre ne dit pas (numéro de l'appelant, application qui sonne).
+  const detail = [named && number ? number : null, app && app !== who ? app : null]
+    .filter(Boolean)
+    .join(' · ');
+
+  return { who, number, detail, unknown, named: Boolean(named) };
+}
+
+// Recherche inverse dans les contacts du téléphone. `phone_lookup` est l'URI
+// faite pour ça : elle compare les numéros à la façon d'Android (indicatif,
+// espaces et séparateurs ignorés), là où un `LIKE` sur `data1` échouerait sur
+// « +33 6 12… » vs « 0612… ». Le shell adb possède READ_CONTACTS.
+export function contactLookupCommand(number) {
+  const value = String(number || '').replace(/[^\d+*#]/g, '');
+  if (!value) return null;
+  return `content query --uri content://com.android.contacts/phone_lookup/${encodeURIComponent(value)} --projection display_name`;
+}
+
+// Sortie de `content query` : « Row: 0 display_name=Maman » (ou « No result
+// found. »). On prend la première ligne exploitable.
+export function parseContactLookup(output) {
+  for (const line of String(output || '').split('\n')) {
+    const match = /^Row:\s*\d+\s+display_name=(.*)$/.exec(line.trim());
+    if (!match) continue;
+    const name = match[1].replace(/\s+/g, ' ').trim();
+    if (name && name !== 'NULL') return name;
+  }
+  return null;
+}
+
+// Appel cellulaire en cours : le numéro vit dans `telephony.registry`. Dernier
+// recours quand la notification ne porte aucune identité (et sans objet pour un
+// appel WhatsApp ou Telegram, qui ne passe pas par la radio).
+export function parseIncomingCallNumber(dump) {
+  const match = /mCallIncomingNumber=([^\s,}]+)/.exec(String(dump || ''));
+  const value = match ? match[1].trim() : '';
+  if (!value || value === 'null' || !/\d/.test(value)) return null;
+  return value;
+}
+
+// ---------------------------------------------------------------------------
+// Journal d'appels (`content://call_log/calls`).
+//
+// Le pendant naturel de l'identification d'appelant : savoir qui a appelé
+// pendant qu'on n'était pas là, et pouvoir rappeler sans chercher le téléphone.
+// Le shell ADB possède READ_CALL_LOG, donc aucune application compagnon n'est
+// nécessaire.
+// ---------------------------------------------------------------------------
+
+// Types d'entrée du journal, tels qu'Android les numérote
+// (`CallLog.Calls.TYPE`).
+export const CALL_LOG_TYPES = {
+  1: 'incoming',
+  2: 'outgoing',
+  3: 'missed',
+  4: 'voicemail',
+  5: 'rejected',
+  6: 'blocked',
+};
+
+export const MAX_CALL_LOG_ENTRIES = 50;
+
+export function callLogCommand(limit = 15) {
+  // `Number(limit) || 15` aurait fait de `0` un 15 : une limite explicitement
+  // nulle doit descendre au plancher, pas remonter au défaut.
+  const asked = Number(limit);
+  const count = Math.min(
+    MAX_CALL_LOG_ENTRIES,
+    Math.max(1, Number.isFinite(asked) ? Math.round(asked) : 15)
+  );
+  // `--sort` est passé tel quel comme clause ORDER BY : SQLite y accepte
+  // LIMIT, ce qui évite de rapatrier des milliers de lignes pour n'en lire
+  // que quinze.
+  return `content query --uri content://call_log/calls --projection number:name:date:duration:type --sort 'date DESC LIMIT ${count}'`;
+}
+
+// Sortie de `content query` : une ligne par appel,
+// « Row: 0 number=+33612345678, name=Maman, date=1700000000000, duration=42, type=3 ».
+//
+// Les valeurs peuvent contenir des virgules (« Durand, Alice ») : on ne coupe
+// donc PAS sur chaque virgule, mais seulement sur celles qui précèdent une
+// nouvelle clé connue.
+export function parseCallLog(output) {
+  const entries = [];
+  const keys = ['number', 'name', 'date', 'duration', 'type'];
+  const boundary = new RegExp(`,\\s+(?=(?:${keys.join('|')})=)`);
+  for (const raw of String(output || '').split('\n')) {
+    const line = raw.trim();
+    const row = /^Row:\s*\d+\s+(.*)$/.exec(line);
+    if (!row) continue;
+    const fields = {};
+    for (const part of row[1].split(boundary)) {
+      const pair = /^(\w+)=([\s\S]*)$/.exec(part.trim());
+      if (!pair) continue;
+      const value = pair[2].trim();
+      fields[pair[1]] = value === 'NULL' ? '' : value;
+    }
+    const number = String(fields.number || '').trim();
+    const at = Number(fields.date);
+    if (!number && !fields.name) continue;
+    entries.push({
+      number: number && number !== '-1' && number !== '-2' ? number : '',
+      name: String(fields.name || '').replace(/\s+/g, ' ').trim(),
+      at: Number.isFinite(at) && at > 0 ? at : null,
+      duration: Math.max(0, Number(fields.duration) || 0),
+      type: CALL_LOG_TYPES[Number(fields.type)] || 'unknown',
+    });
+  }
+  return entries;
+}
+
+// Ce qu'on affiche pour une entrée : qui, et quoi dire en dessous. Un numéro
+// masqué (« -1 » côté Android) n'est pas rappelable, et l'interface doit le
+// savoir plutôt que de proposer un bouton mort.
+export function describeCallLogEntry(entry = {}) {
+  const name = String(entry.name || '').trim();
+  const number = String(entry.number || '').trim();
+  const who = name || number || 'Appelant inconnu';
+  return {
+    who,
+    number,
+    callable: Boolean(number),
+    // Le numéro ne se répète pas sous un nom qu'il a servi à trouver.
+    detail: name && number ? number : '',
+    missed: entry.type === 'missed' || entry.type === 'rejected' || entry.type === 'blocked',
+    type: entry.type || 'unknown',
+  };
+}
+
+export function formatCallDuration(seconds) {
+  const total = Math.max(0, Math.round(Number(seconds) || 0));
+  if (!total) return '';
+  if (total < 60) return `${total} s`;
+  const minutes = Math.floor(total / 60);
+  if (minutes < 60) return `${minutes} min ${String(total % 60).padStart(2, '0')}`;
+  return `${Math.floor(minutes / 60)} h ${String(minutes % 60).padStart(2, '0')}`;
+}
+
+// Numéro sûr pour une URI `tel:`. Tout le reste est écarté : ce numéro part
+// sur la ligne de commande d'`adb shell`, un caractère non prévu n'y a rien à
+// faire. `null` plutôt qu'une chaîne vide, pour que l'appelant ne puisse pas
+// construire une commande sans numéro.
+export function sanitizePhoneNumber(value) {
+  const cleaned = String(value || '').replace(/[^\d+*#]/g, '');
+  if (!cleaned || !/\d/.test(cleaned) || cleaned.length > 24) return null;
+  // Un « + » n'a de sens qu'en tête.
+  return cleaned[0] + cleaned.slice(1).replace(/\+/g, '');
+}
+
+// Deux intentions bien différentes :
+//   • `dial` ouvre le clavier du téléphone, numéro pré-rempli — l'utilisateur
+//     confirme SUR l'appareil ;
+//   • `call` lance l'appel directement (le shell ADB a CALL_PHONE).
+// D'où un choix explicite côté interface, et jamais un appel par surprise.
+export function dialCommand(number, mode = 'dial') {
+  const safe = sanitizePhoneNumber(number);
+  if (!safe) return null;
+  const action = mode === 'call' ? 'android.intent.action.CALL' : 'android.intent.action.DIAL';
+  return `am start -a ${action} -d 'tel:${safe}'`;
+}
+
+// ---------------------------------------------------------------------------
+// Envoi d'un fichier vers le téléphone (`adb push`).
+// ---------------------------------------------------------------------------
+
+// Dossier de destination : celui des téléchargements du téléphone, que toutes
+// les applications Android savent parcourir.
+export const PHONE_PUSH_DIR = '/sdcard/Download';
+
+// Nom de fichier sûr côté Android. Le chemin distant part sur une ligne de
+// commande et sert de chemin de fichier : ni séparateur, ni remontée de
+// dossier, ni caractère de contrôle n'y ont leur place.
+export function phoneRemoteName(name) {
+  // Les caractères de contrôle sont écartés par leur POINT DE CODE, pas par une
+  // classe de regex : une regex de caractères de contrôle est refusée par le
+  // linter, et les écrire en clair dans la source rendrait ce fichier
+  // « binaire » pour grep et compagnie.
+  const printable = [...String(name || '')]
+    .filter((char) => {
+      const code = char.codePointAt(0);
+      return code > 0x1f && code !== 0x7f;
+    })
+    .join('');
+  const base = printable
+    .split(/[/\\]/)
+    .pop()
+    // Ce qui pourrait s'échapper des apostrophes du shell. Les espaces, eux,
+    // restent : le chemin distant est cité.
+    .replace(/["'`$\\]/g, '')
+    // Un nom commençant par un point se cacherait sur le téléphone, et « .. »
+    // n'est pas un nom de fichier.
+    .replace(/^\.+/, '')
+    .trim();
+  if (!base) return null;
+  return base.slice(0, 120);
+}
+
+export function phonePushTarget(name, dir = PHONE_PUSH_DIR) {
+  const safe = phoneRemoteName(name);
+  return safe ? `${dir}/${safe}` : null;
 }
 
 export function phoneCallKey(action) {

@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Camera, Clapperboard, Copy, Crop, Download, Expand, LoaderCircle, X } from 'lucide-react';
+import { Camera, Clapperboard, Copy, Crop, Download, Expand, LoaderCircle, Pin, X } from 'lucide-react';
 import { useT } from '../lib/i18n';
 import { getWebContentsIdFor } from '../lib/webviewRegistry';
 import { useStore } from '../stores/useStore';
+import ScreenshotEditor from './ScreenshotEditor';
 
 export default function ScreenshotPreview() {
   const t = useT();
@@ -17,6 +18,9 @@ export default function ScreenshotPreview() {
   const [delaySeconds, setDelaySeconds] = useState(0);
   const cancelCountdown = useRef(false);
   const chooserRef = useRef(null);
+  // L'éditeur rend l'image annotée ; `null` = capture intacte, on garde alors
+  // l'originale du processus principal (pas de ré-encodage).
+  const editorRef = useRef(null);
 
   const chooseCaptureMode = useCallback(async (mode, copyDirect) => {
     const wcId = captureSource === 'orbit' ? null : sourceWcId || getWebContentsIdFor(activeApp);
@@ -131,7 +135,10 @@ export default function ScreenshotPreview() {
     setBusy(true);
     setError('');
     try {
-      const result = await window.electronAPI?.screenshots?.copy?.(capture.id);
+      const result = await window.electronAPI?.screenshots?.copy?.(
+        capture.id,
+        editorRef.current?.toPngDataUrl?.() || null
+      );
       if (!result?.success) throw new Error(result?.error || t('cm.screenshotError'));
       setCapture(null);
     } catch (err) {
@@ -141,11 +148,34 @@ export default function ScreenshotPreview() {
       setBusy(false);
     }
   };
+  // Épingler : la capture (annotée telle quelle) part dans une fenêtre
+  // flottante et l'aperçu se ferme — c'est le geste « je garde ça sous les
+  // yeux pendant que je travaille ».
+  const pin = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      const result = await window.electronAPI?.screenshots?.pin?.(
+        capture.id,
+        editorRef.current?.toPngDataUrl?.() || null
+      );
+      if (!result?.success) throw new Error(result?.error || t('cm.screenshotError'));
+      setCapture(null);
+    } catch (err) {
+      console.error('[orbit] épinglage de la capture échoué:', err);
+      setError(t('cm.screenshotError'));
+    } finally {
+      setBusy(false);
+    }
+  };
   const save = async () => {
     setBusy(true);
     setError('');
     try {
-      const result = await window.electronAPI?.screenshots?.save?.(capture.id);
+      const result = await window.electronAPI?.screenshots?.save?.(
+        capture.id,
+        editorRef.current?.toPngDataUrl?.() || null
+      );
       if (result?.success) setCapture(null);
       else if (!result?.cancelled) throw new Error(result?.error || t('cm.screenshotError'));
     } catch (err) {
@@ -278,17 +308,20 @@ export default function ScreenshotPreview() {
             <X size={17} />
           </button>
         </header>
-        <div className="max-h-[70vh] overflow-auto bg-black/30 p-3">
-          <img
-            src={capture.dataUrl}
-            alt={t('cm.screenshotPreview')}
-            className="mx-auto h-auto max-h-[66vh] max-w-full rounded-lg object-contain shadow-xl"
-          />
-        </div>
+        <ScreenshotEditor
+          ref={editorRef}
+          dataUrl={capture.dataUrl}
+          alt={t('cm.screenshotPreview')}
+          sensitive={capture.sensitive}
+        />
         {error && <p role="alert" className="px-5 pt-3 text-sm text-error">{error}</p>}
         <footer className="flex flex-wrap justify-end gap-2 border-t border-border px-5 py-4">
           <button type="button" className="btn btn-ghost" onClick={close} disabled={busy}>
             {t('cm.cancelScreenshot')}
+          </button>
+          <button type="button" className="btn btn-ghost" onClick={pin} disabled={busy} title={t('cm.pinScreenshotHint')}>
+            <Pin size={15} />
+            {t('cm.pinScreenshot')}
           </button>
           <button type="button" className="btn btn-secondary" onClick={copy} disabled={busy}>
             <Copy size={15} />

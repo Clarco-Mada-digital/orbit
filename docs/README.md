@@ -26,7 +26,55 @@ La section de téléchargement récupère les fichiers de la dernière release a
 l’API publique GitHub ; les liens directs vers les releases restent disponibles
 si l’API ne répond pas.
 
-## Régénérer le PDF
+## Démarche : faire évoluer la documentation avec l'application
+
+Une documentation ne se périme pas d'un coup, mais fonctionnalité par
+fonctionnalité, en silence — parce qu'on a livré sans écrire la ligne qui va
+avec. D'où cette démarche, volontairement courte.
+
+### 1. Une seule source
+
+`guide-utilisateur.md` est la **seule** source. `guide-utilisateur.html` et
+`guide-utilisateur.pdf` en sont **dérivés** : ne les éditez jamais à la main,
+la prochaine génération écraserait la modification. (Avant, les trois vivaient
+leur vie séparément : trois vérités différentes selon le fichier ouvert.)
+
+### 2. Une commande
+
+```bash
+npm run docs        # Markdown → HTML → PDF
+npm run docs:html   # HTML seul, quand aucun Chromium n'est disponible
+```
+
+Le PDF passe par un Chrome/Chromium en mode « headless », détecté
+automatiquement (`CHROME_BIN=/chemin/vers/chrome npm run docs` pour l'imposer).
+S'il n'y en a pas, le HTML est quand même produit et le script le dit.
+
+### 3. Un garde-fou automatique
+
+`test/docs.test.js` confronte le guide aux **listes qui vivent dans le code** :
+outils d'annotation (`ANNOTATION_TOOLS`), raccourcis du studio (`STUDIO_KEYS`),
+widgets de l'accueil du Téléphone, types de données sensibles, extensions du
+catalogue. Ajouter un outil sans le documenter fait **échouer `npm test`**, en
+nommant ce qui manque.
+
+Il vérifie aussi que le HTML n'est pas en retard sur le Markdown : si la source
+a changé depuis la dernière génération, le site publié et le PDF montrent encore
+l'ancienne version.
+
+Ces tests ne jugent pas la prose — aucun test ne le peut. Ils garantissent
+seulement que **rien ne manque à l'appel**.
+
+### 4. Le réflexe, à chaque fonctionnalité livrée
+
+1. Écrire la section dans `guide-utilisateur.md` (à quoi ça sert, comment y
+   accéder — bouton **et** raccourci, ce que ça donne).
+2. Si la fonctionnalité apparaît dans une liste du code, ajouter son terme de
+   reconnaissance dans `test/docs.test.js`.
+3. `npm run docs`, puis committer les trois fichiers ensemble.
+4. Ajouter l'entrée correspondante au `CHANGELOG.md`.
+
+## Régénérer le PDF à la main (hors `npm run docs`)
 
 Le PDF est produit à partir de `guide-utilisateur.html` avec Google Chrome ou
 Chromium en mode headless. Depuis la racine du dépôt :

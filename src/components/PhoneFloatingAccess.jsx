@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Grip, Loader2, Phone, PhoneOff, Pin, X } from 'lucide-react';
+import { Grip, Loader2, Monitor, Phone, PhoneOff, Pin, User, X } from 'lucide-react';
 import { usePhoneStore } from '../lib/phoneStore';
-import { phoneCallKey } from '../lib/phone';
+import { describeCallNotification, phoneCallKey } from '../lib/phone';
 
 const api = () => window.electronAPI?.phone;
 const DOCK_POSITION_KEY = 'orbit.phone.pinned-dock-position.v1';
@@ -20,6 +20,22 @@ function readDockPosition() {
   return { x: 1, y: 1 };
 }
 
+// Pastille de l'appelant : ses initiales. Un numéro n'en a pas (on garde alors
+// l'icône de téléphone, plus lisible que « 06 »).
+function callerInitials(name) {
+  return String(name || '')
+    .split(/[\s'’-]+/)
+    .filter((word) => /\p{L}/u.test(word))
+    .slice(0, 2)
+    .map((word) => word[0].toUpperCase())
+    .join('');
+}
+
+function formatRinging(seconds) {
+  if (seconds < 60) return `${seconds} s`;
+  return `${Math.floor(seconds / 60)} min ${String(seconds % 60).padStart(2, '0')}`;
+}
+
 export default function PhoneFloatingAccess() {
   const incomingCall = usePhoneStore((state) => state.incomingCall);
   const notifications = usePhoneStore((state) => state.notifications);
@@ -28,6 +44,7 @@ export default function PhoneFloatingAccess() {
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const [expanded, setExpanded] = useState(false);
+  const [ring, setRing] = useState({ key: null, seconds: 0 });
   const [dockPosition, setDockPosition] = useState(readDockPosition);
   const [viewport, setViewport] = useState(() => ({
     width: window.innerWidth,
@@ -47,6 +64,32 @@ export default function PhoneFloatingAccess() {
     return counts;
   }, [apps, notifications]);
   const pinnedNotificationCount = [...notificationCounts.values()].reduce((total, count) => total + count, 0);
+
+  // Qui appelle : le processus principal a déjà résolu le contact quand il a
+  // pu ; l'inventaire local complète le nom de l'application qui sonne.
+  const caller = useMemo(() => {
+    const notification = incomingCall?.notification;
+    if (!notification) return null;
+    const appName =
+      notification.appName || apps.find((app) => app.package === notification.package)?.name || '';
+    return describeCallNotification(notification, appName);
+  }, [incomingCall, apps]);
+
+  // « Sonne depuis… » : un appel qui sonne depuis 40 s ne se décroche pas comme
+  // un appel qui vient d'arriver. La durée est datée de l'appel qui l'a
+  // produite : celle d'un appel précédent n'a pas à s'afficher une seconde sur
+  // le suivant.
+  useEffect(() => {
+    const key = incomingCall?.notification?.key;
+    if (!key) return undefined;
+    const startedAt = Number(incomingCall.notification?.when) || Date.now();
+    const timer = window.setInterval(() => {
+      setRing({ key, seconds: Math.max(0, Math.round((Date.now() - startedAt) / 1000)) });
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [incomingCall?.notification?.key]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const ringing = ring.key && ring.key === incomingCall?.notification?.key ? ring.seconds : 0;
 
   const maxLeft = Math.max(0, viewport.width - DOCK_SIZE);
   const maxTop = Math.max(0, viewport.height - DOCK_SIZE);
@@ -260,16 +303,33 @@ export default function PhoneFloatingAccess() {
           className="fixed right-4 top-4 z-[13000] w-[min(24rem,calc(100vw-2rem))] overflow-hidden rounded-2xl border border-white/15 bg-slate-950/85 text-white shadow-2xl shadow-black/30 backdrop-blur-2xl"
         >
           <div className="flex items-start gap-3 p-4">
-            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-emerald-400/15 text-emerald-200">
-              <Phone size={19} />
+            <span
+              aria-hidden="true"
+              className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-emerald-400/15 text-sm font-semibold text-emerald-200"
+            >
+              {caller?.unknown
+                ? <User size={19} />
+                : callerInitials(caller?.named ? caller.who : '') || <Phone size={19} />}
             </span>
             <div className="min-w-0 flex-1">
-              <p className="text-xs font-medium uppercase tracking-wide text-emerald-200/80">Appel entrant</p>
-              <p className="mt-1 truncate text-sm font-semibold">
-                {incomingCall.notification.title || incomingCall.notification.package}
+              <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-emerald-200/80">
+                Appel entrant
+                {ringing > 0 && ringing < 600 && (
+                  <span className="font-normal normal-case tracking-normal text-white/40">
+                    · sonne depuis {formatRinging(ringing)}
+                  </span>
+                )}
               </p>
-              {incomingCall.notification.text && (
-                <p className="mt-1 line-clamp-2 text-xs text-white/60">{incomingCall.notification.text}</p>
+              <p className="mt-1 truncate text-base font-semibold" title={caller?.who}>
+                {caller?.unknown ? 'Appelant inconnu' : caller?.who}
+              </p>
+              {caller?.detail && (
+                <p className="mt-0.5 truncate text-xs text-white/55">{caller.detail}</p>
+              )}
+              {caller?.unknown && (
+                <p className="mt-0.5 truncate text-xs text-white/40">
+                  Aucune identité transmise par {caller.who}
+                </p>
               )}
             </div>
             <button
@@ -300,6 +360,15 @@ export default function PhoneFloatingAccess() {
               <Phone size={16} /> Décrocher
             </button>
           </div>
+          {/* Dernier recours quand Orbit ne sait pas qui appelle (ou pour un
+              appel vidéo) : l'écran du téléphone, qui l'affiche toujours. */}
+          <button
+            type="button"
+            onClick={() => usePhoneStore.getState().requestOpen(incomingCall.notification.package)}
+            className="flex w-full items-center justify-center gap-1.5 border-t border-white/10 px-3 py-2 text-[11px] font-medium text-white/55 transition hover:bg-white/5 hover:text-white"
+          >
+            <Monitor size={13} /> Voir l’écran du téléphone
+          </button>
         </section>
       )}
       {apps.length > 0 && serial && (
