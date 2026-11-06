@@ -21,6 +21,9 @@ import {
   PenLine,
   Maximize2,
   RefreshCw,
+  Eye,
+  EyeOff,
+  GripVertical,
 } from 'lucide-react';
 import { useT } from '../lib/i18n';
 import { useStore } from '../stores/useStore';
@@ -100,6 +103,15 @@ export default function RecordingStudio({ onClose }) {
   // C'est ce qui permet de filmer Orbit lui-même — impossible tant que le
   // studio occupe tout l'écran.
   const [minimized, setMinimized] = useState(false);
+  // Position de la barre réduite, en pixels depuis le coin bas droit. Elle se
+  // déplace par sa poignée : posée d'office en bas à droite, elle masquait
+  // parfois justement ce qu'on voulait montrer.
+  const [barOffset, setBarOffset] = useState({ right: 20, bottom: 20 });
+  const barRef = useRef(null);
+  // Retour d'image dans la barre réduite, pour voir ce qui est filmé. Sous
+  // Linux, rien n'empêche la capture d'écran de reprendre une fenêtre : s'il
+  // est à l'écran, il est dans la vidéo — d'où la possibilité de le replier.
+  const previewRef = useRef(null);
   // Couche d'annotation de l'écran : une VRAIE fenêtre au-dessus de tout, donc
   // reprise telle quelle par la capture d'écran — le studio n'a rien à
   // composer, et elle sert aussi bien hors enregistrement.
@@ -114,12 +126,24 @@ export default function RecordingStudio({ onClose }) {
   useEffect(() => {
     toggleAnnotateRef.current = toggleAnnotate;
   }, [toggleAnnotate]);
+  // Tracés de la couche d'annotation, recomposés dans la vidéo : la capture
+  // d'écran ne reprend pas toujours une fenêtre transparente (cas courant sous
+  // Linux), et l'annotation manquait alors à l'enregistrement.
+  const annotationsRef = useRef(null);
   useEffect(() => {
-    const off = window.electronAPI?.screenshots?.onAnnotateState?.((state) => {
+    const offState = window.electronAPI?.screenshots?.onAnnotateState?.((state) => {
       setAnnotating(state?.open === true);
+      if (state?.open !== true) annotationsRef.current = null;
+    });
+    const offDraw = window.electronAPI?.screenshots?.onAnnotateDraw?.((state) => {
+      const previous = annotationsRef.current;
+      // La liste complète n'arrive que lorsqu'elle change : on garde la
+      // précédente le reste du temps.
+      annotationsRef.current = { ...state, strokes: state.strokes || previous?.strokes || [] };
     });
     return () => {
-      if (typeof off === 'function') off();
+      if (typeof offState === 'function') offState();
+      if (typeof offDraw === 'function') offDraw();
     };
   }, []);
 
@@ -161,6 +185,11 @@ export default function RecordingStudio({ onClose }) {
   });
 
   const source = useMemo(() => sources.find((s) => s.id === sourceId) || null, [sources, sourceId]);
+  // Lue par la boucle de rendu sans la relancer à chaque changement de liste.
+  const sourceRef = useRef(source);
+  useEffect(() => {
+    sourceRef.current = source;
+  }, [source]);
 
   // --- Préférences : le style choisi survit à la fermeture ------------------
   useEffect(() => {
@@ -360,6 +389,7 @@ export default function RecordingStudio({ onClose }) {
         style.zoom || style.cursorHalo
           ? easeFocus(focusRef.current, targetFocus.current, style.cursorHalo && !style.zoom ? 0.35 : 0.12)
           : { x: 0.5, y: 0.5 };
+      const current = sourceRef.current;
       drawFrame(ctx, {
         width: canvas.width,
         height: canvas.height,
@@ -368,7 +398,15 @@ export default function RecordingStudio({ onClose }) {
         style,
         accentColor,
         focus: focusRef.current,
+        captureBounds: current?.kind === 'screen' ? current.bounds : null,
+        annotations: annotationsRef.current,
       });
+      // Retour d'image : simple copie réduite du canvas, APRÈS composition —
+      // il montre donc exactement ce qui part dans la vidéo.
+      const preview = previewRef.current;
+      if (preview) {
+        preview.getContext('2d')?.drawImage(canvas, 0, 0, preview.width, preview.height);
+      }
       // L'image vient d'être composée : on la pousse à l'encodeur.
       if (frameTrack.current) {
         frameTrack.current.requestFrame?.();
@@ -629,6 +667,31 @@ export default function RecordingStudio({ onClose }) {
 
   const set = (patch) => setStyle((s) => ({ ...s, ...patch }));
 
+  // Déplacement de la barre réduite par sa poignée. On travaille depuis le
+  // coin bas droit (là où elle naît), borné à la fenêtre pour qu'elle ne
+  // puisse jamais disparaître hors champ.
+  const startBarDrag = (e) => {
+    if (e.button !== 0 || !barRef.current) return;
+    e.preventDefault();
+    const rect = barRef.current.getBoundingClientRect();
+    const grabX = e.clientX - rect.right;
+    const grabY = e.clientY - rect.bottom;
+    const move = (ev) => {
+      const width = barRef.current?.offsetWidth || rect.width;
+      const height = barRef.current?.offsetHeight || rect.height;
+      setBarOffset({
+        right: Math.max(4, Math.min(window.innerWidth - width - 4, window.innerWidth - (ev.clientX - grabX))),
+        bottom: Math.max(4, Math.min(window.innerHeight - height - 4, window.innerHeight - (ev.clientY - grabY))),
+      });
+    };
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
+
   const convert = async () => {
     setBusy(true);
     try {
@@ -647,7 +710,31 @@ export default function RecordingStudio({ onClose }) {
         possible l'enregistrement d'Orbit lui-même : le panneau disparaît, il
         ne reste qu'un chronomètre et deux boutons. */}
     {minimized && step === 'recording' && (
-      <div className="fixed bottom-5 right-5 z-[10001] flex items-center gap-2 rounded-full border border-border bg-bg-elevated/95 px-3 py-2 shadow-2xl backdrop-blur">
+      <div
+        ref={barRef}
+        style={{ right: barOffset.right, bottom: barOffset.bottom }}
+        className="fixed z-[10001] flex flex-col items-end gap-2"
+      >
+      {/* Retour d'image, repliable : il figure dans la vidéo quand on filme
+          l'écran où se trouve Orbit. */}
+      {style.monitor && (
+        <div className="rounded-xl border border-border bg-black shadow-2xl overflow-hidden">
+          <canvas
+            ref={previewRef}
+            width={320}
+            height={Math.round((320 * OUTPUT.height) / OUTPUT.width)}
+            className="block w-80 max-w-[70vw] h-auto"
+          />
+        </div>
+      )}
+      <div className="flex items-center gap-2 rounded-full border border-border bg-bg-elevated/95 pl-1 pr-3 py-2 shadow-2xl backdrop-blur">
+        <span
+          onPointerDown={startBarDrag}
+          className="cursor-grab active:cursor-grabbing text-text-muted px-0.5 touch-none"
+          title={t('studio.move')}
+        >
+          <GripVertical size={14} />
+        </span>
         <Circle size={10} fill="currentColor" className={paused ? 'text-text-muted' : 'text-error animate-pulse'} />
         <span className="text-sm tabular-nums font-medium">{formatDuration(elapsed)}</span>
         <span className={`text-[11px] tabular-nums ${fpsHealth(fps, FPS) === 'low' ? 'text-warning' : 'text-text-muted'}`}>
@@ -669,9 +756,19 @@ export default function RecordingStudio({ onClose }) {
         >
           <PenLine size={13} />
         </button>
+        {micId && <MicMeter streamRef={micStream} streamKey={micId} paused={paused} compact />}
+        <button
+          onClick={() => set({ monitor: !style.monitor })}
+          className={`btn-icon w-7 h-7 ${style.monitor ? 'text-accent-primary' : ''}`}
+          aria-pressed={Boolean(style.monitor)}
+          title={t(style.monitor ? 'studio.monitorHide' : 'studio.monitorShow')}
+        >
+          {style.monitor ? <EyeOff size={13} /> : <Eye size={13} />}
+        </button>
         <button onClick={() => setMinimized(false)} className="btn-icon w-7 h-7" title={t('studio.restore')}>
           <Maximize2 size={13} />
         </button>
+      </div>
       </div>
     )}
 
@@ -706,6 +803,9 @@ export default function RecordingStudio({ onClose }) {
             >
               {t('studio.fpsNow', { fps, target: FPS })}
             </span>
+          )}
+          {step === 'recording' && micId && (
+            <MicMeter streamRef={micStream} streamKey={micId} paused={paused} compact />
           )}
           <div className="flex-1" />
           <button
@@ -887,6 +987,13 @@ export default function RecordingStudio({ onClose }) {
                   <option key={d.deviceId} value={d.deviceId}>{d.label || `${t('studio.mic')} ${i + 1}`}</option>
                 ))}
               </select>
+              {/* Onde du micro : on voit qu'il capte AVANT de lancer la prise,
+                  pas à la relecture. */}
+              {micId && (
+                <div className="mt-2" title={t('studio.micLevel')}>
+                  <MicMeter streamRef={micStream} streamKey={micId} />
+                </div>
+              )}
               <p className="text-[11px] text-text-muted mt-2 flex items-center gap-1">
                 {cameraId ? <Video size={11} /> : <VideoOff size={11} />}
                 {micId ? <Mic size={11} /> : <MicOff size={11} />}
@@ -1115,6 +1222,70 @@ export default function RecordingStudio({ onClose }) {
       <video ref={cameraVideo} autoPlay muted playsInline aria-hidden className={OFFSCREEN} />
     </div>
     </>
+  );
+}
+
+// Vumètre du micro : la forme d'onde en direct. Un micro muet ou mal choisi se
+// voit tout de suite — une ligne plate — au lieu de se découvrir à la relecture.
+// L'analyse a son propre graphe audio : elle ne touche pas au son enregistré.
+function MicMeter({ streamRef, streamKey, paused = false, compact = false }) {
+  const canvasRef = useRef(null);
+  useEffect(() => {
+    const track = streamRef.current?.getAudioTracks?.()[0];
+    if (!track) return undefined;
+    let ctx;
+    let frame = 0;
+    try {
+      ctx = new AudioContext();
+    } catch {
+      return undefined;
+    }
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 512;
+    ctx.createMediaStreamSource(new MediaStream([track])).connect(analyser);
+    const samples = new Uint8Array(analyser.fftSize);
+    const draw = () => {
+      frame = requestAnimationFrame(draw);
+      const canvas = canvasRef.current;
+      const g = canvas?.getContext('2d');
+      if (!g) return;
+      analyser.getByteTimeDomainData(samples);
+      const { width, height } = canvas;
+      g.clearRect(0, 0, width, height);
+      // Niveau crête : il colore l'onde (gris = silence, vert = voix, orange =
+      // proche de la saturation).
+      let peak = 0;
+      for (const v of samples) peak = Math.max(peak, Math.abs(v - 128) / 128);
+      g.strokeStyle = paused ? '#64748b' : peak > 0.85 ? '#f59e0b' : peak > 0.02 ? '#22c55e' : '#64748b';
+      g.lineWidth = compact ? 1.5 : 2;
+      g.beginPath();
+      const step = samples.length / width;
+      for (let x = 0; x < width; x += 1) {
+        // Amplifiée ×2 : une voix normale n'occupe qu'un tiers de l'échelle,
+        // l'onde serait sinon trop plate pour être lisible en petit.
+        const v = (samples[Math.floor(x * step)] - 128) / 128;
+        const y = height / 2 + Math.max(-1, Math.min(1, v * 2)) * (height / 2 - 1);
+        if (x === 0) g.moveTo(x, y);
+        else g.lineTo(x, y);
+      }
+      g.stroke();
+    };
+    draw();
+    return () => {
+      cancelAnimationFrame(frame);
+      ctx.close().catch(() => {});
+    };
+    // `streamKey` change quand le micro change : c'est le signal de relancer.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [streamKey, paused, compact]);
+  return (
+    <canvas
+      ref={canvasRef}
+      width={compact ? 56 : 280}
+      height={compact ? 20 : 36}
+      className={compact ? 'w-14 h-5' : 'w-full h-9 rounded-lg border border-border bg-bg-primary/60'}
+      aria-hidden
+    />
   );
 }
 

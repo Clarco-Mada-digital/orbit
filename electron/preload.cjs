@@ -271,6 +271,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on('orbit:annotate-state', listener);
       return () => ipcRenderer.removeListener('orbit:annotate-state', listener);
     },
+    // Tracés de la couche d'annotation, composés par le studio dans la vidéo.
+    onAnnotateDraw: (callback) => {
+      const listener = (_event, state) => callback(state);
+      ipcRenderer.on('orbit:annotate-draw', listener);
+      return () => ipcRenderer.removeListener('orbit:annotate-draw', listener);
+    },
     cancel: (id) => ipcRenderer.invoke('screenshot:cancel', { id }),
     onPreview: (callback) => {
       const listener = (_event, payload) => callback(payload);

@@ -20,6 +20,7 @@ import {
   directStudioKey,
   nextInList,
   BACKGROUNDS,
+  screenToCanvas,
 } from '../src/lib/studioLayout.js';
 
 // La mise en page décide de ce que le spectateur verra. Une erreur ici ne se
@@ -434,4 +435,31 @@ test('« écran seul » masque la pastille sans débrancher la caméra', () => {
   });
   assert.equal(plan.screen.w, pleinCadre.screen.w, 'la capture garde toute la place');
   assert.ok(pleinCadre.camera, 'la disposition voisine, elle, affiche bien la pastille');
+});
+
+// Les annotations sont redessinées par le studio : un décalage ici les ferait
+// tomber à côté de ce qu'elles désignent, sur toute la vidéo.
+test('screenToCanvas replace un point de l’écran filmé dans le cadre', () => {
+  const bounds = { x: 1920, y: 0, width: 1920, height: 1080 }; // second écran
+  const fit = { x: 100, y: 50, w: 960, h: 540 };
+  const m = screenToCanvas(bounds, 1920, 1080, null, fit);
+  const at = (x, y) => ({ x: m.a * x + m.e, y: m.d * y + m.f });
+  assert.deepEqual(at(1920, 0), { x: 100, y: 50 }); // coin haut gauche
+  assert.deepEqual(at(3840, 1080), { x: 1060, y: 590 }); // coin bas droit
+  assert.equal(m.a, 0.5);
+});
+
+test('screenToCanvas suit le zoom : la portion affichée remplit le cadre', () => {
+  const bounds = { x: 0, y: 0, width: 1000, height: 500 };
+  const fit = { x: 0, y: 0, w: 1000, h: 500 };
+  // capture en pixels physiques (×2), zoom ×2 sur le quart haut gauche
+  const source = { sx: 0, sy: 0, sw: 1000, sh: 500 };
+  const m = screenToCanvas(bounds, 2000, 1000, source, fit);
+  assert.equal(m.a * 500 + m.e, 1000); // le milieu de l'écran touche le bord droit
+  assert.equal(m.d * 250 + m.f, 500);
+});
+
+test('screenToCanvas : écran inconnu (fenêtre filmée) → rien à replacer', () => {
+  assert.equal(screenToCanvas(null, 1920, 1080, null, { x: 0, y: 0, w: 10, h: 10 }), null);
+  assert.equal(screenToCanvas({ x: 0, y: 0, width: 0, height: 0 }, 1920, 1080, null, { x: 0, y: 0, w: 10, h: 10 }), null);
 });

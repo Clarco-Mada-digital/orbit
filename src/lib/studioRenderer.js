@@ -18,7 +18,9 @@ import {
   coverRect,
   zoomSourceRect,
   haloPoint,
+  screenToCanvas,
 } from './studioLayout.js';
+import { arrowHead } from './annotate.js';
 
 function paintBackground(ctx, w, h, style, accentColor) {
   const bg = BACKGROUNDS[style.background] || BACKGROUNDS.indigo;
@@ -120,6 +122,109 @@ function cachedShadow(width, height, fit, radius) {
   }
 }
 
+// --- Annotations d'écran ----------------------------------------------------
+// Mêmes règles de tracé que la couche d'annotation (electron/annotate-overlay.js)
+// : ce qu'on voit à l'écran doit être ce qu'on retrouve dans la vidéo.
+const LASER_LIFETIME = 420;
+
+function drawStroke(ctx, stroke) {
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.strokeStyle = stroke.color;
+  ctx.lineWidth = stroke.width;
+  if (stroke.tool === 'highlight') {
+    ctx.globalAlpha = 0.32;
+    ctx.lineWidth = stroke.width * 3.5;
+  }
+  if ((stroke.tool === 'pen' || stroke.tool === 'highlight') && stroke.points?.length) {
+    ctx.beginPath();
+    stroke.points.forEach((point, index) => {
+      if (index === 0) ctx.moveTo(point.x, point.y);
+      else ctx.lineTo(point.x, point.y);
+    });
+    ctx.stroke();
+  } else if (stroke.from && stroke.to) {
+    const { from, to } = stroke;
+    if (stroke.tool === 'arrow') {
+      ctx.beginPath();
+      ctx.moveTo(from.x, from.y);
+      ctx.lineTo(to.x, to.y);
+      ctx.stroke();
+      const head = arrowHead(from, to, stroke.width);
+      ctx.beginPath();
+      ctx.moveTo(head[0].x, head[0].y);
+      ctx.lineTo(head[1].x, head[1].y);
+      ctx.lineTo(head[2].x, head[2].y);
+      ctx.stroke();
+    } else if (stroke.tool === 'rect') {
+      ctx.strokeRect(
+        Math.min(from.x, to.x),
+        Math.min(from.y, to.y),
+        Math.abs(to.x - from.x),
+        Math.abs(to.y - from.y)
+      );
+    } else if (stroke.tool === 'ellipse') {
+      ctx.beginPath();
+      ctx.ellipse(
+        (from.x + to.x) / 2,
+        (from.y + to.y) / 2,
+        Math.max(1, Math.abs(to.x - from.x) / 2),
+        Math.max(1, Math.abs(to.y - from.y) / 2),
+        0,
+        0,
+        Math.PI * 2
+      );
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+
+function drawLaser(ctx, { trail, pointer, color, width }) {
+  const now = Date.now();
+  ctx.save();
+  ctx.lineCap = 'round';
+  ctx.lineWidth = Math.max(4, width);
+  ctx.strokeStyle = color;
+  for (let i = 1; i < (trail?.length || 0); i += 1) {
+    const alpha = Math.max(0, 1 - (now - trail[i].at) / LASER_LIFETIME) * 0.6;
+    if (!alpha) continue;
+    ctx.globalAlpha = alpha;
+    ctx.beginPath();
+    ctx.moveTo(trail[i - 1].x, trail[i - 1].y);
+    ctx.lineTo(trail[i].x, trail[i].y);
+    ctx.stroke();
+  }
+  ctx.globalAlpha = 1;
+  if (pointer && pointer.x > -9000) {
+    ctx.fillStyle = color;
+    ctx.beginPath();
+    ctx.arc(pointer.x, pointer.y, Math.max(6, width), 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+// Les tracés sont en coordonnées de la couche ; `toCanvas` passe de l'écran au
+// canvas. On décale d'abord de la position de la couche sur l'écran.
+function drawAnnotations(ctx, annotations, toCanvas) {
+  const origin = annotations.bounds || { x: 0, y: 0 };
+  ctx.save();
+  ctx.setTransform(
+    toCanvas.a,
+    0,
+    0,
+    toCanvas.d,
+    toCanvas.e + origin.x * toCanvas.a,
+    toCanvas.f + origin.y * toCanvas.d
+  );
+  for (const stroke of annotations.strokes || []) drawStroke(ctx, stroke);
+  if (annotations.drawing) drawStroke(ctx, annotations.drawing);
+  if (annotations.tool === 'laser') drawLaser(ctx, annotations);
+  ctx.restore();
+}
+
 // Une image d'enregistrement. Appelée à chaque rafraîchissement : elle doit
 // rester sans allocation inutile et sans effet de bord.
 export function drawFrame(ctx, {
@@ -130,6 +235,10 @@ export function drawFrame(ctx, {
   style,
   accentColor,
   focus,
+  // Bornes de l'écran filmé (null pour une fenêtre) : sans elles, impossible
+  // de replacer les annotations.
+  captureBounds = null,
+  annotations = null,
 }) {
   ctx.clearRect(0, 0, width, height);
   paintBackground(ctx, width, height, style, accentColor);
@@ -166,6 +275,17 @@ export function drawFrame(ctx, {
     }
 
     drawClipped(ctx, screenVideo, fit, { radius: style.radius, source });
+
+    const toCanvas =
+      annotations &&
+      screenToCanvas(captureBounds, screenVideo.videoWidth, screenVideo.videoHeight, source, fit);
+    if (toCanvas) {
+      ctx.save();
+      roundedPath(ctx, fit.x, fit.y, fit.w, fit.h, style.radius);
+      ctx.clip(); // rien ne déborde du cadre
+      drawAnnotations(ctx, annotations, toCanvas);
+      ctx.restore();
+    }
 
     // Halo du pointeur. Sur une capture réduite dans un cadre, le curseur fait
     // quelques pixels : le spectateur le perd en permanence. Un disque doux

@@ -291,6 +291,34 @@ export function haloPoint(focus, source, srcW, srcH, fit) {
   };
 }
 
+// Passage des coordonnées ÉCRAN (pixels logiques du système, comme les bornes
+// d'un écran ou d'une fenêtre) vers le canvas composé. Sert à replacer dans la
+// vidéo ce qui est dessiné PAR-DESSUS l'écran filmé — les annotations — ou à
+// masquer ce qui ne doit pas y figurer — le retour d'image du studio.
+//
+// Rend une transformation affine `{ a, d, e, f }` (x' = a·x + e, y' = d·y + f),
+// directement utilisable par `ctx.setTransform(a, 0, 0, d, e, f)`, ou `null`
+// quand l'écran filmé est inconnu (capture d'une fenêtre) : sans ses bornes, on
+// ne sait pas où tombe un point de l'écran.
+export function screenToCanvas(captureBounds, videoW, videoH, source, fit) {
+  if (!captureBounds?.width || !captureBounds?.height || !videoW || !videoH || !fit?.w || !fit?.h) {
+    return null;
+  }
+  const sx = source ? source.sx : 0;
+  const sy = source ? source.sy : 0;
+  const sw = source ? source.sw : videoW;
+  const sh = source ? source.sh : videoH;
+  // écran → pixels de la vidéo capturée → portion affichée → cadre du canvas
+  const a = (videoW / captureBounds.width) * (fit.w / sw);
+  const d = (videoH / captureBounds.height) * (fit.h / sh);
+  return {
+    a,
+    d,
+    e: fit.x - (sx * fit.w) / sw - captureBounds.x * a,
+    f: fit.y - (sy * fit.h) / sh - captureBounds.y * d,
+  };
+}
+
 // --- Raccourcis ------------------------------------------------------------
 // Changer de fond ou de disposition À LA SOURIS pendant qu'on parle oblige à
 // rouvrir le panneau, donc à sortir du cadre. Une touche suffit.

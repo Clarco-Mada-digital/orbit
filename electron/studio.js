@@ -51,6 +51,7 @@ export async function listSources() {
       fetchWindowIcons: false,
     });
     const displays = screen.getAllDisplays();
+    const screens = sources.filter((s) => s.id.startsWith('screen:'));
     return {
       success: true,
       sources: sources
@@ -58,20 +59,47 @@ export async function listSources() {
         // n'aiderait personne.
         .filter((s) => s.name && s.name.trim())
         .map((s) => {
-          const display = displays.find((d) => String(d.id) === String(s.display_id));
+          const bounds = s.id.startsWith('screen:') ? screenBounds(s, screens, displays) : null;
           return {
             id: s.id,
             name: s.name,
             kind: s.id.startsWith('screen:') ? 'screen' : 'window',
             thumbnail: s.thumbnail?.toDataURL?.() || null,
             // Bornes de l'écran, pour le zoom suivi du curseur.
-            bounds: display ? display.bounds : null,
+            bounds,
           };
         }),
     };
   } catch (err) {
     return { success: false, error: String(err.message || err) };
   }
+}
+
+// Bornes système d'une source « écran ». `display_id` est souvent VIDE sous
+// Linux : sans repli, le studio ignorait où tombait l'écran filmé, et ne
+// pouvait ni y replacer les annotations ni masquer sa propre barre — qui
+// apparaissait alors dans la vidéo.
+//   • identifiant connu → l'écran correspondant ;
+//   • une seule source pour plusieurs moniteurs (X11 : « écran entier ») → la
+//     zone qui les englobe tous ;
+//   • autant de sources que de moniteurs → appariement dans l'ordre.
+function screenBounds(source, screens, displays) {
+  const byId = displays.find((d) => String(d.id) === String(source.display_id));
+  if (byId) return byId.bounds;
+  if (displays.length === 0) return null;
+  if (screens.length === 1) {
+    const left = Math.min(...displays.map((d) => d.bounds.x));
+    const top = Math.min(...displays.map((d) => d.bounds.y));
+    const right = Math.max(...displays.map((d) => d.bounds.x + d.bounds.width));
+    const bottom = Math.max(...displays.map((d) => d.bounds.y + d.bounds.height));
+    return { x: left, y: top, width: right - left, height: bottom - top };
+  }
+  if (screens.length === displays.length) {
+    const index = screens.indexOf(source);
+    const ordered = [...displays].sort((a, b) => a.bounds.x - b.bounds.x || a.bounds.y - b.bounds.y);
+    return ordered[index]?.bounds || null;
+  }
+  return null;
 }
 
 // --- Source demandée par le studio ----------------------------------------

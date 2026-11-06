@@ -2076,6 +2076,30 @@ ipcMain.handle('annotate:hover', (event, hovering) => {
   return { success: true };
 });
 
+// Tracés de la couche, relayés vers le studio. Sur Linux (X11 comme Wayland),
+// une fenêtre transparente au-dessus de tout n'est pas toujours reprise par la
+// capture d'écran : les annotations s'affichaient à l'écran mais manquaient à
+// la vidéo. Le studio les dessine donc LUI-MÊME dans son canvas, à partir de
+// ces données — avec les bornes de la couche, pour les replacer sur l'écran
+// filmé.
+//
+// Uniquement sous Wayland : ailleurs (X11, Windows, macOS), la capture filme
+// déjà la couche elle-même, et redessiner les tracés les doublerait (surligneur
+// plus foncé, laser fantôme).
+const ANNOTATIONS_NEED_COMPOSITING =
+  process.platform === 'linux' && String(process.env.XDG_SESSION_TYPE).toLowerCase() === 'wayland';
+
+ipcMain.on('annotate:state', (event, state) => {
+  if (!ANNOTATIONS_NEED_COMPOSITING) return;
+  if (!annotateWindow || event.sender !== annotateWindow.webContents) return;
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  try {
+    mainWindow.webContents.send('orbit:annotate-draw', { ...state, bounds: annotateWindow.getBounds() });
+  } catch {
+    /* fenêtre principale en cours de fermeture */
+  }
+});
+
 ipcMain.handle('annotate:close', (event) => {
   if (annotateWindow && event.sender === annotateWindow.webContents) annotateWindow.close();
   return { success: true };

@@ -135,6 +135,47 @@
     for (const stroke of strokes) drawStroke(stroke);
     if (drawing) drawStroke(drawing);
     drawTrail(Date.now());
+    schedulePublish();
+  }
+
+  // --- Relais vers le studio -------------------------------------------------
+  // La capture d'écran ne reprend pas toujours cette fenêtre transparente (cas
+  // courant sous Linux) : le studio redessine donc les tracés dans sa vidéo.
+  // On lui envoie l'état au plus 30 fois par seconde ; la liste complète des
+  // tracés ne part que lorsqu'elle a changé, et une fois par seconde pour
+  // resynchroniser un studio ouvert après coup.
+  const PUBLISH_EVERY = 33;
+  let publishTimer = 0;
+  let sentVersion = -1;
+  let sentAt = 0;
+  let version = 0;
+
+  function strokesChanged() {
+    version += 1;
+  }
+
+  function publish() {
+    publishTimer = 0;
+    const now = Date.now();
+    const full = version !== sentVersion || now - sentAt > 1000;
+    window.annotate?.publish?.({
+      version,
+      ...(full ? { strokes } : {}),
+      drawing,
+      trail: tool === 'laser' ? trail : [],
+      pointer: tool === 'laser' ? pointer : null,
+      tool,
+      color,
+      width,
+    });
+    if (full) {
+      sentVersion = version;
+      sentAt = now;
+    }
+  }
+
+  function schedulePublish() {
+    if (!publishTimer) publishTimer = setTimeout(publish, PUBLISH_EVERY);
   }
 
   function loop() {
@@ -219,11 +260,13 @@
   }
   document.getElementById('undo').addEventListener('click', () => {
     strokes.pop();
+    strokesChanged();
     redraw();
   });
   document.getElementById('clear').addEventListener('click', () => {
     strokes = [];
     trail = [];
+    strokesChanged();
     redraw();
   });
   document.getElementById('close').addEventListener('click', () => window.annotate?.close?.());
@@ -287,7 +330,10 @@
     const meaningful = finished.points
       ? finished.points.length > 1
       : Math.abs(finished.to.x - finished.from.x) > 4 || Math.abs(finished.to.y - finished.from.y) > 4;
-    if (meaningful) strokes.push(finished);
+    if (meaningful) {
+      strokes.push(finished);
+      strokesChanged();
+    }
     redraw();
   };
   board.addEventListener('pointerup', endStroke);
@@ -301,6 +347,7 @@
       else window.annotate?.close?.();
     } else if (event.key.toLowerCase() === 'z' && (event.ctrlKey || event.metaKey)) {
       strokes.pop();
+      strokesChanged();
       redraw();
     }
   });
