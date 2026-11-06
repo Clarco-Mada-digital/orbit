@@ -12,6 +12,5 @@ contextBridge.exposeInMainWorld('pin', {
   },
   copy: () => ipcRenderer.invoke('pin:copy'),
   save: () => ipcRenderer.invoke('pin:save'),
-  opacity: (value) => ipcRenderer.invoke('pin:opacity', value),
   close: () => ipcRenderer.invoke('pin:close'),
 });

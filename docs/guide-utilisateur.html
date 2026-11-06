@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Orbit — guide utilisateur</title>
 <meta name="author" content="Clarco RAHERINANDRASANA" />
-<meta name="description" content="Guide utilisateur complet d'Orbit — 1.17.3" />
+<meta name="description" content="Guide utilisateur complet d'Orbit — 1.18.0" />
 <!-- Fichier GÉNÉRÉ par scripts/build-docs.js à partir de docs/guide-utilisateur.md.
      Toute modification faite ici serait perdue à la prochaine génération. -->
 <style>
@@ -191,7 +191,7 @@
   <div class="cover-rule" aria-hidden="true"></div>
   <dl class="cover-meta">
     <div><dt>Auteur</dt><dd>Clarco RAHERINANDRASANA</dd></div>
-    <div><dt>Version</dt><dd>Orbit 1.17.3</dd></div>
+    <div><dt>Version</dt><dd>Orbit 1.18.0</dd></div>
     <div><dt>Édition</dt><dd>novembre 2026</dd></div>
   </dl>
 </section>
@@ -386,13 +386,51 @@ scène : fond uni ou dégradé, marge, coins arrondis, ombre portée. Tout est
 composé sur un canvas, et c’est ce canvas qui est enregistré — <strong>l’aperçu est
 la vidéo</strong>.</p>
 <p><img src="images/orbit-studio.png" alt="Le studio d’enregistrement : choix de la source, caméra et micro, définition, cadence, mise en scène — et les raccourcis rappelés sous l’aperçu" /></p>
+<p><strong>Cinq dispositions</strong> : <em>écran seul</em>, <em>écran + pastille</em>, <em>caméra seule</em>,
+<em>côte à côte</em>, et <strong>présentation</strong>. Cette dernière donne la priorité à ce qui
+porte l’information : la capture garde toute la hauteur et presque toute la
+largeur, la caméra devient une vignette posée à mi-hauteur sur le côté choisi.
+Son <strong>cadrage</strong> se règle d’une touche (<code>O</code>) :</p>
+<ul><li><strong>chevauché</strong> — la vignette mord sur la capture, comme une incrustation de plateau ;</li><li><strong>espacé</strong> — même vignette, mais un écart la sépare de la capture.</li></ul>
+<p>Changer de disposition, de cadrage ou de fond ne coupe pas l’image : la
+composition <strong>glisse</strong> vers sa nouvelle place en une fraction de seconde, et le
+fond passe en fondu. Un réglage qu’on fait glisser (taille de la pastille,
+marge) reste lui immédiat.</p>
 <p>Pendant la prise, ces touches évitent de rouvrir le panneau et de sortir du
 cadre :</p>
-<table><thead><tr><th>Touche</th><th>Effet</th></tr></thead><tbody><tr><td><code>1</code>–<code>5</code></td><td>Aller directement à une <strong>disposition</strong></td></tr><tr><td><code>Maj</code>+<code>1</code>–<code>8</code></td><td>Aller directement à un <strong>fond</strong></td></tr><tr><td><code>↑</code> <code>↓</code> <code>←</code> <code>→</code></td><td>Placer la caméra, un axe à la fois</td></tr><tr><td><code>F</code></td><td>Faire défiler les <strong>fonds</strong></td></tr><tr><td><code>D</code></td><td>Faire défiler les <strong>dispositions</strong></td></tr><tr><td><code>C</code></td><td>Changer le <strong>coin</strong> de la caméra</td></tr><tr><td><code>Z</code></td><td><strong>Zoom</strong> qui suit le pointeur</td></tr><tr><td><code>H</code></td><td><strong>Halo</strong> du curseur</td></tr><tr><td><code>M</code></td><td>Effet <strong>miroir</strong> de la caméra</td></tr><tr><td><code>A</code></td><td><strong>Annoter l’écran</strong> (voir ci-dessous)</td></tr><tr><td><code>P</code></td><td><strong>Pause</strong> / reprise</td></tr><tr><td><code>S</code></td><td><strong>Arrêt</strong></td></tr><tr><td><code>R</code></td><td><strong>Réduire</strong> le studio en une barre</td></tr></tbody></table>
+<table><thead><tr><th>Touche</th><th>Effet</th></tr></thead><tbody><tr><td><code>1</code>–<code>5</code></td><td>Aller directement à une <strong>disposition</strong></td></tr><tr><td><code>Maj</code>+<code>1</code>–<code>8</code></td><td>Aller directement à un <strong>fond</strong></td></tr><tr><td><code>↑</code> <code>↓</code> <code>←</code> <code>→</code></td><td>Placer la caméra, un axe à la fois</td></tr><tr><td><code>F</code></td><td>Faire défiler les <strong>fonds</strong></td></tr><tr><td><code>D</code></td><td>Faire défiler les <strong>dispositions</strong></td></tr><tr><td><code>C</code></td><td>Changer le <strong>coin</strong> de la caméra</td></tr><tr><td><code>Z</code></td><td><strong>Zoom</strong> qui suit le pointeur</td></tr><tr><td><code>H</code></td><td><strong>Halo</strong> du curseur</td></tr><tr><td><code>M</code></td><td>Effet <strong>miroir</strong> de la caméra</td></tr><tr><td><code>V</code></td><td><strong>Anneau de voix</strong> autour de la caméra</td></tr><tr><td><code>X</code></td><td><strong>Coup de zoom</strong> sur le curseur, qui revient tout seul</td></tr><tr><td><code>O</code></td><td><strong>Cadrage</strong> de la présentation : chevauché ou espacé</td></tr><tr><td><code>C</code></td><td>En présentation : <strong>hauteur de pose</strong> de la vignette</td></tr><tr><td><code>Alt</code>+<code>1</code>–<code>5</code></td><td>Rappeler un <strong>cadrage mémorisé</strong></td></tr><tr><td><code>A</code></td><td><strong>Annoter l’écran</strong> (voir ci-dessous)</td></tr><tr><td><code>P</code></td><td><strong>Pause</strong> / reprise</td></tr><tr><td><code>S</code></td><td><strong>Arrêt</strong></td></tr><tr><td><code>R</code></td><td><strong>Réduire</strong> le studio en une barre</td></tr></tbody></table>
+<p>Chaque touche <strong>annonce ce qu’elle vient de changer</strong> sous l’aperçu, et dit
+quand le réglage ne se voit pas encore (le cadrage sans caméra, par exemple) :
+un raccourci sans effet visible est sinon indiscernable d’un raccourci cassé.</p>
+<p><strong>Depuis l’application que vous filmez.</strong> Les touches ci-dessus ne répondent
+que si Orbit a le focus — or pendant une prise, vous êtes ailleurs. Le temps
+de l’enregistrement, Orbit pose donc les mêmes actions en raccourcis système :
+<code>Alt+Maj+D</code> (disposition), <code>Alt+Maj+F</code> (fond), <code>Alt+Maj+C</code> (place de la
+caméra), <code>Alt+Maj+Z</code> (zoom suivi), <code>Alt+Maj+X</code> (coup de zoom), <code>Alt+Maj+O</code>
+(cadrage), <code>Alt+Maj+P</code> (pause) et <code>Alt+Maj+K</code> (arrêt). Ils sont libérés à la
+fin de la prise. La liste affichée sous l’aperçu ne montre que ceux qui ont
+réellement pu être enregistrés : votre gestionnaire de fenêtres s’en réserve
+parfois un.</p>
 <p>« Réduire » est ce qui permet de filmer Orbit lui-même : il ne reste qu’un
 chronomètre, la pause, l’arrêt et l’annotation. La cadence <strong>réellement tenue</strong>
 est affichée pendant l’enregistrement — une vidéo saccadée se découvrirait
 sinon à la relecture.</p>
+<p><strong>Mettre en valeur et rythmer la prise.</strong> Le <strong>coup de zoom</strong> (<code>X</code>) rapproche
+l’image de votre curseur pendant trois secondes puis revient tout seul : c’est
+le geste qu’on fait au moment de montrer quelque chose, là où un zoom permanent
+finit par donner le mal de mer. L’<strong>anneau de voix</strong> (<code>V</code>) fait respirer un
+liseré autour de la caméra au rythme de ce que capte le micro : on voit qui
+parle. Un <strong>carton de titre</strong> peut ouvrir la vidéo : saisissez-le avant la
+prise, il s’affiche quelques secondes puis s’efface pendant que la composition
+se découvre dessous. Enfin, la <strong>pause</strong> fige l’image avec un bandeau qui reste
+une fraction de seconde dans la vidéo : à la relecture, la coupure se lit comme
+voulue.</p>
+<p><strong>Cadrages mémorisés.</strong> Une démonstration client et un tutoriel ne se filment
+pas pareil. Le panneau <strong>Cadrages mémorisés</strong> enregistre la mise en scène du
+moment sous un nom (jusqu’à cinq) et la rappelle d’un clic ou d’un <code>Alt</code>+chiffre.
+La définition et la cadence n’en font pas partie : ce sont des réglages propres
+à la machine, et les imposer donnerait une vidéo saccadée sans qu’on comprenne
+pourquoi.</p>
 <h3 id="annoter-l-ecran-pendant-une-demonstration">Annoter l’écran pendant une démonstration</h3>
 <p>La touche <code>A</code> (ou le bouton <strong>Annoter l’écran</strong>) ouvre une couche de dessin
 <strong>par-dessus tout l’écran</strong>, pas seulement par-dessus Orbit. C’est une vraie
@@ -441,7 +479,7 @@ sur Android.</p>
 <ul><li><strong>Appel entrant</strong> : un bandeau s’affiche au-dessus d’Orbit avec <strong>Décrocher</strong> et <strong>Refuser</strong>. Il dit <strong>qui</strong> appelle — beaucoup de téléphones titrent seulement « Appel entrant » et laissent l’identité ailleurs, alors Orbit lit les autres champs de la notification, interroge la radio au besoin, puis cherche le nom dans <strong>vos contacts</strong>. Si rien n’est transmis (numéro masqué, appel d’une application qui ne dit rien), il l’annonce franchement au lieu d’afficher un libellé qui ne nomme personne. Le bandeau indique aussi depuis combien de temps ça sonne.</li><li><strong>Appels récents</strong> : le journal du mobile, appels manqués en évidence, avec la durée et l’horodatage. <strong>Rappeler</strong> lance l’appel depuis le téléphone ; <strong>Préparer</strong> ouvre son clavier avec le numéro prêt, à confirmer sur l’appareil — un appel ne part jamais par surprise. Un numéro masqué est signalé comme tel.</li></ul>
 <p><img src="images/phone-preparer.png" alt="« Préparer » ouvre le clavier du téléphone avec le numéro déjà saisi : rien n’est composé tant que vous n’avez pas appuyé sur le bouton vert" /></p>
 <h4 id="applications-et-fichiers">Applications et fichiers</h4>
-<ul><li>Chaque application s’ouvre dans <strong>sa propre fenêtre de bureau</strong> (scrcpy 3.0+, Android 11+). Le bouton <strong>Miroir</strong> reste une session séparée qui affiche l’écran physique.</li><li>Jusqu’à <strong>huit applications épinglées</strong> dans une barre flottante toujours accessible dans Orbit.</li><li><strong>Envoyer un fichier</strong> (contrôles rapides) dépose un ou plusieurs fichiers dans les <strong>téléchargements</strong> du téléphone.</li></ul>
+<ul><li>Chaque application s’ouvre dans <strong>sa propre fenêtre de bureau</strong> (scrcpy 3.0+, Android 11+). Le bouton <strong>Miroir</strong> reste une session séparée qui affiche l’écran physique.</li><li>Jusqu’à <strong>huit applications épinglées</strong> dans une pastille flottante toujours accessible dans Orbit. Poussée contre le bord gauche ou droit, elle <strong>se replie en languette</strong> et ne laisse qu’un onglet discret : un clic la rouvre, un glissement la ramène où vous voulez. Un point rouge sur la languette signale les notifications en attente.</li><li><strong>Envoyer un fichier</strong> (contrôles rapides) dépose un ou plusieurs fichiers dans les <strong>téléchargements</strong> du téléphone.</li></ul>
 <blockquote><p><strong>Répondre à un SMS depuis Orbit n’est pas possible</strong>, et ce n’est pas un
 oubli : l’action « Répondre » d’une notification Android est réservée à
 l’application qui l’a posée, et ADB ne peut pas la déclencher. De même, le
@@ -491,7 +529,7 @@ joignez pas de mots de passe, cookies ou données privées.</p>
 <ul><li><a href="https://github.com/Clarco-Mada-digital/orbit/releases/latest">Télécharger Orbit</a></li><li><a href="https://github.com/Clarco-Mada-digital/orbit">Code source</a></li><li><a href="./guide-utilisateur.pdf">Guide PDF</a></li><li><a href="./guide-developpeur.md">Guide développeur</a></li><li><a href="./index.html">Page de présentation</a></li></ul>
 <hr />
 <p><strong>Orbit</strong> · Développé par <strong>Clarco RAHERINANDRASANA</strong> · Licence MIT.</p>
-<p class="built">Orbit 1.17.3 · Clarco RAHERINANDRASANA · document généré le 2026-11-05 à partir de
+<p class="built">Orbit 1.18.0 · Clarco RAHERINANDRASANA · document généré le 2026-11-06 à partir de
 <code>docs/guide-utilisateur.md</code> (<code>npm run docs</code>).</p>
 </main>
 </body>

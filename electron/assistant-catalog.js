@@ -37,6 +37,12 @@ function isValidCandidate(candidate) {
 }
 
 function modelKeyFor(id) {
+  // SHA-1 sert ici d'IDENTIFIANT COURT et stable pour un identifiant de modèle
+  // public, pas de preuve : rien n'est authentifié avec, et une collision
+  // donnerait au pire deux modèles au même emplacement de cache. Passer à
+  // SHA-256 changerait toutes les clés et ferait retélécharger les poids déjà
+  // présents, pour aucun gain réel.
+  // argus-ignore SEC-WEAK-HASH
   return `hf-${crypto.createHash('sha1').update(id).digest('hex').slice(0, 12)}`;
 }
 

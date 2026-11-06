@@ -358,6 +358,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // minimal, il ne fait que lire la position du pointeur.
     cursor: () => ipcRenderer.invoke('studio:cursor'),
     setThrottling: (enabled) => ipcRenderer.invoke('studio:throttling', { enabled }),
+    // Raccourcis globaux, le temps de la prise : sans eux, les touches du
+    // studio ne répondent pas depuis l'application qu'on filme.
+    setGlobalKeys: (enabled) => ipcRenderer.invoke('studio:globalKeys', { enabled }),
+    onKey: (cb) => {
+      const h = (_e, action) => cb(action);
+      ipcRenderer.on('orbit:studio:key', h);
+      return () => ipcRenderer.removeListener('orbit:studio:key', h);
+    },
     save: (data, name) => ipcRenderer.invoke('studio:save', { data, name }),
     saveAs: (path) => ipcRenderer.invoke('studio:saveAs', { path }),
     reveal: (path) => ipcRenderer.invoke('studio:reveal', { path }),

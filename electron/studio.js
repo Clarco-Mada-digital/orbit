@@ -7,12 +7,13 @@
 //   • la LISTE des écrans et fenêtres capturables (desktopCapturer) ;
 //   • la POSITION DU CURSEUR, qui sert au zoom suivi — une capture d'écran ne
 //     contient pas toujours le pointeur, et jamais ses coordonnées ;
-//   • l'écriture du fichier final, et sa conversion facultative en MP4.
+//   • l'écriture du fichier final, et sa conversion facultative en MP4 ;
+//   • les RACCOURCIS GLOBAUX pendant l'enregistrement (voir plus bas).
 //
 // Rien n'est enregistré à l'insu de l'utilisateur : toutes ces fonctions sont
 // déclenchées par l'interface d'Orbit, jamais par une page.
 // ---------------------------------------------------------------------------
-import { app, desktopCapturer, screen, shell, dialog } from 'electron';
+import { app, desktopCapturer, screen, shell, dialog, globalShortcut } from 'electron';
 import fs from 'fs';
 import path from 'path';
 import { execFile, execFileSync } from 'child_process';
@@ -342,4 +343,79 @@ function safeSize(file) {
   } catch {
     return 0;
   }
+}
+
+// --- Raccourcis globaux pendant l'enregistrement ---------------------------
+//
+// Les touches du studio (disposition, fond, coup de zoom, pause, arrêt…) ne
+// répondaient que si Orbit avait le focus. Or on filme son écran pour montrer
+// AUTRE CHOSE : pendant la prise, le focus est dans l'application démontrée.
+// Les raccourcis étaient donc morts au moment précis où ils servent, et il
+// fallait revenir sur Orbit — c'est-à-dire sortir du cadre — pour changer quoi
+// que ce soit.
+//
+// Trois décisions, et elles se tiennent :
+//
+//   • `Alt+Maj+<lettre>` plutôt que la lettre seule. Un raccourci global
+//     capte la touche dans TOUTE l'application filmée : enregistrer « D » ou
+//     « S » rendrait impossible d'écrire ces lettres ailleurs, ce qui est
+//     inacceptable. La combinaison suit celles qu'Orbit s'est déjà réservées.
+//   • Enregistrés à l'ouverture de la prise, libérés à sa fin — y compris en
+//     cas de fermeture brutale (voir releaseStudioKeys, appelé au démontage).
+//     Un raccourci global qui survit à ce qui l'a posé est un bogue qu'on
+//     découvre des heures plus tard, dans une autre application.
+//   • Les touches de l'interface restent actives telles quelles quand Orbit a
+//     le focus : ce sont deux chemins vers la même action, et le plus court
+//     reste disponible quand on est devant.
+const STUDIO_GLOBAL_KEYS = {
+  'Alt+Shift+D': 'layout',
+  'Alt+Shift+F': 'background',
+  'Alt+Shift+X': 'zoomPulse',
+  'Alt+Shift+Z': 'zoom',
+  'Alt+Shift+O': 'framing',
+  'Alt+Shift+C': 'corner',
+  'Alt+Shift+P': 'pause',
+  'Alt+Shift+K': 'stop',
+};
+
+let studioKeysOwner = null;
+
+/**
+ * Pose (ou retire) les raccourcis globaux du studio.
+ *
+ * Rend la liste de ce qui a RÉELLEMENT été enregistré : un gestionnaire de
+ * fenêtres peut déjà s'être approprié une combinaison, et l'annoncer dans
+ * l'interface alors qu'elle ne répondra pas serait pire que de ne rien
+ * proposer.
+ */
+export function setStudioKeys({ enabled, window } = {}) {
+  releaseStudioKeys();
+  if (!enabled || !window || window.isDestroyed()) return { success: true, keys: [] };
+
+  const keys = [];
+  for (const [accelerator, action] of Object.entries(STUDIO_GLOBAL_KEYS)) {
+    try {
+      const ok = globalShortcut.register(accelerator, () => {
+        if (window.isDestroyed()) return;
+        window.webContents.send('orbit:studio:key', action);
+      });
+      if (ok) keys.push({ accelerator, action });
+    } catch {
+      /* combinaison refusée par le système : on continue sans elle */
+    }
+  }
+  studioKeysOwner = keys.length > 0 ? keys : null;
+  return { success: true, keys };
+}
+
+export function releaseStudioKeys() {
+  if (!studioKeysOwner) return;
+  for (const { accelerator } of studioKeysOwner) {
+    try {
+      globalShortcut.unregister(accelerator);
+    } catch {
+      /* déjà libérée */
+    }
+  }
+  studioKeysOwner = null;
 }

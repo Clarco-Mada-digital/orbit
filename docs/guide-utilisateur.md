@@ -359,6 +359,21 @@ la vidéo**.
 
 ![Le studio d’enregistrement : choix de la source, caméra et micro, définition, cadence, mise en scène — et les raccourcis rappelés sous l’aperçu](images/orbit-studio.png)
 
+**Cinq dispositions** : *écran seul*, *écran + pastille*, *caméra seule*,
+*côte à côte*, et **présentation**. Cette dernière donne la priorité à ce qui
+porte l’information : la capture garde toute la hauteur et presque toute la
+largeur, la caméra devient une vignette posée à mi-hauteur sur le côté choisi.
+Son **cadrage** se règle d’une touche (`O`) :
+
+- **chevauché** — la vignette mord sur la capture, comme une incrustation de
+  plateau ;
+- **espacé** — même vignette, mais un écart la sépare de la capture.
+
+Changer de disposition, de cadrage ou de fond ne coupe pas l’image : la
+composition **glisse** vers sa nouvelle place en une fraction de seconde, et le
+fond passe en fondu. Un réglage qu’on fait glisser (taille de la pastille,
+marge) reste lui immédiat.
+
 Pendant la prise, ces touches évitent de rouvrir le panneau et de sortir du
 cadre :
 
@@ -373,15 +388,52 @@ cadre :
 | `Z` | **Zoom** qui suit le pointeur |
 | `H` | **Halo** du curseur |
 | `M` | Effet **miroir** de la caméra |
+| `V` | **Anneau de voix** autour de la caméra |
+| `X` | **Coup de zoom** sur le curseur, qui revient tout seul |
+| `O` | **Cadrage** de la présentation : chevauché ou espacé |
+| `C` | En présentation : **hauteur de pose** de la vignette |
+| `Alt`+`1`–`5` | Rappeler un **cadrage mémorisé** |
 | `A` | **Annoter l’écran** (voir ci-dessous) |
 | `P` | **Pause** / reprise |
 | `S` | **Arrêt** |
 | `R` | **Réduire** le studio en une barre |
 
+Chaque touche **annonce ce qu’elle vient de changer** sous l’aperçu, et dit
+quand le réglage ne se voit pas encore (le cadrage sans caméra, par exemple) :
+un raccourci sans effet visible est sinon indiscernable d’un raccourci cassé.
+
+**Depuis l’application que vous filmez.** Les touches ci-dessus ne répondent
+que si Orbit a le focus — or pendant une prise, vous êtes ailleurs. Le temps
+de l’enregistrement, Orbit pose donc les mêmes actions en raccourcis système :
+`Alt+Maj+D` (disposition), `Alt+Maj+F` (fond), `Alt+Maj+C` (place de la
+caméra), `Alt+Maj+Z` (zoom suivi), `Alt+Maj+X` (coup de zoom), `Alt+Maj+O`
+(cadrage), `Alt+Maj+P` (pause) et `Alt+Maj+K` (arrêt). Ils sont libérés à la
+fin de la prise. La liste affichée sous l’aperçu ne montre que ceux qui ont
+réellement pu être enregistrés : votre gestionnaire de fenêtres s’en réserve
+parfois un.
+
 « Réduire » est ce qui permet de filmer Orbit lui-même : il ne reste qu’un
 chronomètre, la pause, l’arrêt et l’annotation. La cadence **réellement tenue**
 est affichée pendant l’enregistrement — une vidéo saccadée se découvrirait
 sinon à la relecture.
+
+**Mettre en valeur et rythmer la prise.** Le **coup de zoom** (`X`) rapproche
+l’image de votre curseur pendant trois secondes puis revient tout seul : c’est
+le geste qu’on fait au moment de montrer quelque chose, là où un zoom permanent
+finit par donner le mal de mer. L’**anneau de voix** (`V`) fait respirer un
+liseré autour de la caméra au rythme de ce que capte le micro : on voit qui
+parle. Un **carton de titre** peut ouvrir la vidéo : saisissez-le avant la
+prise, il s’affiche quelques secondes puis s’efface pendant que la composition
+se découvre dessous. Enfin, la **pause** fige l’image avec un bandeau qui reste
+une fraction de seconde dans la vidéo : à la relecture, la coupure se lit comme
+voulue.
+
+**Cadrages mémorisés.** Une démonstration client et un tutoriel ne se filment
+pas pareil. Le panneau **Cadrages mémorisés** enregistre la mise en scène du
+moment sous un nom (jusqu’à cinq) et la rappelle d’un clic ou d’un `Alt`+chiffre.
+La définition et la cadence n’en font pas partie : ce sont des réglages propres
+à la machine, et les imposer donnerait une vidéo saccadée sans qu’on comprenne
+pourquoi.
 
 ### Annoter l’écran pendant une démonstration
 
@@ -502,8 +554,11 @@ sur Android.
 - Chaque application s’ouvre dans **sa propre fenêtre de bureau** (scrcpy 3.0+,
   Android 11+). Le bouton **Miroir** reste une session séparée qui affiche
   l’écran physique.
-- Jusqu’à **huit applications épinglées** dans une barre flottante toujours
-  accessible dans Orbit.
+- Jusqu’à **huit applications épinglées** dans une pastille flottante toujours
+  accessible dans Orbit. Poussée contre le bord gauche ou droit, elle **se
+  replie en languette** et ne laisse qu’un onglet discret : un clic la rouvre,
+  un glissement la ramène où vous voulez. Un point rouge sur la languette
+  signale les notifications en attente.
 - **Envoyer un fichier** (contrôles rapides) dépose un ou plusieurs fichiers
   dans les **téléchargements** du téléphone.
 

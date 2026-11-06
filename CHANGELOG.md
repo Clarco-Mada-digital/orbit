@@ -8,6 +8,93 @@ Format : une section `## [X.Y.Z] — AAAA-MM-JJ` par version, puis des
 sous-sections `### Ajouté` / `### Modifié` / `### Corrigé` / `### Sécurité`.
 La plus récente en premier.
 
+## [1.19.0] — 2026-11-06
+
+### Ajouté
+- **Studio : la disposition « Présentation » donne enfin la priorité à ce qui
+  porte l'information.** La capture garde toute la hauteur et presque toute la
+  largeur ; la caméra devient une vignette posée à mi-hauteur sur le côté
+  choisi — dans un coin, elle ne se distinguait plus de « écran + pastille ».
+  Son **cadrage** se règle d'une touche (`O`) : *chevauché*, où elle mord sur
+  la capture comme une incrustation de plateau, ou *espacé*, même vignette mais
+  séparée. Sa **hauteur de pose** (haut / milieu / bas) se change avec `C` ou
+  les flèches, pour la dégager de ce qu'on veut justement montrer.
+- **Studio : les changements ne coupent plus l'image.** Changer de disposition,
+  de cadrage ou de fond fait *glisser* la composition vers sa nouvelle place en
+  une fraction de seconde, avec un fondu sur le fond. Un réglage qu'on fait
+  glisser (taille de la pastille, marge) reste lui immédiat : l'animer donnerait
+  un curseur que l'image suit avec un temps de retard.
+- **Studio : chaque raccourci dit ce qu'il vient de changer**, sous l'aperçu —
+  et dit aussi quand le réglage ne se voit pas encore (le cadrage sans caméra,
+  le coin hors « écran + pastille »). Un raccourci sans effet visible était
+  indiscernable d'un raccourci cassé.
+- **Studio : les raccourcis marchent depuis l'application que vous filmez.**
+  On filme son écran pour montrer autre chose : pendant la prise, le focus est
+  ailleurs et les touches ne recevaient plus rien. Le temps de l'enregistrement
+  seulement, Orbit pose les mêmes actions en raccourcis système
+  (`Alt+Maj+D`, `F`, `C`, `Z`, `X`, `O`, `P`, `K`), et les libère à la fin.
+  Seuls ceux réellement obtenus sont annoncés : un gestionnaire de fenêtres
+  s'en réserve parfois un.
+- **Studio : anneau de voix** (`V`) — un liseré respire autour de la caméra au
+  rythme du micro, donc on voit qui parle. Mesuré en valeur efficace et non en
+  crête, avec un seuil : sinon il clignoterait au rythme des consonnes ou
+  vibrerait sur le bruit de fond.
+- **Studio : coup de zoom** (`X`) — l'image se rapproche du curseur quelques
+  secondes puis revient toute seule. C'est le geste qu'on fait au moment de
+  montrer quelque chose, là où un zoom permanent finit par donner le mal de mer.
+- **Studio : carton de titre** — quelques secondes de titre sur le fond, puis la
+  composition se découvre dessous pendant qu'il s'efface.
+- **Studio : la pause se voit dans la vidéo.** L'image se fige avec un bandeau
+  qui reste un instant enregistré avant la coupure : à la relecture, la coupure
+  se lit comme voulue au lieu d'un saut dont on se demande si on a manqué
+  quelque chose.
+- **Studio : cadrages mémorisés** — la mise en scène du moment s'enregistre sous
+  un nom (jusqu'à cinq) et se rappelle d'un clic ou d'un `Alt`+chiffre. La
+  définition et la cadence n'en font pas partie : ce sont des réglages propres à
+  la machine, et les imposer donnerait une vidéo saccadée sans qu'on comprenne
+  pourquoi.
+- **Téléphone : la pastille des applications épinglées se replie en languette.**
+  Poussée contre le bord gauche ou droit, il ne reste qu'un onglet discret ; un
+  clic la rouvre, un glissement la ramène où vous voulez. Un point rouge y
+  signale les notifications en attente. La pastille elle-même a maigri.
+- **Veille des vulnérabilités** : un workflow hebdomadaire interroge OSV.dev et
+  ouvre une alerte uniquement s'il y a quelque chose à dire. C'est le seul cas
+  qu'une intégration continue classique ne voit jamais — devenir vulnérable
+  sans qu'aucun commit ne soit poussé.
+
+### Sécurité
+- **`@xmldom/xmldom` passe de 0.7.13 à 0.8.15**, version abandonnée et visée par
+  quinze CVE (injection via le DocType, entités externes). Elle était tirée par
+  **kdbxweb**, c'est-à-dire par le parseur du XML des fichiers KDBX — donc d'une
+  entrée qui vient de l'extérieur. La version corrigée est imposée en attendant
+  que kdbxweb la suive.
+- Trois autres avis publiés depuis la dernière version sont également couverts :
+  `joi` → 18.3.1, `minimatch` → 11.0.1, `follow-redirects` → 1.16.2. Aucun
+  n'était visible jusqu'ici : faute de synchronisation avec OSV.dev, l'analyse
+  d'intégration continue comparait les dépendances à une liste de dix-sept
+  paquets. Elle était verte sans avoir presque rien vérifié — le symptôme est
+  exactement l'inverse d'une alerte.
+
+### Modifié
+- **Démarrage plus rapide** : la visionneuse de documents, le studio, le
+  coffre-fort et la relecture hors ligne ne sont plus chargés au lancement mais
+  à leur première ouverture. KaTeX (~280 Ko), que la visionneuse embarque pour
+  les formules, sortait ainsi du paquet principal : **1145 Ko → 734 Ko**.
+- **L'analyse de qualité ne tourne plus à chaque push**, mais aux versions et à
+  la demande. Elle mesure une dette, qui bouge lentement ; en faire échouer un
+  push plusieurs fois par jour pour les mêmes constats apprend à ne plus lire
+  les notifications — y compris le jour où il y a vraiment quelque chose. Les
+  tests, eux, restent à chaque push.
+
+### Corrigé
+- **Le bouton d'opacité d'une capture épinglée ne faisait rien sous Linux.**
+  `BrowserWindow.setOpacity` n'existe que sous Windows et macOS et échoue en
+  silence ailleurs. L'opacité est désormais appliquée dans la fenêtre, en CSS :
+  même rendu partout, et la barre d'outils reste lisible à 30 %.
+- **Accessibilité** : les champs de la page d'options de l'extension Souris &
+  Défilement n'avaient pas d'étiquette associée — un intitulé posé à côté se
+  voit, mais ne se lit pas à voix haute.
+
 ## [1.18.0] — 2026-11-05
 
 ### Ajouté

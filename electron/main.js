@@ -2150,15 +2150,9 @@ ipcMain.handle('pin:save', async (event) => {
   }
 });
 
-ipcMain.handle('pin:opacity', (event, value) => {
-  const entry = pinnedShotFor(event);
-  if (!entry) return { success: false };
-  // Bornes volontaires : une fenêtre totalement transparente ne se retrouve
-  // plus pour être refermée.
-  const opacity = Math.min(1, Math.max(0.25, Number(value) || 1));
-  entry.win.setOpacity(opacity);
-  return { success: true, opacity };
-});
+// L'opacité d'une capture épinglée est réglée DANS la fenêtre, en CSS (voir
+// pinned-shot.html) : `BrowserWindow.setOpacity` n'existe que sous Windows et
+// macOS, et ne faisait rien sous Linux.
 
 ipcMain.handle('pin:close', (event) => {
   const entry = pinnedShotFor(event);
@@ -3287,6 +3281,12 @@ function createWindow() {
   }
 
   // Mémorise la taille/position au redimensionnement / déplacement
+  // Filet de sécurité des raccourcis globaux du studio : ils sont posés le
+  // temps d'une prise et libérés par le renderer, mais un rechargement dur ne
+  // laisse pas ce dernier faire son ménage. Un raccourci système qui survit à
+  // ce qui l'a posé se découvre des heures plus tard, dans une autre
+  // application — et on ne fait jamais le lien.
+  mainWindow.webContents.on('did-start-loading', () => studio.releaseStudioKeys());
   mainWindow.on('resize', persistWindowState);
   mainWindow.on('move', persistWindowState);
   mainWindow.on('maximize', persistWindowState);
@@ -5682,6 +5682,11 @@ ipcMain.handle('downloads:openTorrent', async (_event, value) => {
     if (torrentUrl.protocol !== 'magnet:') {
       return { success: false, error: 'unsupported-torrent-protocol' };
     }
+    // Le protocole est vérifié trois lignes plus haut : tout ce qui n'est pas
+    // `magnet:` est refusé avant d'arriver ici, et `parseDownloadUrl` a déjà
+    // exigé un identifiant de torrent valide. Ouvrir le client torrent du
+    // système est le geste voulu.
+    // argus-ignore ELECTRON-OPEN-EXTERNAL
     const error = await shell.openExternal(torrentUrl.href);
     return error ? { success: false, error } : { success: true };
   } catch (error) {
@@ -6656,6 +6661,11 @@ handleFromUi('studio:cursor', () => studio.cursorPoint());
 // Pendant l'enregistrement seulement : voir setThrottling dans studio.js.
 handleFromUi('studio:throttling', (e, { enabled } = {}) =>
   studio.setThrottling({ enabled, window: vaultWindow(e) })
+);
+// Raccourcis globaux : posés le temps de la prise, pour que les touches du
+// studio répondent depuis l'application qu'on est en train de filmer.
+handleFromUi('studio:globalKeys', (e, { enabled } = {}) =>
+  studio.setStudioKeys({ enabled, window: vaultWindow(e) })
 );
 handleFromUi('studio:save', (_e, payload = {}) => studio.saveRecording(payload));
 handleFromUi('studio:saveAs', (e, payload = {}) =>

@@ -75,7 +75,11 @@
     "zustand": "^5.0.2"
   },
   "overrides": {
-    "katex": "0.19.1"
+    "katex": "0.19.1",
+    "@xmldom/xmldom": "^0.8.15",
+    "joi": "^18.3.1",
+    "minimatch": "^11.0.1",
+    "follow-redirects": "^1.16.2"
   },
   "build": {
     "appId": "com.orbit.app",

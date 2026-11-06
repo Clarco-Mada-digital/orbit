@@ -149,7 +149,10 @@ function MathFormula({ tex, display }) {
   return (
     <Tag
       className={display ? 'my-3 overflow-x-auto text-center' : ''}
-      // Sortie de KaTeX, pas du document : voir le commentaire du composant.
+      // Sortie de KaTeX, pas du document : voir le commentaire du composant —
+      // l'entrée est du TeX extrait par notre parseur, et `trust: false`
+      // interdit les commandes qui émettraient du balisage arbitraire.
+      // argus-ignore SEC-DANGEROUS-HTML
       dangerouslySetInnerHTML={{ __html: html }}
     />
   );

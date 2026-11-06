@@ -19,15 +19,18 @@ import {
   zoomSourceRect,
   haloPoint,
   screenToCanvas,
+  voiceRingWidth,
 } from './studioLayout.js';
 import { arrowHead } from './annotate.js';
 
-function paintBackground(ctx, w, h, style, accentColor) {
-  const bg = BACKGROUNDS[style.background] || BACKGROUNDS.indigo;
-  if (bg.kind === 'none') {
-    ctx.clearRect(0, 0, w, h);
-    return;
-  }
+// Peint un fond par-dessus ce qui est déjà là. Le canvas est effacé avant,
+// alors « aucun fond » n'a rien à faire ici — et pendant un fondu, le nouveau
+// fond se pose en transparence sur l'ancien.
+function paintBackground(ctx, w, h, key, accentColor, alpha = 1) {
+  const bg = BACKGROUNDS[key] || BACKGROUNDS.indigo;
+  if (bg.kind === 'none' || alpha <= 0) return;
+  ctx.save();
+  ctx.globalAlpha = Math.min(1, alpha);
   if (bg.kind === 'accent') {
     const grad = ctx.createLinearGradient(0, 0, w, h);
     grad.addColorStop(0, accentColor || '#6366f1');
@@ -42,6 +45,7 @@ function paintBackground(ctx, w, h, style, accentColor) {
     ctx.fillStyle = bg.colors[0];
   }
   ctx.fillRect(0, 0, w, h);
+  ctx.restore();
 }
 
 // Assombrit ou éclaircit une couleur hexadécimale, pour fabriquer le second
@@ -225,6 +229,95 @@ function drawAnnotations(ctx, annotations, toCanvas) {
   ctx.restore();
 }
 
+// Anneau qui respire avec la voix, posé AUTOUR de la vignette — à l'intérieur,
+// il mangerait le visage. Il grossit avec le niveau au lieu de s'allumer et
+// s'éteindre : un anneau binaire clignote, un anneau qui respire se regarde.
+function drawVoiceRing(ctx, box, level, color) {
+  const amount = voiceRingWidth(level);
+  if (!amount) return;
+  const width = Math.max(2, Math.min(box.w, box.h) * 0.035) * (0.5 + amount);
+  ctx.save();
+  ctx.globalAlpha = 0.35 + amount * 0.5;
+  ctx.strokeStyle = color || '#6366f1';
+  ctx.lineWidth = width;
+  if (box.shape === 'circle') {
+    ctx.beginPath();
+    ctx.arc(box.x + box.w / 2, box.y + box.h / 2, Math.min(box.w, box.h) / 2 + width / 2, 0, Math.PI * 2);
+    ctx.stroke();
+  } else {
+    const o = width / 2;
+    roundedPath(ctx, box.x - o, box.y - o, box.w + o * 2, box.h + o * 2, box.radius ?? 0);
+    ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// Carton de titre : un voile sur la composition, le titre par-dessus. Les deux
+// s'effacent à leur rythme (voir titleCardPhase), si bien que la composition
+// se découvre sous le texte au lieu d'apparaître après lui.
+function drawTitleCard(ctx, width, height, { text, phase }) {
+  if (!text || !phase) return;
+  ctx.save();
+  if (phase.veil > 0) {
+    ctx.globalAlpha = phase.veil * 0.72;
+    ctx.fillStyle = 'rgba(8,11,22,1)';
+    ctx.fillRect(0, 0, width, height);
+  }
+  ctx.globalAlpha = phase.text;
+  const size = Math.round(Math.min(width, height) * 0.085);
+  ctx.font = `600 ${size}px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.shadowColor = 'rgba(0,0,0,0.55)';
+  ctx.shadowBlur = size * 0.35;
+  ctx.fillStyle = '#ffffff';
+  // Le titre est coupé en lignes sur les espaces : une seule ligne débordait
+  // du cadre dès qu'on écrivait une phrase.
+  const lines = wrapText(ctx, String(text), width * 0.78);
+  const start = height / 2 - ((lines.length - 1) * size * 1.25) / 2;
+  lines.forEach((line, i) => ctx.fillText(line, width / 2, start + i * size * 1.25));
+  ctx.restore();
+}
+
+function wrapText(ctx, text, maxWidth) {
+  const words = text.split(/\s+/).filter(Boolean);
+  const lines = [];
+  let line = '';
+  for (const word of words) {
+    const next = line ? `${line} ${word}` : word;
+    if (line && ctx.measureText(next).width > maxWidth) {
+      lines.push(line);
+      line = word;
+    } else {
+      line = next;
+    }
+  }
+  if (line) lines.push(line);
+  return lines.slice(0, 3);
+}
+
+// Bandeau d'état — « Pause ». Sur l'image figée d'une pause, c'est lui qui dit
+// au spectateur que la coupure est voulue et non un bogue d'encodage.
+function drawBanner(ctx, width, height, label) {
+  if (!label) return;
+  const size = Math.round(Math.min(width, height) * 0.038);
+  ctx.save();
+  ctx.font = `600 ${size}px system-ui, -apple-system, "Segoe UI", Roboto, sans-serif`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  const padX = size * 0.9;
+  const w = ctx.measureText(label).width + padX * 2;
+  const h = size * 2;
+  const x = (width - w) / 2;
+  const y = height * 0.06;
+  ctx.fillStyle = 'rgba(8,11,22,0.72)';
+  roundedPath(ctx, x, y, w, h, h / 2);
+  ctx.fill();
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText(label, width / 2, y + h / 2);
+  ctx.restore();
+}
+
 // Une image d'enregistrement. Appelée à chaque rafraîchissement : elle doit
 // rester sans allocation inutile et sans effet de bord.
 export function drawFrame(ctx, {
@@ -239,21 +332,53 @@ export function drawFrame(ctx, {
   // de replacer les annotations.
   captureBounds = null,
   annotations = null,
+  // Plan déjà interpolé par l'appelant pendant un changement de disposition.
+  // Sans lui, on compose directement la disposition demandée.
+  plan: planOverride = null,
+  // Fondu de fond en cours : `{ from, t }`, l'ancien fond et l'avancement.
+  backgroundFade = null,
+  // Niveau de zoom EFFECTIF : le réglage permanent, ou un coup de zoom en
+  // cours. 1 = pas de zoom.
+  zoomLevel = null,
+  // Niveau de voix lissé (0→1), pour l'anneau de la caméra.
+  voice = 0,
+  // Carton de titre : `{ text, phase }` pendant les premières secondes.
+  titleCard = null,
+  // Image figée à redessiner telle quelle (pause), et bandeau à poser dessus.
+  frozen = null,
+  banner = null,
 }) {
+  // Pause : on redessine l'image d'avant, inchangée. Tout recomposer ferait
+  // vivre la vidéo pendant la pause (le visage bouge, le curseur passe), ce
+  // qui est précisément ce qu'une pause ne doit pas montrer.
+  if (frozen) {
+    ctx.clearRect(0, 0, width, height);
+    ctx.drawImage(frozen, 0, 0, width, height);
+    drawBanner(ctx, width, height, banner);
+    return;
+  }
+
   ctx.clearRect(0, 0, width, height);
-  paintBackground(ctx, width, height, style, accentColor);
+  if (backgroundFade?.from && backgroundFade.t < 1) {
+    paintBackground(ctx, width, height, backgroundFade.from, accentColor);
+    paintBackground(ctx, width, height, style.background, accentColor, backgroundFade.t);
+  } else {
+    paintBackground(ctx, width, height, style.background, accentColor);
+  }
 
   const hasCamera = Boolean(cameraVideo && cameraVideo.videoWidth);
-  const plan = composeLayout({ outW: width, outH: height, style, hasCamera });
+  const plan = planOverride || composeLayout({ outW: width, outH: height, style, hasCamera });
 
   if (plan.screen && screenVideo && screenVideo.videoWidth) {
     const box = plan.screen;
+    ctx.save();
+    if (box.alpha != null) ctx.globalAlpha = box.alpha;
     // Le zoom choisit QUELLE PART de la capture est montrée ; le cadre, lui,
     // ne bouge pas. C'est ce qui donne l'effet « la caméra se rapproche »
     // plutôt qu'une image qui grossit en débordant.
-    const source = style.zoom
-      ? zoomSourceRect(screenVideo.videoWidth, screenVideo.videoHeight, focus, style.zoomLevel)
-      : null;
+    const z = zoomLevel ?? (style.zoom ? style.zoomLevel : 1);
+    const source =
+      z > 1 ? zoomSourceRect(screenVideo.videoWidth, screenVideo.videoHeight, focus, z) : null;
 
     const fit = containRect(
       source ? source.sw : screenVideo.videoWidth,
@@ -269,7 +394,9 @@ export function drawFrame(ctx, {
     // géométrie du cadre, qui ne bouge pas d'une image à l'autre — la
     // recalculer trente fois par seconde revenait à payer le plus lourd pour
     // redessiner l'identique.
-    if (style.shadow && style.background !== 'none') {
+    // Mise de côté pendant un enchaînement : la géométrie change à chaque
+    // image, le cache ne servirait plus à rien et le flou coûterait la cadence.
+    if (style.shadow && style.background !== 'none' && !plan.animating) {
       const shadow = cachedShadow(width, height, fit, style.radius);
       if (shadow) ctx.drawImage(shadow, 0, 0);
     }
@@ -307,11 +434,19 @@ export function drawFrame(ctx, {
         ctx.restore();
       }
     }
+    ctx.restore(); // opacité de l'enchaînement
   }
 
   if (plan.camera && hasCamera) {
     const box = plan.camera;
     const circle = box.shape === 'circle';
+
+    ctx.save();
+    if (box.alpha != null) ctx.globalAlpha = box.alpha;
+
+    if (style.voiceRing !== false) {
+      drawVoiceRing(ctx, { ...box, radius: style.radius }, voice, accentColor);
+    }
 
     ctx.save();
     // Un liseré clair détache le visage du fond, surtout quand la pastille
@@ -340,5 +475,11 @@ export function drawFrame(ctx, {
     } else {
       drawClipped(ctx, cameraVideo, box, { radius: style.radius, circle, cover: true });
     }
+    ctx.restore(); // opacité de l'enchaînement
   }
+
+  // Par-dessus tout : le carton de titre des premières secondes, puis le
+  // bandeau d'état.
+  if (titleCard) drawTitleCard(ctx, width, height, titleCard);
+  drawBanner(ctx, width, height, banner);
 }

@@ -1,0 +1,95 @@
+name: Veille des vulnérabilités
+
+# Un projet peut devenir vulnérable SANS QU'AUCUN COMMIT NE SOIT POUSSÉ : il
+# suffit qu'un avis soit publié sur une dépendance qui n'a pas bougé. C'est le
+# seul cas qu'une intégration continue classique ne voit jamais, puisqu'elle ne
+# se déclenche qu'au push — et c'est précisément pour ça que ce workflow est à
+# l'heure, pas à l'événement.
+#
+# Il ne juge pas la qualité du code (c'est le rôle d'argus.yml, aux versions) :
+# il rafraîchit la base OSV.dev et regarde une seule chose, les dépendances.
+#
+# Il n'ouvre une alerte QUE s'il y a quelque chose à dire. Un ticket
+# hebdomadaire « rien à signaler » finit par ne plus être lu, et c'est ainsi
+# qu'on rate celui qui comptait.
+on:
+  schedule:
+    # Lundi 6 h UTC : le constat est là avant le début de semaine.
+    - cron: '0 6 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+env:
+  ARGUS: https://codeload.github.com/Clarco-Mada-digital/argus/tar.gz/490dcca3ac3624176b177c5f21442d4086952f4d
+
+jobs:
+  veille:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      # Seuls des couples (nom de paquet, version) partent en requête vers
+      # OSV.dev. Le code ne sort pas.
+      - name: Rafraîchir la base OSV.dev
+        run: npx --yes --package=$ARGUS argus sync .
+
+      - name: Analyser les dépendances
+        id: analyse
+        run: |
+          npx --yes --package=$ARGUS argus scan . \
+            --only dependances \
+            --json rapport.json \
+            --quiet || true
+
+          node -e "
+            const fs = require('node:fs');
+            const r = JSON.parse(fs.readFileSync('rapport.json', 'utf8'));
+            const vulns = r.findings.filter((f) => f.ruleId === 'DEP-VULNERABLE');
+            fs.appendFileSync(process.env.GITHUB_OUTPUT, 'nombre=' + vulns.length + '\n');
+
+            const ligne = (f) => {
+              const d = f.data || {};
+              const avis = (d.advisories || []).slice(0, 4).join(', ');
+              return '- **' + (d.package || f.file) + '** ' + (d.installed || '') +
+                ' → corrigé en ' + (d.fixedIn || '?') +
+                (d.direct ? '' : ' _(dépendance transitive)_') +
+                (avis ? '\n  ' + avis : '');
+            };
+            const lignes = vulns.map(ligne);
+            fs.writeFileSync('resume.md', lignes.join('\n') || 'Aucune.');
+
+            const veille = r.veille || {};
+            const bandeau = vulns.length
+              ? '## ' + vulns.length + ' dépendance(s) vulnérable(s)\n\n' + lignes.join('\n')
+              : '## Aucune vulnérabilité connue\n\nBase OSV rafraîchie ce jour (' +
+                (veille.entrees || 0) + ' entrée(s)).';
+            fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, bandeau + '\n');
+          "
+
+      # Un seul ticket, mis à jour par commentaire : dix tickets « Veille »
+      # ouverts en parallèle, personne ne les lit.
+      - name: Ouvrir ou mettre à jour l'alerte
+        if: steps.analyse.outputs.nombre != '0'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh label create veille --color FBCA04 --description "Veille des vulnérabilités" 2>/dev/null || true
+
+          titre="Veille : ${{ steps.analyse.outputs.nombre }} dépendance(s) vulnérable(s)"
+          corps=$(printf '%s\n\n---\n\nRelevé par la veille hebdomadaire, sans aucun changement de code : ces avis ont été publiés depuis la dernière analyse.\n\nEn local : `npx argus sync . && npx argus scan . --only dependances`\n' "$(cat resume.md)")
+
+          existant=$(gh issue list --label veille --state open --json number,title \
+            --jq '.[] | select(.title | startswith("Veille :")) | .number' | head -1)
+
+          if [ -n "$existant" ]; then
+            gh issue edit "$existant" --title "$titre"
+            gh issue comment "$existant" --body "$corps"
+          else
+            gh issue create --title "$titre" --label veille --body "$corps"
+          fi

@@ -1,15 +1,28 @@
 name: Argus
 
-# Analyse qualité / sécurité à chaque push et PR, avec notre propre outil Argus.
+# Analyse qualité / sécurité avec notre propre outil Argus.
+#
+# AUX VERSIONS, pas à chaque push. Une analyse de qualité ne dit pas « ce
+# commit casse quelque chose » : elle mesure une dette, qui bouge lentement.
+# La lancer à chaque push produisait une notification d'échec plusieurs fois
+# par jour, toujours pour les mêmes constats — et on finit par ne plus les
+# lire du tout, y compris le jour où il y a vraiment quelque chose.
+# Les tests, eux, restent à chaque push (voir tests.yml) : c'est leur rôle
+# d'attraper une régression AVANT qu'on taggue une version.
+#
+# `workflow_dispatch` reste là pour la lancer à la demande, depuis l'onglet
+# Actions, quand on veut faire le point sans publier.
+#
 # NB : on lance le CLI via npx plutôt que l'action `Clarco-Mada-digital/argus@main`,
 # car son action.yml est actuellement invalide (erreur de parsing YAML).
 #
-# Les exceptions précises et motivées vivent dans `argus.config.json` à la
-# racine, pas dans une baseline qui masquerait indistinctement la dette.
+# Les exceptions vivent DANS le code, en commentaire `argus-ignore` au-dessus
+# de la ligne concernée (voir argus.config.json pour le pourquoi), pas dans une
+# baseline qui masquerait indistinctement la dette.
 on:
   push:
-    branches: [master]
-  pull_request:
+    tags:
+      - 'v*'
   workflow_dispatch:
 
 permissions:
@@ -29,5 +42,20 @@ jobs:
         with:
           node-version: 22
 
+      # Sans cette etape, l'analyse des dependances retombe sur la liste de
+      # secours d'Argus — dix-sept paquets, soit une part infime des
+      # vulnerabilites connues. Une analyse sans constat ressemblait alors a
+      # un projet sain alors qu'elle n'avait presque rien verifie.
+      #
+      # `sync` interroge OSV.dev (GitHub Advisories, CVE, PyPA, RustSec…) et
+      # ecrit un cache local. Seuls des couples (nom de paquet, version)
+      # partent en requete : le code ne sort pas.
+      - name: Rafraichir la base de vulnerabilites
+        run: npx --yes --package=$ARGUS argus sync .
+        env:
+          ARGUS: https://codeload.github.com/Clarco-Mada-digital/argus/tar.gz/490dcca3ac3624176b177c5f21442d4086952f4d
+
       - name: Analyse Argus
-        run: npx --yes --package=https://codeload.github.com/Clarco-Mada-digital/argus/tar.gz/490dcca3ac3624176b177c5f21442d4086952f4d argus scan . --ci --fail-on high
+        run: npx --yes --package=$ARGUS argus scan . --ci --fail-on high
+        env:
+          ARGUS: https://codeload.github.com/Clarco-Mada-digital/argus/tar.gz/490dcca3ac3624176b177c5f21442d4086952f4d

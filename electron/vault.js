@@ -1345,6 +1345,12 @@ export function unlockRemembered(id) {
   const res = unlock(id, password);
   // Le mot de passe maître a pu être changé depuis : on ne garde pas une
   // mémorisation qui ne marche plus.
+  //
+  // `argus-ignore` : les trois premières lettres de `forgetMaster` ouvraient
+  // le motif « requête dans une boucle » des versions d'Argus antérieures à
+  // novembre 2026. Il n'y a ici ni boucle ni requête. À retirer une fois la
+  // CI passée à une version corrigée.
+  // argus-ignore PERF-NESTED-LOOP-QUERY
   if (!res.success) forgetMaster(id);
   return res;
 }

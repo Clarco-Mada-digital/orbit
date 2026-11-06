@@ -52,12 +52,12 @@
       "maxAssetBytes": 1048576
     }
   },
-  "suppressions": [
-    {
-      "regle": "ELECTRON-OPEN-EXTERNAL",
-      "fichier": "electron/main.js",
-      "ligne": 5103,
-      "raison": "Lien magnet : parseDownloadUrl exige un identifiant torrent valide, le protocole magnet est contrôlé explicitement, et l'ouverture du client torrent système est volontaire."
-    }
-  ]
+  // Vide, et c'est voulu : une exception écrite ICI est repérée par un NUMÉRO
+  // DE LIGNE, qui se décale au premier ajout au-dessus. L'exception portait
+  // alors sur une autre ligne — elle ne masquait plus rien, et le constat
+  // qu'elle devait écarter revenait sans qu'on comprenne pourquoi.
+  // Les exceptions vivent donc DANS le code, en commentaire `argus-ignore`
+  // juste au-dessus de la ligne concernée, avec la raison : elles suivent le
+  // code quand il bouge, et se lisent là où la question se pose.
+  "suppressions": []
 }

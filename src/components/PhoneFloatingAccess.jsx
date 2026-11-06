@@ -1,12 +1,27 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Grip, Loader2, Monitor, Phone, PhoneOff, Pin, User, X } from 'lucide-react';
+import { ChevronLeft, ChevronRight, Grip, Loader2, Monitor, Phone, PhoneOff, Pin, User, X } from 'lucide-react';
 import { usePhoneStore } from '../lib/phoneStore';
 import { describeCallNotification, phoneCallKey } from '../lib/phone';
 
 const api = () => window.electronAPI?.phone;
 const DOCK_POSITION_KEY = 'orbit.phone.pinned-dock-position.v1';
-const DOCK_SIZE = 52;
+// La pastille tenait 52 px en permanence au-dessus du contenu. Réduite, et
+// surtout REPLIABLE : collée à un bord, elle ne laisse qu'une languette.
+const DOCK_SIZE = 44;
+// Largeur de la languette repliée : assez pour être saisie à la souris, assez
+// peu pour qu'on oublie qu'elle est là.
+const TAB_WIDTH = 16;
 const DOCK_MARGIN = 12;
+
+// Bord contre lequel la pastille est rangée, ou null quand elle flotte. Le
+// repli est AUTOMATIQUE : on pousse la pastille contre un bord et elle se
+// range, on la tire vers le centre et elle revient entière. Pas de réglage à
+// trouver, c'est le geste qui le dit.
+function edgeOf(position) {
+  if (position.x >= 0.995) return 'right';
+  if (position.x <= 0.005) return 'left';
+  return null;
+}
 
 function readDockPosition() {
   try {
@@ -51,6 +66,9 @@ export default function PhoneFloatingAccess() {
     height: window.innerHeight,
   }));
   const dockRef = useRef(null);
+  // Pendant le déplacement, la pastille reprend sa taille entière : on saisit
+  // mal une languette de seize pixels qui reste collée au bord.
+  const [dragging, setDragging] = useState(false);
   const dragRef = useRef(null);
   const suppressClickRef = useRef(false);
   const notificationCounts = useMemo(() => {
@@ -95,6 +113,11 @@ export default function PhoneFloatingAccess() {
   const maxTop = Math.max(0, viewport.height - DOCK_SIZE);
   const dockLeft = Math.round(dockPosition.x * maxLeft);
   const dockTop = Math.round(dockPosition.y * maxTop);
+  // Repliée tant qu'on ne s'en sert pas : ouverte ou en cours de déplacement,
+  // elle redevient une pastille ordinaire.
+  const edge = !dragging && !expanded ? edgeOf(dockPosition) : null;
+  const dockWidth = edge ? TAB_WIDTH : DOCK_SIZE;
+  const dockRenderLeft = edge === 'right' ? viewport.width - TAB_WIDTH : edge === 'left' ? 0 : dockLeft;
   const panelWidth = Math.max(1, Math.min(264, viewport.width - DOCK_MARGIN * 2));
   const panelHeight = Math.max(1, Math.min(232, viewport.height - DOCK_MARGIN * 2));
   const panelLeft = Math.max(
@@ -211,6 +234,7 @@ export default function PhoneFloatingAccess() {
     if (!drag.moved && Math.hypot(deltaX, deltaY) < 6) return;
     drag.moved = true;
     suppressClickRef.current = true;
+    setDragging(true);
     const next = {
       x: maxLeft ? Math.max(0, Math.min(1, (drag.startLeft + deltaX) / maxLeft)) : 0,
       y: maxTop ? Math.max(0, Math.min(1, (drag.startTop + deltaY) / maxTop)) : 0,
@@ -223,6 +247,7 @@ export default function PhoneFloatingAccess() {
     const drag = dragRef.current;
     if (!drag || drag.pointerId !== event.pointerId) return;
     dragRef.current = null;
+    setDragging(false);
     if (drag.moved) {
       try {
         window.localStorage.setItem(DOCK_POSITION_KEY, JSON.stringify(drag.lastPosition));
@@ -374,15 +399,15 @@ export default function PhoneFloatingAccess() {
       {apps.length > 0 && serial && (
         <div
           ref={dockRef}
-          className="fixed z-[11000] h-[52px] w-[52px]"
-          style={{ left: dockLeft, top: dockTop }}
+          className="fixed z-[11000]"
+          style={{ left: dockRenderLeft, top: dockTop, width: dockWidth, height: DOCK_SIZE }}
         >
           {expanded && (
             <nav
               aria-label="Applications Android épinglées"
               className="absolute rounded-2xl border border-white/15 bg-slate-950/85 p-3 text-white shadow-2xl shadow-black/35 backdrop-blur-2xl"
               style={{
-                left: panelLeft - dockLeft,
+                left: panelLeft - dockRenderLeft,
                 top: panelTop - dockTop,
                 width: panelWidth,
                 maxHeight: panelHeight,
@@ -455,23 +480,57 @@ export default function PhoneFloatingAccess() {
               }
               setExpanded((value) => !value);
             }}
-            aria-label={expanded ? 'Fermer les applications épinglées' : `Ouvrir les ${apps.length} applications épinglées`}
+            aria-label={
+              expanded
+                ? 'Fermer les applications épinglées'
+                : `Ouvrir les ${apps.length} applications épinglées`
+            }
             aria-expanded={expanded}
-            title="Déplacer ou ouvrir les applications épinglées"
-            className="group relative grid h-[52px] w-[52px] touch-none place-items-center overflow-hidden rounded-[19px] border border-white/20 bg-slate-950/85 p-1 text-white shadow-xl shadow-black/35 backdrop-blur-2xl transition hover:scale-105 hover:border-white/35 focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-300"
+            title={
+              edge
+                ? 'Applications épinglées — cliquer pour ouvrir, glisser pour déplacer'
+                : 'Déplacer ou ouvrir les applications épinglées'
+            }
+            style={{ width: dockWidth, height: DOCK_SIZE }}
+            className={`group relative grid touch-none place-items-center overflow-hidden border border-white/20 bg-slate-950/85 text-white shadow-xl shadow-black/35 backdrop-blur-2xl transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-300 ${
+              edge === 'right'
+                ? 'rounded-l-xl border-r-0 hover:-translate-x-0.5'
+                : edge === 'left'
+                  ? 'rounded-r-xl border-l-0 hover:translate-x-0.5'
+                  : 'rounded-[16px] p-1 hover:scale-105 hover:border-white/35'
+            }`}
           >
-            {apps[0]?.icon
-              ? <img src={apps[0].icon} alt="" draggable={false} className="h-full w-full rounded-[14px] object-contain" />
-              : <Pin size={21} className="text-violet-200" />}
-            {pinnedNotificationCount > 0 && (
-              <span
-                aria-label={`${pinnedNotificationCount} notification${pinnedNotificationCount === 1 ? '' : 's'} dans les applications épinglées`}
-                className="absolute -right-0.5 -top-0.5 grid h-[19px] min-w-[19px] place-items-center rounded-full border border-slate-950 bg-rose-500 px-1 text-[10px] font-bold text-white"
-              >
-                {pinnedNotificationCount > 99 ? '99+' : pinnedNotificationCount}
-              </span>
+            {/* Repliée contre un bord : une languette, et un chevron qui
+                montre d'où le reste va sortir. */}
+            {edge ? (
+              edge === 'right'
+                ? <ChevronLeft size={13} className="text-violet-200" />
+                : <ChevronRight size={13} className="text-violet-200" />
+            ) : apps[0]?.icon ? (
+              <img src={apps[0].icon} alt="" draggable={false} className="h-full w-full rounded-[12px] object-contain" />
+            ) : (
+              <Pin size={18} className="text-violet-200" />
             )}
-            <Grip size={12} className="absolute bottom-1 left-1 text-white/60 opacity-0 transition group-hover:opacity-100" />
+            {pinnedNotificationCount > 0 && (
+              edge ? (
+                // Sur une languette de seize pixels, le compte ne tiendrait
+                // pas : un point suffit à dire « il s'est passé quelque chose ».
+                <span
+                  aria-label={`${pinnedNotificationCount} notification${pinnedNotificationCount === 1 ? '' : 's'} dans les applications épinglées`}
+                  className="absolute right-0.5 top-1 h-1.5 w-1.5 rounded-full bg-rose-500"
+                />
+              ) : (
+                <span
+                  aria-label={`${pinnedNotificationCount} notification${pinnedNotificationCount === 1 ? '' : 's'} dans les applications épinglées`}
+                  className="absolute -right-0.5 -top-0.5 grid h-[17px] min-w-[17px] place-items-center rounded-full border border-slate-950 bg-rose-500 px-1 text-[9px] font-bold text-white"
+                >
+                  {pinnedNotificationCount > 99 ? '99+' : pinnedNotificationCount}
+                </span>
+              )
+            )}
+            {!edge && (
+              <Grip size={11} className="absolute bottom-0.5 left-0.5 text-white/60 opacity-0 transition group-hover:opacity-100" />
+            )}
           </button>
         </div>
       )}

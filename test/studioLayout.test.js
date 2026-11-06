@@ -21,6 +21,29 @@ import {
   nextInList,
   BACKGROUNDS,
   screenToCanvas,
+  PRESENTATION_FRAMINGS,
+  framingOf,
+  framingPatch,
+  CAMERA_ALIGNS,
+  inertReason,
+  micLevel,
+  voiceRingWidth,
+  VOICE_FLOOR,
+  zoomPulseLevel,
+  ZOOM_PULSE_MS,
+  titleCardPhase,
+  TITLE_CARD_MS,
+  stagingOf,
+  savePreset,
+  removePreset,
+  presetPatch,
+  MAX_PRESETS,
+  easeInOut,
+  tweenPlan,
+  stepLayoutTransition,
+  stepFade,
+  LAYOUT_TRANSITION_MS,
+  BACKGROUND_FADE_MS,
 } from '../src/lib/studioLayout.js';
 
 // La mise en page décide de ce que le spectateur verra. Une erreur ici ne se
@@ -133,6 +156,36 @@ test('disposition « présentation » : l’écran reste le plus grand', () => {
   assert.ok(plan.screen.w > plan.camera.w, 'la capture doit dominer');
 });
 
+test('en « présentation », la caméra est une vignette, pas une colonne', () => {
+  // L'information est dans la capture : à hauteur égale, les deux images se
+  // disputaient le regard et la capture perdait de la place pour rien.
+  const plan = composeLayout({
+    outW: 1920, outH: 1080, hasCamera: true,
+    style: { ...DEFAULT_STYLE, layout: 'presentation' },
+  });
+  assert.ok(plan.camera.h < plan.screen.h * 0.7, 'la pastille doit être nettement moins haute');
+  // À MI-HAUTEUR : dans un coin, elle se confondrait avec « écran + pastille ».
+  assert.equal(
+    Math.round(plan.camera.y + plan.camera.h / 2),
+    Math.round(plan.screen.y + plan.screen.h / 2),
+    'la vignette doit être centrée en hauteur'
+  );
+  const coin = composeLayout({
+    outW: 1920, outH: 1080, hasCamera: true,
+    style: { ...DEFAULT_STYLE, layout: 'screen' },
+  });
+  assert.ok(
+    Math.abs(plan.camera.y - coin.camera.y) > plan.camera.h / 2,
+    'elle ne doit pas retomber là où se pose la pastille de « écran + pastille »'
+  );
+  // Et la capture garde presque toute la largeur.
+  const pleinCadre = composeLayout({
+    outW: 1920, outH: 1080, hasCamera: true,
+    style: { ...DEFAULT_STYLE, layout: 'screen' },
+  });
+  assert.ok(plan.screen.w > pleinCadre.screen.w * 0.85, 'la capture doit rester large');
+});
+
 test('chevauchement : la pastille MORD sur la capture, et passe devant', () => {
   const avec = composeLayout({
     outW: 1920,
@@ -152,6 +205,29 @@ test('chevauchement : la pastille MORD sur la capture, et passe devant', () => {
     hasCamera: true,
   });
   assert.ok(sans.screen.x + sans.screen.w <= sans.camera.x + 1, 'sans chevauchement, les zones sont disjointes');
+
+  // « Même format » : c'est le RAPPORT entre les deux images qui change, pas la
+  // vignette. Une pastille qui change de taille avec le cadrage donnerait deux
+  // mises en scène différentes au lieu de deux cadrages de la même.
+  assert.equal(avec.camera.w, sans.camera.w, 'la vignette garde sa taille');
+  assert.equal(avec.camera.h, sans.camera.h);
+  assert.equal(avec.camera.y, sans.camera.y, 'et sa hauteur de pose');
+  assert.equal(avec.camera.x, sans.camera.x, 'et sa place contre le bord');
+});
+
+test('le cadrage de la présentation se nomme, se lit et se bascule', () => {
+  assert.deepEqual(PRESENTATION_FRAMINGS, ['overlap', 'spaced']);
+  // Lecture : le réglage est stocké en booléen depuis l'origine, et un réglage
+  // déjà enregistré sans ce champ doit rester « chevauché ».
+  assert.equal(framingOf({}), 'overlap');
+  assert.equal(framingOf({ cameraOverlap: true }), 'overlap');
+  assert.equal(framingOf({ cameraOverlap: false }), 'spaced');
+  assert.deepEqual(framingPatch('spaced'), { cameraOverlap: false });
+  assert.deepEqual(framingPatch('overlap'), { cameraOverlap: true });
+  // Et la touche fait l'aller-retour.
+  assert.equal(STUDIO_KEYS.o, 'framing');
+  assert.deepEqual(applyStudioKey('o', { cameraOverlap: true }), { cameraOverlap: false });
+  assert.deepEqual(applyStudioKey('O', { cameraOverlap: false }), { cameraOverlap: true });
 });
 
 test('le côté de la caméra inverse bien les deux zones', () => {
@@ -371,6 +447,268 @@ test('« présentation » existe aussi sans caméra : la capture est mise en sc�
   );
 });
 
+// --- Enchaînements ---------------------------------------------------------
+// Un changement de disposition en pleine phrase doit se voir comme un
+// mouvement, pas comme une coupure.
+
+test('l’enchaînement part de l’affiché et arrive exactement sur la cible', () => {
+  const a = composeLayout({
+    outW: 1280, outH: 720, hasCamera: true,
+    style: { ...DEFAULT_STYLE, layout: 'screen' },
+  });
+  const b = composeLayout({
+    outW: 1280, outH: 720, hasCamera: true,
+    style: { ...DEFAULT_STYLE, layout: 'presentation' },
+  });
+
+  // Première image : rien à rattraper, on affiche la cible telle quelle.
+  let state = stepLayoutTransition(null, a, 1000);
+  assert.equal(state.plan, a);
+
+  // Changement de cible : on repart de ce qui est à l'écran.
+  state = stepLayoutTransition(state, b, 2000);
+  assert.equal(state.plan, a, 'le premier pas ne doit pas sauter');
+
+  // À mi-parcours, la géométrie est entre les deux.
+  state = stepLayoutTransition(state, b, 2000 + LAYOUT_TRANSITION_MS / 2);
+  assert.ok(state.plan.animating, 'un mouvement est en cours');
+  const between = (v, x, y) => v > Math.min(x, y) && v < Math.max(x, y);
+  assert.ok(between(state.plan.camera.w, a.camera.w, b.camera.w), 'largeur interpolée');
+  assert.ok(between(state.plan.camera.y, a.camera.y, b.camera.y), 'position interpolée');
+
+  // Au bout du temps imparti, on est sur la cible au pixel près — sinon la
+  // composition finirait légèrement décalée pour le reste de la vidéo.
+  state = stepLayoutTransition(state, b, 2000 + LAYOUT_TRANSITION_MS);
+  assert.deepEqual(state.plan, b);
+  assert.ok(!state.plan.animating);
+});
+
+test('une zone qui apparaît ou disparaît se révèle au lieu de surgir', () => {
+  const avecEcran = composeLayout({
+    outW: 1280, outH: 720, hasCamera: true,
+    style: { ...DEFAULT_STYLE, layout: 'screen' },
+  });
+  const cameraSeule = composeLayout({
+    outW: 1280, outH: 720, hasCamera: true,
+    style: { ...DEFAULT_STYLE, layout: 'camera' },
+  });
+
+  const moitie = tweenPlan(avecEcran, cameraSeule, 0.5);
+  assert.ok(moitie.screen, 'l’écran qui part reste dessiné le temps du fondu');
+  assert.ok(moitie.screen.alpha > 0 && moitie.screen.alpha < 1, 'il doit s’effacer');
+  assert.ok(moitie.screen.w < avecEcran.screen.w, 'et se resserrer vers son centre');
+
+  const retour = tweenPlan(cameraSeule, avecEcran, 0.5);
+  assert.ok(retour.screen.alpha > 0 && retour.screen.alpha < 1, 'et réapparaître de même');
+});
+
+test('deux changements rapprochés s’enchaînent sans retour en arrière', () => {
+  const plans = ['screenOnly', 'screen', 'split'].map((layout) =>
+    composeLayout({ outW: 1280, outH: 720, hasCamera: true, style: { ...DEFAULT_STYLE, layout } })
+  );
+  let state = stepLayoutTransition(null, plans[0], 0);
+  state = stepLayoutTransition(state, plans[1], 100);
+  state = stepLayoutTransition(state, plans[1], 100 + LAYOUT_TRANSITION_MS / 2);
+  const milieu = state.plan.screen.w;
+  // Nouvelle cible alors que le mouvement n'est pas terminé : le départ est la
+  // position courante, pas l'ancienne cible.
+  state = stepLayoutTransition(state, plans[2], 300);
+  assert.equal(state.from.screen.w, milieu);
+});
+
+test('un réglage qu’on fait glisser suit le curseur, sans amortissement', () => {
+  // Un enchaînement sur chaque pixel du glissement donnerait un réglage qui
+  // répond avec un temps de retard, donc l'impression que l'application rame.
+  const plan = (cameraSize) =>
+    composeLayout({
+      outW: 1280, outH: 720, hasCamera: true,
+      style: { ...DEFAULT_STYLE, layout: 'screen', cameraSize },
+    });
+  let state = stepLayoutTransition(null, plan(22), 0);
+  state = stepLayoutTransition(state, plan(23), 10);
+  assert.deepEqual(state.plan, plan(23), 'un pas de réglage doit être immédiat');
+  assert.ok(!state.plan.animating);
+
+  // Un vrai changement de composition, lui, s'enchaîne.
+  const presentation = composeLayout({
+    outW: 1280, outH: 720, hasCamera: true,
+    style: { ...DEFAULT_STYLE, layout: 'presentation' },
+  });
+  state = stepLayoutTransition(state, presentation, 20);
+  state = stepLayoutTransition(state, presentation, 20 + LAYOUT_TRANSITION_MS / 2);
+  assert.ok(state.plan.animating, 'changer de disposition doit se voir bouger');
+});
+
+test('le fondu de fond démarre à zéro et ne rejoue pas sans changement', () => {
+  let fade = stepFade(null, 'indigo', 0);
+  assert.equal(fade.t, 1, 'au démarrage, rien à fondre');
+  assert.equal(fade.from, null);
+
+  fade = stepFade(fade, 'sunset', 1000);
+  assert.equal(fade.from, 'indigo');
+  assert.equal(fade.t, 0);
+  fade = stepFade(fade, 'sunset', 1000 + BACKGROUND_FADE_MS);
+  assert.equal(fade.t, 1, 'le fondu doit se terminer');
+});
+
+test('easeInOut est accompagné aux deux bouts', () => {
+  assert.equal(easeInOut(0), 0);
+  assert.equal(easeInOut(1), 1);
+  assert.ok(Math.abs(easeInOut(0.5) - 0.5) < 1e-9, 'symétrique au milieu');
+  // Démarrage lent : c'est ce qui enlève l'impression de saut.
+  assert.ok(easeInOut(0.1) < 0.1);
+  assert.ok(easeInOut(0.9) > 0.9);
+  // Valeurs hors bornes : bornées plutôt que divergentes.
+  assert.equal(easeInOut(-5), 0);
+  assert.equal(easeInOut(42), 1);
+});
+
+// --- Hauteur de pose de la vignette ----------------------------------------
+test('la vignette se pose en haut, au milieu ou en bas', () => {
+  // Le milieu d'abord : c'est le réglage par défaut, et « C » part de lui.
+  assert.deepEqual(CAMERA_ALIGNS, ['middle', 'top', 'bottom']);
+  assert.equal(DEFAULT_STYLE.cameraAlign, 'middle');
+  const plan = (cameraAlign) =>
+    composeLayout({
+      outW: 1920, outH: 1080, hasCamera: true,
+      style: { ...DEFAULT_STYLE, layout: 'presentation', cameraAlign },
+    });
+  const box = contentBox(1920, 1080, DEFAULT_STYLE.padding);
+  assert.equal(Math.round(plan('top').camera.y), Math.round(box.y));
+  assert.equal(
+    Math.round(plan('bottom').camera.y + plan('bottom').camera.h),
+    Math.round(box.y + box.h)
+  );
+  // Valeur absente ou inconnue : on retombe au milieu, jamais hors cadre.
+  assert.equal(plan('milieu-du-milieu').camera.y, plan('middle').camera.y);
+  assert.equal(plan(undefined).camera.y, plan('middle').camera.y);
+});
+
+test('« C » place la caméra là où il y a quelque chose à placer', () => {
+  // En présentation, la vignette n'a pas de coin : la même touche règle sa
+  // hauteur de pose plutôt que de ne rien faire.
+  assert.deepEqual(applyStudioKey('c', { layout: 'presentation', cameraAlign: 'middle' }), {
+    cameraAlign: 'top',
+  });
+  assert.deepEqual(applyStudioKey('c', { layout: 'screen', cameraCorner: 'bottom-left' }), {
+    cameraCorner: 'bottom-right',
+  });
+  // Les flèches règlent les deux d'un coup : elles vont « en haut », et c'est
+  // vrai dans les deux dispositions.
+  assert.deepEqual(directStudioKey('ArrowUp', {}, { cameraCorner: 'bottom-left' }), {
+    cameraCorner: 'top-left',
+    cameraAlign: 'top',
+  });
+});
+
+// --- Un raccourci sans effet visible ---------------------------------------
+test('inertReason dit pourquoi un réglage ne se voit pas', () => {
+  const avec = { hasCamera: true };
+  // Le cas qui fait croire à une panne : le cadrage hors présentation.
+  assert.equal(inertReason({ cameraOverlap: false }, { layout: 'screen' }, avec), 'needsPresentation');
+  assert.equal(inertReason({ cameraAlign: 'top' }, { layout: 'split' }, avec), 'needsPresentation');
+  assert.equal(inertReason({ cameraOverlap: false }, { layout: 'presentation' }, avec), null);
+  // Sans caméra, tous les réglages de caméra sont muets.
+  assert.equal(
+    inertReason({ cameraOverlap: false }, { layout: 'presentation' }, { hasCamera: false }),
+    'needsCamera'
+  );
+  // « Écran seul » garde la caméra branchée mais ne la dessine pas.
+  assert.equal(inertReason({ cameraMirror: false }, { layout: 'screenOnly' }, avec), 'needsCamera');
+  // Le coin ne concerne que « écran + pastille », le côté que les deux zones.
+  assert.equal(inertReason({ cameraCorner: 'top-left' }, { layout: 'presentation' }, avec), 'needsBubble');
+  assert.equal(inertReason({ cameraSide: 'left' }, { layout: 'screen' }, avec), 'needsTwoZones');
+  // Ce qui se voit toujours ne déclenche aucune explication.
+  assert.equal(inertReason({ background: 'dark' }, { layout: 'screen' }, avec), null);
+  assert.equal(inertReason({ padding: 10 }, { layout: 'camera' }, avec), null);
+  assert.equal(inertReason(null, {}, avec), null);
+});
+
+// --- Voix, coup de zoom, carton de titre -----------------------------------
+test('le niveau de voix est une moyenne, pas une crête', () => {
+  const silence = new Uint8Array(512).fill(128);
+  assert.equal(micLevel(silence), 0);
+  // Une seule impulsion dans un bloc silencieux doit rester un petit niveau :
+  // sinon l'anneau sauterait sur chaque claquement de touche.
+  const impulsion = new Uint8Array(512).fill(128);
+  impulsion[0] = 255;
+  assert.ok(micLevel(impulsion) < 0.05);
+  // Un signal plein régime sature à 1.
+  assert.ok(micLevel(new Uint8Array(512).fill(255)) > 0.99);
+  assert.equal(micLevel(null), 0);
+  assert.equal(micLevel([]), 0);
+});
+
+test('l’anneau ignore le bruit de fond et sature sur une voix forte', () => {
+  assert.equal(voiceRingWidth(0), 0);
+  assert.equal(voiceRingWidth(VOICE_FLOOR / 2), 0, 'le bruit de fond ne doit pas l’animer');
+  assert.ok(voiceRingWidth(0.08) > 0 && voiceRingWidth(0.08) < 1);
+  assert.equal(voiceRingWidth(0.5), 1);
+  assert.equal(voiceRingWidth('bruit'), 0);
+});
+
+test('le coup de zoom entre, tient, puis ressort de lui-même', () => {
+  const start = 10_000;
+  assert.equal(zoomPulseLevel(0, start, 2), 1, 'aucun coup en cours');
+  assert.equal(zoomPulseLevel(start, start, 2), 1, 'il part de l’image normale');
+  const plein = zoomPulseLevel(start, start + ZOOM_PULSE_MS * 0.5, 2);
+  assert.equal(plein, 2, 'il tient le zoom au milieu');
+  assert.ok(zoomPulseLevel(start, start + ZOOM_PULSE_MS * 0.1, 2) > 1, 'il entre');
+  assert.ok(zoomPulseLevel(start, start + ZOOM_PULSE_MS * 0.9, 2) < 2, 'il ressort');
+  // Et surtout : il se termine. Un coup de zoom qui resterait collé
+  // transformerait un geste en réglage subi pour le reste de la vidéo.
+  assert.equal(zoomPulseLevel(start, start + ZOOM_PULSE_MS, 2), 1);
+  assert.equal(zoomPulseLevel(start, start + 60_000, 2), 1);
+});
+
+test('le carton de titre s’efface, et le voile se lève avant lui', () => {
+  assert.equal(titleCardPhase(0).text, 1);
+  assert.equal(titleCardPhase(0).veil, 1);
+  const milieu = titleCardPhase(TITLE_CARD_MS * 0.6);
+  assert.ok(milieu.text < 1 && milieu.text > 0, 'le titre s’efface');
+  assert.ok(milieu.veil < milieu.text, 'la composition se découvre SOUS le titre');
+  // Passé le carton, plus rien — surtout pas un voile oublié sur la vidéo.
+  assert.equal(titleCardPhase(TITLE_CARD_MS), null);
+  assert.equal(titleCardPhase(99_999), null);
+});
+
+// --- Cadrages mémorisés ----------------------------------------------------
+test('un cadrage garde la mise en scène, pas les réglages de machine', () => {
+  const style = { ...DEFAULT_STYLE, layout: 'presentation', resolution: '1080p', fps: 30, title: 'Démo' };
+  const staging = stagingOf(style);
+  assert.equal(staging.layout, 'presentation');
+  // Rappeler un cadrage ne doit pas remonter la définition : la vidéo
+  // deviendrait saccadée sur une machine modeste, sans explication.
+  assert.ok(!('resolution' in staging), 'la définition ne fait pas partie du cadrage');
+  assert.ok(!('fps' in staging), 'la cadence non plus');
+  assert.ok(!('title' in staging), 'ni le titre, qui change à chaque vidéo');
+});
+
+test('les cadrages s’enregistrent, s’écrasent par leur nom et se suppriment', () => {
+  let presets = savePreset([], 'Démo client', { ...DEFAULT_STYLE, layout: 'presentation' });
+  assert.equal(presets.length, 1);
+  assert.equal(presets[0].style.layout, 'presentation');
+  // Même nom : on corrige un cadrage en le réenregistrant, sans doublon.
+  presets = savePreset(presets, 'Démo client', { ...DEFAULT_STYLE, layout: 'split' });
+  assert.equal(presets.length, 1);
+  assert.equal(presets[0].style.layout, 'split');
+  // Un nom vide ne crée rien.
+  assert.equal(savePreset(presets, '   ', DEFAULT_STYLE).length, 1);
+  // Rappel par la position, et touche hors liste sans effet.
+  assert.equal(presetPatch(presets, 0).layout, 'split');
+  assert.equal(presetPatch(presets, 4), null);
+  assert.equal(presetPatch(null, 0), null);
+  assert.equal(removePreset(presets, 'Démo client').length, 0);
+});
+
+test('la liste des cadrages est bornée', () => {
+  let presets = [];
+  for (let i = 0; i < MAX_PRESETS + 3; i += 1) presets = savePreset(presets, `C${i}`, DEFAULT_STYLE);
+  assert.equal(presets.length, MAX_PRESETS);
+  // Ce sont les plus récents qu'on garde.
+  assert.equal(presets.at(-1).name, `C${MAX_PRESETS + 2}`);
+});
+
 // --- Accès direct ----------------------------------------------------------
 // Faire défiler convient quand on cherche ; quand on SAIT ce qu'on veut, il
 // faut y aller d'un coup — surtout en plein enregistrement.
@@ -398,11 +736,15 @@ test('Maj + chiffre mène directement à un fond', () => {
 
 test('les flèches placent la caméra un axe à la fois', () => {
   // ↑ ne touche qu'à la verticale : le côté gauche/droite est conservé.
+  // (`cameraAlign` est la même intention dite pour la présentation, où la
+  // vignette n'a pas de coin — voir le test dédié.)
   assert.deepEqual(directStudioKey('ArrowUp', {}, { cameraCorner: 'bottom-left' }), {
     cameraCorner: 'top-left',
+    cameraAlign: 'top',
   });
   assert.deepEqual(directStudioKey('ArrowDown', {}, { cameraCorner: 'top-right' }), {
     cameraCorner: 'bottom-right',
+    cameraAlign: 'bottom',
   });
   // ← et → règlent AUSSI le côté, qui sert aux dispositions à deux zones.
   assert.deepEqual(directStudioKey('ArrowRight', {}, { cameraCorner: 'top-left' }), {
@@ -462,4 +804,28 @@ test('screenToCanvas suit le zoom : la portion affichée remplit le cadre', () =
 test('screenToCanvas : écran inconnu (fenêtre filmée) → rien à replacer', () => {
   assert.equal(screenToCanvas(null, 1920, 1080, null, { x: 0, y: 0, w: 10, h: 10 }), null);
   assert.equal(screenToCanvas({ x: 0, y: 0, width: 0, height: 0 }, 1920, 1080, null, { x: 0, y: 0, w: 10, h: 10 }), null);
+});
+
+// --- Raccourcis globaux ----------------------------------------------------
+test('chaque action globale correspond à une touche du studio', () => {
+  // Les raccourcis globaux (Alt+Maj+…) rejouent les MÊMES actions que les
+  // touches de la fenêtre, par le même chemin. Une action annoncée au
+  // processus principal sans équivalent ici ne ferait rien, en silence.
+  const actions = ['layout', 'background', 'corner', 'zoom', 'framing'];
+  const parAction = Object.fromEntries(
+    Object.entries(STUDIO_KEYS).map(([touche, action]) => [action, touche])
+  );
+  for (const action of actions) {
+    assert.ok(parAction[action], `aucune touche pour « ${action} »`);
+    assert.ok(
+      applyStudioKey(parAction[action], DEFAULT_STYLE, { hasCamera: true }),
+      `« ${action} » doit produire un changement de style`
+    );
+  }
+  // Pause, arrêt et coup de zoom relèvent du composant : ils ne changent pas
+  // le style, et c'est pour ça qu'ils sont traités à part des deux côtés.
+  for (const action of ['pause', 'stop', 'zoomPulse']) {
+    assert.ok(parAction[action], `aucune touche pour « ${action} »`);
+    assert.equal(applyStudioKey(parAction[action], DEFAULT_STYLE), null);
+  }
 });

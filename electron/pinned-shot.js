@@ -40,7 +40,10 @@
   function cycleOpacity() {
     opacityIndex = (opacityIndex + 1) % OPACITIES.length;
     const value = OPACITIES[opacityIndex];
-    window.pin?.opacity?.(value);
+    // L'opacité est posée en CSS plutôt que par `BrowserWindow.setOpacity` :
+    // cette API-là n'existe que sous Windows et macOS, et ne fait RIEN sous
+    // Linux — le bouton paraissait cassé. Voir la note dans pinned-shot.html.
+    document.documentElement.style.setProperty('--veil', String(value));
     say(`Opacité ${Math.round(value * 100)} %`);
   }
 

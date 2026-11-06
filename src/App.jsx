@@ -1,7 +1,6 @@
 import { Fragment, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Moon, Play, X, Columns2, Rows2, Wifi, KeyRound, Plus, Copy, ExternalLink, Globe, EyeOff } from 'lucide-react';
 import Sidebar from './components/Sidebar';
-import DocumentViewer from './components/DocumentViewer';
 import { isViewerKind } from './lib/fileTypes';
 import Topbar from './components/Topbar';
 import Bottombar from './components/Bottombar';
@@ -20,11 +19,17 @@ const AppStore = lazy(() => import('./components/AppStore'));
 // sont chargés qu'à la première ouverture, si l'extension est installée.
 const PhoneOverlay = lazy(() => import('./components/PhoneOverlay'));
 const PhoneFloatingAccess = lazy(() => import('./components/PhoneFloatingAccess'));
+// Même raison pour ces quatre-là, et une de plus pour la visionneuse : elle
+// embarque KaTeX (~280 Ko) pour les formules des documents. Statique, elle le
+// faisait charger et analyser à CHAQUE lancement, pour un rendu de formule
+// mathématique que la plupart des sessions n'affichent jamais.
+const DocumentViewer = lazy(() => import('./components/DocumentViewer'));
+const RecordingStudio = lazy(() => import('./components/RecordingStudio'));
+const PasswordVault = lazy(() => import('./components/PasswordVault'));
+const OfflineProofreader = lazy(() => import('./components/OfflineProofreader'));
 import WebView from './components/WebView';
 import GuestContextMenu from './components/GuestContextMenu';
 import ScreenshotPreview from './components/ScreenshotPreview';
-import RecordingStudio from './components/RecordingStudio';
-import OfflineProofreader from './components/OfflineProofreader';
 import WebDialogHost from './components/WebDialogHost';
 import EditUrlDialog from './components/EditUrlDialog';
 import LockScreen from './components/LockScreen';
@@ -32,7 +37,6 @@ import FindBar from './components/FindBar';
 import UpdateBanner from './components/UpdateBanner';
 import Welcome from './components/Welcome';
 import HomeDashboard from './components/HomeDashboard';
-import PasswordVault from './components/PasswordVault';
 import { useStore, appVisibleIn } from './stores/useStore';
 import { usePhoneStore } from './lib/phoneStore';
 import { useSecurityStore } from './lib/securityStore';
@@ -1358,11 +1362,13 @@ const openEditUrl = useCallback((id) => {
                             rendu pour ces formats et, selon le Content-Type
                             du serveur, en fait même un téléchargement. */}
                         {isViewerKind(a.kind) ? (
-                          <DocumentViewer
-                            app={a}
-                            visible={inSplit || (inActive && a.id === activeApp)}
-                            flexLayout={inSplit}
-                          />
+                          <Suspense fallback={null}>
+                            <DocumentViewer
+                              app={a}
+                              visible={inSplit || (inActive && a.id === activeApp)}
+                              flexLayout={inSplit}
+                            />
+                          </Suspense>
                         ) : (
                           <WebView
                             app={a}
@@ -1535,8 +1541,12 @@ const openEditUrl = useCallback((id) => {
         </Suspense>
       )}
       <ScreenshotPreview />
-      {showStudio && <RecordingStudio onClose={() => setShowStudio(false)} />}
-      <OfflineProofreader />
+      <Suspense fallback={null}>
+        {showStudio && <RecordingStudio onClose={() => setShowStudio(false)} />}
+        {/* La relecture hors ligne ne se monte vraiment qu'au premier appel :
+            le composant s'affiche sinon sans rien faire. */}
+        <OfflineProofreader />
+      </Suspense>
       <AssistantHost />
 
       {/* Questions posées par les apps : alert/confirm/prompt et demandes
@@ -1693,7 +1703,9 @@ const openEditUrl = useCallback((id) => {
               </button>
             </div>
             <div className="flex-1 overflow-y-auto p-5">
-              <PasswordVault />
+              <Suspense fallback={null}>
+                <PasswordVault />
+              </Suspense>
             </div>
           </div>
         </div>

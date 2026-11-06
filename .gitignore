@@ -30,6 +30,8 @@ lerna-debug.log*
 *~
 .cache
 .argus/
+argus-report.json
+argus-report.html
 .parcel-cache
 .turbo
 coverage

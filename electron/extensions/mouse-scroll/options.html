@@ -25,7 +25,7 @@
       max-width: 760px;
     }
     .field { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
-    .field > span.name { width: 190px; color: #d1d5db; flex: none; }
+    .field > .name { width: 190px; color: #d1d5db; flex: none; }
     .field input[type="range"] { flex: 1; min-width: 120px; accent-color: #6366f1; }
     .field output { width: 64px; text-align: right; color: #9ca3af; font-variant-numeric: tabular-nums; }
     .check { display: flex; align-items: center; gap: 8px; color: #d1d5db; margin-bottom: 10px; }
@@ -77,17 +77,17 @@
     <label class="check"><input type="checkbox" id="smooth" /> Défilement lissé (la page glisse au lieu de sauter)</label>
 
     <div class="field">
-      <span class="name">Souplesse</span>
+      <label class="name" for="intensity">Souplesse</label>
       <input type="range" id="intensity" min="5" max="60" step="1" />
       <output id="intensity-out"></output>
     </div>
     <div class="field">
-      <span class="name">Pixels par cran</span>
+      <label class="name" for="step">Pixels par cran</label>
       <input type="range" id="step" min="40" max="400" step="5" />
       <output id="step-out"></output>
     </div>
     <div class="field">
-      <span class="name">Vitesse</span>
+      <label class="name" for="speed">Vitesse</label>
       <input type="range" id="speed" min="25" max="400" step="5" />
       <output id="speed-out"></output>
     </div>
@@ -100,14 +100,14 @@
     </label>
 
     <div class="field">
-      <span class="name">Défilement rapide</span>
+      <label class="name" for="fastModifier">Défilement rapide</label>
       <select id="fastModifier">
         <option value="none">Désactivé</option>
         <option value="alt">Alt + molette</option>
         <option value="shift">Maj + molette</option>
         <option value="ctrl">Ctrl + molette</option>
       </select>
-      <input type="range" id="fastFactor" min="15" max="80" step="5" />
+      <input type="range" id="fastFactor" min="15" max="80" step="5" aria-label="Facteur du défilement rapide" />
       <output id="fastFactor-out"></output>
     </div>
     <p class="hint">
@@ -119,12 +119,12 @@
   <div class="card">
     <h2>Défilement automatique</h2>
     <div class="field">
-      <span class="name">Déclencheur</span>
+      <label class="name" for="autoScroll">Déclencheur</label>
       <select id="autoScroll">
         <option value="off">Désactivé</option>
         <option value="middle">Clic du milieu maintenu</option>
       </select>
-      <input type="range" id="autoScrollSpeed" min="30" max="300" step="10" />
+      <input type="range" id="autoScrollSpeed" min="30" max="300" step="10" aria-label="Vitesse du défilement automatique" />
       <output id="autoScrollSpeed-out"></output>
     </div>
     <p class="hint">
@@ -157,7 +157,7 @@
     <h2>Sites particuliers</h2>
     <div id="sites"></div>
     <div class="row" style="margin-top: 12px;">
-      <input type="text" class="host" id="new-host" placeholder="exemple.fr ou *.exemple.fr" />
+      <input type="text" class="host" id="new-host" placeholder="exemple.fr ou *.exemple.fr" aria-label="Domaine du site à ajouter" />
       <button class="btn ghost" id="add">+ Ajouter ce site</button>
     </div>
     <p class="hint">

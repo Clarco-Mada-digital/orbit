@@ -42,6 +42,22 @@ import {
   applyStudioKey,
   directStudioKey,
   STUDIO_KEYS,
+  composeLayout,
+  stepLayoutTransition,
+  stepFade,
+  PRESENTATION_FRAMINGS,
+  framingOf,
+  framingPatch,
+  CAMERA_ALIGNS,
+  inertReason,
+  micLevel,
+  zoomPulseLevel,
+  ZOOM_PULSE_MS,
+  titleCardPhase,
+  presetPatch,
+  savePreset,
+  removePreset,
+  MAX_PRESETS,
 } from '../lib/studioLayout';
 import { drawFrame } from '../lib/studioRenderer';
 
@@ -73,12 +89,25 @@ const RESOLUTIONS = {
 };
 const OFFSCREEN = 'fixed -left-[9999px] top-0 w-px h-px opacity-0 pointer-events-none';
 
+// Temps pendant lequel l'image figée de la pause est ENCORE enregistrée, avant
+// la coupure. Assez pour qu'on lise le bandeau à la relecture, assez court
+// pour ne pas allonger la vidéo d'une seconde à chaque pause.
+const PAUSE_HOLD_MS = 700;
+
+// Touche associée à chaque action, pour rejouer un raccourci GLOBAL par le
+// même chemin que la touche locale. `STUDIO_KEYS` reste la seule source.
+const KEY_FOR_ACTION = Object.fromEntries(
+  Object.entries(STUDIO_KEYS).map(([touche, action]) => [action, touche])
+);
+
 
 export default function RecordingStudio({ onClose }) {
   const t = useT();
   const accentColor = useStore((s) => s.settings?.accentColor) || '#6366f1';
   const savedStyle = useStore((s) => s.settings?.studio);
+  const savedPresets = useStore((s) => s.settings?.studioPresets);
   const updateSettings = useStore((s) => s.updateSettings);
+  const presets = useMemo(() => (Array.isArray(savedPresets) ? savedPresets : []), [savedPresets]);
 
   const [step, setStep] = useState('setup'); // setup | countdown | recording | done
   const [sources, setSources] = useState([]);
@@ -87,6 +116,7 @@ export default function RecordingStudio({ onClose }) {
   const [cameraId, setCameraId] = useState('');
   const [micId, setMicId] = useState('');
   const [style, setStyle] = useState({ ...DEFAULT_STYLE, ...(savedStyle || {}) });
+  const styleRef = useRef(style);
   const OUTPUT = RESOLUTIONS[style.resolution] || RESOLUTIONS['720p'];
   const FPS = style.fps || 24;
   const [error, setError] = useState('');
@@ -103,6 +133,12 @@ export default function RecordingStudio({ onClose }) {
   // C'est ce qui permet de filmer Orbit lui-même — impossible tant que le
   // studio occupe tout l'écran.
   const [minimized, setMinimized] = useState(false);
+  // Coup de zoom en cours : seul le suivi du curseur s'en sert (il doit se
+  // réveiller le temps de la pulsation), d'où un état plutôt qu'une référence.
+  const [pulsing, setPulsing] = useState(false);
+  // Ce qu'une touche vient de changer, affiché brièvement sur l'aperçu.
+  const [hint, setHint] = useState(null);
+  const [presetName, setPresetName] = useState('');
   // Position de la barre réduite, en pixels depuis le coin bas droit. Elle se
   // déplace par sa poignée : posée d'office en bas à droite, elle masquait
   // parfois justement ce qu'on voulait montrer.
@@ -162,6 +198,24 @@ export default function RecordingStudio({ onClose }) {
   const startedAt = useRef(0);
   const focusRef = useRef({ x: 0.5, y: 0.5 });
   const targetFocus = useRef({ x: 0.5, y: 0.5 });
+  // Enchaînements : la géométrie affichée rattrape la disposition demandée, et
+  // le fond fait un fondu. L'état vit dans une ref — il change à chaque image,
+  // en faire un état React redéclencherait trente rendus par seconde.
+  const transitionRef = useRef(null);
+  const bgFadeRef = useRef(null);
+  // Coup de zoom : l'instant où il a été demandé, et rien d'autre — sa courbe
+  // se déduit du temps écoulé (voir zoomPulseLevel).
+  const pulseRef = useRef(0);
+  // Niveau de voix lissé, et l'analyseur qui le mesure.
+  const voiceRef = useRef(0);
+  const analyserRef = useRef(null);
+  const micBufRef = useRef(null);
+  // Début du carton de titre (enregistrement ou aperçu à la demande).
+  const titleStartRef = useRef(0);
+  // Image figée pendant la pause.
+  const frozenRef = useRef(null);
+  const pulseTimer = useRef(0);
+  const pauseTimer = useRef(0);
   const audioCtxRef = useRef(null);
   // Piste vidéo en capture MANUELLE : c'est nous qui décidons quand une image
   // part à l'encodeur (voir beginRecording).
@@ -193,8 +247,24 @@ export default function RecordingStudio({ onClose }) {
 
   // --- Préférences : le style choisi survit à la fermeture ------------------
   useEffect(() => {
+    styleRef.current = style;
     updateSettings({ studio: style });
   }, [style, updateSettings]);
+
+  // Cadrages mémorisés. Lus par le gestionnaire de touches via une référence :
+  // il est posé une fois et ne doit pas se réabonner à chaque enregistrement.
+  const presetsRef = useRef(presets);
+  useEffect(() => {
+    presetsRef.current = presets;
+  }, [presets]);
+
+  // L'annonce d'un réglage s'efface d'elle-même : c'est un accusé de
+  // réception, pas un bandeau de plus à regarder.
+  useEffect(() => {
+    if (!hint) return undefined;
+    const timer = setTimeout(() => setHint(null), 1800);
+    return () => clearTimeout(timer);
+  }, [hint]);
 
   // --- Inventaire ----------------------------------------------------------
   const loadSources = useCallback(async () => {
@@ -367,6 +437,36 @@ export default function RecordingStudio({ onClose }) {
     }
   }, [loadDevices]);
 
+  // Analyseur du micro : il alimente l'anneau de la caméra. Branché sur le
+  // flux déjà ouvert, il ne coûte qu'une FFT par image — et surtout il tourne
+  // AVANT l'enregistrement, pour qu'on puisse vérifier d'un coup d'œil que le
+  // bon micro est choisi et qu'il entend quelque chose.
+  useEffect(() => {
+    const stream = micStream.current;
+    if (!micId || !stream) {
+      analyserRef.current = null;
+      voiceRef.current = 0;
+      return undefined;
+    }
+    let ctx;
+    try {
+      ctx = new AudioContext();
+      const analyser = ctx.createAnalyser();
+      analyser.fftSize = 1024;
+      analyser.smoothingTimeConstant = 0.6;
+      ctx.createMediaStreamSource(stream).connect(analyser);
+      micBufRef.current = new Uint8Array(analyser.fftSize);
+      analyserRef.current = analyser;
+    } catch {
+      analyserRef.current = null; // pas d'anneau plutôt qu'un studio cassé
+    }
+    return () => {
+      analyserRef.current = null;
+      voiceRef.current = 0;
+      ctx?.close?.().catch?.(() => {});
+    };
+  }, [micId]);
+
   // --- Boucle de rendu -----------------------------------------------------
   // Le même canvas sert d'aperçu et de source d'enregistrement.
   useEffect(() => {
@@ -378,28 +478,81 @@ export default function RecordingStudio({ onClose }) {
     // Une minuterie, elle, continue de battre (le bridage d'arrière-plan est
     // levé pendant l'enregistrement, voir beginRecording), et dessiner dans un
     // canvas 2D ne demande pas que la fenêtre soit visible.
+    // Niveau du micro, mesuré sur le flux déjà ouvert pour l'enregistrement.
+    // Zéro quand l'anneau est coupé : inutile de réveiller l'analyseur pour un
+    // chiffre dont personne ne fait rien.
+    const readMicLevel = () => {
+      const analyser = analyserRef.current;
+      if (!analyser || style.voiceRing === false) return 0;
+      analyser.getByteTimeDomainData(micBufRef.current);
+      return micLevel(micBufRef.current);
+    };
+
+    const titleCardFor = (now) => {
+      const text = String(style.title || '').trim();
+      if (!text || !titleStartRef.current) return null;
+      const phase = titleCardPhase(now - titleStartRef.current);
+      return phase ? { text, phase } : null;
+    };
+
     const draw = () => {
       const canvas = canvasRef.current;
       const ctx = canvas?.getContext('2d');
       if (!ctx) return;
+      const now = Date.now();
+      // Coup de zoom en cours ? Il l'emporte sur le zoom permanent : c'est un
+      // geste, et un geste doit se voir même si le zoom continu est déjà là.
+      const pulse = zoomPulseLevel(pulseRef.current, now, style.zoomLevel);
+      const zoomLevel = pulse > 1 ? pulse : style.zoom ? style.zoomLevel : 1;
       // Le point suivi sert au zoom ET au halo : on l'entretient dès que l'un
       // des deux est demandé. Le halo suit de plus près (le zoom, lui, doit
       // rester lent pour ne pas donner le mal de mer).
       focusRef.current =
-        style.zoom || style.cursorHalo
-          ? easeFocus(focusRef.current, targetFocus.current, style.cursorHalo && !style.zoom ? 0.35 : 0.12)
+        zoomLevel > 1 || style.cursorHalo
+          ? easeFocus(
+              focusRef.current,
+              targetFocus.current,
+              // Un coup de zoom doit arriver SUR le curseur, pas le rattraper
+              // en deux secondes : pendant la pulsation, on suit de près.
+              pulse > 1 ? 0.3 : style.cursorHalo && !style.zoom ? 0.35 : 0.12
+            )
           : { x: 0.5, y: 0.5 };
+      // Niveau de voix, lissé : la mesure brute saute d'une image à l'autre et
+      // ferait vibrer l'anneau au lieu de le faire respirer.
+      voiceRef.current = voiceRef.current * 0.72 + readMicLevel() * 0.28;
       const current = sourceRef.current;
+      const camera = cameraId ? cameraVideo.current : null;
+      // Disposition VISÉE, puis plan réellement dessiné : entre les deux, un
+      // enchaînement de quelques centaines de millisecondes. Sans lui, changer
+      // de disposition en pleine phrase se voyait comme une coupure au montage.
+      const target = composeLayout({
+        outW: canvas.width,
+        outH: canvas.height,
+        style,
+        hasCamera: Boolean(camera && camera.videoWidth),
+      });
+      transitionRef.current = stepLayoutTransition(transitionRef.current, target, now);
+      bgFadeRef.current = stepFade(bgFadeRef.current, style.background, now);
       drawFrame(ctx, {
         width: canvas.width,
         height: canvas.height,
         screenVideo: screenVideo.current,
-        cameraVideo: cameraId ? cameraVideo.current : null,
+        cameraVideo: camera,
         style,
         accentColor,
         focus: focusRef.current,
         captureBounds: current?.kind === 'screen' ? current.bounds : null,
         annotations: annotationsRef.current,
+        plan: transitionRef.current.plan,
+        backgroundFade: bgFadeRef.current,
+        zoomLevel,
+        voice: voiceRef.current,
+        // Le carton de titre n'existe que pendant l'enregistrement : à la
+        // préparation, il cacherait la mise en scène qu'on est en train de
+        // régler. Le bouton « Aperçu du titre » le rejoue à la demande.
+        titleCard: titleCardFor(now),
+        frozen: frozenRef.current,
+        banner: frozenRef.current ? tRef.current('studio.pauseBanner') : null,
       });
       // Retour d'image : simple copie réduite du canvas, APRÈS composition —
       // il montre donc exactement ce qui part dans la vidéo.
@@ -422,13 +575,36 @@ export default function RecordingStudio({ onClose }) {
   // cadence des images, l'aller-retour IPC coûterait plus cher que le dessin
   // lui-même, pour un gain invisible — le suivi est de toute façon amorti.
   useEffect(() => {
-    if ((!style.zoom && !style.cursorHalo) || !source?.bounds) return undefined;
+    if ((!style.zoom && !style.cursorHalo && !pulsing) || !source?.bounds) return undefined;
     const timer = setInterval(async () => {
       const point = await api()?.cursor();
       if (point) targetFocus.current = cursorFocus(point, source.bounds);
     }, 100);
     return () => clearInterval(timer);
-  }, [style.zoom, style.cursorHalo, source]);
+  }, [style.zoom, style.cursorHalo, pulsing, source]);
+
+  // Coup de zoom : l'image se rapproche de là où l'on travaille, puis revient
+  // toute seule. Le point visé est relevé AVANT de zoomer, et posé d'autorité
+  // — un zoom qui démarre au centre puis glisse vers le curseur donnerait
+  // exactement le mal de mer qu'on cherche à éviter.
+  const zoomPulse = useCallback(async () => {
+    const bounds = sourceRef.current?.bounds;
+    if (bounds) {
+      const point = await api()?.cursor();
+      if (point) {
+        targetFocus.current = cursorFocus(point, bounds);
+        focusRef.current = targetFocus.current;
+      }
+    }
+    pulseRef.current = Date.now();
+    setPulsing(true);
+    clearTimeout(pulseTimer.current);
+    pulseTimer.current = setTimeout(() => setPulsing(false), ZOOM_PULSE_MS);
+  }, []);
+  const zoomPulseRef = useRef(zoomPulse);
+  useEffect(() => {
+    zoomPulseRef.current = zoomPulse;
+  }, [zoomPulse]);
 
   // --- Enregistrement ------------------------------------------------------
   const buildAudioStream = () => {
@@ -485,6 +661,13 @@ export default function RecordingStudio({ onClose }) {
     // passage (React le signale comme impur).
     startedAt.current = 0;
     elapsedRef.current = 0;
+    // Carton de titre : il commence AVEC l'enregistrement, et la composition
+    // arrive dessous. On réamorce l'enchaînement pour qu'elle se révèle au
+    // lieu d'être déjà là quand le voile se lève.
+    // (la base du carton est posée par le même effet, voir plus bas)
+    titleStartRef.current = 0;
+    const vide = { screen: null, camera: null };
+    transitionRef.current = { plan: vide, from: vide, target: null, signature: '', start: 0 };
     setElapsed(0);
     setPaused(false);
     setStep('recording');
@@ -534,19 +717,49 @@ export default function RecordingStudio({ onClose }) {
   };
 
   const stopRecording = useCallback(() => {
+    clearTimeout(pauseTimer.current);
+    frozenRef.current = null;
+    titleStartRef.current = 0;
     const recorder = recorderRef.current;
     if (recorder && recorder.state !== 'inactive') recorder.stop();
     recorderRef.current = null;
   }, []);
 
+  // Image figée de la pause : une copie du canvas, prise avant la coupure.
+  // Elle est REDESSINÉE pendant un instant encore enregistré, pour que la
+  // coupure se lise comme voulue à la relecture, au lieu d'un saut brutal dont
+  // le spectateur se demande s'il a manqué quelque chose.
+  const freezeCanvas = () => {
+    const canvas = canvasRef.current;
+    if (!canvas) return null;
+    try {
+      const copy = Object.assign(document.createElement('canvas'), {
+        width: canvas.width,
+        height: canvas.height,
+      });
+      copy.getContext('2d').drawImage(canvas, 0, 0);
+      return copy;
+    } catch {
+      return null; // pas de figé plutôt qu'une pause qui échoue
+    }
+  };
+
   const togglePause = () => {
     const recorder = recorderRef.current;
     if (!recorder) return;
     if (recorder.state === 'recording') {
-      recorder.pause();
+      frozenRef.current = freezeCanvas();
       setPaused(true);
-    } else if (recorder.state === 'paused') {
-      recorder.resume();
+      // Le temps que l'image figée et son bandeau entrent dans la vidéo, puis
+      // seulement, on coupe pour de bon.
+      clearTimeout(pauseTimer.current);
+      pauseTimer.current = setTimeout(() => {
+        if (recorderRef.current?.state === 'recording') recorderRef.current.pause();
+      }, PAUSE_HOLD_MS);
+    } else if (recorder.state === 'paused' || paused) {
+      clearTimeout(pauseTimer.current);
+      if (recorder.state === 'paused') recorder.resume();
+      frozenRef.current = null;
       // La base est recalculée à partir du temps déjà écoulé : la pause ne
       // compte pas, sans avoir à mémoriser l'instant où elle a commencé.
       startedAt.current = 0;
@@ -558,7 +771,12 @@ export default function RecordingStudio({ onClose }) {
   useEffect(() => {
     if (step !== 'recording' || paused) return undefined;
     const tick = () => {
-      if (!startedAt.current) startedAt.current = Date.now() - elapsed;
+      if (!startedAt.current) {
+        startedAt.current = Date.now() - elapsed;
+        // Le carton de titre démarre avec la prise — mais pas après une pause,
+        // où `elapsed` a déjà couru : on ne rejoue pas le titre au milieu.
+        if (!elapsed) titleStartRef.current = startedAt.current;
+      }
       const next = Date.now() - startedAt.current;
       // Cadence tenue sur la dernière seconde : c'est elle qui dit si la
       // machine suit, pas la cadence demandée.
@@ -575,6 +793,48 @@ export default function RecordingStudio({ onClose }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [step, paused]);
 
+  // Un réglage qui change SANS que l'image bouge est indiscernable d'un
+  // raccourci cassé — c'est ce qui fait écrire « j'appuie et rien ne se
+  // passe ». On annonce donc le réglage ET, le cas échéant, la raison pour
+  // laquelle il ne se voit pas tout de suite.
+  const describePatch = (patch, next) => {
+    const champs = Object.keys(patch);
+    const nom = (field) => {
+      switch (field) {
+        case 'layout': return `${t('studio.layout')} · ${t(`studio.layout.${next.layout}`)}`;
+        case 'background': return `${t('studio.background')} · ${t(`studio.bg.${next.background}`)}`;
+        case 'cameraCorner': return `${t('studio.corner')} · ${t(`studio.corner.${next.cameraCorner}`)}`;
+        case 'cameraSide': return `${t('studio.side')} · ${t(`studio.side.${next.cameraSide}`)}`;
+        case 'cameraAlign': return `${t('studio.align')} · ${t(`studio.align.${next.cameraAlign}`)}`;
+        case 'cameraOverlap': return `${t('studio.framing')} · ${t(`studio.framing.${framingOf(next)}`)}`;
+        case 'cameraShape': return `${t('studio.shape')} · ${t(`studio.shape.${next.cameraShape}`)}`;
+        case 'zoom': return `${t('studio.zoom')} · ${t(next.zoom ? 'studio.on' : 'studio.off')}`;
+        case 'cursorHalo': return `${t('studio.halo')} · ${t(next.cursorHalo ? 'studio.on' : 'studio.off')}`;
+        case 'cameraMirror': return `${t('studio.mirror')} · ${t(next.cameraMirror ? 'studio.on' : 'studio.off')}`;
+        case 'voiceRing': return `${t('studio.voiceRing')} · ${t(next.voiceRing ? 'studio.on' : 'studio.off')}`;
+        default: return null;
+      }
+    };
+    // Le premier champ reconnu porte le message : les patches à deux champs
+    // (une flèche règle le coin ET le côté) parlent de la même chose.
+    return champs.map(nom).find(Boolean) || null;
+  };
+
+  const announce = (label, next, patch) => {
+    if (!label) return;
+    const reason = patch ? inertReason(patch, next, { hasCamera: Boolean(cameraId) }) : null;
+    setHint({ label, reason: reason ? t(`studio.inert.${reason}`) : null, at: Date.now() });
+  };
+
+  // `styleRef` double l'état : il est à jour À L'INSTANT, ce dont le
+  // gestionnaire de touches a besoin pour enchaîner deux appuis.
+  const set = (patch) => {
+    const next = { ...styleRef.current, ...patch };
+    styleRef.current = next;
+    setStyle(next);
+    announce(describePatch(patch, next), next, patch);
+  };
+
   // Échap arrête l'enregistrement plutôt que de fermer la fenêtre : perdre une
   // prise en cours par réflexe serait rageant.
   useEffect(() => {
@@ -583,6 +843,21 @@ export default function RecordingStudio({ onClose }) {
       // changer le fond de la vidéo.
       const el = e.target;
       if (el instanceof HTMLElement && el.closest('input, select, textarea, [contenteditable="true"]')) {
+        return;
+      }
+      // Alt + chiffre rappelle un cadrage mémorisé. C'est la seule
+      // combinaison admise : les autres appartiennent au système ou à l'app
+      // qu'on est en train de filmer.
+      if (e.altKey && !e.ctrlKey && !e.metaKey && /^[1-9]$/.test(e.key)) {
+        const index = Number(e.key) - 1;
+        const patch = presetPatch(presetsRef.current, index);
+        if (patch) {
+          e.preventDefault();
+          const next = { ...styleRef.current, ...patch };
+          styleRef.current = next;
+          setStyle(next);
+          setHint({ label: presetsRef.current[index].name, reason: null, at: Date.now() });
+        }
         return;
       }
       if (e.ctrlKey || e.metaKey || e.altKey) return;
@@ -622,6 +897,12 @@ export default function RecordingStudio({ onClose }) {
         toggleAnnotateRef.current?.();
         return;
       }
+      if (action === 'zoomPulse' && (step === 'setup' || step === 'recording')) {
+        e.preventDefault();
+        zoomPulseRef.current?.();
+        announce(tRef.current('studio.zoomPulse'));
+        return;
+      }
 
       // Mise en scène : modifiable à tout moment, y compris en plein
       // enregistrement — c'est tout l'intérêt.
@@ -634,21 +915,73 @@ export default function RecordingStudio({ onClose }) {
         if (!/^[1-9]$/.test(e.key) && !e.key.startsWith('Arrow') && !parcourt) return;
         e.preventDefault();
 
-        // Le calcul se fait DANS la mise à jour, sur l'état le plus récent.
+        // Le calcul part de `styleRef`, tenu à jour À L'INSTANT par `set`.
         // Deux flèches enchaînées dans le même instant lisaient sinon la même
         // valeur périmée : « ↑ » puis « → » donnait « en bas à droite », le
         // second appui ignorant le premier.
-        setStyle((cur) => {
-          const patch =
-            directStudioKey(e.key, { shift: e.shiftKey }, cur, { hasCamera: Boolean(cameraId) }) ||
-            (e.shiftKey ? null : applyStudioKey(key, cur, { hasCamera: Boolean(cameraId) }));
-          return patch ? { ...cur, ...patch } : cur;
-        });
+        const cur = styleRef.current;
+        const patch =
+          directStudioKey(e.key, { shift: e.shiftKey }, cur, { hasCamera: Boolean(cameraId) }) ||
+          (e.shiftKey ? null : applyStudioKey(key, cur, { hasCamera: Boolean(cameraId) }));
+        if (patch) set(patch);
       }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [step, stopRecording, onClose, cameraId]);
+
+  // --- Raccourcis GLOBAUX pendant la prise ---------------------------------
+  // On filme son écran pour montrer AUTRE CHOSE : pendant l'enregistrement, le
+  // focus est dans l'application démontrée, et les touches ci-dessus ne
+  // recevaient plus rien. Il fallait revenir sur Orbit — donc sortir du cadre
+  // — pour changer une disposition. Le processus principal pose donc les mêmes
+  // actions en raccourcis système, le temps de la prise seulement
+  // (voir electron/studio.js).
+  const actionRef = useRef(null);
+  // Affecté dans un effet, pas pendant le rendu : un rendu doit rester sans
+  // effet de bord, et React le vérifie.
+  const executerAction = (action) => {
+    if (action === 'pause') {
+      togglePause();
+      return;
+    }
+    if (action === 'stop') {
+      stopRecording();
+      return;
+    }
+    if (action === 'zoomPulse') {
+      zoomPulseRef.current?.();
+      setHint({ label: t('studio.zoomPulse'), reason: null, at: Date.now() });
+      return;
+    }
+    // Le reste passe par EXACTEMENT le même chemin que la touche équivalente
+    // dans la fenêtre : une seule logique, donc un seul comportement.
+    const key = KEY_FOR_ACTION[action];
+    const patch = key && applyStudioKey(key, styleRef.current, { hasCamera: Boolean(cameraId) });
+    if (patch) set(patch);
+  };
+  useEffect(() => {
+    actionRef.current = executerAction;
+  });
+
+  const [globalKeys, setGlobalKeys] = useState([]);
+  useEffect(() => {
+    if (step !== 'recording') return undefined;
+    let annule = false;
+    api()?.setGlobalKeys?.(true).then((res) => {
+      // Ce qui a RÉELLEMENT été enregistré : un gestionnaire de fenêtres peut
+      // s'être approprié une combinaison. Annoncer un raccourci qui ne répond
+      // pas serait pire que de ne rien proposer.
+      if (!annule) setGlobalKeys(res?.keys || []);
+    });
+    const off = api()?.onKey?.((action) => actionRef.current?.(action));
+    return () => {
+      annule = true;
+      off?.();
+      api()?.setGlobalKeys?.(false);
+      setGlobalKeys([]);
+    };
+  }, [step]);
 
   // Libération des ressources : la caméra et le micro doivent s'éteindre à la
   // fermeture, sans exception.
@@ -664,8 +997,6 @@ export default function RecordingStudio({ onClose }) {
     api()?.setThrottling(true);
     audioCtxRef.current?.close().catch(() => {});
   }, []);
-
-  const set = (patch) => setStyle((s) => ({ ...s, ...patch }));
 
   // Déplacement de la barre réduite par sa poignée. On travaille depuis le
   // coin bas droit (là où elle naît), borné à la fenêtre pour qu'elle ne
@@ -690,6 +1021,14 @@ export default function RecordingStudio({ onClose }) {
     };
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
+  };
+
+  const storePreset = () => {
+    const name = presetName.trim();
+    if (!name) return;
+    updateSettings({ studioPresets: savePreset(presets, name, style) });
+    setPresetName('');
+    setHint({ label: name, reason: null, at: Date.now() });
   };
 
   const convert = async () => {
@@ -786,7 +1125,7 @@ export default function RecordingStudio({ onClose }) {
         {/* En-tête */}
         <div className="h-14 px-5 flex items-center gap-3 border-b border-border flex-shrink-0">
           <Sparkles size={18} className="text-accent-primary" />
-          <h3 className="font-semibold">{t('studio.title')}</h3>
+          <h3 className="font-semibold">{t('studio.titleCard')}</h3>
           {step === 'recording' && (
             <span className="ml-2 flex items-center gap-2 px-2.5 py-1 rounded-full bg-error/15 text-error text-sm tabular-nums">
               <Circle size={9} className={paused ? '' : 'animate-pulse'} fill="currentColor" />
@@ -849,6 +1188,21 @@ export default function RecordingStudio({ onClose }) {
                   <span className="text-7xl font-bold text-white tabular-nums">{countdown}</span>
                 </div>
               )}
+              {/* Accusé de réception d'un raccourci. Il est posé SUR l'aperçu
+                  mais HORS du canvas : il guide celui qui règle, sans figurer
+                  dans la vidéo. */}
+              {hint && (
+                <div className="absolute bottom-3 left-1/2 -translate-x-1/2 pointer-events-none flex flex-col items-center gap-1">
+                  <span className="px-3 py-1.5 rounded-full bg-bg-elevated/95 border border-border text-xs shadow-lg backdrop-blur">
+                    {hint.label}
+                  </span>
+                  {hint.reason && (
+                    <span className="px-3 py-1 rounded-full bg-warning/15 border border-warning/40 text-[11px] text-warning max-w-sm text-center">
+                      {hint.reason}
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
 
             {error && <p className="text-sm text-error max-w-2xl text-center">{error}</p>}
@@ -866,8 +1220,14 @@ export default function RecordingStudio({ onClose }) {
                   ['D', `${t('studio.layout')} ▸`],
                   ['C', `${t('studio.corner')} ▸`],
                   ['Z', t('studio.zoom')],
+                  ['X', t('studio.zoomPulse')],
                   ['H', t('studio.halo')],
                   ['M', t('studio.mirror')],
+                  ['V', t('studio.voiceRing')],
+                  // Le cadrage ne concerne que la présentation : on ne
+                  // l'annonce que là, pour ne pas allonger la liste pour rien.
+                  ...(style.layout === 'presentation' ? [['O', t('studio.framing')]] : []),
+                  ...(presets.length ? [['⎇1–' + presets.length, t('studio.presets')]] : []),
                   ...(step === 'recording'
                     ? [['P', t('studio.pause')], ['S', t('studio.stop')], ['R', t('studio.minimize')]]
                     : []),
@@ -875,6 +1235,23 @@ export default function RecordingStudio({ onClose }) {
                   <span key={key} className="flex items-center gap-1">
                     <kbd className="px-1.5 py-0.5 rounded border border-border bg-bg-elevated">{key}</kbd>
                     {label}
+                  </span>
+                ))}
+              </p>
+            )}
+
+            {/* Les raccourcis ci-dessus ne répondent que si Orbit a le focus.
+                Pendant la prise on est ailleurs : ceux-là marchent depuis
+                l'application filmée. */}
+            {step === 'recording' && globalKeys.length > 0 && (
+              <p className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[11px] text-text-muted">
+                <span className="text-accent-primary">{t('studio.globalKeys')}</span>
+                {globalKeys.map(({ accelerator, action }) => (
+                  <span key={accelerator} className="flex items-center gap-1">
+                    <kbd className="px-1.5 py-0.5 rounded border border-border bg-bg-elevated">
+                      {accelerator.replace('Alt+Shift+', '⎇⇧')}
+                    </kbd>
+                    {t(`studio.action.${action}`)}
                   </span>
                 ))}
               </p>
@@ -1074,6 +1451,76 @@ export default function RecordingStudio({ onClose }) {
                 checked={style.shadow}
                 onChange={(v) => set({ shadow: v })}
               />
+
+              {/* Carton de titre : les trois premières secondes décident si on
+                  regarde la suite. Vide = pas de carton. */}
+              <label className="block text-xs text-text-muted mb-1 mt-3">{t('studio.titleCard')}</label>
+              <input
+                value={style.title || ''}
+                onChange={(e) => set({ title: e.target.value })}
+                placeholder={t('studio.titlePlaceholder')}
+                maxLength={80}
+                className="input"
+              />
+              <div className="flex items-center justify-between gap-2 mt-1">
+                <p className="text-[11px] text-text-muted">{t('studio.titleHint')}</p>
+                {Boolean(String(style.title || '').trim()) && (
+                  <button
+                    onClick={() => { titleStartRef.current = Date.now(); }}
+                    className="btn btn-secondary btn-sm flex-shrink-0"
+                  >
+                    <Eye size={13} /> {t('studio.titlePreview')}
+                  </button>
+                )}
+              </div>
+            </Section>
+
+            {/* Cadrages mémorisés : « ma démo client » et « mon tutoriel » ne
+                se filment pas pareil, et refaire huit réglages à chaque fois
+                use. Les réglages de machine (définition, cadence) n'en font
+                pas partie — voir stagingOf. */}
+            <Section title={t('studio.presets')}>
+              {presets.length === 0 ? (
+                <p className="text-[11px] text-text-muted mb-2">{t('studio.presetsHint')}</p>
+              ) : (
+                <div className="flex flex-col gap-1.5 mb-2">
+                  {presets.map((preset, i) => (
+                    <div key={preset.name} className="flex items-center gap-1">
+                      <button
+                        onClick={() => set(presetPatch(presets, i) || {})}
+                        className="flex-1 flex items-center justify-between gap-2 px-2 py-1.5 rounded-lg border border-border hover:bg-bg-hover text-xs"
+                      >
+                        <span className="truncate">{preset.name}</span>
+                        <kbd className="flex-shrink-0 px-1 rounded border border-border text-[10px] text-text-muted">⎇{i + 1}</kbd>
+                      </button>
+                      <button
+                        onClick={() => updateSettings({ studioPresets: removePreset(presets, preset.name) })}
+                        className="btn-icon w-7 h-7 flex-shrink-0"
+                        title={t('common.delete')}
+                      >
+                        <X size={13} />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <div className="flex gap-1">
+                <input
+                  value={presetName}
+                  onChange={(e) => setPresetName(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') storePreset(); }}
+                  placeholder={t('studio.presetName')}
+                  maxLength={24}
+                  className="input flex-1"
+                />
+                <button
+                  onClick={storePreset}
+                  disabled={!presetName.trim() || (presets.length >= MAX_PRESETS && !presets.some((p) => p.name === presetName.trim()))}
+                  className="btn btn-secondary btn-sm flex-shrink-0"
+                >
+                  {t('common.save')}
+                </button>
+              </div>
             </Section>
 
             {cameraId && (
@@ -1129,12 +1576,52 @@ export default function RecordingStudio({ onClose }) {
                         </button>
                       ))}
                     </div>
+                    {/* Cadrage : la vignette mord sur la capture, ou se range à
+                        côté. Deux choix nommés plutôt qu'un interrupteur — on
+                        voit d'un coup les deux allures possibles. */}
                     {style.layout === 'presentation' && (
-                      <Toggle
-                        label={t('studio.overlap')}
-                        checked={style.cameraOverlap !== false}
-                        onChange={(v) => set({ cameraOverlap: v })}
-                      />
+                      <>
+                        <label className="flex items-center gap-1.5 text-xs text-text-muted mb-1">
+                          {t('studio.framing')}
+                          <kbd className="px-1 rounded border border-border text-[10px]">O</kbd>
+                        </label>
+                        <div className="flex gap-2 mb-3">
+                          {PRESENTATION_FRAMINGS.map((f) => (
+                            <button
+                              key={f}
+                              onClick={() => set(framingPatch(f))}
+                              className={`flex-1 px-2 py-1.5 rounded-lg border text-xs ${
+                                framingOf(style) === f
+                                  ? 'border-accent-primary bg-accent-primary/10'
+                                  : 'border-border hover:bg-bg-hover'
+                              }`}
+                            >
+                              {t(`studio.framing.${f}`)}
+                            </button>
+                          ))}
+                        </div>
+                        {/* Hauteur de pose : la vignette tombe parfois sur ce
+                            qu'on veut justement montrer. */}
+                        <label className="flex items-center gap-1.5 text-xs text-text-muted mb-1">
+                          {t('studio.align')}
+                          <kbd className="px-1 rounded border border-border text-[10px]">C</kbd>
+                        </label>
+                        <div className="flex gap-2 mb-3">
+                          {CAMERA_ALIGNS.map((a) => (
+                            <button
+                              key={a}
+                              onClick={() => set({ cameraAlign: a })}
+                              className={`flex-1 px-2 py-1.5 rounded-lg border text-xs ${
+                                (style.cameraAlign || 'middle') === a
+                                  ? 'border-accent-primary bg-accent-primary/10'
+                                  : 'border-border hover:bg-bg-hover'
+                              }`}
+                            >
+                              {t(`studio.align.${a}`)}
+                            </button>
+                          ))}
+                        </div>
+                      </>
                     )}
                   </>
                 )}
@@ -1181,6 +1668,14 @@ export default function RecordingStudio({ onClose }) {
                   checked={style.cameraMirror}
                   onChange={(v) => set({ cameraMirror: v })}
                 />
+                {/* L'anneau ne sert à rien sans micro : il ne pourrait que
+                    rester éteint, et on chercherait pourquoi. */}
+                <Toggle
+                  label={t('studio.voiceRing')}
+                  checked={style.voiceRing !== false}
+                  onChange={(v) => set({ voiceRing: v })}
+                />
+                {!micId && <p className="text-[11px] text-text-muted">{t('studio.voiceRingHint')}</p>}
               </Section>
             )}
 
@@ -1210,6 +1705,18 @@ export default function RecordingStudio({ onClose }) {
                   <p className="text-[11px] text-text-muted">{t('studio.zoomHint')}</p>
                 </>
               )}
+              {/* Coup de zoom : le geste, plutôt que le réglage. On s'en sert
+                  au moment précis où l'on montre quelque chose. */}
+              <button
+                onClick={() => { zoomPulseRef.current?.(); setHint({ label: t('studio.zoomPulse'), reason: null, at: Date.now() }); }}
+                disabled={!source?.bounds}
+                className="btn btn-secondary btn-sm w-full mt-2"
+                title={t('studio.zoomPulseHint')}
+              >
+                <ZoomIn size={13} /> {t('studio.zoomPulse')}
+                <kbd className="ml-auto px-1 rounded border border-border text-[10px]">X</kbd>
+              </button>
+              {!source?.bounds && <p className="text-[11px] text-text-muted mt-1">{t('studio.zoomPulseWindow')}</p>}
             </Section>
           </div>
         </div>
