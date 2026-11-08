@@ -1,12 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowLeft,
-  AppWindow,
-  Battery,
   Bell,
-  Bluetooth,
   Check,
-  Clock3,
   Download,
   Home,
   Keyboard,
@@ -16,28 +12,19 @@ import {
   Monitor,
   Power,
   Palette,
-  PhoneCall,
-  PhoneIncoming,
-  PhoneMissed,
-  PhoneOutgoing,
   Pin,
-  Plus,
   RefreshCw,
   Search,
-  Settings,
   Smartphone,
   Square,
   Star,
-  Trash2,
-  Upload,
   Usb,
   Wifi,
-  Volume1,
-  Volume2,
-  VolumeX,
   X,
 } from 'lucide-react';
 import { detectUrl } from '../lib/urls';
+import { neededSources, normalizeDesktopLayout, presetLayout } from '../lib/phoneDesktop';
+import PhoneDesktop from './phone/PhoneDesktop';
 import { usePhoneStore } from '../lib/phoneStore';
 import {
   compareVersions,
@@ -246,8 +233,6 @@ export default function PhoneApp({ visible, onClose }) {
   const [error, setError] = useState('');
   const [controlBusy, setControlBusy] = useState('');
   const [tab, setTab] = useState('home');
-  const [desktopNow, setDesktopNow] = useState(() => new Date());
-  const [notificationsExpanded, setNotificationsExpanded] = useState(false);
   const [clearingNotifications, setClearingNotifications] = useState(false);
   const [wallpaperUrl, setWallpaperUrl] = useState('');
   const wallpaperFileRef = useRef(null);
@@ -258,8 +243,19 @@ export default function PhoneApp({ visible, onClose }) {
   const [appsToken, setAppsToken] = useState(0);
   const [query, setQuery] = useState('');
   const [appDrawerOpen, setAppDrawerOpen] = useState(false);
-  const [homeWidgetPickerOpen, setHomeWidgetPickerOpen] = useState(false);
-  const [sortMode, setSortMode] = useState('name');
+  // Le tiroir couvre tout l'écran : Échap doit le refermer LUI, pas le
+  // Téléphone entier. L'écouteur est posé en capture et arrête la propagation,
+  // sinon celui de l'overlay (`PhoneOverlay`) referme le panneau derrière.
+  useEffect(() => {
+    if (!appDrawerOpen) return undefined;
+    const onKey = (event) => {
+      if (event.key !== 'Escape') return;
+      event.stopPropagation();
+      setAppDrawerOpen(false);
+    };
+    window.addEventListener('keydown', onKey, true);
+    return () => window.removeEventListener('keydown', onKey, true);
+  }, [appDrawerOpen]);
 
   const [favorites, setFavorites] = useState([]);
   const [pinnedPackages, setPinnedPackages] = useState([]);
@@ -294,12 +290,6 @@ export default function PhoneApp({ visible, onClose }) {
   const desktopBackground = settings.homeBackgroundImage
     ? `linear-gradient(rgba(2, 6, 23, 0.56), rgba(2, 6, 23, 0.56)), url("${settings.homeBackgroundImage}")`
     : PHONE_HOME_BACKGROUNDS.find((background) => background.id === settings.homeBackground)?.css;
-
-  useEffect(() => {
-    if (tab !== 'home') return undefined;
-    const timer = setInterval(() => setDesktopNow(new Date()), 15000);
-    return () => clearInterval(timer);
-  }, [tab]);
 
   const refreshStatus = useCallback(async () => {
     const api = apiRef.current;
@@ -401,6 +391,43 @@ export default function PhoneApp({ visible, onClose }) {
           setError(result?.error || `Impossible de modifier ${radio}.`);
           return;
         }
+        await refreshStatus();
+      } catch (err) {
+        setError(String(err.message || err));
+      } finally {
+        setControlBusy('');
+      }
+    },
+    [serial, refreshStatus]
+  );
+
+  // Sonnerie et Ne pas déranger. Le processus principal relit l'état appliqué
+  // par Android : on rafraîchit ensuite pour que la barre dise le vrai mode,
+  // même quand le téléphone a ignoré la demande.
+  const setPhoneRinger = useCallback(
+    async (mode) => {
+      if (!serial) return;
+      setControlBusy('ringer');
+      try {
+        const result = await apiRef.current?.setRingerMode({ serial, mode });
+        if (!result?.success) setError(result?.error || 'Impossible de changer le mode sonnerie.');
+        await refreshStatus();
+      } catch (err) {
+        setError(String(err.message || err));
+      } finally {
+        setControlBusy('');
+      }
+    },
+    [serial, refreshStatus]
+  );
+
+  const setPhoneDnd = useCallback(
+    async (enabled) => {
+      if (!serial) return;
+      setControlBusy('dnd');
+      try {
+        const result = await apiRef.current?.setDnd({ serial, enabled });
+        if (!result?.success) setError(result?.error || 'Impossible de changer Ne pas déranger.');
         await refreshStatus();
       } catch (err) {
         setError(String(err.message || err));
@@ -732,8 +759,9 @@ export default function PhoneApp({ visible, onClose }) {
   // de sondage régulier pour une liste qui ne change que rarement.
   const [callLog, setCallLog] = useState([]);
   const [callBusy, setCallBusy] = useState('');
-  const [callsExpanded, setCallsExpanded] = useState(false);
-  const showCalls = settings.homeWidgets.calls;
+  // Le journal d'appels n'est lu que si une carte l'affiche.
+  const showCalls = Array.isArray(settings.homeWidgets)
+    && settings.homeWidgets.some((widget) => widget?.type === 'calls');
   const refreshCallLog = useCallback(async () => {
     if (!serial) {
       setCallLog([]);
@@ -754,12 +782,14 @@ export default function PhoneApp({ visible, onClose }) {
   // OÙ le fichier est arrivé fait partie du service rendu.
   const [sendingFiles, setSendingFiles] = useState(false);
   const [sendReport, setSendReport] = useState('');
-  const sendFilesToPhone = useCallback(async () => {
+  // `folder` : sélecteur de dossiers, envoi récursif. L'arborescence est
+  // recréée dans les téléchargements du téléphone.
+  const sendFilesToPhone = useCallback(async (folder = false) => {
     if (!serial) return;
     setSendingFiles(true);
     setSendReport('');
     try {
-      const result = await apiRef.current?.sendFiles?.({ serial });
+      const result = await apiRef.current?.sendFiles?.({ serial, folder });
       if (result?.cancelled) return;
       const count = result?.sent?.length || 0;
       if (count) {
@@ -937,6 +967,10 @@ export default function PhoneApp({ visible, onClose }) {
     [serial, settings.showSystemApps, saveSettings]
   );
 
+  // Le tri du tiroir vient des RÉGLAGES. Il était en état local : la clé
+  // `sortMode` existait dans le schéma mais n'était ni lue ni écrite, donc le
+  // choix se perdait à chaque fermeture du Téléphone.
+  const sortMode = settings.sortMode;
   const filtered = useMemo(() => {
     const list = filterPhoneApps(apps, query);
     return sortPhoneApps(list, sortMode, recents);
@@ -960,12 +994,242 @@ export default function PhoneApp({ visible, onClose }) {
     [recents, apps, favorites]
   );
 
-  const showHomeFavorites = settings.homeWidgets.favorites && favoriteApps.length > 0;
-  const showHomeRecent = settings.homeWidgets.recent && recentApps.length > 0;
-  const homeAppSections = Number(showHomeFavorites) + Number(showHomeRecent);
+  // --- Bureau -------------------------------------------------------------
+  //
+  // La disposition vit dans les réglages (donc par appareil, et persistée).
+  // Le bureau ne lit QUE les sources dont une carte a besoin : poser une
+  // horloge ne doit pas déclencher une lecture d'agenda.
+  const desktopLayout = Array.isArray(settings.homeWidgets) ? settings.homeWidgets : [];
+  const desktopSources = useMemo(() => neededSources(desktopLayout), [desktopLayout]);
+  const setDesktopLayout = useCallback(
+    (next) => saveSettings({ homeWidgets: normalizeDesktopLayout(next) }),
+    [saveSettings]
+  );
+  const [shadeOpen, setShadeOpen] = useState(false);
+  const [calendarData, setCalendarData] = useState(null);
+  const [mediaData, setMediaData] = useState(null);
+  const [mediaBusy, setMediaBusy] = useState('');
+  const [storageData, setStorageData] = useState(null);
+  const [screenPreview, setScreenPreview] = useState(null);
+
+  const pinnedAppsList = useMemo(
+    () => pinnedPackages.map((pkg) => apps.find((a) => a.package === pkg)).filter(Boolean),
+    [pinnedPackages, apps]
+  );
+
+  // Clé STABLE des sources. `neededSources` rend un Set neuf à chaque rendu :
+  // s'en servir comme dépendance relançait tout l'effet au moindre
+  // enregistrement de réglage — donc une capture d'écran de plus, à chaque
+  // fois, pour rien.
+  const desktopSourcesKey = useMemo(() => [...desktopSources].sort().join(','), [desktopSources]);
+
+  // Chaque source a son rythme : l'agenda et le stockage bougent lentement, la
+  // lecture en cours doit suivre le morceau, l'aperçu d'écran est le plus cher
+  // (une capture) et reste donc le plus lent des trois rapides.
+  //
+  // Rien ne tourne si le Téléphone n'est pas à l'écran, si l'onglet Accueil
+  // n'est pas celui qu'on regarde, ou si la fenêtre d'Orbit est masquée :
+  // interroger un téléphone que personne ne regarde lui coûte sa batterie.
+  useEffect(() => {
+    if (!visible || !serial || tab !== 'home') return undefined;
+    const api = apiRef.current;
+    if (!api) return undefined;
+    let alive = true;
+    let timers = [];
+    const sources = new Set(desktopSourcesKey ? desktopSourcesKey.split(',') : []);
+
+    const poll = (source, everyMs, read) => {
+      if (!sources.has(source)) return;
+      const tick = async () => {
+        try {
+          const result = await read();
+          if (alive) result();
+        } catch {
+          /* une source muette laisse sa carte dans son état précédent */
+        }
+      };
+      Promise.resolve().then(tick);
+      timers.push(window.setInterval(tick, everyMs));
+    };
+
+    // Fenêtre d'Orbit masquée (réduite, autre bureau) : on arrête tout et on
+    // reprend au retour. Sans ça, l'aperçu d'écran continue de réclamer une
+    // capture toutes les cinq secondes à un téléphone que personne ne regarde.
+    const stop = () => {
+      for (const timer of timers) window.clearInterval(timer);
+      timers = [];
+    };
+    const onVisibility = () => {
+      if (document.hidden) stop();
+      else if (!timers.length) start();
+    };
+
+    function start() {
+      poll('calendar', 10 * 60 * 1000, async () => {
+        const res = await api.calendar?.({ serial, from: Date.now() - 2 * 3600 * 1000, limit: 20 });
+        return () =>
+          setCalendarData(
+            res?.success
+              ? { events: res.events || [] }
+              : { error: res?.error || 'agenda indisponible', events: [] }
+          );
+      });
+
+      poll('storage', 5 * 60 * 1000, async () => {
+        const res = await api.storage?.({ serial });
+        return () =>
+          setStorageData(
+            res?.success ? { storage: res.storage } : { error: res?.error || 'stockage indisponible' }
+          );
+      });
+
+      poll('media', 8000, async () => {
+        const res = await api.media?.({ serial });
+        return () => setMediaData(res?.success ? { media: res.media } : { error: res?.error || '' });
+      });
+
+      poll('screen', 5000, async () => {
+        // Largeur modeste : c'est une vignette sur un bureau, pas le miroir.
+        // `dataUrl` (et non `image`) : c'est le nom que rend `captureScreen`.
+        const res = await api.screen?.({ serial, maxWidth: 420 });
+        return () =>
+          setScreenPreview(
+            res?.success && res.dataUrl
+              ? { image: res.dataUrl }
+              : { error: res?.error || 'aperçu indisponible' }
+          );
+      });
+    }
+
+    if (!document.hidden) start();
+    document.addEventListener('visibilitychange', onVisibility);
+
+    return () => {
+      alive = false;
+      stop();
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [visible, serial, tab, desktopSourcesKey]);
+
+  // Les appels, dans la forme que la carte attend (le libellé et le numéro
+  // sont déjà résolus par `describeCallLogEntry`).
+  const desktopCalls = useMemo(
+    () => ({
+      entries: callLog.slice(0, 8).map((entry) => {
+        const call = describeCallLogEntry(entry);
+        return { ...call, at: entry.at, duration: formatCallDuration(entry.duration), raw: entry };
+      }),
+    }),
+    [callLog]
+  );
+
+  // Un appel se lit par son appelant, pas par le titre que pose le dialer
+  // (« Appel entrant ») : le volet et la carte Notifications reçoivent donc un
+  // intitulé déjà résolu.
+  const desktopNotifications = useMemo(
+    () =>
+      phoneNotifications.map((notification) => {
+        if (notification.category !== 'call') return notification;
+        const app = apps.find((item) => item.package === notification.package);
+        const caller = describeCallNotification(notification, app?.name || notification.appName);
+        return {
+          ...notification,
+          title: caller.unknown ? 'Appel — appelant inconnu' : `Appel — ${caller.who}`,
+          text: caller.detail || notification.text || '',
+        };
+      }),
+    [phoneNotifications, apps]
+  );
+
+  // La taille est décidée par l'APPELANT : une icône de dock, une tuile et une
+  // vignette de liste n'ont pas la même. Elle était figée à 40 px, donc trop
+  // grande pour sa boîte dans les grilles — l'icône débordait et se faisait
+  // rogner.
+  const renderDesktopIcon = useCallback(
+    (app, size = 40) => (
+      <PhoneIcon
+        serial={serial}
+        pkg={app.package}
+        name={app.name}
+        size={size}
+        limit={settings.iconConcurrency}
+      />
+    ),
+    [serial, settings.iconConcurrency]
+  );
+
+  const desktopActions = useMemo(
+    () => ({
+      launch,
+      renderIcon: renderDesktopIcon,
+      openMirror: openPhoneMirror,
+      openDrawer: () => {
+        setAppDrawerOpen(true);
+        setQuery('');
+      },
+      openSettings: () => selectTab('settings'),
+      sendKey: sendPhoneKey,
+      mediaKey: async (action) => {
+        if (!serial || mediaBusy) return;
+        setMediaBusy(action);
+        try {
+          await apiRef.current?.mediaKey?.({ serial, action });
+          // On relit tout de suite : le titre ou l'état de lecture vient de
+          // changer, attendre le prochain tour donnerait un bouton menteur.
+          const res = await apiRef.current?.media?.({ serial });
+          if (res?.success) setMediaData({ media: res.media });
+        } catch (err) {
+          setError(String(err?.message || err));
+        } finally {
+          setMediaBusy('');
+        }
+      },
+      toggleRadio: (radio) =>
+        setPhoneRadio(radio, (radio === 'wifi' ? device?.wifiEnabled : device?.bluetoothEnabled) !== true),
+      toggleRinger: () => setPhoneRinger(device?.ringerMode === 'normal' ? 'vibrate' : 'normal'),
+      toggleDnd: () => setPhoneDnd(device?.doNotDisturb !== true),
+      sendFiles: () => sendFilesToPhone(false),
+      sendFolder: () => sendFilesToPhone(true),
+      openDevicePanel,
+      openNotification: (item) =>
+        launch({ package: item.package, name: item.title || item.package }),
+      dismissNotification: dismissPhoneNotification,
+      clearNotifications: clearPhoneNotifications,
+      callBack: (entry) => callBack(entry.raw || entry, 'call'),
+    }),
+    [
+      launch,
+      renderDesktopIcon,
+      openPhoneMirror,
+      sendPhoneKey,
+      serial,
+      mediaBusy,
+      device,
+      setPhoneRadio,
+      setPhoneRinger,
+      setPhoneDnd,
+      sendFilesToPhone,
+      openDevicePanel,
+      dismissPhoneNotification,
+      clearPhoneNotifications,
+      callBack,
+      selectTab,
+    ]
+  );
 
   const searchUrl = detectUrl(query);
   const tileSize = settings.iconSize === 'small' ? 40 : settings.iconSize === 'large' ? 68 : 52;
+  // Le tiroir s'étalait sur un nombre FIXE de colonnes : sur un grand écran il
+  // laissait la moitié de la place vide, et sur une fenêtre étroite il
+  // tassait. Il en met maintenant autant que la largeur en autorise, à partir
+  // de « largeur minimale d'une tuile » — un réglage qui existait déjà, avec
+  // son curseur, mais qui n'était appliqué nulle part.
+  // « Taille des icônes » vaut aussi pour le BUREAU : le réglage ne touchait
+  // que le tiroir, donc le changer ne changeait rien là où on regarde.
+  const desktopIconBase = settings.iconSize === 'small' ? 32 : settings.iconSize === 'large' ? 52 : 40;
+  const appCellWidth = Math.max(settings.gridMin, tileSize + 28);
+  const appCellHeight = tileSize + 46;
+  const appGridTemplate = `repeat(auto-fill, minmax(${appCellWidth}px, 1fr))`;
   const iconLimitForGrid = settings.iconConcurrency;
   // Une app est ouverte : on retire la coquille Téléphone (en-tête + onglets)
   // pour que l'app occupe TOUTE la zone d'Orbit. Les commandes sont dans la
@@ -976,7 +1240,7 @@ export default function PhoneApp({ visible, onClose }) {
     <div
       key={app.package}
       className={`group relative flex ${
-        compact ? 'w-28 shrink-0 flex-col items-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.04] px-2 py-2 text-white hover:bg-white/[0.09]' : 'flex-col items-center gap-1.5 rounded-xl px-1 py-2 hover:bg-bg-hover'
+        compact ? 'min-w-0 flex-col items-center gap-1.5 rounded-xl border border-white/10 bg-white/[0.04] px-2 py-2 text-white hover:bg-white/[0.09]' : 'flex-col items-center gap-1.5 rounded-xl px-1 py-2 hover:bg-bg-hover'
       }`}
     >
       <button
@@ -1050,53 +1314,10 @@ export default function PhoneApp({ visible, onClose }) {
         backgroundSize: 'cover',
       } : undefined}
     >
-      <header className="flex shrink-0 items-center gap-3 border-b border-border px-4 py-2.5">
-        <div className="flex items-center gap-2">
-          <Smartphone size={18} className="text-accent-primary" />
-          <span className="text-sm font-medium">Téléphone</span>
-          {device ? (
-            <span className="hidden text-xs text-text-muted sm:inline">
-              {device.model}
-              {device.android ? ` · Android ${device.android}` : ''}
-              {typeof device.battery === 'number' ? ` · ${device.battery}%` : ''}
-              {device.charging ? ' ⚡' : ''}
-            </span>
-          ) : (
-            <Pill tone="warn">Aucun appareil</Pill>
-          )}
-        </div>
-        <div className="ml-auto flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => refreshStatus()}
-            className="rounded-lg p-1.5 text-text-muted hover:bg-bg-hover hover:text-text-primary"
-            title="Actualiser"
-          >
-            <RefreshCw size={16} />
-          </button>
-          <button
-            type="button"
-            onClick={() => selectTab('settings')}
-            className={`rounded-lg p-1.5 hover:bg-bg-hover ${
-              tab === 'settings' ? 'text-accent-primary' : 'text-text-muted hover:text-text-primary'
-            }`}
-            title="Réglages"
-          >
-            <Settings size={16} />
-          </button>
-          {onClose ? (
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-lg p-1.5 text-text-muted hover:bg-bg-hover hover:text-text-primary"
-              title="Fermer le Téléphone (Échap)"
-            >
-              <X size={16} />
-            </button>
-          ) : null}
-        </div>
-      </header>
-
+      {/* L'en-tête a disparu : il répétait ce que la barre d'état du bureau
+          dit déjà (modèle, version d'Android, batterie), et l'engrenage
+          doublait l'onglet Réglages. Il ne restait que deux actions propres à
+          la coquille — actualiser et fermer — qui ont rejoint les onglets. */}
       {error ? (
         <div className="flex shrink-0 items-center gap-2 border-b border-border bg-red-500/10 px-4 py-1.5 text-xs text-red-300">
           <span className="min-w-0 flex-1 truncate" title={error}>
@@ -1129,6 +1350,30 @@ export default function PhoneApp({ visible, onClose }) {
           </button>
         ))}
         {mirrorRunning ? <Pill tone="good">Miroir ouvert</Pill> : null}
+        {!device && !loading ? <Pill tone="warn">Aucun appareil</Pill> : null}
+
+        <div className="ml-auto flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => refreshStatus()}
+            className="rounded-lg p-1.5 text-text-muted hover:bg-bg-hover hover:text-text-primary"
+            title="Actualiser"
+            aria-label="Actualiser"
+          >
+            <RefreshCw size={15} />
+          </button>
+          {onClose ? (
+            <button
+              type="button"
+              onClick={onClose}
+              className="rounded-lg p-1.5 text-text-muted hover:bg-bg-hover hover:text-text-primary"
+              title="Fermer le Téléphone (Échap)"
+              aria-label="Fermer le Téléphone"
+            >
+              <X size={15} />
+            </button>
+          ) : null}
+        </div>
       </nav>
 
       {/* ------------------------------- ACCUEIL ------------------------------ */}
@@ -1238,280 +1483,39 @@ export default function PhoneApp({ visible, onClose }) {
               />
             </div>
           ) : (
-            <div className="mx-auto grid w-full max-w-7xl grid-cols-1 gap-3 px-4 pb-10 pt-4 lg:grid-cols-12">
-              {(settings.homeWidgets.clock || settings.homeWidgets.device) ? <section className="relative overflow-hidden rounded-2xl border border-white/15 bg-gradient-to-br from-white/[0.13] via-white/[0.06] to-indigo-300/[0.08] p-4 text-white shadow-xl shadow-black/20 backdrop-blur-2xl sm:p-5 lg:col-span-12">
-                <div className="pointer-events-none absolute -right-12 -top-20 h-56 w-56 rounded-full bg-sky-300/10 blur-3xl" />
-                <div className="pointer-events-none absolute -bottom-24 left-1/3 h-48 w-48 rounded-full bg-violet-400/10 blur-3xl" />
-                <div className="relative flex flex-wrap items-end justify-between gap-5">
-                  {settings.homeWidgets.clock ? <div>
-                    <div className="mb-2 flex items-center gap-2 text-[11px] font-medium uppercase tracking-[0.2em] text-sky-100/65"><Clock3 size={14} /> Ton bureau</div>
-                    <div className="text-4xl font-light leading-none tabular-nums tracking-tight sm:text-5xl">{desktopNow.toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}</div>
-                    <div className="mt-2 text-xs text-white/70">{desktopNow.toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}</div>
-                  </div> : null}
-                  {settings.homeWidgets.device ? <div className="flex min-w-[210px] items-center gap-3 rounded-2xl border border-white/10 bg-black/15 px-4 py-3 shadow-inner backdrop-blur-xl">
-                    <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-sky-300/10 text-sky-200"><Smartphone size={18} /></span>
-                    <span className="min-w-0 flex-1"><span className="block truncate text-xs font-medium">{device?.model || 'Téléphone connecté'}</span><span className="mt-1 block text-[11px] text-white/45">{device ? 'Connecté à Orbit' : 'En attente de connexion'}</span></span>
-                    {typeof device?.battery === 'number' ? <span className="flex items-center gap-1 rounded-lg bg-white/[0.06] px-2 py-1 text-xs tabular-nums text-white/75"><Battery size={14} />{device.battery}%</span> : null}
-                  </div> : null}
-                </div>
-              </section> : null}
-
-              {device ? (
-                <section className="flex flex-wrap items-center gap-1.5 rounded-2xl border border-white/10 bg-slate-950/25 p-2 text-white shadow-lg backdrop-blur-xl lg:col-span-12">
-                  <button
-                    type="button"
-                    onClick={() => selectTab('screen')}
-                    className="flex items-center gap-2 rounded-xl bg-sky-300/10 px-3 py-2 text-xs font-medium text-sky-100 transition hover:bg-sky-300/20"
-                  >
-                    <Monitor size={15} /> Écran
-                  </button>
-                  <button
-                    type="button"
-                    onClick={openPhoneMirror}
-                    title={mirrorRunning ? 'Le miroir est ouvert' : 'Ouvrir le miroir'}
-                    aria-label={mirrorRunning ? 'Le miroir est ouvert' : 'Ouvrir le miroir'}
-                    className="flex items-center gap-2 rounded-xl px-3 py-2 text-xs text-white/75 transition hover:bg-white/10 hover:text-white"
-                  >
-                    <Smartphone size={15} /> {mirrorRunning ? 'Miroir ouvert' : 'Ouvrir le miroir'}
-                  </button>
-                  <span className="mx-1 h-5 w-px bg-white/10" />
-                  {[
-                    ['back', ArrowLeft, 'Retour'],
-                    ['home', Home, 'Accueil du téléphone'],
-                    ['recents', Square, 'Applications récentes'],
-                    ['wakeup', Power, 'Réveiller l’écran'],
-                  ].map(([key, Icon, label]) => (
-                    <button
-                      key={key}
-                      type="button"
-                      onClick={() => sendPhoneKey(key)}
-                      title={label}
-                      aria-label={label}
-                      className="rounded-xl p-2 text-white/65 transition hover:bg-white/10 hover:text-white"
-                    >
-                      <Icon size={15} />
-                    </button>
-                  ))}
-                  {settings.homeWidgets.quickControls ? (
-                    <>
-                      <span className="mx-1 h-5 w-px bg-white/10" />
-                      {[
-                        {
-                          id: 'wifi',
-                          label: device.wifiEnabled === true ? 'Désactiver le Wi-Fi' : 'Activer le Wi-Fi',
-                          enabled: device.wifiEnabled,
-                          icon: Wifi,
-                        },
-                        {
-                          id: 'bluetooth',
-                          label: device.bluetoothEnabled === true ? 'Désactiver le Bluetooth' : 'Activer le Bluetooth',
-                          enabled: device.bluetoothEnabled,
-                          icon: Bluetooth,
-                        },
-                      ].map(({ id, label, enabled, icon: Icon }) => (
-                        <button
-                          key={id}
-                          type="button"
-                          aria-label={label}
-                          aria-pressed={enabled === true}
-                          title={controlBusy === id ? 'Mise à jour…' : `${label} · ${enabled === true ? 'activé' : enabled === false ? 'désactivé' : 'état inconnu'}`}
-                          disabled={Boolean(controlBusy)}
-                          onClick={() => setPhoneRadio(id, enabled !== true)}
-                          className={`rounded-xl p-2 transition disabled:opacity-50 ${
-                            enabled === true
-                              ? 'bg-sky-300/15 text-sky-100 hover:bg-sky-300/25'
-                              : 'text-white/65 hover:bg-white/10 hover:text-white'
-                          }`}
-                        >
-                          <Icon size={15} />
-                        </button>
-                      ))}
-                      {[
-                        ['volume_down', Volume1, 'Baisser le volume'],
-                        ['mute', VolumeX, 'Couper le son'],
-                        ['volume_up', Volume2, 'Augmenter le volume'],
-                      ].map(([key, Icon, label]) => (
-                        <button
-                          key={key}
-                          type="button"
-                          onClick={() => sendPhoneKey(key)}
-                          title={label}
-                          aria-label={label}
-                          className="rounded-xl p-2 text-white/65 transition hover:bg-white/10 hover:text-white"
-                        >
-                          <Icon size={15} />
-                        </button>
-                      ))}
-                      <span className="mx-1 h-5 w-px bg-white/10" />
-                      {[
-                        ['internet', Wifi, 'Réglages réseau'],
-                        ['sound', Volume2, 'Réglages du son'],
-                        ['settings', Settings, 'Réglages Android'],
-                      ].map(([panel, Icon, label]) => (
-                        <button
-                          key={panel}
-                          type="button"
-                          onClick={() => openDevicePanel(panel)}
-                          title={label}
-                          aria-label={label}
-                          className="rounded-xl p-2 text-white/65 transition hover:bg-white/10 hover:text-white"
-                        >
-                          <Icon size={15} />
-                        </button>
-                      ))}
-                      <span className="mx-1 h-5 w-px bg-white/10" />
-                      {/* Envoyer un fichier : le sélecteur est ouvert par le
-                          processus principal, le fichier arrive dans les
-                          téléchargements du téléphone. */}
-                      <button
-                        type="button"
-                        onClick={sendFilesToPhone}
-                        disabled={sendingFiles}
-                        title="Envoyer un fichier dans les téléchargements du téléphone"
-                        aria-label="Envoyer un fichier au téléphone"
-                        className="flex items-center gap-1.5 rounded-xl px-2 py-2 text-xs text-white/65 transition hover:bg-white/10 hover:text-white disabled:opacity-40"
-                      >
-                        {sendingFiles ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />}
-                        <span className="hidden sm:inline">Envoyer un fichier</span>
-                      </button>
-                    </>
-                  ) : null}
-                </section>
-              ) : null}
-              {sendReport ? <p role="status" className="rounded-xl border border-white/10 bg-slate-950/40 px-3 py-2 text-[11px] text-white/70 lg:col-span-12">{sendReport}</p> : null}
-
-              {settings.homeWidgets.notifications && phoneNotifications.length > 0 ? <section className="overflow-hidden rounded-2xl border border-white/10 bg-slate-950/25 text-white shadow-lg shadow-black/10 backdrop-blur-xl lg:col-span-12">
-                <div className="flex items-center gap-2 border-b border-white/[0.07] px-4 py-3">
-                  <span className="grid h-7 w-7 place-items-center rounded-lg bg-sky-300/10 text-sky-200"><Bell size={14} /></span>
-                  <span className="text-xs font-semibold">Notifications</span>
-                  <span className="rounded-full bg-white/10 px-2 py-0.5 text-[10px] tabular-nums text-white/70">{phoneNotifications.length}</span>
-                  <button type="button" onClick={clearPhoneNotifications} disabled={clearingNotifications} className="ml-auto flex items-center gap-1.5 rounded-lg px-2 py-1 text-[10px] text-white/55 transition hover:bg-white/10 hover:text-white disabled:opacity-40" title="Écarter toutes les notifications du téléphone">
-                    <Trash2 size={12} /> {clearingNotifications ? 'Effacement…' : 'Tout effacer'}
-                  </button>
-                </div>
-                <div className="max-h-[360px] divide-y divide-white/[0.06] overflow-y-auto">
-                  {phoneNotifications.slice(0, notificationsExpanded ? phoneNotifications.length : 5).map((notification) => {
-                    const app = apps.find((item) => item.package === notification.package);
-                    // Un appel se lit par son appelant, pas par le titre posé
-                    // par le dialer (« Appel entrant »).
-                    const caller = notification.category === 'call'
-                      ? describeCallNotification(notification, app?.name || notification.appName)
-                      : null;
-                    const heading = caller
-                      ? (caller.unknown ? 'Appel — appelant inconnu' : `Appel — ${caller.who}`)
-                      : notification.title || app?.name || 'Notification';
-                    return <div key={notification.key} className="group flex items-start gap-2 px-3 py-2.5 transition hover:bg-white/[0.04]">
-                      <button type="button" onClick={() => launch({ package: notification.package, name: app?.name || notification.title || notification.package })} className="min-w-0 flex-1 rounded-lg px-1 py-0.5 text-left" title={`${heading} — ouvrir l’application`}>
-                        <span className="block truncate text-xs font-medium text-white/90">{heading}</span>
-                        {caller?.detail || notification.text ? <span className="mt-1 block line-clamp-2 text-[11px] leading-relaxed text-white/55">{caller?.detail || notification.text}</span> : null}
-                        <span className="mt-1.5 block truncate text-[10px] text-white/30">{app?.name || notification.package}</span>
-                      </button>
-                      <button type="button" onClick={() => dismissPhoneNotification(notification)} className="mt-0.5 rounded-lg p-1.5 text-white/35 opacity-60 transition hover:bg-white/10 hover:text-white sm:opacity-0 sm:group-hover:opacity-100" title="Écarter du téléphone (24 h)" aria-label="Écarter cette notification">
-                        <X size={13} />
-                      </button>
-                    </div>;
-                  })}
-                </div>
-                {phoneNotifications.length > 5 ? <button type="button" onClick={() => setNotificationsExpanded((expanded) => !expanded)} className="w-full border-t border-white/[0.07] px-3 py-2 text-[11px] font-medium text-sky-200/80 transition hover:bg-white/[0.04] hover:text-sky-100">{notificationsExpanded ? 'Afficher moins' : `Afficher les ${phoneNotifications.length - 5} autres notifications`}</button> : null}
-              </section> : null}
-
-              {/* Appels récents : savoir qui a appelé pendant qu'on n'était
-                  pas là, et rappeler sans chercher le téléphone. */}
-              {showCalls && callLog.length > 0 ? <section className="overflow-hidden rounded-2xl border border-white/10 bg-slate-950/25 text-white shadow-lg shadow-black/10 backdrop-blur-xl lg:col-span-12">
-                <div className="flex items-center gap-2 border-b border-white/[0.07] px-3 py-2">
-                  <PhoneCall size={13} className="text-emerald-200/80" />
-                  <h3 className="text-xs font-semibold">Appels récents</h3>
-                  <button type="button" onClick={refreshCallLog} className="ml-auto rounded-lg px-2 py-1 text-[10px] text-white/55 transition hover:bg-white/10 hover:text-white" title="Relire le journal d’appels du téléphone">Actualiser</button>
-                </div>
-                <div className="max-h-[300px] divide-y divide-white/[0.06] overflow-y-auto">
-                  {callLog.slice(0, callsExpanded ? callLog.length : 5).map((entry, index) => {
-                    const call = describeCallLogEntry(entry);
-                    const duration = formatCallDuration(entry.duration);
-                    const Icon = call.type === 'outgoing' ? PhoneOutgoing : call.missed ? PhoneMissed : PhoneIncoming;
-                    return <div key={`${entry.at || index}-${entry.number || index}`} className="flex items-center gap-2.5 px-3 py-2.5 transition hover:bg-white/[0.04]">
-                      <Icon size={14} className={call.missed ? 'shrink-0 text-rose-300' : 'shrink-0 text-white/45'} />
-                      <div className="min-w-0 flex-1">
-                        <span className={`block truncate text-xs font-medium ${call.missed ? 'text-rose-100' : 'text-white/90'}`}>{call.who}</span>
-                        <span className="mt-0.5 block truncate text-[10px] text-white/40">
-                          {[call.detail, entry.at ? new Date(entry.at).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }) : null, duration].filter(Boolean).join(' · ')}
-                        </span>
-                      </div>
-                      {call.callable ? <>
-                        <button type="button" onClick={() => callBack(entry, 'dial')} disabled={Boolean(callBusy)} className="rounded-lg px-2 py-1.5 text-[10px] text-white/60 transition hover:bg-white/10 hover:text-white disabled:opacity-40" title={`Préparer ${call.number} sur le clavier du téléphone`}>Préparer</button>
-                        <button type="button" onClick={() => callBack(entry, 'call')} disabled={Boolean(callBusy)} className="flex items-center gap-1 rounded-lg bg-emerald-500/20 px-2.5 py-1.5 text-[10px] font-medium text-emerald-100 transition hover:bg-emerald-500/30 disabled:opacity-40" title={`Appeler ${call.number} depuis le téléphone`}>
-                          {callBusy === entry.number + 'call' ? <Loader2 size={11} className="animate-spin" /> : <PhoneCall size={11} />} Rappeler
-                        </button>
-                      </> : <span className="text-[10px] text-white/30" title="Numéro masqué : rien à rappeler">Numéro masqué</span>}
-                    </div>;
-                  })}
-                </div>
-                {callLog.length > 5 ? <button type="button" onClick={() => setCallsExpanded((expanded) => !expanded)} className="w-full border-t border-white/[0.07] px-3 py-2 text-[11px] font-medium text-sky-200/80 transition hover:bg-white/[0.04] hover:text-sky-100">{callsExpanded ? 'Afficher moins' : `Afficher les ${callLog.length - 5} autres appels`}</button> : null}
-              </section> : null}
-
-              <div className="relative flex items-center justify-between gap-3 lg:col-span-12">
-                <div><h2 className="text-sm font-semibold text-white/90">Ton bureau</h2><p className="text-[11px] text-white/50">Favoris, raccourcis et activité récente</p></div>
-                <div className="flex items-center gap-2">
-                  <button type="button" onClick={() => setHomeWidgetPickerOpen((open) => !open)} aria-expanded={homeWidgetPickerOpen} className="flex items-center gap-1.5 rounded-lg border border-sky-200/15 bg-sky-300/10 px-2.5 py-1.5 text-xs text-sky-100 hover:bg-sky-300/20"><Plus size={13} /> Ajouter un widget</button>
-                  <button type="button" onClick={() => selectTab('settings')} className="flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.05] px-2.5 py-1.5 text-xs text-white/70 hover:bg-white/10"><Settings size={13} /> Personnaliser</button>
-                </div>
-              </div>
-              {homeWidgetPickerOpen ? (
-                <section className="rounded-2xl border border-sky-200/15 bg-slate-950/70 p-3 text-white shadow-xl backdrop-blur-xl lg:col-span-12">
-                  <div className="mb-2 flex items-center justify-between gap-3">
-                    <div>
-                      <h3 className="text-xs font-semibold">Widgets disponibles</h3>
-                      <p className="mt-1 text-[11px] text-white/45">Ajoute ou retire les cartes affichées sur cet accueil.</p>
-                    </div>
-                    <button type="button" onClick={() => selectTab('settings')} className="rounded-lg px-2 py-1 text-[11px] text-sky-200 hover:bg-white/10">Plus de réglages</button>
-                  </div>
-                  <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6">
-                    {[
-                      ['clock', 'Horloge'],
-                      ['device', 'Appareil et batterie'],
-                      ['quickControls', 'Contrôles rapides'],
-                      ['favorites', 'Applications favorites'],
-                      ['recent', 'Applications récentes'],
-                      ['notifications', 'Notifications'],
-                      ['calls', 'Appels récents'],
-                    ].map(([key, label]) => {
-                      const enabled = settings.homeWidgets[key];
-                      return (
-                        <button
-                          key={key}
-                          type="button"
-                          aria-pressed={enabled}
-                          onClick={() => saveSettings({
-                            homeWidgets: { ...settings.homeWidgets, [key]: !enabled },
-                          })}
-                          className={`rounded-xl border px-3 py-2 text-left text-xs transition ${
-                            enabled
-                              ? 'border-sky-200/30 bg-sky-300/10 text-sky-100'
-                              : 'border-white/10 bg-white/[0.03] text-white/60 hover:bg-white/[0.08]'
-                          }`}
-                        >
-                          <span className="block font-medium">{label}</span>
-                          <span className="mt-1 block text-[10px] opacity-60">{enabled ? 'Ajouté · retirer' : 'Cliquer pour ajouter'}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                  <p className="mt-3 text-[10px] leading-relaxed text-white/40">
-                    Ce sont les widgets intégrés à Orbit. Les widgets Android tiers ne sont pas encore hébergeables dans ce panneau; cela nécessite une application hôte native sur Android.
-                  </p>
-                </section>
-              ) : null}
-              {showHomeFavorites ? <section className={`min-w-0 rounded-2xl border border-white/10 bg-white/[0.06] p-3 text-white shadow-lg backdrop-blur-xl ${homeAppSections > 1 ? 'lg:col-span-6' : 'lg:col-span-12'}`}>
-                <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-white/70"><Star size={14} className="text-amber-300" /> Favoris <span className="ml-auto text-[10px] font-normal text-white/40">{favoriteApps.length}</span></div>
-                <div className="flex gap-2 overflow-x-auto pb-1">{favoriteApps.slice(0, 12).map((app) => tile(app, true))}</div>
-              </section> : null}
-              {showHomeRecent ? <section className={`min-w-0 rounded-2xl border border-white/10 bg-white/[0.04] p-3 text-white shadow-lg backdrop-blur-xl ${homeAppSections > 1 ? 'lg:col-span-6' : 'lg:col-span-12'}`}>
-                <div className="mb-2 flex items-center gap-2 text-xs font-semibold text-white/70"><RefreshCw size={13} className="text-sky-300" /> Récemment ouvertes <span className="ml-auto text-[10px] font-normal text-white/40">{recentApps.length}</span></div>
-                <div className="flex gap-2 overflow-x-auto pb-1">{recentApps.map((app) => tile(app, true))}</div>
-              </section> : null}
-              <button type="button" onClick={() => { setAppDrawerOpen((open) => !open); setQuery(''); }} className="flex w-full items-center justify-center gap-2 rounded-2xl border border-sky-200/15 bg-gradient-to-r from-sky-400/15 to-indigo-400/15 px-4 py-3 text-sm font-medium text-white shadow-lg transition hover:from-sky-400/25 hover:to-indigo-400/25 lg:col-span-12">
-                <AppWindow size={17} /> {appDrawerOpen ? 'Fermer les applications' : 'Toutes les applications'} <span className="rounded-full bg-white/10 px-2 py-0.5 text-xs tabular-nums">{apps.length}</span>
-              </button>
-              {appDrawerOpen ? <div className="rounded-2xl border border-white/10 bg-black/20 p-4 text-white shadow-xl backdrop-blur-xl lg:col-span-12">
+            <>
+              <PhoneDesktop
+                layout={desktopLayout}
+                onLayoutChange={setDesktopLayout}
+                device={device}
+                apps={apps}
+                pinnedApps={pinnedAppsList}
+                favorites={favoriteApps}
+                recent={recentApps}
+                notifications={desktopNotifications}
+                calls={desktopCalls}
+                calendar={calendarData}
+                media={mediaData}
+                storage={storageData}
+                screen={screenPreview}
+                mediaBusy={mediaBusy}
+                callBusy={callBusy}
+                controlBusy={controlBusy}
+                sendingFiles={sendingFiles}
+                sendReport={sendReport}
+                mirrorRunning={mirrorRunning}
+                shadeOpen={shadeOpen}
+                onShadeToggle={setShadeOpen}
+                dockVisible={settings.homeDock !== false}
+                iconBase={desktopIconBase}
+                actions={desktopActions}
+              />
+              {/* Le tiroir : toutes les applications, par-dessus le bureau.
+                  Ouvert depuis le dock, fermé par Échap ou son bouton. */}
+              {appDrawerOpen ? (
+                <div className="absolute inset-0 z-30 overflow-y-auto bg-slate-950/75 p-4 backdrop-blur-xl">
+                  <div className="w-full">
+                  <div className="rounded-2xl border border-white/10 bg-black/20 p-4 text-white shadow-xl backdrop-blur-xl">
                 <div className="mb-3 flex items-center justify-between gap-3"><div><h2 className="text-base font-semibold">Applications</h2><p className="text-xs text-white/50">Choisis une application pour l’ouvrir dans sa fenêtre.</p></div><button type="button" onClick={() => setAppDrawerOpen(false)} className="rounded-lg px-2.5 py-1.5 text-xs text-white/65 hover:bg-white/10">Fermer</button></div>
               <div className="relative">
                 <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted" />
@@ -1592,7 +1596,7 @@ export default function PhoneApp({ visible, onClose }) {
                   <span>{apps.length} applications</span>
                   <select
                     value={sortMode}
-                    onChange={(e) => setSortMode(e.target.value)}
+                    onChange={(e) => saveSettings({ sortMode: e.target.value })}
                     className="rounded-md border border-border bg-bg-secondary px-1.5 py-1 text-[11px] outline-none"
                   >
                     <option value="name">Nom</option>
@@ -1617,7 +1621,7 @@ export default function PhoneApp({ visible, onClose }) {
                   {appsLoading ? <Loader2 size={11} className="animate-spin" /> : null}
                 </h3>
                 {appsLoading && !filtered.length ? (
-                  <div className="grid gap-1 overflow-y-auto pr-1" style={{ gridTemplateColumns: `repeat(${settings.appGridColumns}, minmax(0, 1fr))`, gridAutoRows: '96px', maxHeight: `${settings.appGridRows * 96}px` }}>
+                  <div className="grid gap-1 overflow-y-auto pr-1" style={{ gridTemplateColumns: appGridTemplate, gridAutoRows: `${appCellHeight}px` }}>
                     {Array.from({ length: 12 }).map((_, i) => (
                       <div key={i} className="flex flex-col items-center gap-2 py-2">
                         <div className="h-12 w-12 animate-pulse rounded-2xl bg-bg-hover" />
@@ -1628,7 +1632,7 @@ export default function PhoneApp({ visible, onClose }) {
                 ) : filtered.length ? (
                   <div
                     className="grid gap-1"
-                    style={{ gridTemplateColumns: `repeat(${settings.appGridColumns}, minmax(0, 1fr))`, gridAutoRows: '96px', maxHeight: `${settings.appGridRows * 96}px`, overflowY: 'auto' }}
+                    style={{ gridTemplateColumns: appGridTemplate, gridAutoRows: `${appCellHeight}px` }}
                   >
                     {filtered.map(tile)}
                   </div>
@@ -1638,8 +1642,11 @@ export default function PhoneApp({ visible, onClose }) {
                   </p>
                 )}
               </section>
-              </div> : null}
-            </div>
+                  </div>
+                  </div>
+                </div>
+              ) : null}
+            </>
           )}
         </div>
       ) : null}
@@ -1921,20 +1928,57 @@ export default function PhoneApp({ visible, onClose }) {
                 Scrcpy crée un nouvel écran Android avec ces dimensions. Ce réglage s’applique aux nouvelles fenêtres ; ferme les fenêtres déjà ouvertes ci-dessous avant de relancer une app. Une app peut toujours imposer sa propre orientation.
               </p>
               <p className="mb-3 text-[11px] leading-relaxed text-text-muted">
-                Ces cartes sont des widgets Orbit affichés dans le panneau. Les widgets Android fournis par d’autres applications ne peuvent pas encore être hébergés ici : il faudrait un hôte de widgets Android natif.
+                Les cartes du bureau s’ajoutent et s’enlèvent directement sur l’accueil, par le bouton
+                « Ajouter » : c’est là qu’on les voit, donc c’est là qu’on les choisit. Deux dispositions
+                de départ y sont proposées, « sobre » et « tout afficher ». Les widgets Android fournis par
+                d’autres applications ne peuvent pas être hébergés ici : Android ne les expose qu’à un
+                lanceur installé sur le téléphone. Les cartes Agenda, Lecture en cours et Stockage lisent
+                donc les mêmes données, directement sur l’appareil.
               </p>
-              <Toggle label="Horloge et date" checked={settings.homeWidgets.clock} onChange={(v) => saveSettings({ homeWidgets: { ...settings.homeWidgets, clock: v } })} />
-              <Toggle label="Appareil et batterie" checked={settings.homeWidgets.device} onChange={(v) => saveSettings({ homeWidgets: { ...settings.homeWidgets, device: v } })} />
-              <Toggle label="Applications favorites" checked={settings.homeWidgets.favorites} onChange={(v) => saveSettings({ homeWidgets: { ...settings.homeWidgets, favorites: v } })} />
-              <Toggle label="Applications récentes" checked={settings.homeWidgets.recent} onChange={(v) => saveSettings({ homeWidgets: { ...settings.homeWidgets, recent: v } })} />
-              <Toggle label="Notifications du téléphone" hint="Affiche les alertes récentes. Cliquer ouvre l’application dans sa fenêtre ; « Tout effacer » les écarte du téléphone." checked={settings.homeWidgets.notifications} onChange={(v) => saveSettings({ homeWidgets: { ...settings.homeWidgets, notifications: v } })} />
-              <Toggle label="Contrôles rapides" hint="Volume, Wi-Fi, Bluetooth et raccourcis vers les réglages Android." checked={settings.homeWidgets.quickControls} onChange={(v) => saveSettings({ homeWidgets: { ...settings.homeWidgets, quickControls: v } })} />
-              <Toggle label="Appels récents" hint="Journal d’appels du téléphone, appels manqués en évidence. « Rappeler » lance l’appel depuis le mobile ; « Préparer » ouvre son clavier avec le numéro, à confirmer sur l’appareil." checked={settings.homeWidgets.calls} onChange={(v) => saveSettings({ homeWidgets: { ...settings.homeWidgets, calls: v } })} />
+              <Toggle
+                label="Dock en bas du bureau"
+                hint="Les applications épinglées, la navigation du téléphone et le miroir, toujours à portée."
+                checked={settings.homeDock !== false}
+                onChange={(v) => saveSettings({ homeDock: v })}
+              />
+              <div className="mt-3 flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => saveSettings({ homeWidgets: presetLayout('sobre') })}
+                  className="rounded-lg border border-border px-2.5 py-1.5 text-xs hover:bg-bg-hover"
+                  title="L’heure et les favoris, rien de plus"
+                >
+                  Bureau sobre
+                </button>
+                <button
+                  type="button"
+                  onClick={() => saveSettings({ homeWidgets: presetLayout('complet') })}
+                  className="rounded-lg border border-border px-2.5 py-1.5 text-xs hover:bg-bg-hover"
+                  title="Toutes les cartes disponibles"
+                >
+                  Tout afficher
+                </button>
+                <button
+                  type="button"
+                  onClick={() => saveSettings({ homeWidgets: [] })}
+                  className="rounded-lg border border-border px-2.5 py-1.5 text-xs hover:bg-bg-hover"
+                  title="Un bureau nu : le fond d’écran, le volet et le dock"
+                >
+                  Bureau nu
+                </button>
+              </div>
               <div className="mt-4 border-t border-border pt-3">
                 <h4 className="mb-2 text-xs font-medium text-text-secondary">Tiroir d’applications</h4>
                 <Range label="Taille des icônes" value={settings.iconSize === 'small' ? 1 : settings.iconSize === 'large' ? 3 : 2} min={1} max={3} step={1} suffix="" onChange={(v) => saveSettings({ iconSize: v === 1 ? 'small' : v === 3 ? 'large' : 'medium' })} />
-                <Range label="Colonnes par ligne" value={settings.appGridColumns} min={3} max={12} step={1} onChange={(v) => saveSettings({ appGridColumns: v })} />
-                <Range label="Lignes visibles avant défilement" value={settings.appGridRows} min={2} max={8} step={1} onChange={(v) => saveSettings({ appGridRows: v })} />
+                {/* « Colonnes par ligne » et « Lignes visibles » ont disparu :
+                    le tiroir remplit maintenant la largeur disponible, autant
+                    de colonnes que la fenêtre en permet. Un nombre fixe
+                    laissait la moitié d'un grand écran vide. La taille des
+                    icônes ci-dessus décide seule de la densité. */}
+                <p className="mt-2 text-[11px] leading-relaxed text-text-muted">
+                  Le tiroir s’adapte à la largeur de la fenêtre : la taille des icônes décide du
+                  nombre de colonnes.
+                </p>
               </div>
             </section>
 
@@ -2145,6 +2189,41 @@ export default function PhoneApp({ visible, onClose }) {
                 checked={settings.mirrorAlwaysOnTop}
                 onChange={(v) => saveSettings({ mirrorAlwaysOnTop: v })}
               />
+              {/* Ces deux-là étaient APPLIQUÉS au miroir mais réglables nulle
+                  part : sur une machine modeste ou un lien sans fil, ce sont
+                  précisément les deux boutons qu'on cherche. */}
+              {/* Bornes alignées sur `normalizePhoneSettings` : un curseur qui
+                  descend à 10 i/s alors que le schéma remonte à 15 mentirait
+                  sur ce qui a été enregistré. */}
+              <Range
+                label="Images par seconde"
+                value={settings.mirrorFps}
+                min={15}
+                max={60}
+                step={5}
+                suffix=" i/s"
+                onChange={(v) => saveSettings({ mirrorFps: v })}
+              />
+              <label className="mb-2 block">
+                <span className="mb-1 block text-xs text-text-secondary">Débit vidéo</span>
+                <select
+                  value={settings.mirrorBitrate}
+                  onChange={(e) => saveSettings({ mirrorBitrate: e.target.value })}
+                  className="w-full rounded-lg border border-border bg-bg-primary px-2 py-1.5 text-xs outline-none focus:border-accent-primary"
+                >
+                  {/* Valeurs acceptées par le schéma (`BITRATES`) : scrcpy
+                      attend un suffixe, pas un nombre d'octets. */}
+                  {['2M', '4M', '6M', '8M', '12M', '16M', '24M'].map((rate) => (
+                    <option key={rate} value={rate}>
+                      {rate.replace('M', ' Mb/s')}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <p className="mb-2 text-[11px] leading-relaxed text-text-muted">
+                Baisser l’un ou l’autre allège le miroir sur une liaison sans fil ou une machine
+                modeste. Les fenêtres déjà ouvertes gardent leurs réglages jusqu’à leur réouverture.
+              </p>
               <div className="mt-2 flex flex-wrap gap-2">
                 <button
                   type="button"

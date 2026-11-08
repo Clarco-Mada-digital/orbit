@@ -1,5 +1,5 @@
-import { useState, useEffect } from 'react';
-import { Puzzle, FolderOpen, Trash2, Loader2, Info, Globe, Download, Settings2, AlertTriangle, RotateCw, Dice6, Check, X, Upload, Smartphone } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { Puzzle, FolderOpen, Trash2, Loader2, Info, Globe, Download, Settings2, AlertTriangle, RotateCw, Dice6, Check, X, Upload, Smartphone, CloudOff, WifiOff, Search } from 'lucide-react';
 import { useStore } from '../stores/useStore';
 import { getRegisteredWebviews } from '../lib/webviewRegistry';
 import { appPartition } from '../lib/session';
@@ -164,10 +164,19 @@ export default function Extensions() {
   const [fakeDataSaved, setFakeDataSaved] = useState(false);
   const [nativeConfigOpen, setNativeConfigOpen] = useState(null); // id de l'extension dont le panneau inline est ouvert
   const [extQuery, setExtQuery] = useState('');
-  // Archives optionnelles livrées avec Orbit (aucune n'est chargée avant
-  // installation) : elles évitent de chercher un ZIP sur le site pour avoir
-  // une app comme Téléphone.
+  // Archives optionnelles présentes à côté de l'application. Il n'y en a plus
+  // dans les paquets publiés : ce chemin ne sert qu'en développement et aux
+  // anciennes installations.
   const [bundled, setBundled] = useState([]);
+  // Catalogue publié : la liste des extensions disponibles, téléchargées à la
+  // demande. `stale` dit qu'on affiche une copie en cache (hors ligne).
+  const [catalog, setCatalog] = useState({
+    extensions: [],
+    fetchedAt: 0,
+    stale: false,
+    error: null,
+    loading: true,
+  });
 
   const fakeDataDisabled = settings.fakeDataDisabled || false;
   const fakeDataRemoved = settings.fakeDataRemoved || false;
@@ -187,6 +196,55 @@ export default function Extensions() {
       })
       .catch(() => {});
   }, []);
+
+  // Catalogue publié. `refresh` force le tour par le réseau ; sans lui, une
+  // copie de moins de six heures répond sans rien demander.
+  const loadCatalog = useCallback(async (refresh = false) => {
+    if (!window.electronAPI?.extensionCatalog) {
+      setCatalog((state) => ({ ...state, loading: false }));
+      return;
+    }
+    setCatalog((state) => ({ ...state, loading: true }));
+    try {
+      const res = await window.electronAPI.extensionCatalog({ refresh });
+      setCatalog({
+        extensions: Array.isArray(res?.extensions) ? res.extensions : [],
+        fetchedAt: Number(res?.fetchedAt) || 0,
+        stale: !!res?.stale,
+        error: res?.success === false ? res?.error || 'catalogue indisponible' : res?.error || null,
+        loading: false,
+      });
+    } catch (err) {
+      setCatalog((state) => ({
+        ...state,
+        loading: false,
+        error: String(err?.message || err),
+      }));
+    }
+  }, []);
+
+  useEffect(() => {
+    loadCatalog(false);
+  }, [loadCatalog]);
+
+  // Ce que le magasin propose. Le catalogue en ligne fait foi ; les archives
+  // locales ne complètent que ce qu'il ne connaît pas — en développement, ou
+  // sur une installation plus ancienne qui en embarquait encore.
+  // Le catalogue est fait pour grossir : sans filtre, une centaine
+  // d'extensions deviendrait une liste qu'on parcourt à la molette.
+  const [storeQuery, setStoreQuery] = useState('');
+  const allStoreItems = [
+    ...catalog.extensions.map((item) => ({ ...item, source: 'catalog' })),
+    ...bundled
+      .filter((item) => !catalog.extensions.some((remote) => remote.name === item.name))
+      .map((item) => ({ ...item, source: 'bundled' })),
+  ];
+  const storeNeedle = storeQuery.trim().toLowerCase();
+  const storeItems = storeNeedle
+    ? allStoreItems.filter((item) =>
+        `${item.name} ${item.description || ''}`.toLowerCase().includes(storeNeedle)
+      )
+    : allStoreItems;
 
   // Ouvrir le sélecteur de fichier via Electron dialog
   const selectZipFile = async () => {
@@ -228,11 +286,10 @@ export default function Extensions() {
   };
 
   // Installation depuis un fichier ZIP
-  const handleInstallFromZip = async (file) => {
-    setBusy('zip');
-    setError(null);
-    try {
-      const res = await window.electronAPI?.installExtensionFromZip?.(file);
+  // Partie commune aux deux chemins d'installation (archive locale choisie par
+  // l'utilisateur, ou archive téléchargée depuis le catalogue) : ce qui suit
+  // l'arrivée de l'extension dans Orbit est le même travail.
+  const finishInstall = async (res) => {
       if (!res || !res.success) {
         setError(res?.error || t('ex.cantInstall') || 'Erreur inconnue');
         return;
@@ -248,8 +305,31 @@ export default function Extensions() {
         ? extensions.map((e) => (sameExt(e, ext) ? { ...e, ...ext, enabled: e.enabled !== false } : e))
         : [...extensions, { ...ext, enabled: true }];
       await applyExtensions(nextList, { reload: true });
+  };
+
+  const handleInstallFromZip = async (file) => {
+    setBusy('zip');
+    setError(null);
+    try {
+      await finishInstall(await window.electronAPI?.installExtensionFromZip?.(file));
     } catch (err) {
       console.error('[orbit-ui] Erreur installation ZIP:', err);
+      setError(String(err?.message || err || 'Erreur inconnue'));
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  // Installation depuis le catalogue : le processus principal télécharge
+  // l'archive, vérifie sa taille et son empreinte, puis l'installe. Le
+  // renderer ne transmet qu'un nom de fichier.
+  const handleInstallFromCatalog = async (item) => {
+    setBusy(`catalog:${item.file}`);
+    setError(null);
+    try {
+      await finishInstall(await window.electronAPI?.installExtensionFromCatalog?.(item.file));
+    } catch (err) {
+      console.error('[orbit-ui] Erreur installation depuis le catalogue:', err);
       setError(String(err?.message || err || 'Erreur inconnue'));
     } finally {
       setBusy(null);
@@ -478,20 +558,84 @@ export default function Extensions() {
         </div>
       </div>
 
-      {/* Extensions Orbit optionnelles : présentes dans l'app, INERTES tant
-          qu'elles ne sont pas installées. */}
-      {bundled.length ? (
+      {/* Magasin d'extensions. Les archives ne sont PAS dans l'application :
+          le catalogue est lu en ligne et chaque extension est téléchargée au
+          moment où on l'installe. Les archives locales (développement,
+          anciennes installations) servent de repli. */}
+      {allStoreItems.length || catalog.loading || catalog.error ? (
         <div className="card">
           <div className="flex items-center gap-2 mb-2">
             <Puzzle size={18} className="text-accent-primary" />
             <h4 className="font-semibold">Extensions Orbit</h4>
+            {catalog.loading ? <Loader2 size={14} className="animate-spin text-text-muted" /> : null}
+            <button
+              type="button"
+              onClick={() => loadCatalog(true)}
+              disabled={catalog.loading}
+              className="btn btn-secondary ml-auto flex-shrink-0 text-xs"
+              title="Relire le catalogue en ligne"
+            >
+              <RotateCw size={13} /> Actualiser
+            </button>
           </div>
           <p className="text-sm text-text-muted mb-3">
-            Optionnelles : Orbit ne charge ni leur code ni leurs fonctionnalités avant que vous
-            les installiez.
+            Téléchargées à la demande : rien n'est embarqué dans Orbit, et une extension n'est
+            active qu'une fois installée.
           </p>
+
+          {allStoreItems.length > 6 ? (
+            <div className="relative mb-3">
+              <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-muted" />
+              <input
+                value={storeQuery}
+                onChange={(e) => setStoreQuery(e.target.value)}
+                placeholder={`Rechercher parmi ${allStoreItems.length} extensions…`}
+                className="w-full rounded-lg border border-border bg-bg-secondary py-1.5 pl-8 pr-8 text-xs outline-none placeholder:text-text-muted focus:border-accent-primary"
+              />
+              {storeQuery ? (
+                <button
+                  type="button"
+                  onClick={() => setStoreQuery('')}
+                  aria-label="Effacer la recherche"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-0.5 text-text-muted hover:text-text-primary"
+                >
+                  <X size={13} />
+                </button>
+              ) : null}
+            </div>
+          ) : null}
+
+          {/* Hors ligne, la liste reste affichée — mais datée. Mentir sur sa
+              fraîcheur ferait chercher une extension publiée entre-temps. */}
+          {catalog.stale && allStoreItems.length ? (
+            <div className="mb-3 flex items-start gap-2 rounded-lg border border-yellow-500/25 bg-yellow-500/10 p-2.5 text-xs text-yellow-600 dark:text-yellow-400">
+              <CloudOff size={14} className="mt-0.5 flex-shrink-0" />
+              <span>
+                Catalogue hors ligne
+                {catalog.fetchedAt
+                  ? ` — copie du ${new Date(catalog.fetchedAt).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' })}`
+                  : ''}
+                . Les extensions déjà décrites ici restent installables si le serveur répond.
+              </span>
+            </div>
+          ) : null}
+          {!storeItems.length && storeNeedle ? (
+            <p className="rounded-lg border border-border bg-bg-secondary p-3 text-xs text-text-muted">
+              Aucune extension ne correspond à « {storeQuery} ».
+            </p>
+          ) : null}
+          {!allStoreItems.length && !catalog.loading ? (
+            <div className="flex items-start gap-2 rounded-lg border border-border bg-bg-secondary p-3 text-xs text-text-muted">
+              <WifiOff size={14} className="mt-0.5 flex-shrink-0" />
+              <span>
+                Catalogue injoignable{catalog.error ? ` (${catalog.error})` : ''}. Vérifiez la
+                connexion, puis « Actualiser » — ou installez une extension depuis un fichier ZIP.
+              </span>
+            </div>
+          ) : null}
+
           <div className="space-y-2">
-            {bundled.map((item) => {
+            {storeItems.map((item) => {
               // Une version plus récente livrée avec Orbit doit pouvoir
               // s'installer PAR-DESSUS l'ancienne : sans ça, l'extension
               // continue de tourner dans sa version précédente sans qu'aucun
@@ -524,21 +668,35 @@ export default function Extensions() {
                       <p className="line-clamp-2 text-xs text-text-muted">{item.description}</p>
                     ) : null}
                   </div>
-                  <span className="flex-shrink-0 text-xs text-text-muted">
+                  <span className="flex-shrink-0 text-right text-xs text-text-muted">
                     v{item.version}
                     {updatable ? (
                       <span className="block text-[10px] text-accent-primary">
                         installée : v{installedVersion}
                       </span>
                     ) : null}
+                    {/* Le poids a sa place ici : c'est un téléchargement, et
+                        sur une connexion lente ça se décide avant de cliquer. */}
+                    {!installed && item.size ? (
+                      <span className="block text-[10px]">{Math.max(1, Math.round(item.size / 1024))} Ko</span>
+                    ) : null}
                   </span>
                   <button
                     type="button"
-                    onClick={() => handleInstallFromZip(item.zipPath)}
+                    onClick={() =>
+                      item.source === 'catalog'
+                        ? handleInstallFromCatalog(item)
+                        : handleInstallFromZip(item.zipPath)
+                    }
                     disabled={installed || !!busy}
                     className={`btn flex-shrink-0 text-xs ${updatable ? 'btn-primary' : 'btn-secondary'}`}
+                    title={
+                      item.source === 'catalog'
+                        ? 'Télécharger puis installer cette extension'
+                        : 'Installer depuis l’archive locale'
+                    }
                   >
-                    {busy === 'zip' && !installed ? (
+                    {busy === `catalog:${item.file}` || (busy === 'zip' && !installed) ? (
                       <Loader2 size={13} className="animate-spin" />
                     ) : (
                       <Download size={13} />

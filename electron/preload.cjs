@@ -41,6 +41,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   uninstallExtension: (payload) => ipcRenderer.invoke('extensions:uninstall', payload),
   exportFakeDataExtension: () => ipcRenderer.invoke('extensions:exportFakeData'),
   listBundledExtensions: () => ipcRenderer.invoke('extensions:listBundled'),
+  // Magasin d'extensions : catalogue publié (lu en HTTPS, mis en cache) et
+  // installation par téléchargement de l'archive.
+  extensionCatalog: (payload) => ipcRenderer.invoke('extensions:catalog', payload || {}),
+  installExtensionFromCatalog: (file) =>
+    ipcRenderer.invoke('extensions:installFromCatalog', { file }),
   // KeePassXC (auto-remplissage des identifiants)
   keepassStatus: () => ipcRenderer.invoke('keepass:status'),
   keepassAssociate: () => ipcRenderer.invoke('keepass:associate'),
@@ -66,6 +71,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     swipe: (payload) => ipcRenderer.invoke('phone:swipe', payload),
     key: (payload) => ipcRenderer.invoke('phone:key', payload),
     setRadio: (payload) => ipcRenderer.invoke('phone:setRadio', payload),
+    // Sources des widgets du bureau : agenda, lecture en cours, stockage.
+    calendar: (payload) => ipcRenderer.invoke('phone:calendar', payload),
+    media: (payload) => ipcRenderer.invoke('phone:media', payload),
+    mediaKey: (payload) => ipcRenderer.invoke('phone:mediaKey', payload),
+    storage: (payload) => ipcRenderer.invoke('phone:storage', payload),
+    // Sonnerie (`mode: 'normal' | 'vibrate'`) et Ne pas déranger.
+    setRingerMode: (payload) => ipcRenderer.invoke('phone:setRingerMode', payload),
+    setDnd: (payload) => ipcRenderer.invoke('phone:setDnd', payload),
     openSettings: (payload) => ipcRenderer.invoke('phone:openSettings', payload),
     text: (payload) => ipcRenderer.invoke('phone:text', payload),
     startMirror: (payload) => ipcRenderer.invoke('phone:startMirror', payload),
@@ -87,6 +100,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     callLog: (payload) => ipcRenderer.invoke('phone:callLog', payload),
     placeCall: (payload) => ipcRenderer.invoke('phone:placeCall', payload),
     // Envoi de fichiers : le sélecteur est ouvert PAR le processus principal.
+    // `folder: true` demande le sélecteur de dossiers (envoi récursif).
     sendFiles: (payload) => ipcRenderer.invoke('phone:sendFiles', payload),
     onNotifications: (callback) => {
       const listener = (_event, payload) => callback(payload);

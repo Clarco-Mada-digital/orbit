@@ -8,6 +8,8 @@
 // décisions sans lancer Electron ni brancher un téléphone.
 // ---------------------------------------------------------------------------
 
+import { normalizeDesktopLayout, presetLayout } from './phoneDesktop.js';
+
 // Code retour de `scrcpy --list-apps` :
 //   «  * » = application système, «  - » = application utilisateur
 // Le libellé peut contenir des espaces ; le nom de paquet, jamais. On coupe donc
@@ -185,7 +187,6 @@ export const DEFAULT_PHONE_SETTINGS = {
   pinnedPackages: [],
   recentPackages: [],
   showSystemApps: false,
-  openMode: 'integrated', // integrated | mirror
   // Plafond de résolution de la capture intégrée (px). Par défaut la définition
   // d'un téléphone courant : la vue plein écran reste nette sans jamais
   // dépasser ce que l'appareil sait produire. Le baisser accélère l'aperçu.
@@ -194,8 +195,6 @@ export const DEFAULT_PHONE_SETTINGS = {
   iconConcurrency: 3, // extractions d'icônes simultanées
   iconSize: 'medium', // small | medium | large
   gridMin: 132, // largeur minimale d'une tuile (px)
-  appGridColumns: 6,
-  appGridRows: 4,
   sortMode: 'name', // name | recent | package
   mirrorFps: 60,
   mirrorBitrate: '8M',
@@ -210,15 +209,11 @@ export const DEFAULT_PHONE_SETTINGS = {
   appFollowWindow: true,
   homeBackground: 'aurora',
   homeBackgroundImage: '',
-  homeWidgets: {
-    clock: true,
-    device: true,
-    favorites: true,
-    recent: true,
-    notifications: true,
-    quickControls: true,
-    calls: true,
-  },
+  // Disposition du bureau : liste ordonnée de cartes (voir `phoneDesktop.js`).
+  // Par défaut SOBRE — l'heure et les favoris. Un premier lancement ne doit
+  // pas ressembler à un tableau de bord d'usine ; le reste s'ajoute d'un clic.
+  homeWidgets: presetLayout('sobre'),
+  homeDock: true,
   // Alerte système à chaque nouvelle notification du téléphone.
   desktopNotifications: true,
   autoUpdateEngine: true,
@@ -271,7 +266,6 @@ export const PHONE_HOME_BACKGROUNDS = [
 const BITRATES = new Set(['2M', '4M', '6M', '8M', '12M', '16M', '24M']);
 const ICON_SIZES = new Set(['small', 'medium', 'large']);
 const SORT_MODES = new Set(['name', 'recent', 'package']);
-const OPEN_MODES = new Set(['integrated', 'mirror']);
 const HOME_BACKGROUNDS = new Set(PHONE_HOME_BACKGROUNDS.map((background) => background.id));
 
 export function normalizePhoneSettings(raw) {
@@ -284,14 +278,11 @@ export function normalizePhoneSettings(raw) {
     pinnedPackages: PACKAGE_LIST(s.pinnedPackages).slice(0, MAX_PINNED_PHONE_APPS),
     recentPackages: PACKAGE_LIST(s.recentPackages),
     showSystemApps: bool(s.showSystemApps, DEFAULT_PHONE_SETTINGS.showSystemApps),
-    openMode: OPEN_MODES.has(s.openMode) ? s.openMode : DEFAULT_PHONE_SETTINGS.openMode,
     captureWidth: clampInt(s.captureWidth, 240, 1600, DEFAULT_PHONE_SETTINGS.captureWidth),
     refreshMs: clampInt(s.refreshMs, 120, 2000, DEFAULT_PHONE_SETTINGS.refreshMs),
     iconConcurrency: clampInt(s.iconConcurrency, 1, 8, DEFAULT_PHONE_SETTINGS.iconConcurrency),
     iconSize: ICON_SIZES.has(s.iconSize) ? s.iconSize : DEFAULT_PHONE_SETTINGS.iconSize,
     gridMin: clampInt(s.gridMin, 88, 240, DEFAULT_PHONE_SETTINGS.gridMin),
-    appGridColumns: clampInt(s.appGridColumns, 3, 12, DEFAULT_PHONE_SETTINGS.appGridColumns),
-    appGridRows: clampInt(s.appGridRows, 2, 8, DEFAULT_PHONE_SETTINGS.appGridRows),
     sortMode: SORT_MODES.has(s.sortMode) ? s.sortMode : DEFAULT_PHONE_SETTINGS.sortMode,
     mirrorFps: clampInt(s.mirrorFps, 15, 240, DEFAULT_PHONE_SETTINGS.mirrorFps),
     mirrorBitrate: BITRATES.has(s.mirrorBitrate)
@@ -316,12 +307,13 @@ export function normalizePhoneSettings(raw) {
       /^(https?:\/\/|data:image\/(?:png|jpeg|webp|gif);base64,)/i.test(s.homeBackgroundImage)
         ? s.homeBackgroundImage
         : '',
-    homeWidgets: Object.fromEntries(
-      Object.keys(DEFAULT_PHONE_SETTINGS.homeWidgets).map((key) => [
-        key,
-        bool(s.homeWidgets?.[key], DEFAULT_PHONE_SETTINGS.homeWidgets[key]),
-      ])
-    ),
+    // `normalizeDesktopLayout` accepte l'ANCIENNE forme (un objet de
+    // booléens) : le bureau de quelqu'un qui utilise déjà le Téléphone ne doit
+    // pas se vider à la mise à jour.
+    homeWidgets: s.homeWidgets === undefined
+      ? DEFAULT_PHONE_SETTINGS.homeWidgets
+      : normalizeDesktopLayout(s.homeWidgets),
+    homeDock: bool(s.homeDock, DEFAULT_PHONE_SETTINGS.homeDock),
     desktopNotifications: bool(s.desktopNotifications, DEFAULT_PHONE_SETTINGS.desktopNotifications),
     autoUpdateEngine: bool(s.autoUpdateEngine, DEFAULT_PHONE_SETTINGS.autoUpdateEngine),
     enginePath: typeof s.enginePath === 'string' && s.enginePath ? s.enginePath : null,
@@ -387,17 +379,10 @@ export function stripNativeApps(apps) {
   };
 }
 
-// Place le bouton « Téléphone » dans la barre du haut, juste avant la cloche de
-// notifications, sans écraser une disposition choisie par l'utilisateur.
-// Retourne la nouvelle disposition, ou `null` si le bouton y est déjà.
-export function withPhoneModule(topbar) {
-  if (!topbar || typeof topbar !== 'object') return null;
-  const zones = ['left', 'center', 'right'];
-  if (zones.some((z) => Array.isArray(topbar[z]) && topbar[z].includes('phone'))) return null;
-  const right = Array.isArray(topbar.right) ? topbar.right : [];
-  const at = right.indexOf('notifications');
-  const next = at >= 0 ? [...right.slice(0, at), 'phone', ...right.slice(at)] : [...right, 'phone'];
-  return { ...topbar, right: next };
+// « null » tel que Java l'imprime : une absence de valeur, jamais un nom.
+// Android pose aussi « NULL » dans la sortie de `content query`.
+export function isNullLiteral(value) {
+  return /^(?:null|NULL)$/.test(String(value || '').trim());
 }
 
 // ---------------------------------------------------------------------------
@@ -424,7 +409,15 @@ export function parseAndroidNotifications(dump) {
     // La clé utile est sur sa propre ligne ; celle de l'en-tête du bloc porte
     // un « : » final et ne désigne pas la notification.
     const key = /^\s+key=([^\s]+)\s*$/m.exec(scope);
-    const clean = (m) => (m ? m[1].replace(/\s+/g, ' ').trim() : '');
+    // `dumpsys` imprime un champ Java vide comme « null ». Les champs lus à
+    // l'intérieur d'un « String (…) » ne peuvent pas tomber dans le piège,
+    // mais `tickerText=null` se lit jusqu'au bout de la ligne : sans ce
+    // filtre, le mot « null » devenait une valeur, et un appel dont le titre
+    // était générique s'affichait « null » au lieu du nom de l'appelant.
+    const clean = (m) => {
+      const value = m ? m[1].replace(/\s+/g, ' ').trim() : '';
+      return isNullLiteral(value) ? '' : value;
+    };
     const t = clean(title) || clean(titleBig);
     const b = clean(text);
     // Champs secondaires : sur un appel, le nom de l'appelant n'est pas
@@ -526,7 +519,16 @@ export function describeCallNotification(notification = {}, appName = '') {
 
   const named = [n.callerName, n.conversationTitle, n.title, n.text, n.bigText, n.subText, n.ticker]
     .map((value) => String(value || '').replace(/\s+/g, ' ').trim())
-    .find((value) => value && !isGenericCallLabel(value) && !looksLikePhoneNumber(value));
+    // `isNullLiteral` : une identité d'appelant ne vaut rien si elle vaut le
+    // mot « null ». Le parseur du dump l'écarte déjà à la source, mais cette
+    // fonction reçoit aussi des notifications venues du processus principal.
+    .find(
+      (value) =>
+        value &&
+        !isNullLiteral(value) &&
+        !isGenericCallLabel(value) &&
+        !looksLikePhoneNumber(value)
+    );
 
   const app = String(appName || '').trim();
   const who = named || (number ? number : app || n.package || 'Appelant inconnu');
@@ -558,7 +560,7 @@ export function parseContactLookup(output) {
     const match = /^Row:\s*\d+\s+display_name=(.*)$/.exec(line.trim());
     if (!match) continue;
     const name = match[1].replace(/\s+/g, ' ').trim();
-    if (name && name !== 'NULL') return name;
+    if (name && !isNullLiteral(name)) return name;
   }
   return null;
 }
@@ -735,6 +737,85 @@ export function phonePushTarget(name, dir = PHONE_PUSH_DIR) {
   return safe ? `${dir}/${safe}` : null;
 }
 
+// Envoyer un DOSSIER, c'est envoyer ses fichiers en gardant l'arborescence :
+// chaque segment du chemin relatif est assaini comme un nom de fichier, et un
+// segment qui ne survit pas à l'assainissement disqualifie l'entrée (plutôt
+// que d'aplatir silencieusement deux fichiers sur le même nom distant).
+export function phoneRemoteRelativePath(relative) {
+  const segments = String(relative || '')
+    .split(/[/\\]/)
+    .filter((segment) => segment && segment !== '.');
+  if (!segments.length) return null;
+  const safe = [];
+  for (const segment of segments) {
+    const name = phoneRemoteName(segment);
+    if (!name) return null;
+    safe.push(name);
+  }
+  return safe.join('/');
+}
+
+// Garde-fou d'un envoi : au-delà, c'est une synchronisation de bibliothèque,
+// pas un transfert — et `adb push` fichier par fichier y passerait l'heure.
+export const MAX_PUSH_FILES = 400;
+export const MAX_PUSH_BYTES = 4 * 1024 * 1024 * 1024;
+
+// ---------------------------------------------------------------------------
+// Mode sonnerie et Ne pas déranger.
+// ---------------------------------------------------------------------------
+
+// Flux audio de la sonnerie (AudioManager.STREAM_RING).
+export const RING_STREAM = 2;
+
+// Android n'a pas de commande ADB qui POSE le mode sonnerie : `cmd audio` ne
+// connaît pas `set-ringer-mode`, et `settings put global mode_ringer` écrit la
+// valeur sans qu'AudioService l'applique (vérifié sur Android 12 : la clé passe
+// à 1, le mode interne reste NORMAL). Le volume de la sonnerie, lui, le fait
+// vraiment : 0 fait basculer en vibreur, une valeur non nulle ramène la
+// sonnerie. C'est donc par là qu'on passe.
+export function ringVolumeCommand({ set, get } = {}) {
+  if (get) return `cmd media_session volume --stream ${RING_STREAM} --get`;
+  const index = Math.max(0, Math.round(Number(set) || 0));
+  return `cmd media_session volume --stream ${RING_STREAM} --set ${index}`;
+}
+
+// « volume is 8 in range [0..15] » — la seule sortie exploitable de la
+// commande, qui écrit par ailleurs ses traces de connexion.
+export function parseRingVolume(output) {
+  const match = /volume is\s+(\d+)\s+in range\s+\[(\d+)\.\.(\d+)\]/i.exec(String(output || ''));
+  if (!match) return null;
+  return { index: Number(match[1]), min: Number(match[2]), max: Number(match[3]) };
+}
+
+export const RINGER_MODE_COMMAND = 'dumpsys audio | grep -i "mode (internal)"';
+
+// « - mode (internal) = VIBRATE ». Le mode INTERNE est le bon : c'est celui
+// qu'AudioService applique, pas la valeur souhaitée rangée dans les réglages.
+export function parseRingerMode(output) {
+  const match = /mode \(internal\)\s*=\s*([A-Z_]+)/i.exec(String(output || ''));
+  if (!match) return null;
+  const mode = match[1].toUpperCase();
+  if (mode === 'NORMAL') return 'normal';
+  if (mode === 'VIBRATE') return 'vibrate';
+  if (mode === 'SILENT') return 'silent';
+  return null;
+}
+
+// Ne pas déranger : `cmd notification set_dnd` le pose, et `zen_mode` le relit
+// pour une bouchée de pain (le `dumpsys notification` complet coûte dix fois
+// plus cher pour la même information).
+export const ZEN_MODE_COMMAND = 'settings get global zen_mode';
+
+export function parseZenMode(output) {
+  const value = String(output || '').trim();
+  if (!/^[0-3]$/.test(value)) return null;
+  return value !== '0';
+}
+
+export function dndCommand(enabled) {
+  return `cmd notification set_dnd ${enabled ? 'on' : 'off'}`;
+}
+
 export function phoneCallKey(action) {
   if (action === 'answer') return 'call';
   if (action === 'reject') return 'end_call';
@@ -834,4 +915,126 @@ export function scaledSize(width, height, maxWidth) {
   const max = Number(maxWidth) || 0;
   if (!w || !h || !max || w <= max) return { width: w, height: h };
   return { width: max, height: Math.max(1, Math.round((h * max) / w)) };
+}
+
+// ---------------------------------------------------------------------------
+// Sources de données des widgets du bureau.
+//
+// Aucun widget Android TIERS n'est hébergeable ici : Android ne les expose
+// qu'à un lanceur installé sur le téléphone. Ce qu'on peut faire, et qui rend
+// le même service, c'est lire les mêmes données que ces widgets affichent —
+// l'agenda, la lecture en cours, le stockage — et les présenter dans Orbit.
+// ---------------------------------------------------------------------------
+
+// Agenda. Le fournisseur de contenu accepte un filtre et un tri, donc le
+// travail se fait SUR l'appareil : on ne rapatrie pas trois ans d'évènements
+// pour en afficher quatre.
+export function calendarQueryCommand({ from = Date.now(), limit = 40 } = {}) {
+  const start = Math.max(0, Math.round(Number(from) || 0));
+  const count = Math.max(1, Math.min(100, Math.round(Number(limit) || 40)));
+  return (
+    'content query --uri content://com.android.calendar/events' +
+    ' --projection title:dtstart:dtend:allDay:eventLocation' +
+    ` --where "dtstart>=${start}" --sort "dtstart ASC LIMIT ${count}"`
+  );
+}
+
+// « Row: 0 title=Réunion, dtstart=…, dtend=…, allDay=0, eventLocation=Bureau »
+//
+// Les valeurs sont séparées par des virgules ET peuvent en contenir : le motif
+// s'ancre donc sur le NOM du champ suivant, jamais sur la virgule seule.
+// Deux agendas synchronisés donnent deux fois le même évènement : on
+// dédoublonne sur le couple titre + début.
+export function parseCalendarEvents(output, { now = Date.now() } = {}) {
+  const events = [];
+  const seen = new Set();
+  const line = /^Row:\s*\d+\s+title=(.*?),\s*dtstart=(\d+),\s*dtend=(-?\d*),\s*allDay=(\d?),\s*eventLocation=(.*)$/;
+  for (const raw of String(output || '').split('\n')) {
+    const match = line.exec(raw.trim());
+    if (!match) continue;
+    const title = match[1].replace(/\s+/g, ' ').trim();
+    const start = Number(match[2]);
+    if (!title || isNullLiteral(title) || !Number.isFinite(start) || start <= 0) continue;
+    const key = `${title}|${start}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const end = Number(match[3]);
+    const location = match[5].replace(/\s+/g, ' ').trim();
+    events.push({
+      title,
+      start,
+      end: Number.isFinite(end) && end > start ? end : null,
+      allDay: match[4] === '1',
+      location: location && !isNullLiteral(location) ? location : '',
+    });
+  }
+  // Un évènement en cours passe AVANT ceux qui n'ont pas commencé : c'est
+  // celui qui concerne l'instant présent.
+  return events.sort((a, b) => {
+    const live = (e) => (e.start <= now && (e.end || e.start) >= now ? 0 : 1);
+    return live(a) - live(b) || a.start - b.start;
+  });
+}
+
+// Lecture en cours. `dumpsys media_session` décrit chaque session ; celle qui
+// nous intéresse est celle qui JOUE (état 3), à défaut celle en pause (2).
+export const MEDIA_SESSION_COMMAND = 'dumpsys media_session';
+
+const MEDIA_STATES = { 2: 'paused', 3: 'playing', 6: 'buffering' };
+
+export function parseMediaSession(output) {
+  const text = String(output || '');
+  // Un bloc par session : il commence à une ligne « <Étiquette> <paquet>/… ».
+  const blocks = text.split(/\n(?=\s{2}\S+\s+[\w.]+\/)/);
+  const sessions = [];
+  for (const block of blocks) {
+    const pkg = /^\s*package=([\w.]+)/m.exec(block);
+    if (!pkg) continue;
+    const state = /state=PlaybackState\s*\{state=(\d+)/.exec(block);
+    const kind = state ? MEDIA_STATES[Number(state[1])] : null;
+    if (!kind) continue;
+    // « description=Titre, Artiste, Album » — les trois champs que le dump
+    // expose, dans cet ordre, et dont seuls les deux premiers nous servent.
+    const description = /^\s*metadata:.*?description=(.*)$/m.exec(block);
+    const parts = description
+      ? description[1].split(',').map((part) => part.replace(/\s+/g, ' ').trim())
+      : [];
+    const clean = (value) => (value && !isNullLiteral(value) ? value : '');
+    const title = clean(parts[0]);
+    if (!title) continue;
+    sessions.push({
+      package: pkg[1],
+      state: kind,
+      title,
+      artist: clean(parts[1]),
+      album: clean(parts[2]),
+    });
+  }
+  return sessions.find((s) => s.state === 'playing') || sessions[0] || null;
+}
+
+// Touches média. Liste fermée : ces commandes partent sur une ligne de shell.
+const MEDIA_KEYS = new Set(['play-pause', 'next', 'previous', 'stop']);
+
+export function mediaKeyCommand(action) {
+  const value = String(action || '');
+  if (!MEDIA_KEYS.has(value)) return null;
+  return `cmd media_session dispatch ${value}`;
+}
+
+// Stockage de l'espace utilisateur — celui qui se remplit de photos, et dont
+// le téléphone ne prévient qu'une fois saturé.
+export const STORAGE_COMMAND = 'df -k /data';
+
+export function parseStorage(output) {
+  for (const raw of String(output || '').split('\n')) {
+    const match = /^\S+\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)%/.exec(raw.trim());
+    if (!match) continue;
+    const total = Number(match[1]) * 1024;
+    const used = Number(match[2]) * 1024;
+    const free = Number(match[3]) * 1024;
+    if (!total) continue;
+    return { total, used, free, percent: Number(match[4]) };
+  }
+  return null;
 }

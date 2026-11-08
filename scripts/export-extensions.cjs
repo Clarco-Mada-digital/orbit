@@ -25,6 +25,7 @@
 
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 const AdmZip = require('adm-zip');
 
 const ROOT = path.join(__dirname, '..');
@@ -99,21 +100,104 @@ function writeCatalog() {
     .map((name) => {
       const manifest = readManifestFromZip(path.join(OUT, name));
       if (!manifest?.name || !manifest?.version) return null;
+      const zipPath = path.join(OUT, name);
+      const bytes = fs.readFileSync(zipPath);
       return {
         file: name,
         name: manifest.name,
         version: manifest.version,
         description: manifest.description || '',
         nativeApp: manifest.orbit?.nativeApp || null,
-        size: fs.statSync(path.join(OUT, name)).size,
+        size: bytes.length,
+        // Empreinte OBLIGATOIRE côté application : les archives ne voyagent
+        // plus dans Orbit, elles sont téléchargées. C'est elle qui distingue
+        // l'archive publiée de celle qu'un intermédiaire aurait remplacée —
+        // une entrée sans empreinte est refusée par le magasin.
+        sha256: crypto.createHash('sha256').update(bytes).digest('hex'),
       };
     })
     .filter(Boolean);
 
-  const catalog = { version: 1, extensions };
+  // Deux archives pour la MÊME extension : le magasin les afficherait toutes
+  // les deux, et son suivi « installée / à mettre à jour » se fait par NOM —
+  // il désignerait donc l'une au hasard. C'est arrivé : le script nomme le ZIP
+  // d'après le dossier source, et deux dossiers portaient un nom différent de
+  // leur archive déjà publiée. On refuse d'écrire un tel catalogue.
+  const byName = new Map();
+  for (const entry of extensions) {
+    const seen = byName.get(entry.name);
+    if (seen) {
+      console.error(
+        `✖ deux archives pour « ${entry.name} » : ${seen.file} et ${entry.file}.\n` +
+          '  Renommez le dossier source pour qu\'il porte le nom de l\'archive publiée\n' +
+          '  (l\'URL de téléchargement doit rester stable), puis supprimez l\'archive en trop.'
+      );
+      process.exitCode = 1;
+      return;
+    }
+    byName.set(entry.name, entry);
+  }
+
+  const catalog = { version: 1, generatedAt: new Date().toISOString(), extensions };
   const outFile = path.join(OUT, 'catalog.json');
   fs.writeFileSync(outFile, `${JSON.stringify(catalog, null, 2)}\n`);
   console.log(`✔ catalogue : ${extensions.length} extension(s) → ${path.relative(ROOT, outFile)}`);
+}
+
+// Les archives publiées disent-elles la même chose que les sources ?
+//
+// Le piège attrapé ici : une source corrigée, un ZIP jamais réexporté, et la
+// même version de part et d'autre — le correctif n'arrive jamais chez
+// personne, et rien ne le signale. Seules les extensions dont les SOURCES sont
+// dans le dépôt sont vérifiables (`.gitignore` n'en suit qu'une partie).
+function checkSources() {
+  let drifted = 0;
+  for (const name of listSourceExtensions()) {
+    const zipPath = path.join(OUT, `${name}.zip`);
+    if (!fs.existsSync(zipPath)) {
+      console.error(`✖ ${name} : aucune archive ${name}.zip — lancez l'export.`);
+      drifted += 1;
+      continue;
+    }
+    const published = new AdmZip(zipPath);
+    const inZip = new Map(
+      published
+        .getEntries()
+        .filter((e) => !e.isDirectory)
+        .map((e) => [e.entryName, e.getData()])
+    );
+    const sources = walk(path.join(SRC, name));
+    const diffs = [];
+    for (const file of sources) {
+      const current = fs.readFileSync(file.full);
+      const archived = inZip.get(file.rel);
+      if (!archived) diffs.push(`${file.rel} (absent de l'archive)`);
+      else if (!archived.equals(current)) diffs.push(file.rel);
+      inZip.delete(file.rel);
+    }
+    for (const left of inZip.keys()) diffs.push(`${left} (plus dans les sources)`);
+    if (diffs.length) {
+      drifted += 1;
+      console.error(`✖ ${name} : l'archive publiée diffère des sources — ${diffs.join(', ')}`);
+    } else {
+      console.log(`✔ ${name} : archive conforme aux sources`);
+    }
+  }
+  if (drifted) {
+    console.error(
+      `\n${drifted} extension(s) à réexporter : \`npm run export:extensions\`.\n` +
+        'Pensez à incrémenter la version du manifeste, sinon le magasin considère\n' +
+        'la version déjà installée comme à jour et le correctif n\'arrive chez personne.'
+    );
+    process.exitCode = 1;
+  }
+}
+
+function listSourceExtensions() {
+  return fs
+    .readdirSync(SRC, { withFileTypes: true })
+    .filter((e) => e.isDirectory() && fs.existsSync(path.join(SRC, e.name, 'manifest.json')))
+    .map((e) => e.name);
 }
 
 function main() {
@@ -123,11 +207,23 @@ function main() {
   }
   fs.mkdirSync(OUT, { recursive: true });
 
+  // `--catalog-only` : reconstruire le catalogue à partir des ZIP présents,
+  // sans réexporter les sources. C'est ce qu'il faut quand on veut rafraîchir
+  // les empreintes sans republier d'archive — et ce que fait la publication.
+  if (process.argv.includes('--catalog-only')) {
+    writeCatalog();
+    return;
+  }
+
+  // `--check` : ne rien écrire, dire seulement si une archive publiée a pris
+  // du retard sur ses sources. C'est ce que lance la publication.
+  if (process.argv.includes('--check')) {
+    checkSources();
+    return;
+  }
+
   const wanted = process.argv.slice(2).filter((a) => !a.startsWith('-'));
-  const available = fs
-    .readdirSync(SRC, { withFileTypes: true })
-    .filter((e) => e.isDirectory() && fs.existsSync(path.join(SRC, e.name, 'manifest.json')))
-    .map((e) => e.name);
+  const available = listSourceExtensions();
 
   if (!available.length) {
     console.error('Aucune extension source avec manifest.json.');

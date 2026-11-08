@@ -20,7 +20,7 @@ import {
   removeAssistantSession,
   setSessionTitle,
 } from '../lib/assistantSessions.js';
-import { stripNativeApps, withPhoneModule } from '../lib/phone.js';
+import { stripNativeApps } from '../lib/phone.js';
 
 // Compteur d'identifiants de pages volantes (voir `openFlyPage`).
 let flySeq = 0;
@@ -432,13 +432,13 @@ export const useStore = create(
             }
           }
 
-          // Extension présente → le bouton rejoint la barre du haut s'il n'y a
-          // jamais été placé. Retirée → le bouton disparaît de lui-même (il ne
-          // s'affiche que si la capacité existe).
-          if (next.includes('phone')) {
-            const topbar = withPhoneModule(state.settings?.topbar);
-            if (topbar) patch.settings = { ...state.settings, topbar };
-          }
+          // Le bouton « Téléphone » de la barre du haut n'est PLUS ajouté
+          // d'office à l'installation de l'extension. Il était réinséré à
+          // chaque synchronisation : qui l'enlevait le retrouvait au
+          // redémarrage, sans moyen d'en finir. Il fait partie de la
+          // disposition par défaut de la barre et s'ajoute ou s'enlève comme
+          // n'importe quel autre module, dans la personnalisation de la barre
+          // — et il ne s'affiche de toute façon que si l'extension est là.
 
           return patch;
         }),

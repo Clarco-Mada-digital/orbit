@@ -5,6 +5,7 @@ on:
     branches: [master]
     paths:
       - 'docs/**'
+      - 'extensions-dist/**'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 
@@ -26,6 +27,40 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+
+      # `adm-zip` est nécessaire : le script lit les manifestes DANS les
+      # archives pour construire le catalogue.
+      - name: Install dependencies
+        run: npm ci
+
+      # Une archive publiée qui a pris du retard sur ses sources ne se voit
+      # pas : même nom, même version, correctif absent. On refuse de publier
+      # dans cet état. Seules les extensions dont les sources sont dans le
+      # dépôt sont concernées.
+      - name: Vérifier que les archives suivent les sources
+        run: node scripts/export-extensions.cjs --check
+
+      # Le MAGASIN d'extensions d'Orbit. Les archives ne sont plus embarquées
+      # dans l'application : elle lit ce catalogue en HTTPS et télécharge
+      # l'archive au moment de l'installation. Publier une extension corrigée
+      # ne demande donc plus de republier Orbit — un push sur master suffit.
+      #
+      # Le catalogue est RECONSTRUIT ici à partir des ZIP du dépôt : les
+      # empreintes SHA-256 décrivent forcément les archives qu'on publie, et
+      # pas l'état du fichier commité.
+      - name: Publier le catalogue d'extensions
+        run: |
+          node scripts/export-extensions.cjs --catalog-only
+          mkdir -p docs/extensions
+          cp extensions-dist/*.zip extensions-dist/catalog.json docs/extensions/
+          echo "Publié :"
+          ls -la docs/extensions/
 
       - name: Upload site
         uses: actions/upload-pages-artifact@v4

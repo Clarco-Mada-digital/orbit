@@ -1,5 +1,36 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ChevronLeft, ChevronRight, Grip, Loader2, Monitor, Phone, PhoneOff, Pin, User, X } from 'lucide-react';
+import {
+  ArrowLeft,
+  Battery,
+  Bell,
+  BellOff,
+  BellRing,
+  Bluetooth,
+  BluetoothOff,
+  ChevronLeft,
+  ChevronRight,
+  FolderUp,
+  Grip,
+  Home,
+  Loader2,
+  Monitor,
+  Moon,
+  Phone,
+  PhoneOff,
+  Pin,
+  Power,
+  Smartphone,
+  Square,
+  Upload,
+  User,
+  Vibrate,
+  Volume1,
+  Volume2,
+  VolumeX,
+  Wifi,
+  WifiOff,
+  X,
+} from 'lucide-react';
 import { usePhoneStore } from '../lib/phoneStore';
 import { describeCallNotification, phoneCallKey } from '../lib/phone';
 
@@ -55,9 +86,14 @@ export default function PhoneFloatingAccess() {
   const incomingCall = usePhoneStore((state) => state.incomingCall);
   const notifications = usePhoneStore((state) => state.notifications);
   const [serial, setSerial] = useState(null);
+  const [device, setDevice] = useState(null);
+  const [mirrorRunning, setMirrorRunning] = useState(false);
   const [apps, setApps] = useState([]);
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
+  // Compte rendu d'un envoi réussi : « 12 fichiers envoyés… ». Sans lui, un
+  // transfert de dossier se terminait sans que rien ne bouge à l'écran.
+  const [report, setReport] = useState('');
   const [expanded, setExpanded] = useState(false);
   const [ring, setRing] = useState({ key: null, seconds: 0 });
   const [dockPosition, setDockPosition] = useState(readDockPosition);
@@ -118,8 +154,10 @@ export default function PhoneFloatingAccess() {
   const edge = !dragging && !expanded ? edgeOf(dockPosition) : null;
   const dockWidth = edge ? TAB_WIDTH : DOCK_SIZE;
   const dockRenderLeft = edge === 'right' ? viewport.width - TAB_WIDTH : edge === 'left' ? 0 : dockLeft;
-  const panelWidth = Math.max(1, Math.min(264, viewport.width - DOCK_MARGIN * 2));
-  const panelHeight = Math.max(1, Math.min(232, viewport.height - DOCK_MARGIN * 2));
+  // Le panneau porte maintenant deux choses : les applications épinglées ET
+  // les raccourcis du téléphone. Il lui faut la place des deux.
+  const panelWidth = Math.max(1, Math.min(304, viewport.width - DOCK_MARGIN * 2));
+  const panelHeight = Math.max(1, Math.min(420, viewport.height - DOCK_MARGIN * 2));
   const panelLeft = Math.max(
     DOCK_MARGIN,
     Math.min(viewport.width - panelWidth - DOCK_MARGIN, dockLeft + DOCK_SIZE / 2 - panelWidth / 2)
@@ -139,12 +177,15 @@ export default function PhoneFloatingAccess() {
       const state = await api()?.status();
       if (!state?.success) {
         setSerial(null);
+        setDevice(null);
         setApps([]);
         setExpanded(false);
         return;
       }
       const activeSerial = state.serial || null;
       setSerial(activeSerial);
+      setDevice(state.device || null);
+      setMirrorRunning(Boolean(state.mirror?.running));
       if (!activeSerial || !state.settings?.pinnedPackages?.length) {
         setApps([]);
         setExpanded(false);
@@ -176,6 +217,7 @@ export default function PhoneFloatingAccess() {
     } catch (err) {
       console.error('[orbit] chargement des applications épinglées impossible:', err);
       setSerial(null);
+      setDevice(null);
       setApps([]);
       setExpanded(false);
     }
@@ -187,10 +229,14 @@ export default function PhoneFloatingAccess() {
     const onResize = () => setViewport({ width: window.innerWidth, height: window.innerHeight });
     window.addEventListener('orbit:phone-pins-changed', onPinsChanged);
     window.addEventListener('resize', onResize);
+    // Le miroir peut être fermé depuis sa propre fenêtre : sans cet abonnement
+    // le raccourci resterait bloqué sur « Fermer le miroir ».
+    const offMirror = api()?.onMirrorStopped?.(() => setMirrorRunning(false));
     const timer = window.setInterval(refresh, 20000);
     return () => {
       window.removeEventListener('orbit:phone-pins-changed', onPinsChanged);
       window.removeEventListener('resize', onResize);
+      offMirror?.();
       window.clearInterval(timer);
     };
   }, [refresh]);
@@ -299,6 +345,104 @@ export default function PhoneFloatingAccess() {
     }
   };
 
+  // Raccourcis du téléphone. Tous passent par le même garde : un seul à la
+  // fois, l'erreur s'affiche dans le panneau, et le panneau reste ouvert (on
+  // enchaîne souvent « réveiller » puis « accueil »).
+  const runShortcut = async (id, action) => {
+    if (!serial || busy) return;
+    setBusy(id);
+    setError('');
+    setReport('');
+    try {
+      const result = await action();
+      if (result && result.success === false && !result.cancelled) {
+        setError(result.error || 'Le téléphone n’a pas accepté la commande.');
+      }
+    } catch (err) {
+      console.error('[orbit] raccourci téléphone échoué:', err);
+      setError(String(err.message || err));
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const toggleMirror = () =>
+    runShortcut('mirror', async () => {
+      if (mirrorRunning) {
+        const result = await api()?.stopMirror();
+        if (result?.success !== false) setMirrorRunning(false);
+        return result;
+      }
+      const result = await api()?.startMirror({ serial, title: device?.model || 'Téléphone' });
+      if (result?.success) setMirrorRunning(true);
+      return result;
+    });
+
+  // Envoi vers le téléphone. Le sélecteur accepte PLUSIEURS entrées : un
+  // transfert, c'est autant de fichiers que l'on veut — ou un dossier, dont
+  // l'arborescence est recréée dans les téléchargements.
+  const sendTo = (folder) =>
+    runShortcut(folder ? 'folder' : 'files', async () => {
+      const result = await api()?.sendFiles({ serial, folder });
+      if (result?.cancelled) return null;
+      const count = result?.sent?.length || 0;
+      if (count) {
+        setReport(
+          `${count} fichier${count > 1 ? 's' : ''} envoyé${count > 1 ? 's' : ''} dans ${result.directory || 'les téléchargements'}.`
+        );
+      }
+      return result;
+    });
+
+  // Les bascules d'état lisent la réponse du téléphone (le processus principal
+  // RELIT le mode après l'avoir posé) plutôt que de supposer que l'ordre est
+  // passé : un appareil qui refuse ne doit pas laisser un bouton allumé.
+  const patchDevice = (fields) => setDevice((current) => ({ ...(current || {}), ...fields }));
+
+  const toggleRinger = () =>
+    runShortcut('ringer', async () => {
+      const next = device?.ringerMode === 'normal' ? 'vibrate' : 'normal';
+      const result = await api()?.setRingerMode({ serial, mode: next });
+      if (result?.ringerMode) patchDevice({ ringerMode: result.ringerMode });
+      return result;
+    });
+
+  const toggleDnd = () =>
+    runShortcut('dnd', async () => {
+      const result = await api()?.setDnd({ serial, enabled: device?.doNotDisturb !== true });
+      if (typeof result?.doNotDisturb === 'boolean') patchDevice({ doNotDisturb: result.doNotDisturb });
+      return result;
+    });
+
+  const toggleRadio = (radio) =>
+    runShortcut(radio, async () => {
+      const field = radio === 'wifi' ? 'wifiEnabled' : 'bluetoothEnabled';
+      const enabled = device?.[field] !== true;
+      const result = await api()?.setRadio({ serial, radio, enabled });
+      if (result?.success) patchDevice({ [field]: enabled });
+      return result;
+    });
+
+  const ringer = device?.ringerMode || null;
+  const ringerIcon = ringer === 'vibrate' ? Vibrate : ringer === 'silent' ? BellOff : BellRing;
+  const ringerLabel = ringer === 'vibrate' ? 'Vibreur' : ringer === 'silent' ? 'Silencieux' : 'Sonnerie';
+
+  // Une tuile allumée veut dire « cet état est actif sur le téléphone », pas
+  // « ce bouton est sélectionné » : d'où la même teinte pour le miroir ouvert,
+  // le Wi-Fi activé et le vibreur.
+  const tileClass = (active) =>
+    `flex flex-col items-center gap-1 rounded-xl border px-1 py-2 text-[10px] font-medium transition disabled:opacity-40 ${
+      active
+        ? 'border-violet-300/30 bg-violet-400/15 text-violet-100 hover:bg-violet-400/25'
+        : 'border-white/10 bg-white/[0.05] text-white/75 hover:bg-white/[0.12] hover:text-white'
+    }`;
+  const iconClass = (active) =>
+    `rounded-xl p-2 transition disabled:opacity-40 ${
+      active
+        ? 'bg-violet-400/15 text-violet-100 hover:bg-violet-400/25'
+        : 'text-white/65 hover:bg-white/10 hover:text-white'
+    }`;
+
   const actOnCall = async (action) => {
     const key = phoneCallKey(action);
     if (!key || !incomingCall?.serial || busy) return;
@@ -403,9 +547,9 @@ export default function PhoneFloatingAccess() {
           style={{ left: dockRenderLeft, top: dockTop, width: dockWidth, height: DOCK_SIZE }}
         >
           {expanded && (
-            <nav
-              aria-label="Applications Android épinglées"
-              className="absolute rounded-2xl border border-white/15 bg-slate-950/85 p-3 text-white shadow-2xl shadow-black/35 backdrop-blur-2xl"
+            <section
+              aria-label="Accès rapide au téléphone"
+              className="absolute flex flex-col overflow-hidden rounded-2xl border border-white/15 bg-slate-950/90 text-white shadow-2xl shadow-black/40 backdrop-blur-2xl"
               style={{
                 left: panelLeft - dockRenderLeft,
                 top: panelTop - dockTop,
@@ -413,59 +557,278 @@ export default function PhoneFloatingAccess() {
                 maxHeight: panelHeight,
               }}
             >
-              <div className="mb-3 flex items-center justify-between gap-2">
-                <span className="flex items-center gap-2 text-xs font-semibold text-white/80">
-                  <Pin size={13} className="text-violet-300" />
-                  Applications épinglées
+              {/* En-tête : on sait de quel téléphone on parle avant de toucher
+                  à quoi que ce soit (plusieurs appareils peuvent défiler). */}
+              <header className="flex shrink-0 items-center gap-2 border-b border-white/10 px-3 py-2.5">
+                <span className="grid h-7 w-7 shrink-0 place-items-center rounded-lg bg-violet-400/15 text-violet-200">
+                  <Smartphone size={14} />
                 </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-xs font-semibold">{device?.model || 'Téléphone'}</span>
+                  <span className="mt-0.5 block truncate text-[10px] text-white/45">
+                    {mirrorRunning ? 'Miroir ouvert' : device?.android ? `Android ${device.android}` : 'Connecté à Orbit'}
+                  </span>
+                </span>
+                {typeof device?.battery === 'number' && (
+                  <span
+                    className="flex shrink-0 items-center gap-1 rounded-lg bg-white/[0.06] px-1.5 py-1 text-[10px] tabular-nums text-white/70"
+                    title={device.charging ? 'En charge' : 'Niveau de batterie'}
+                  >
+                    <Battery size={12} />
+                    {device.battery}%
+                  </span>
+                )}
                 <button
                   type="button"
                   onClick={() => setExpanded(false)}
-                  aria-label="Fermer les applications épinglées"
-                  className="rounded-lg p-1 text-white/50 transition hover:bg-white/10 hover:text-white"
+                  aria-label="Fermer l’accès rapide au téléphone"
+                  className="shrink-0 rounded-lg p-1 text-white/50 transition hover:bg-white/10 hover:text-white"
                 >
                   <X size={14} />
                 </button>
-              </div>
-              <div className="grid grid-cols-4 gap-2 overflow-y-auto">
-                {apps.map((app) => (
-                  <div key={app.package} className="group relative min-w-0 text-center">
-                    {notificationCounts.get(app.package) > 0 && (
-                      <span
-                        aria-label={`${notificationCounts.get(app.package)} notification${notificationCounts.get(app.package) === 1 ? '' : 's'}`}
-                        className="absolute -right-1 -top-1 z-10 grid h-[18px] min-w-[18px] place-items-center rounded-full border border-slate-950 bg-rose-500 px-1 text-[9px] font-bold text-white"
+              </header>
+
+              {/* Un seul conteneur défilant pour les applications ET les
+                  raccourcis : sur un petit écran, c'est la liste du bas qui
+                  disparaissait sous le bord de la fenêtre. */}
+              <div className="min-h-0 flex-1 overflow-y-auto">
+              <div className="px-3 py-3">
+                <div className="mb-2 flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-white/45">
+                  <Pin size={11} className="text-violet-300" />
+                  Épinglées
+                  <span className="ml-auto rounded-full bg-white/[0.07] px-1.5 py-0.5 text-[9px] font-medium normal-case tracking-normal tabular-nums text-white/55">
+                    {apps.length}
+                  </span>
+                </div>
+                {/* Grille fixe à quatre colonnes : jamais de défilement
+                    horizontal, les noms se coupent plutôt que de pousser la
+                    rangée hors du panneau. */}
+                <nav aria-label="Applications Android épinglées" className="grid grid-cols-4 gap-x-2 gap-y-3">
+                  {apps.map((app) => (
+                    <div key={app.package} className="group relative min-w-0 text-center">
+                      {notificationCounts.get(app.package) > 0 && (
+                        <span
+                          aria-label={`${notificationCounts.get(app.package)} notification${notificationCounts.get(app.package) === 1 ? '' : 's'}`}
+                          className="absolute -right-1 -top-1 z-10 grid h-[18px] min-w-[18px] place-items-center rounded-full border border-slate-950 bg-rose-500 px-1 text-[9px] font-bold text-white"
+                        >
+                          {notificationCounts.get(app.package) > 99 ? '99+' : notificationCounts.get(app.package)}
+                        </span>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() => launch(app)}
+                        disabled={Boolean(busy)}
+                        title={`Ouvrir ${app.name}`}
+                        aria-label={`Ouvrir ${app.name}`}
+                        className="mx-auto grid h-11 w-11 place-items-center overflow-hidden rounded-xl border border-white/10 bg-white/10 text-[10px] font-semibold text-white/80 transition hover:-translate-y-0.5 hover:bg-white/20 disabled:opacity-50"
                       >
-                        {notificationCounts.get(app.package) > 99 ? '99+' : notificationCounts.get(app.package)}
+                        {busy === app.package
+                          ? <Loader2 size={16} className="animate-spin" />
+                          : app.icon
+                            ? <img src={app.icon} alt="" draggable={false} className="h-full w-full object-contain" />
+                            : app.name.slice(0, 2).toUpperCase()}
+                      </button>
+                      <span className="mt-1 block truncate text-[10px] leading-tight text-white/65" title={app.name}>
+                        {app.name}
                       </span>
-                    )}
-                    <button
-                      type="button"
-                      onClick={() => launch(app)}
-                      disabled={Boolean(busy)}
-                      title={`Ouvrir ${app.name}`}
-                      aria-label={`Ouvrir ${app.name}`}
-                      className="mx-auto grid h-10 w-10 place-items-center overflow-hidden rounded-xl border border-white/10 bg-white/10 text-[10px] font-semibold text-white/80 transition hover:-translate-y-0.5 hover:bg-white/20 disabled:opacity-50"
-                    >
-                      {busy === app.package
-                        ? <Loader2 size={16} className="animate-spin" />
-                        : app.icon
-                          ? <img src={app.icon} alt="" draggable={false} className="h-full w-full object-contain" />
-                          : app.name.slice(0, 2).toUpperCase()}
-                    </button>
-                    <span className="mt-1 block truncate text-[10px] text-white/65">{app.name}</span>
-                    <button
-                      type="button"
-                      onClick={() => unpin(app)}
-                      title={`Désépingler ${app.name}`}
-                      aria-label={`Désépingler ${app.name}`}
-                      className="absolute -right-1 -top-1 grid h-5 w-5 place-items-center rounded-full border border-white/20 bg-slate-800 text-white/70 opacity-0 transition hover:bg-rose-500 hover:text-white focus:opacity-100 group-hover:opacity-100"
-                    >
-                      <X size={11} />
-                    </button>
-                  </div>
-                ))}
+                      <button
+                        type="button"
+                        onClick={() => unpin(app)}
+                        title={`Désépingler ${app.name}`}
+                        aria-label={`Désépingler ${app.name}`}
+                        className="absolute -right-1 -top-1 grid h-5 w-5 place-items-center rounded-full border border-white/20 bg-slate-800 text-white/70 opacity-0 transition hover:bg-rose-500 hover:text-white focus:opacity-100 group-hover:opacity-100"
+                      >
+                        <X size={11} />
+                      </button>
+                    </div>
+                  ))}
+                </nav>
               </div>
-            </nav>
+
+              {/* Raccourcis : ce que les applications épinglées ne savent pas
+                  faire — le miroir, le volet Android, la sonnerie, la
+                  connectivité, la navigation, un envoi de fichiers ou de
+                  dossier. Sans ouvrir l'app Téléphone. */}
+              <div className="border-t border-white/10 px-3 py-2.5">
+                <div className="mb-2 text-[10px] font-semibold uppercase tracking-wider text-white/45">Raccourcis</div>
+                <div className="grid grid-cols-3 gap-1.5">
+                  <button
+                    type="button"
+                    onClick={toggleMirror}
+                    disabled={Boolean(busy)}
+                    title={mirrorRunning ? 'Fermer la fenêtre miroir' : 'Ouvrir l’écran du téléphone dans une fenêtre'}
+                    className={tileClass(mirrorRunning)}
+                  >
+                    {busy === 'mirror' ? <Loader2 size={15} className="animate-spin" /> : <Monitor size={15} />}
+                    {mirrorRunning ? 'Fermer' : 'Miroir'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => runShortcut('shade', () => api()?.expandShade({ serial }))}
+                    disabled={Boolean(busy)}
+                    title="Déplier le volet de notifications sur le téléphone"
+                    className={tileClass(false)}
+                  >
+                    {busy === 'shade' ? <Loader2 size={15} className="animate-spin" /> : <Bell size={15} />}
+                    Volet
+                  </button>
+                  {/* Le mode sonnerie se BASCULE entre sonnerie et vibreur. Le
+                      silencieux n'est pas proposé : aucune commande ADB ne le
+                      pose de façon fiable (voir setRingerMode) — s'il est posé
+                      sur le téléphone, la tuile l'affiche et le premier clic
+                      rend la sonnerie. */}
+                  <button
+                    type="button"
+                    onClick={toggleRinger}
+                    disabled={Boolean(busy) || !ringer}
+                    aria-pressed={ringer === 'vibrate' || ringer === 'silent'}
+                    title={
+                      ringer
+                        ? `${ringerLabel} — passer en ${ringer === 'normal' ? 'vibreur' : 'sonnerie'}`
+                        : 'Mode sonnerie illisible sur cet appareil'
+                    }
+                    className={tileClass(ringer === 'vibrate' || ringer === 'silent')}
+                  >
+                    {busy === 'ringer'
+                      ? <Loader2 size={15} className="animate-spin" />
+                      : (() => {
+                          const Icon = ringerIcon;
+                          return <Icon size={15} />;
+                        })()}
+                    {ringer ? ringerLabel : 'Sonnerie'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={toggleDnd}
+                    disabled={Boolean(busy)}
+                    aria-pressed={device?.doNotDisturb === true}
+                    title={device?.doNotDisturb === true ? 'Désactiver Ne pas déranger' : 'Activer Ne pas déranger'}
+                    className={tileClass(device?.doNotDisturb === true)}
+                  >
+                    {busy === 'dnd' ? <Loader2 size={15} className="animate-spin" /> : <Moon size={15} />}
+                    Ne pas déranger
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => sendTo(false)}
+                    disabled={Boolean(busy)}
+                    title="Envoyer un ou plusieurs fichiers dans les téléchargements du téléphone"
+                    className={tileClass(false)}
+                  >
+                    {busy === 'files' ? <Loader2 size={15} className="animate-spin" /> : <Upload size={15} />}
+                    Fichiers
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => sendTo(true)}
+                    disabled={Boolean(busy)}
+                    title="Envoyer un dossier entier : l’arborescence est recréée dans les téléchargements"
+                    className={tileClass(false)}
+                  >
+                    {busy === 'folder' ? <Loader2 size={15} className="animate-spin" /> : <FolderUp size={15} />}
+                    Dossier
+                  </button>
+                </div>
+
+                {/* Connectivité et volume : des bascules dont l'état se LIT sur
+                    le téléphone, donc des icônes qui changent avec lui. */}
+                <div className="mt-2 flex items-center gap-0.5">
+                  <button
+                    type="button"
+                    onClick={() => toggleRadio('wifi')}
+                    disabled={Boolean(busy)}
+                    aria-pressed={device?.wifiEnabled === true}
+                    title={`Wi-Fi ${device?.wifiEnabled === true ? 'activé — désactiver' : device?.wifiEnabled === false ? 'désactivé — activer' : '(état inconnu)'}`}
+                    aria-label="Wi-Fi"
+                    className={iconClass(device?.wifiEnabled === true)}
+                  >
+                    {busy === 'wifi'
+                      ? <Loader2 size={14} className="animate-spin" />
+                      : device?.wifiEnabled === false
+                        ? <WifiOff size={14} />
+                        : <Wifi size={14} />}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => toggleRadio('bluetooth')}
+                    disabled={Boolean(busy)}
+                    aria-pressed={device?.bluetoothEnabled === true}
+                    title={`Bluetooth ${device?.bluetoothEnabled === true ? 'activé — désactiver' : device?.bluetoothEnabled === false ? 'désactivé — activer' : '(état inconnu)'}`}
+                    aria-label="Bluetooth"
+                    className={iconClass(device?.bluetoothEnabled === true)}
+                  >
+                    {busy === 'bluetooth'
+                      ? <Loader2 size={14} className="animate-spin" />
+                      : device?.bluetoothEnabled === false
+                        ? <BluetoothOff size={14} />
+                        : <Bluetooth size={14} />}
+                  </button>
+                  <span className="mx-1 h-5 w-px bg-white/10" />
+                  {[
+                    ['volume_down', Volume1, 'Baisser le volume'],
+                    ['mute', VolumeX, 'Couper le son'],
+                    ['volume_up', Volume2, 'Augmenter le volume'],
+                  ].map(([key, Icon, label]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => runShortcut(key, () => api()?.key({ serial, key }))}
+                      disabled={Boolean(busy)}
+                      title={label}
+                      aria-label={label}
+                      className={iconClass(false)}
+                    >
+                      {busy === key ? <Loader2 size={14} className="animate-spin" /> : <Icon size={14} />}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="mt-0.5 flex items-center gap-0.5">
+                  {[
+                    ['back', ArrowLeft, 'Retour'],
+                    ['home', Home, 'Accueil du téléphone'],
+                    ['recents', Square, 'Applications récentes'],
+                    ['wakeup', Power, 'Réveiller l’écran'],
+                  ].map(([key, Icon, label]) => (
+                    <button
+                      key={key}
+                      type="button"
+                      onClick={() => runShortcut(key, () => api()?.key({ serial, key }))}
+                      disabled={Boolean(busy)}
+                      title={label}
+                      aria-label={label}
+                      className={iconClass(false)}
+                    >
+                      {busy === key ? <Loader2 size={14} className="animate-spin" /> : <Icon size={14} />}
+                    </button>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setExpanded(false);
+                      usePhoneStore.getState().requestOpen(null);
+                    }}
+                    className="ml-auto rounded-lg px-2 py-1.5 text-[10px] font-medium text-violet-200/85 transition hover:bg-white/10 hover:text-violet-100"
+                    title="Ouvrir l’app Téléphone dans Orbit"
+                  >
+                    Ouvrir le Téléphone
+                  </button>
+                </div>
+              </div>
+              </div>
+              {/* Compte rendu d'envoi et erreurs : hors du défilement, pour ne
+                  pas répondre dans une zone qu'il faut aller chercher. */}
+              {(error || report) && (
+                <p
+                  role="status"
+                  className={`shrink-0 border-t px-3 py-2 text-[10px] leading-relaxed ${
+                    error ? 'border-rose-400/20 bg-rose-500/10 text-rose-200' : 'border-white/10 text-white/60'
+                  }`}
+                >
+                  {error || report}
+                </p>
+              )}
+            </section>
           )}
           <button
             type="button"
@@ -482,14 +845,14 @@ export default function PhoneFloatingAccess() {
             }}
             aria-label={
               expanded
-                ? 'Fermer les applications épinglées'
-                : `Ouvrir les ${apps.length} applications épinglées`
+                ? 'Fermer l’accès rapide au téléphone'
+                : `Accès rapide au téléphone — ${apps.length} application${apps.length === 1 ? '' : 's'} épinglée${apps.length === 1 ? '' : 's'}`
             }
             aria-expanded={expanded}
             title={
               edge
-                ? 'Applications épinglées — cliquer pour ouvrir, glisser pour déplacer'
-                : 'Déplacer ou ouvrir les applications épinglées'
+                ? 'Téléphone — cliquer pour ouvrir, glisser pour déplacer'
+                : 'Téléphone : applications épinglées et raccourcis — glisser pour déplacer'
             }
             style={{ width: dockWidth, height: DOCK_SIZE }}
             className={`group relative grid touch-none place-items-center overflow-hidden border border-white/20 bg-slate-950/85 text-white shadow-xl shadow-black/35 backdrop-blur-2xl transition focus-visible:outline focus-visible:outline-2 focus-visible:outline-violet-300 ${
@@ -506,10 +869,22 @@ export default function PhoneFloatingAccess() {
               edge === 'right'
                 ? <ChevronLeft size={13} className="text-violet-200" />
                 : <ChevronRight size={13} className="text-violet-200" />
-            ) : apps[0]?.icon ? (
-              <img src={apps[0].icon} alt="" draggable={false} className="h-full w-full rounded-[12px] object-contain" />
             ) : (
-              <Pin size={18} className="text-violet-200" />
+              // La pastille portait l'icône de la PREMIÈRE application
+              // épinglée : elle annonçait donc une app, alors qu'un clic
+              // ouvre un panneau. Elle porte maintenant sa propre identité —
+              // le téléphone — et le nombre d'applications derrière elle.
+              <span className="grid h-full w-full place-items-center rounded-[12px] bg-violet-400/15">
+                <Smartphone size={18} className="text-violet-200" />
+              </span>
+            )}
+            {!edge && apps.length > 1 && pinnedNotificationCount === 0 && (
+              <span
+                aria-hidden="true"
+                className="absolute -right-0.5 -top-0.5 grid h-[16px] min-w-[16px] place-items-center rounded-full border border-slate-950 bg-slate-800 px-1 text-[9px] font-semibold tabular-nums text-white/70"
+              >
+                {apps.length}
+              </span>
             )}
             {pinnedNotificationCount > 0 && (
               edge ? (

@@ -9,7 +9,7 @@ const path = require('path');
 const { execSync } = require('child_process');
 
 const rootDir = path.resolve(__dirname, '..');
-const srcDir = path.join(rootDir, 'electron', 'extensions', 'fake-data-sources');
+const srcDir = path.join(rootDir, 'electron', 'extensions', 'fake-data-filler-orbit');
 const distZipDir = path.join(rootDir, 'extensions-dist');
 const distZipPath = path.join(distZipDir, 'fake-data-filler-orbit.zip');
 
@@ -42,7 +42,7 @@ try {
   console.log('Pour installer manuellement:');
   console.log('  1. Ouvrir chrome://extensions');
   console.log('  2. Activer le mode developpeur');
-  console.log('  3. Charger l\'extension depaquetee depuis electron/extensions/fake-data-sources');
+  console.log('  3. Charger l\'extension depaquetee depuis electron/extensions/fake-data-filler-orbit');
   console.log('  4. Ou glisser-deposer le ZIP dans Firefox\n');
 } catch (err) {
   console.error('ERROR: Echec de la creation du ZIP:', err.message);

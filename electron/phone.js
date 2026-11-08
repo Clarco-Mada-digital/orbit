@@ -49,8 +49,24 @@ import {
   parseCallLog,
   dialCommand,
   sanitizePhoneNumber,
-  phonePushTarget,
+  phoneRemoteRelativePath,
   PHONE_PUSH_DIR,
+  MAX_PUSH_FILES,
+  MAX_PUSH_BYTES,
+  calendarQueryCommand,
+  parseCalendarEvents,
+  MEDIA_SESSION_COMMAND,
+  parseMediaSession,
+  mediaKeyCommand,
+  STORAGE_COMMAND,
+  parseStorage,
+  ringVolumeCommand,
+  parseRingVolume,
+  RINGER_MODE_COMMAND,
+  parseRingerMode,
+  ZEN_MODE_COMMAND,
+  parseZenMode,
+  dndCommand,
   pngSize,
   scaledSize,
 } from '../src/lib/phone.js';
@@ -504,12 +520,14 @@ export async function listDevices() {
 }
 
 export async function deviceInfo(serial) {
-  const [model, android, battery, wifi, bluetooth] = await Promise.all([
+  const [model, android, battery, wifi, bluetooth, ringer, zen] = await Promise.all([
     deviceShell(serial, 'getprop ro.product.model', { timeout: 8000 }),
     deviceShell(serial, 'getprop ro.build.version.release', { timeout: 8000 }),
     deviceShell(serial, 'dumpsys battery', { timeout: 8000 }),
     deviceShell(serial, 'settings get global wifi_on', { timeout: 8000 }),
     deviceShell(serial, 'settings get global bluetooth_on', { timeout: 8000 }),
+    deviceShell(serial, RINGER_MODE_COMMAND, { timeout: 8000 }),
+    deviceShell(serial, ZEN_MODE_COMMAND, { timeout: 8000 }),
   ]);
   const level = /^\s*level:\s*(\d+)/m.exec(battery.stdout);
   const status = /^\s*status:\s*(\d+)/m.exec(battery.stdout);
@@ -526,7 +544,63 @@ export async function deviceInfo(serial) {
     charging,
     wifiEnabled: radioState(wifi),
     bluetoothEnabled: radioState(bluetooth),
+    // `null` quand l'appareil ne répond pas : l'interface affiche alors un
+    // état inconnu plutôt qu'un « sonnerie » inventé.
+    ringerMode: ringer.ok ? parseRingerMode(ringer.stdout) : null,
+    doNotDisturb: zen.ok ? parseZenMode(zen.stdout) : null,
   };
+}
+
+// --- Sonnerie et Ne pas déranger --------------------------------------------
+
+// Dernier volume de sonnerie connu, par appareil : revenir de « vibreur » à
+// « sonnerie » doit rendre SON volume, pas une valeur arbitraire.
+const ringVolumeBefore = new Map();
+
+async function readRingVolume(serial) {
+  const out = await deviceShell(serial, ringVolumeCommand({ get: true }), { timeout: 10000 });
+  // La commande écrit ses traces sur les deux flux selon la version d'Android.
+  return parseRingVolume(`${out.stdout}\n${out.stderr}`);
+}
+
+export async function setRingerMode({ serial, mode } = {}) {
+  if (!serial) return { success: false, error: 'aucun appareil' };
+  if (!['normal', 'vibrate'].includes(mode)) {
+    return { success: false, error: 'mode de sonnerie inconnu' };
+  }
+  const volume = await readRingVolume(serial);
+  if (mode === 'vibrate') {
+    if (volume && volume.index > 0) ringVolumeBefore.set(serial, volume.index);
+    const out = await deviceShell(serial, ringVolumeCommand({ set: 0 }), { timeout: 10000 });
+    if (!out.ok) return { success: false, error: 'Android a refusé de couper la sonnerie.' };
+  } else {
+    const max = volume?.max || 15;
+    // À défaut de valeur mémorisée, un volume audible sans faire sursauter.
+    const restored = Math.min(max, ringVolumeBefore.get(serial) || Math.round(max * 0.6) || 1);
+    const out = await deviceShell(serial, ringVolumeCommand({ set: restored }), { timeout: 10000 });
+    if (!out.ok) return { success: false, error: 'Android a refusé de rétablir la sonnerie.' };
+  }
+  // On RELIT le mode appliqué au lieu de croire la commande : c'est ce qui
+  // distingue un téléphone qui a obéi d'un téléphone qui a ignoré l'ordre
+  // (certains constructeurs refusent le vibreur quand « vibrer en sonnant »
+  // est désactivé — l'appareil part alors en silencieux).
+  const after = await deviceShell(serial, RINGER_MODE_COMMAND, { timeout: 8000 });
+  const applied = after.ok ? parseRingerMode(after.stdout) : null;
+  if (applied && mode === 'vibrate' && applied === 'normal') {
+    return { success: false, error: 'Le téléphone a gardé la sonnerie.', ringerMode: applied };
+  }
+  return { success: true, ringerMode: applied };
+}
+
+export async function setDoNotDisturb({ serial, enabled } = {}) {
+  if (!serial) return { success: false, error: 'aucun appareil' };
+  if (typeof enabled !== 'boolean') return { success: false, error: 'commande invalide' };
+  const out = await deviceShell(serial, dndCommand(enabled), { timeout: 10000 });
+  if (!out.ok) {
+    return { success: false, error: 'Android a refusé de changer le mode Ne pas déranger.' };
+  }
+  const after = await deviceShell(serial, ZEN_MODE_COMMAND, { timeout: 8000 });
+  return { success: true, doNotDisturb: after.ok ? parseZenMode(after.stdout) : null };
 }
 
 export async function setDeviceRadio({ serial, radio, enabled } = {}) {
@@ -941,53 +1015,131 @@ export async function dismissNotifications({ serial, keys } = {}) {
 
 // --- Envoi de fichiers ------------------------------------------------------
 
+// Aplatit la sélection en fichiers à pousser. Un fichier donne une entrée ; un
+// DOSSIER donne les siennes, chemin relatif compris — c'est ce qui permet de
+// recréer l'arborescence sur le téléphone au lieu de déverser cinquante
+// fichiers en vrac dans les téléchargements.
+//
+// Les liens symboliques ne sont pas suivis : un lien qui pointe vers un parent
+// ferait tourner la descente en rond, et un lien vers `/` enverrait le disque.
+function collectPushEntries(paths) {
+  const entries = [];
+  const skipped = [];
+  let bytes = 0;
+  let truncated = false;
+
+  const walk = (localPath, relative) => {
+    if (truncated) return;
+    let stat = null;
+    try {
+      stat = fs.lstatSync(localPath);
+    } catch {
+      skipped.push(relative || path.basename(localPath));
+      return;
+    }
+    if (stat.isSymbolicLink()) {
+      skipped.push(relative);
+      return;
+    }
+    if (stat.isDirectory()) {
+      let children = [];
+      try {
+        children = fs.readdirSync(localPath);
+      } catch {
+        skipped.push(relative);
+        return;
+      }
+      // Un dossier vide ne crée rien sur le téléphone : il n'y a pas de
+      // fichier à y pousser, et `adb push` ne sait pas créer un vide.
+      for (const child of children.sort()) {
+        walk(path.join(localPath, child), `${relative}/${child}`);
+      }
+      return;
+    }
+    if (!stat.isFile()) {
+      skipped.push(relative);
+      return;
+    }
+    if (entries.length >= MAX_PUSH_FILES || bytes + stat.size > MAX_PUSH_BYTES) {
+      truncated = true;
+      return;
+    }
+    const remote = phoneRemoteRelativePath(relative);
+    if (!remote) {
+      skipped.push(relative);
+      return;
+    }
+    bytes += stat.size;
+    entries.push({ local: localPath, remote, name: relative, bytes: stat.size });
+  };
+
+  for (const localPath of paths) walk(localPath, path.basename(localPath));
+  return { entries, skipped, bytes, truncated };
+}
+
 // `adb push` vers le dossier des téléchargements du téléphone. Les chemins
 // locaux viennent d'un sélecteur de fichiers du système (jamais d'une page),
-// et le nom distant est assaini : il sert de chemin sur l'appareil.
+// et chaque segment du nom distant est assaini : il sert de chemin sur
+// l'appareil.
 export async function pushFiles({ serial, paths } = {}) {
   if (!serial) return { success: false, error: 'aucun appareil', sent: [] };
   const list = (Array.isArray(paths) ? paths : []).filter((p) => typeof p === 'string' && p);
   if (!list.length) return { success: false, error: 'aucun fichier', sent: [] };
-  if (list.length > 20) return { success: false, error: 'trop de fichiers (20 au plus)', sent: [] };
+
+  const { entries, skipped, truncated } = collectPushEntries(list);
+  if (!entries.length) {
+    return {
+      success: false,
+      error: truncated
+        ? `sélection trop grosse (${MAX_PUSH_FILES} fichiers ou 4 Go au plus)`
+        : 'aucun fichier à envoyer',
+      sent: [],
+      failed: skipped,
+    };
+  }
+
+  // Les dossiers d'abord, en UNE commande : `adb push` échoue sur un chemin
+  // dont le parent n'existe pas, et un `mkdir -p` par fichier coûterait un
+  // aller-retour adb pour rien.
+  const remoteDirs = [
+    ...new Set(
+      entries
+        .map((entry) => path.posix.dirname(`${PHONE_PUSH_DIR}/${entry.remote}`))
+        .filter((dir) => dir !== PHONE_PUSH_DIR)
+    ),
+  ];
+  if (remoteDirs.length) {
+    const quoted = remoteDirs.map((dir) => `'${dir}'`).join(' ');
+    await deviceShell(serial, `mkdir -p ${quoted}`, { timeout: 60000 });
+  }
 
   const sent = [];
-  const failed = [];
-  for (const localPath of list) {
-    const target = phonePushTarget(path.basename(localPath));
-    if (!target) {
-      failed.push(path.basename(localPath));
-      continue;
-    }
-    let stat = null;
-    try {
-      stat = fs.statSync(localPath);
-    } catch {
-      failed.push(path.basename(localPath));
-      continue;
-    }
-    // Un dossier ne se pousse pas tel quel (adb le ferait récursivement, avec
-    // des surprises) : on s'en tient aux fichiers.
-    if (!stat.isFile()) {
-      failed.push(path.basename(localPath));
-      continue;
-    }
-    const out = await adb(serial, ['push', localPath, target], { timeout: 10 * 60 * 1000 });
+  const failed = [...skipped];
+  for (const entry of entries) {
+    const target = `${PHONE_PUSH_DIR}/${entry.remote}`;
+    const out = await adb(serial, ['push', entry.local, target], { timeout: 10 * 60 * 1000 });
     const text = `${out.stdout}${out.stderr}`;
     if (out.ok && !/error|failed|no such file|permission denied/i.test(text)) {
-      sent.push({ name: path.basename(localPath), target, bytes: stat.size });
+      sent.push({ name: entry.name, target, bytes: entry.bytes });
     } else {
-      failed.push(path.basename(localPath));
+      failed.push(entry.name);
     }
   }
 
+  const tooMany = truncated
+    ? `Sélection tronquée à ${MAX_PUSH_FILES} fichiers (ou 4 Go).`
+    : '';
+  const notSent = failed.length
+    ? `Non transféré${failed.length > 1 ? 's' : ''} : ${failed.slice(0, 5).join(', ')}${failed.length > 5 ? `… (+${failed.length - 5})` : ''}`
+    : '';
+  const error = [notSent, tooMany].filter(Boolean).join(' ');
   return {
-    success: sent.length > 0 && failed.length === 0,
+    success: sent.length > 0 && !failed.length && !truncated,
     sent,
     failed,
+    truncated,
     directory: PHONE_PUSH_DIR,
-    ...(failed.length
-      ? { error: `Non transféré${failed.length > 1 ? 's' : ''} : ${failed.join(', ')}` }
-      : {}),
+    ...(error ? { error } : {}),
   };
 }
 
@@ -1452,4 +1604,38 @@ export function stopMirror() {
 export function cleanup() {
   stopMirror();
   stopAppSession();
+}
+
+// --- Sources des widgets du bureau -----------------------------------------
+
+// Agenda du téléphone. Le fournisseur de contenu exige la permission de
+// lecture, que le shell adb possède ; une erreur ici n'est donc pas un refus
+// mais un agenda absent (appareil sans application d'agenda).
+export async function listCalendarEvents({ serial, from, limit } = {}) {
+  if (!serial) return { success: false, error: 'aucun appareil', events: [] };
+  const out = await deviceShell(serial, calendarQueryCommand({ from, limit }), { timeout: 20000 });
+  if (!out.ok) return { success: false, error: 'agenda illisible sur cet appareil', events: [] };
+  return { success: true, events: parseCalendarEvents(out.stdout) };
+}
+
+export async function readMediaSession({ serial } = {}) {
+  if (!serial) return { success: false, error: 'aucun appareil', media: null };
+  const out = await deviceShell(serial, MEDIA_SESSION_COMMAND, { timeout: 12000 });
+  if (!out.ok) return { success: false, error: 'sessions média illisibles', media: null };
+  return { success: true, media: parseMediaSession(out.stdout) };
+}
+
+export async function sendMediaKey({ serial, action } = {}) {
+  const command = mediaKeyCommand(action);
+  if (!serial || !command) return { success: false, error: 'commande média inconnue' };
+  const out = await deviceShell(serial, command, { timeout: 10000 });
+  return { success: out.ok };
+}
+
+export async function readStorage({ serial } = {}) {
+  if (!serial) return { success: false, error: 'aucun appareil', storage: null };
+  const out = await deviceShell(serial, STORAGE_COMMAND, { timeout: 10000 });
+  if (!out.ok) return { success: false, error: 'stockage illisible', storage: null };
+  const storage = parseStorage(out.stdout);
+  return storage ? { success: true, storage } : { success: false, error: 'stockage illisible', storage: null };
 }

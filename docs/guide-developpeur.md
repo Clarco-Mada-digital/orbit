@@ -34,7 +34,7 @@ web intégrées dans des `<webview>`.
 | Interface | Écrans React, navigation et vues principales | `src/App.jsx`, `src/components/` |
 | État | Préférences, profils, apps et persistance | `src/stores/` |
 | Extensions | Sources d’extensions installables | `electron/extensions/` |
-| Archives distribuées | ZIP et catalogue embarqués | `extensions-dist/` |
+| Archives distribuées | ZIP et catalogue publiés (hors application) | `extensions-dist/` |
 | Tests | Tests Node intégrés | `test/` |
 
 Les partitions Electron représentent les frontières de sessions. Toute nouvelle
@@ -96,13 +96,24 @@ disponibles. La CI release exécute des builds Linux, Windows et macOS séparés
    npm run export:extensions -- nom-du-dossier
    ```
 
-5. Vérifier le ZIP et `extensions-dist/catalog.json`.
+5. Vérifier le ZIP et `extensions-dist/catalog.json` (taille et empreinte
+   SHA-256 de chaque archive).
+6. Le format attendu, les limites du moteur et la publication sont détaillés
+   dans [guide-extensions.md](guide-extensions.md) — c'est le document à
+   donner à quelqu'un d'extérieur qui veut écrire une extension.
+7. Pousser sur `master` : le workflow Pages reconstruit le catalogue et publie
+   `extensions-dist/` sous `/extensions/`. C'est de là qu'Orbit télécharge les
+   extensions — aucune republication de l'application n'est nécessaire.
 
 Fake Data Filler possède aussi un chemin natif dans
 `electron/credentials-preload.cjs`. Les comportements accessibles dans Orbit
 doivent rester cohérents entre ce chemin et l’extension ZIP, qui est distribuée
-séparément. Les sources d’extensions sont exclues de l’archive application ;
-les ZIP distribuables sont inclus.
+séparément. Ni les sources d’extensions ni les ZIP ne sont inclus dans
+l’archive application : le magasin lit le catalogue publié en HTTPS et
+télécharge l’archive au moment de l’installation, après contrôle de sa taille
+et de son empreinte (`electron/extension-store.js`,
+`src/lib/extensionCatalog.js`). `ORBIT_EXTENSIONS_URL` permet de viser un autre
+catalogue (recette, miroir interne).
 
 Pour le Texte Snippets, les options sont dans `options.html` / `options.js`.
 Le content script doit supporter les champs dynamiques et les contextes de

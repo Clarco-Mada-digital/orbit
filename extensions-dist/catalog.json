@@ -1,5 +1,6 @@
 {
   "version": 1,
+  "generatedAt": "2026-11-08T06:30:55.823Z",
   "extensions": [
     {
       "file": "color-picker.zip",
@@ -7,7 +8,8 @@
       "version": "1.1.0",
       "description": "Pipette de couleur intégrée : bouton 🎨 flottant, survolez pour voir la couleur, cliquez pour copier (Alt+C). Ne touche pas au menu contextuel.",
       "nativeApp": null,
-      "size": 28592
+      "size": 28592,
+      "sha256": "674e77b9650eed3245ea540f253eff7a0fb4238a0b11f8f6a384edda3e2f39f4"
     },
     {
       "file": "fake-data-filler-orbit.zip",
@@ -15,15 +17,17 @@
       "version": "1.6.0",
       "description": "Remplit des champs ou un formulaire actif avec des données réalistes et du Lorem Ipsum.",
       "nativeApp": null,
-      "size": 27119
+      "size": 27119,
+      "sha256": "298b9d8a8bbe1a5745925373bdf69660f4028e8b618eaa1b759db30fd9b38b73"
     },
     {
       "file": "mouse-scroll.zip",
       "name": "Souris & Défilement",
-      "version": "1.1.0",
+      "version": "1.1.1",
       "description": "Défilement lissé et réglable (vitesse, sens, par site), défilement automatique au clic du milieu, et une palette de présentation (Alt+Maj+D) : pointeur laser, stylo, surligneur, flèche, couleurs, épaisseurs, spot lumineux, halo de clic. 100% local, configurable (⚙️).",
       "nativeApp": null,
-      "size": 29727
+      "size": 29789,
+      "sha256": "4a0db25838d68fc99c84f9d6e92f140d0874d058c854cab64f0bebabeb8dc736"
     },
     {
       "file": "orbit-phone.zip",
@@ -31,7 +35,8 @@
       "version": "1.4.0",
       "description": "Ajoute le Téléphone à Orbit : fenêtres de bureau indépendantes pour les applications Android, miroir séparé, notifications du mobile et pilotage via adb/scrcpy.",
       "nativeApp": "phone",
-      "size": 11826
+      "size": 11826,
+      "sha256": "d68203f08aaa13b2eba6d5e29ea0e1da518f49e3c99ccb2b7ac335cc8852917d"
     },
     {
       "file": "page-to-markdown.zip",
@@ -39,7 +44,8 @@
       "version": "1.1.0",
       "description": "Ajoute « Convertir la page en Markdown » au menu clic droit d'Orbit, et télécharge le .md (raccourci Alt+M).",
       "nativeApp": null,
-      "size": 21375
+      "size": 21375,
+      "sha256": "bcaf9fb63dc93f259feb4de26e121f7e2671c877f92997ee26ee4b14210132c5"
     },
     {
       "file": "qr-code-generator.zip",
@@ -47,7 +53,8 @@
       "version": "1.0.0",
       "description": "Génère un QR code de la page ou de tout texte/lien : bouton flottant ou Alt+Q. 100% local (aucune requête réseau), personnalisable (⚙️).",
       "nativeApp": null,
-      "size": 17521
+      "size": 17521,
+      "sha256": "09d23e0a7a43dd3f6b8b799ccd1676a7b80364271352fb606a2cd38f60e9b56b"
     },
     {
       "file": "sticky-notes.zip",
@@ -55,7 +62,8 @@
       "version": "1.0.0",
       "description": "Notes collantes par site : le bouton 📝 ouvre un bloc-notes attaché au domaine courant. Les notes se rouvrent automatiquement à chaque visite. Aucune donnée ne quitte la machine.",
       "nativeApp": null,
-      "size": 14267
+      "size": 14267,
+      "sha256": "af639c71be3b67cce093d0881668752c8de60f4ed0e17cace6fdbdad30377d0b"
     },
     {
       "file": "text-snippets.zip",
@@ -63,7 +71,8 @@
       "version": "1.2.0",
       "description": "Abréviations extensibles : tapez ;email, ;addr, ;sig… dans un champ et elles se remplacent immédiatement. Configurable (⚙️).",
       "nativeApp": null,
-      "size": 14715
+      "size": 14715,
+      "sha256": "2f295a2cf69c4fb040b7f0d6872addb52281373785de4198e9e774afaf6d5255"
     },
     {
       "file": "web-clipper.zip",
@@ -71,7 +80,8 @@
       "version": "1.0.0",
       "description": "Capture localement une sélection ou le contenu principal d’une page, puis retrouvez et exportez vos captures en Markdown.",
       "nativeApp": null,
-      "size": 6687
+      "size": 6687,
+      "sha256": "e4c967adce9b36f16e36534062efa7ae6e69a1b5f1087fe0667e715188251dc7"
     }
   ]
 }

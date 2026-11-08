@@ -5862,7 +5862,7 @@ async function exportExtensionToZip(extDir, zipPath) {
 // Export de l'extension Fake Data Filler bundled avec Orbit
 handleFromUi('extensions:exportFakeData', async () => {
   try {
-    const srcDir = path.join(__dirname, 'extensions', 'fake-data-sources');
+    const srcDir = path.join(__dirname, 'extensions', 'fake-data-filler-orbit');
     const destDir = app.getPath('downloads');
     const zipName = 'fake-data-filler-orbit.zip';
     const zipPath = path.join(destDir, zipName);
@@ -5871,10 +5871,28 @@ handleFromUi('extensions:exportFakeData', async () => {
       await exportExtensionToZip(srcDir, zipPath);
     } else {
       const bundledZip = resourcePath(path.join('extensions-dist', zipName));
-      if (!fs.existsSync(bundledZip)) {
-        return { success: false, error: 'Archive Fake Data introuvable' };
+      if (fs.existsSync(bundledZip)) {
+        await fs.promises.copyFile(bundledZip, zipPath);
+      } else {
+        // Ni sources ni archive embarquée : c'est le cas NORMAL dans un paquet
+        // publié depuis que les extensions sont téléchargées. On va donc la
+        // chercher au catalogue — avec les mêmes contrôles de taille et
+        // d'empreinte que n'importe quelle installation.
+        const store = await loadExtensionStore();
+        const catalog = await store.fetchCatalog({ cachePath: extensionCatalogCache() });
+        const entry = (catalog.extensions || []).find((item) => item.file === zipName);
+        if (!entry) {
+          return { success: false, error: 'Archive Fake Data introuvable au catalogue' };
+        }
+        const downloaded = await store.downloadExtension({
+          entry,
+          destDir: path.join(app.getPath('userData'), 'extensions', 'downloads'),
+          url: catalog.url,
+        });
+        if (!downloaded.success) return downloaded;
+        await fs.promises.copyFile(downloaded.zipPath, zipPath);
+        await fs.promises.rm(downloaded.zipPath, { force: true });
       }
-      await fs.promises.copyFile(bundledZip, zipPath);
     }
     return { success: true, zipPath };
   } catch (err) {
@@ -5883,9 +5901,12 @@ handleFromUi('extensions:exportFakeData', async () => {
   }
 });
 
-// Extensions OPTIONNELLES livrées avec Orbit (archives non installées). Le
-// catalogue est écrit par `scripts/export-extensions.cjs` ; son absence (build
-// ancien) n'est pas une erreur, juste une liste vide.
+// Extensions OPTIONNELLES livrées avec Orbit (archives non installées).
+//
+// Ce chemin-là ne sert plus qu'en développement et aux anciens paquets : les
+// archives ne sont plus embarquées dans l'application (voir
+// `extensions:catalog`). Son absence n'est donc pas une erreur, juste une
+// liste vide.
 ipcMain.handle('extensions:listBundled', () => {
   try {
     const catalogPath = resourcePath(path.join('extensions-dist', 'catalog.json'));
@@ -5902,8 +5923,66 @@ ipcMain.handle('extensions:listBundled', () => {
   }
 });
 
-// Installation depuis un fichier ZIP (extrait puis chargé comme extension)
-ipcMain.handle('extensions:installFromZip', async (_event, zipPath) => {
+// --- Magasin d'extensions (catalogue publié, archives téléchargées) --------
+//
+// Le module est chargé à la demande : un utilisateur qui n'ouvre jamais
+// l'onglet Extensions ne paie ni son code ni son cache.
+let extensionStore = null;
+async function loadExtensionStore() {
+  if (!extensionStore) extensionStore = await import('./extension-store.js');
+  return extensionStore;
+}
+
+const extensionCatalogCache = () =>
+  path.join(app.getPath('userData'), 'extension-catalog.json');
+
+ipcMain.handle('extensions:catalog', async (_event, { refresh } = {}) => {
+  try {
+    const store = await loadExtensionStore();
+    return await store.fetchCatalog({ cachePath: extensionCatalogCache(), refresh: !!refresh });
+  } catch (err) {
+    return { success: false, extensions: [], error: String(err?.message || err) };
+  }
+});
+
+// Installation depuis le catalogue : on RE-LIT le catalogue (cache frais ou
+// réseau) au lieu de faire confiance à ce que le renderer renvoie. Le
+// renderer ne transmet qu'un nom de fichier ; taille et empreinte attendues
+// viennent du catalogue, jamais de lui.
+ipcMain.handle('extensions:installFromCatalog', async (_event, { file } = {}) => {
+  let zipPath = null;
+  try {
+    const store = await loadExtensionStore();
+    const catalog = await store.fetchCatalog({ cachePath: extensionCatalogCache() });
+    const entry = (catalog.extensions || []).find((item) => item.file === file);
+    if (!entry) {
+      return { success: false, error: 'Cette extension n’est pas (ou plus) au catalogue.' };
+    }
+    const downloads = path.join(app.getPath('userData'), 'extensions', 'downloads');
+    const download = await store.downloadExtension({ entry, destDir: downloads, url: catalog.url });
+    if (!download.success) return download;
+    zipPath = download.zipPath;
+    const installed = await installExtensionFromZip(zipPath);
+    return installed;
+  } catch (err) {
+    console.error('[orbit] installation depuis le catalogue échouée:', err);
+    return { success: false, error: String(err?.message || err) };
+  } finally {
+    // L'archive a été extraite : la garder ne sert qu'à occuper le disque.
+    if (zipPath) {
+      try {
+        fs.rmSync(zipPath, { force: true });
+      } catch { /* sans conséquence */ }
+    }
+  }
+});
+
+// Installation depuis un fichier ZIP (extrait puis chargé comme extension).
+//
+// Fonction et non handler : le magasin d'extensions télécharge une archive
+// avant de l'installer, et doit emprunter EXACTEMENT ce chemin — extraction,
+// contrôle du manifeste, déchargement de l'ancienne version, chargement.
+async function installExtensionFromZip(zipPath) {
   try {
     // Vérifier que le fichier existe
     if (!fs.existsSync(zipPath)) {
@@ -6014,7 +6093,9 @@ ipcMain.handle('extensions:installFromZip', async (_event, zipPath) => {
     console.error('[orbit] installation depuis ZIP échouée:', err);
     return { success: false, error: String(err.message || err) };
   }
-});
+}
+
+ipcMain.handle('extensions:installFromZip', (_event, zipPath) => installExtensionFromZip(zipPath));
 
 ipcMain.handle('extensions:install', async (_event, { kind, path: extPath } = {}) => {
   try {
@@ -6491,18 +6572,34 @@ ipcMain.handle('phone:placeCall', phoneGuard((p, phone) => phone.placeCall(p)));
 // Les chemins ne viennent JAMAIS du renderer : il demande l'envoi, le
 // processus principal ouvre le sélecteur du système et ne pousse que ce que
 // l'utilisateur y a désigné.
+// `folder: true` ouvre un sélecteur de DOSSIERS. Deux sélecteurs et non un :
+// Windows et Linux n'acceptent pas `openFile` et `openDirectory` dans le même
+// dialogue (seul macOS le permet), et un dialogue qui ne montrerait pas les
+// fichiers sur deux systèmes sur trois serait pire que deux boutons clairs.
 ipcMain.handle(
   'phone:sendFiles',
-  phoneGuard(async ({ serial } = {}, phone) => {
+  phoneGuard(async ({ serial, folder } = {}, phone) => {
     const result = await dialog.showOpenDialog(mainWindow, {
-      title: 'Envoyer au téléphone',
+      title: folder ? 'Envoyer un dossier au téléphone' : 'Envoyer au téléphone',
       buttonLabel: 'Envoyer',
-      properties: ['openFile', 'multiSelections', 'dontAddToRecent'],
+      properties: folder
+        ? ['openDirectory', 'multiSelections', 'dontAddToRecent']
+        : ['openFile', 'multiSelections', 'dontAddToRecent'],
     });
     if (result.canceled || !result.filePaths?.length) return { success: false, cancelled: true };
     return phone.pushFiles({ serial, paths: result.filePaths });
   })
 );
+
+// --- Widgets du bureau ------------------------------------------------------
+ipcMain.handle('phone:calendar', phoneGuard((p, phone) => phone.listCalendarEvents(p)));
+ipcMain.handle('phone:media', phoneGuard((p, phone) => phone.readMediaSession(p)));
+ipcMain.handle('phone:mediaKey', phoneGuard((p, phone) => phone.sendMediaKey(p)));
+ipcMain.handle('phone:storage', phoneGuard((p, phone) => phone.readStorage(p)));
+
+// --- Sonnerie et Ne pas déranger --------------------------------------------
+ipcMain.handle('phone:setRingerMode', phoneGuard((p, phone) => phone.setRingerMode(p)));
+ipcMain.handle('phone:setDnd', phoneGuard((p, phone) => phone.setDoNotDisturb(p)));
 
 // ---------------------------------------------------------------------------
 // IPC — KeePassXC (pont natif : auto-remplissage des identifiants)

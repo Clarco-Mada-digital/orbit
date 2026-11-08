@@ -136,7 +136,8 @@ Filler** (Firefox).
 #### Architecture des extensions
 
 ```
-extensions-dist/            ← ZIPs distribuables (SUIVI EN GIT, partagés avec utilisateurs)
+extensions-dist/            ← ZIPs distribuables (SUIVI EN GIT, publiés sur GitHub Pages,
+                               PAS embarqués dans l'application)
   └── fake-data-filler-orbit.zip   (24 Ko, Manifest V3)
   └── color-picker.zip             (28 Ko) — pipette de couleur (bouton 🎨, Alt+C)
   └── page-to-markdown.zip         (21 Ko) — page → Markdown (clic droit, Alt+M)
@@ -152,6 +153,7 @@ userData/extensions/         ← Extensions installées par l'utilisateur (Elect
 #   1. Créer electron/extensions/<mon-extension>/ localement
 #   2. Lancer npm run export:extensions
 #   3. Le ZIP est créé dans extensions-dist/ et suivi en git
+#   4. Un push sur master le publie sous /extensions/ (le catalogue d'Orbit)
 ```
 
 #### Fake Data Filler — intégré nativement
@@ -165,7 +167,9 @@ userData/extensions/         ← Extensions installées par l'utilisateur (Elect
 
 #### Installation manuelle d'une extension depuis ZIP
 
-1. Récupérer le ZIP depuis `extensions-dist/` (ex: `web-clipper.zip`)
+1. Récupérer le ZIP depuis `extensions-dist/` (ex: `web-clipper.zip`) — utile
+   surtout hors ligne : sinon, le magasin de **Réglages → Extensions** les
+   télécharge lui-même
 2. Dans Orbit : **Réglages → Extensions → Extensions installables → Installer depuis ZIP**
 3. Sélectionner le fichier ZIP
 4. L'extension est extraite et chargée automatiquement
@@ -181,11 +185,31 @@ userData/extensions/         ← Extensions installées par l'utilisateur (Elect
 
 #### Distribution des extensions
 
-- Les ZIPs distribuables sont dans `extensions-dist/` (suivis en git)
+Les archives ne sont **pas embarquées dans l'application**. Orbit lit un
+catalogue publié et télécharge l'archive au moment de l'installation : une
+application qui portera peut-être cent extensions ne grossit pas de celles que
+personne n'installe, et une extension corrigée n'attend pas la prochaine
+version d'Orbit.
+
+- Les ZIP et `catalog.json` sont dans `extensions-dist/` (suivis en git)
 - Pour créer/actualiser tous les ZIPs : `npm run export:extensions`
 - Pour créer un ZIP spécifique : `npm run export:extensions -- <nom-dossier>`
+- Pour ne régénérer que le catalogue : `npm run export:extensions -- --catalog-only`
+- Un push sur `master` publie `extensions-dist/` sur GitHub Pages sous
+  `/extensions/` (workflow `pages.yml`) : c'est le catalogue que lit Orbit
+- Chaque entrée porte la **taille** et l'**empreinte SHA-256** de son archive ;
+  une archive dont l'empreinte ne correspond pas est refusée à l'installation
+- `ORBIT_EXTENSIONS_URL` vise un autre catalogue (recette, miroir interne)
+- Hors ligne, le magasin affiche la dernière copie connue du catalogue, datée
 - Les utilisateurs qui téléchargent une release n'ont **pas** d'extensions pré-installées
-- S'ils veulent une extension, ils téléchargent le ZIP depuis le repo et l'installent manuellement
+
+#### Écrire sa propre extension
+
+Un guide dédié décrit le format, ce que le moteur supporte (et ce qu'il ne
+supporte pas), le champ `orbit.nativeApp`, les essais et la publication :
+**[docs/guide-extensions.md](docs/guide-extensions.md)**. La liste des
+extensions disponibles, avec téléchargement direct des archives, est publiée
+sur [la page Extensions](https://clarco-mada-digital.github.io/orbit/extensions.html).
 
 #### Ajouter une nouvelle extension
 

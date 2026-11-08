@@ -1,0 +1,333 @@
+<!doctype html>
+<html lang="fr">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#0b1020" />
+    <meta
+      name="description"
+      content="Les extensions d'Orbit : téléchargez l'archive et installez-la depuis l'application, ou laissez Orbit le faire pour vous."
+    />
+    <meta property="og:title" content="Extensions Orbit" />
+    <meta
+      property="og:description"
+      content="Catalogue des extensions d'Orbit, à télécharger ou à installer directement depuis l'application."
+    />
+    <meta property="og:type" content="website" />
+    <title>Extensions — Orbit</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --bg: #0b1020;
+        --panel: #111a2c;
+        --ink: #f5f7ff;
+        --muted: #a4b0c6;
+        --line: #ffffff19;
+        --blue: #8188ff;
+        --cyan: #62e2d6;
+        --solar: #ffc58d;
+        --content: 1160px;
+      }
+      * { box-sizing: border-box; }
+      html { scroll-behavior: smooth; }
+      body {
+        margin: 0;
+        color: var(--ink);
+        background:
+          linear-gradient(#ffffff04 1px, transparent 1px),
+          linear-gradient(90deg, #ffffff04 1px, transparent 1px),
+          radial-gradient(ellipse at 82% 5%, #3956a22b 0, transparent 26rem),
+          radial-gradient(ellipse at 0% 40%, #276a6820 0, transparent 30rem),
+          var(--bg);
+        background-size: 64px 64px, 64px 64px, auto, auto, auto;
+        font: 15px/1.6 Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+      }
+      a { color: inherit; text-decoration: none; }
+      button { font: inherit; }
+      a:focus-visible, button:focus-visible { outline: 2px solid var(--solar); outline-offset: 4px; }
+      .wrap { width: min(var(--content), calc(100% - 44px)); margin: 0 auto; }
+      .nav {
+        position: sticky;
+        z-index: 20;
+        top: 0;
+        border-bottom: 1px solid #ffffff0d;
+        background: #0b1020cc;
+        backdrop-filter: blur(18px);
+      }
+      .nav-inner { height: 74px; display: flex; align-items: center; justify-content: space-between; gap: 20px; }
+      .brand { display: inline-flex; align-items: center; gap: 11px; font-size: 19px; font-weight: 800; letter-spacing: .12em; }
+      .brand svg { width: 38px; height: 38px; filter: drop-shadow(0 6px 16px #777fff44); }
+      .nav-links { display: flex; align-items: center; gap: 25px; color: #c3cbe0; font-size: 13px; }
+      .nav-links a:hover, .footer a:hover { color: var(--cyan); }
+      .button {
+        min-height: 44px;
+        padding: 11px 17px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 9px;
+        border: 1px solid #ffffff20;
+        border-radius: 12px;
+        background: #ffffff0a;
+        color: var(--ink);
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        transition: background .18s, border-color .18s, transform .18s;
+      }
+      .button:hover { background: #ffffff14; border-color: #ffffff33; transform: translateY(-1px); }
+      .button-primary {
+        border-color: transparent;
+        background: linear-gradient(135deg, #747cff, #8f63ef);
+        box-shadow: 0 12px 30px #6f78ff38;
+      }
+      .hero { padding: 72px 0 34px; }
+      .eyebrow {
+        display: inline-flex;
+        align-items: center;
+        gap: 9px;
+        margin-bottom: 18px;
+        padding: 6px 13px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        color: #cfd7ea;
+        font-size: 12px;
+        letter-spacing: .04em;
+      }
+      .eyebrow i { width: 7px; height: 7px; border-radius: 50%; background: var(--cyan); }
+      h1 { margin: 0 0 14px; font-size: clamp(34px, 6vw, 52px); line-height: 1.04; letter-spacing: -.02em; }
+      .gradient-text { background: linear-gradient(100deg, #aab2ff, #7de3d6); -webkit-background-clip: text; background-clip: text; color: transparent; }
+      .lede { max-width: 60ch; color: var(--muted); font-size: 16px; }
+      section.content-section { padding: 34px 0 72px; }
+      h2 { margin: 0 0 10px; font-size: clamp(23px, 3.4vw, 31px); letter-spacing: -.01em; }
+      .section-intro { max-width: 70ch; margin: 0 0 26px; color: var(--muted); font-size: 14px; }
+      .ext-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(330px, 1fr)); gap: 16px; }
+      .ext-card {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        padding: 20px;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: linear-gradient(#ffffff09, #ffffff03);
+      }
+      .ext-head { display: flex; align-items: flex-start; gap: 12px; }
+      .ext-icon {
+        display: grid;
+        flex: none;
+        place-items: center;
+        width: 42px;
+        height: 42px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: #ffffff0a;
+        font-size: 19px;
+      }
+      .ext-name { margin: 0; font-size: 16px; font-weight: 700; }
+      .ext-meta { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; color: var(--muted); font-size: 12px; }
+      .tag {
+        padding: 2px 8px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        font-size: 11px;
+      }
+      .tag-native { border-color: #8188ff4d; background: #8188ff1f; color: #c3c7ff; }
+      .ext-desc { margin: 0; flex: 1; color: #cbd3e6; font-size: 13.5px; }
+      .ext-foot { display: flex; align-items: center; gap: 10px; }
+      .hash {
+        margin: 0;
+        overflow-wrap: anywhere;
+        color: #7f8aa3;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 10.5px;
+      }
+      .panel {
+        margin-bottom: 26px;
+        padding: 22px;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: #ffffff07;
+      }
+      .panel h3 { margin: 0 0 8px; font-size: 16px; }
+      .panel p, .panel li { color: var(--muted); font-size: 13.5px; }
+      .panel ol { margin: 0; padding-left: 20px; }
+      .status { padding: 16px; border: 1px solid var(--line); border-radius: 14px; color: var(--muted); font-size: 14px; }
+      .status-error { border-color: #ffb4a24d; background: #ff6b4b14; color: #ffc9bd; }
+      .footer { padding: 42px 0; border-top: 1px solid #ffffff0f; color: #93a0b8; font-size: 13px; }
+      .footer-inner { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+      .footer-links { display: flex; flex-wrap: wrap; gap: 18px; }
+      @media (max-width: 860px) {
+        .nav-links { gap: 10px; font-size: 11px; }
+        .footer-inner { align-items: flex-start; flex-direction: column; }
+        .ext-grid { grid-template-columns: 1fr; }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        *, *::before, *::after { scroll-behavior: auto !important; transition-duration: .01ms !important; }
+      }
+    </style>
+  </head>
+  <body>
+    <nav class="nav" aria-label="Navigation principale">
+      <div class="wrap nav-inner">
+        <a class="brand" href="./" aria-label="Orbit, accueil">
+          <svg viewBox="0 0 64 64" aria-hidden="true">
+            <defs><linearGradient id="logoBg" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#747cff"/><stop offset="1" stop-color="#8f63ef"/></linearGradient></defs>
+            <rect x="1" y="1" width="62" height="62" rx="15" fill="url(#logoBg)"/>
+            <circle cx="32" cy="32" r="20" fill="none" stroke="#fff" stroke-width="2.6"/>
+            <circle cx="32" cy="32" r="5" fill="#fff"/><circle cx="48.4" cy="20.5" r="6.2" fill="#c7d2fe"/>
+          </svg>
+          <span>ORBIT</span>
+        </a>
+        <div class="nav-links">
+          <a href="./">Accueil</a>
+          <a href="./guide-utilisateur.html">Guide</a>
+          <a href="https://github.com/Clarco-Mada-digital/orbit/blob/master/docs/guide-extensions.md">Créer une extension</a>
+        </div>
+        <a class="button button-primary" href="https://github.com/Clarco-Mada-digital/orbit/releases/latest">
+          <span aria-hidden="true">↓</span> Télécharger Orbit
+        </a>
+      </div>
+    </nav>
+
+    <main>
+      <section class="hero wrap">
+        <div class="eyebrow"><i></i> <span id="count">Catalogue</span></div>
+        <h1>Extensions <span class="gradient-text">Orbit</span></h1>
+        <p class="lede">
+          Aucune n'est embarquée dans l'application : vous installez seulement ce dont vous avez
+          besoin. Le plus simple est de passer par Orbit, qui télécharge l'archive pour vous — mais
+          chaque archive est aussi téléchargeable ici, puis installable depuis votre ordinateur.
+        </p>
+      </section>
+
+      <section class="content-section wrap">
+        <div class="panel">
+          <h3>Deux façons d'installer</h3>
+          <ol>
+            <li>
+              <strong>Depuis Orbit (recommandé)</strong> — Réglages → Extensions : la liste
+              ci-dessous y apparaît, et un clic sur « Installer » télécharge puis installe
+              l'extension. Orbit vérifie la taille et l'empreinte de l'archive.
+            </li>
+            <li>
+              <strong>Depuis un fichier</strong> — téléchargez le ZIP ici, puis dans Orbit :
+              Réglages → Extensions → <em>Installer depuis un ZIP</em>. Pratique hors ligne, ou
+              pour installer une extension qui n'est pas au catalogue.
+            </li>
+          </ol>
+        </div>
+
+        <h2>Catalogue</h2>
+        <p class="section-intro">
+          Cette liste est lue dans <code>catalog.json</code> au chargement de la page : une
+          extension publiée y apparaît sans que personne ait à retoucher ce site.
+        </p>
+        <div id="status" class="status">Lecture du catalogue…</div>
+        <div id="grid" class="ext-grid" hidden></div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="wrap footer-inner">
+        <span>© Orbit — Clarco Mada Digital</span>
+        <div class="footer-links">
+          <a href="https://github.com/Clarco-Mada-digital/orbit">GitHub</a>
+          <a href="https://github.com/Clarco-Mada-digital/orbit/blob/master/docs/guide-extensions.md">Créer une extension</a>
+          <a href="https://github.com/Clarco-Mada-digital/orbit/issues">Aide &amp; signalements</a>
+        </div>
+      </div>
+    </footer>
+
+    <script>
+      // La liste vient du catalogue publié à côté de cette page, le MÊME que
+      // celui qu'Orbit télécharge. Elle n'est donc jamais en retard sur ce que
+      // l'application propose, et ajouter une extension ne demande pas de
+      // toucher à ce fichier.
+      const CATALOG = 'extensions/catalog.json';
+
+      const kb = (bytes) => `${Math.max(1, Math.round(bytes / 1024))} Ko`;
+
+      // Le texte des manifestes vient de nous, mais il traverse quand même le
+      // DOM par `textContent` : rien n'est interprété comme du HTML.
+      function card(ext) {
+        const article = document.createElement('article');
+        article.className = 'ext-card';
+
+        const head = document.createElement('div');
+        head.className = 'ext-head';
+        const icon = document.createElement('span');
+        icon.className = 'ext-icon';
+        icon.setAttribute('aria-hidden', 'true');
+        icon.textContent = ext.nativeApp ? '📱' : '🧩';
+        const titles = document.createElement('div');
+        const name = document.createElement('h3');
+        name.className = 'ext-name';
+        name.textContent = ext.name;
+        const meta = document.createElement('div');
+        meta.className = 'ext-meta';
+        const version = document.createElement('span');
+        version.className = 'tag';
+        version.textContent = `v${ext.version}`;
+        const size = document.createElement('span');
+        size.className = 'tag';
+        size.textContent = kb(ext.size);
+        meta.append(version, size);
+        if (ext.nativeApp) {
+          const native = document.createElement('span');
+          native.className = 'tag tag-native';
+          native.textContent = 'Active une app intégrée';
+          meta.append(native);
+        }
+        titles.append(name, meta);
+        head.append(icon, titles);
+
+        const desc = document.createElement('p');
+        desc.className = 'ext-desc';
+        desc.textContent = ext.description || '';
+
+        const foot = document.createElement('div');
+        foot.className = 'ext-foot';
+        const link = document.createElement('a');
+        link.className = 'button';
+        link.href = `extensions/${encodeURIComponent(ext.file)}`;
+        link.setAttribute('download', '');
+        link.textContent = `↓ ${ext.file}`;
+        foot.append(link);
+
+        // L'empreinte est affichée : elle permet de vérifier soi-même une
+        // archive téléchargée à la main (`sha256sum`), exactement comme le
+        // fait Orbit avant d'installer.
+        const hash = document.createElement('p');
+        hash.className = 'hash';
+        hash.textContent = `sha256 ${ext.sha256}`;
+
+        article.append(head, desc, foot, hash);
+        return article;
+      }
+
+      async function load() {
+        const status = document.getElementById('status');
+        const grid = document.getElementById('grid');
+        try {
+          const res = await fetch(CATALOG, { cache: 'no-cache' });
+          if (!res.ok) throw new Error(`le serveur a répondu ${res.status}`);
+          const data = await res.json();
+          const list = Array.isArray(data.extensions) ? data.extensions : [];
+          if (!list.length) throw new Error('catalogue vide');
+          list.sort((a, b) => String(a.name).localeCompare(String(b.name), 'fr'));
+          for (const ext of list) grid.append(card(ext));
+          grid.hidden = false;
+          status.hidden = true;
+          document.getElementById('count').textContent =
+            `${list.length} extension${list.length > 1 ? 's' : ''} disponible${list.length > 1 ? 's' : ''}`;
+        } catch (err) {
+          status.className = 'status status-error';
+          status.textContent =
+            `Catalogue indisponible (${err.message}). Les archives restent téléchargeables depuis le dépôt, dossier extensions-dist/.`;
+        }
+      }
+
+      load();
+    </script>
+  </body>
+</html>

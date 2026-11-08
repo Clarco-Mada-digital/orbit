@@ -54,3 +54,8 @@ coverage
 
 # Profil jetable de « npm run dev:fresh » (données vierges à chaque essai)
 .dev-profile/
+
+# Copie locale du catalogue publié : le workflow Pages la fabrique au moment
+# du déploiement (extensions-dist/ -> docs/extensions/). La commiter
+# dupliquerait les archives dans le dépôt.
+docs/extensions/

@@ -16,7 +16,6 @@ import {
   sortPhoneApps,
   initialsOf,
   stripNativeApps,
-  withPhoneModule,
   pngSize,
   isLauncherPackage,
   parseAndroidNotifications,
@@ -27,6 +26,17 @@ import {
   describeCallNotification,
   contactLookupCommand,
   parseContactLookup,
+  parseRingerMode,
+  parseRingVolume,
+  ringVolumeCommand,
+  parseZenMode,
+  dndCommand,
+  phoneRemoteRelativePath,
+  calendarQueryCommand,
+  parseCalendarEvents,
+  parseMediaSession,
+  mediaKeyCommand,
+  parseStorage,
   parseIncomingCallNumber,
   phoneCallKey,
   callLogCommand,
@@ -206,8 +216,10 @@ test('normalizePhoneSettings : bornes, types et listes propres', () => {
   assert.equal(s.iconSize, 'medium');
   assert.equal(s.sortMode, 'name');
   assert.equal(s.showSystemApps, false);
-  assert.equal(s.homeWidgets.quickControls, false);
-  assert.equal(normalizePhoneSettings({}).homeWidgets.quickControls, true);
+  // `homeWidgets` est devenu une DISPOSITION (liste ordonnée de cartes) :
+  // l'ancienne forme en booléens est convertie, voir le test dédié plus bas.
+  assert.ok(Array.isArray(s.homeWidgets));
+  assert.deepEqual(normalizePhoneSettings({}).homeWidgets.map((w) => w.type), ['clock', 'favorites']);
   const pinned = normalizePhoneSettings({
     pinnedPackages: ['com.whatsapp', 'invalid package', ...Array.from({ length: 10 }, (_, i) => `org.example.app${i}`)],
   }).pinnedPackages;
@@ -264,14 +276,18 @@ test('stripNativeApps : retire l\'ancienne app Téléphone du sidebar', () => {
   assert.equal(stripNativeApps(null), null);
 });
 
-test('withPhoneModule : insère le bouton avant la cloche, une seule fois', () => {
-  const topbar = { left: ['logo'], center: ['search'], right: ['shields', 'notifications'] };
-  assert.deepEqual(withPhoneModule(topbar).right, ['shields', 'phone', 'notifications']);
-  // Déjà présent (n'importe quelle zone) → aucune modification.
-  assert.equal(withPhoneModule({ ...topbar, right: ['phone', 'notifications'] }), null);
-  assert.equal(withPhoneModule({ ...topbar, left: ['phone'] }), null);
-  // Sans cloche : ajout en fin de barre.
-  assert.deepEqual(withPhoneModule({ left: [], center: [], right: ['shields'] }).right, ['shields', 'phone']);
+test('le bouton Téléphone de la barre n’est jamais imposé', () => {
+  // Il était réinséré dans la barre du haut à chaque synchronisation des
+  // extensions : l'enlever ne servait à rien, il revenait au redémarrage.
+  // Plus aucune fonction ne modifie la disposition de la barre au nom du
+  // Téléphone — c'est un module comme un autre, que l'on place soi-même.
+  const store = fs.readFileSync(new URL('../src/stores/useStore.js', import.meta.url), 'utf8');
+  assert.equal(/withPhoneModule/.test(store), false, 'useStore ne doit plus forcer le module');
+  const lib = fs.readFileSync(new URL('../src/lib/phone.js', import.meta.url), 'utf8');
+  assert.equal(/export function withPhoneModule/.test(lib), false, 'la fonction doit avoir disparu');
+  // Le module reste PROPOSÉ dans la personnalisation de la barre.
+  const layout = fs.readFileSync(new URL('../src/lib/topbarLayout.js', import.meta.url), 'utf8');
+  assert.ok(/id: 'phone'/.test(layout), 'le module doit rester ajoutable par l’utilisateur');
 });
 
 test('scaledSize : conserve les proportions, ne grossit jamais', () => {
@@ -619,4 +635,257 @@ test('isLauncherPackage : accueil du téléphone reconnu, vraies apps non', () =
   // à chaque retour sur un appareil lent à répondre).
   assert.equal(isLauncherPackage(''), false);
   assert.equal(isLauncherPackage(null), false);
+});
+
+// ---------------------------------------------------------------------------
+// « null » pris pour un nom d'appelant
+// ---------------------------------------------------------------------------
+
+test('parseAndroidNotifications : « tickerText=null » n\'est pas une valeur', () => {
+  // Le bogue : `android.title=...` se lit dans un « String (…) » et ne peut
+  // pas valoir « null », mais `tickerText` se lit jusqu'au bout de la ligne.
+  // Le mot « null » devenait donc le nom de l'appelant à l'écran.
+  const dump = [
+    'NotificationRecord(0x1: pkg=com.samsung.android.incallui user=UserHandle{0} id=1 tag=null:',
+    '  key=0|com.samsung.android.incallui|1|null|10123',
+    '  when=1700000000000',
+    '  tickerText=null',
+    '  category=call',
+    '    android.title=String (Appel entrant)',
+    '    android.showChronometer=Boolean (true)',
+  ].join('\n');
+
+  const [item] = parseAndroidNotifications(dump);
+  assert.equal('ticker' in item, false);
+  const caller = describeCallNotification(item, 'Téléphone');
+  assert.equal(caller.who, 'Téléphone');
+  assert.equal(caller.unknown, true);
+});
+
+test('describeCallNotification : « null » n\'est jamais une identité', () => {
+  for (const value of ['null', 'NULL', ' null ']) {
+    const caller = describeCallNotification({ package: 'com.whatsapp', title: value }, 'WhatsApp');
+    assert.equal(caller.named, false, value);
+    assert.equal(caller.unknown, true, value);
+  }
+  // Un vrai nom qui CONTIENT « null » reste un nom.
+  assert.equal(describeCallNotification({ title: 'Nulla Rakoto' }).who, 'Nulla Rakoto');
+});
+
+test('parseContactLookup : un display_name vide ne devient pas « null »', () => {
+  assert.equal(parseContactLookup('Row: 0 display_name=NULL'), null);
+  assert.equal(parseContactLookup('Row: 0 display_name=null'), null);
+  assert.equal(parseContactLookup('Row: 0 display_name=Maman'), 'Maman');
+});
+
+// ---------------------------------------------------------------------------
+// Sonnerie, Ne pas déranger
+// ---------------------------------------------------------------------------
+
+test('parseRingerMode : le mode INTERNE, celui qu\'Android applique', () => {
+  assert.equal(parseRingerMode('- mode (internal) = NORMAL'), 'normal');
+  assert.equal(parseRingerMode('  - mode (internal) = VIBRATE\n'), 'vibrate');
+  assert.equal(parseRingerMode('- mode (internal) = SILENT'), 'silent');
+  // Un appareil muet sur la question : on ne devine pas.
+  assert.equal(parseRingerMode('Ringer mode:'), null);
+  assert.equal(parseRingerMode(''), null);
+});
+
+test('parseRingVolume : index et bornes du flux de sonnerie', () => {
+  assert.deepEqual(parseRingVolume('[V] volume is 8 in range [0..15]'), { index: 8, min: 0, max: 15 });
+  assert.deepEqual(parseRingVolume('volume is 0 in range [0..7]'), { index: 0, min: 0, max: 7 });
+  assert.equal(parseRingVolume('[V] Connecting to AudioService'), null);
+});
+
+test('ringVolumeCommand : flux de sonnerie, index borné à zéro', () => {
+  assert.equal(ringVolumeCommand({ get: true }), 'cmd media_session volume --stream 2 --get');
+  assert.equal(ringVolumeCommand({ set: 5 }), 'cmd media_session volume --stream 2 --set 5');
+  assert.equal(ringVolumeCommand({ set: -3 }), 'cmd media_session volume --stream 2 --set 0');
+});
+
+test('parseZenMode / dndCommand', () => {
+  assert.equal(parseZenMode('0'), false);
+  assert.equal(parseZenMode('1'), true);
+  assert.equal(parseZenMode('2\n'), true);
+  assert.equal(parseZenMode('null'), null);
+  assert.equal(dndCommand(true), 'cmd notification set_dnd on');
+  assert.equal(dndCommand(false), 'cmd notification set_dnd off');
+});
+
+// ---------------------------------------------------------------------------
+// Envoi d'un dossier
+// ---------------------------------------------------------------------------
+
+test('phoneRemoteRelativePath : l\'arborescence survit, les remontées non', () => {
+  assert.equal(phoneRemoteRelativePath('Photos/2026/plage.jpg'), 'Photos/2026/plage.jpg');
+  assert.equal(phoneRemoteRelativePath('Photos\\hiver\\ski.png'), 'Photos/hiver/ski.png');
+  // « . » ne porte rien, « .. » ne survit pas à l'assainissement du segment :
+  // une remontée de dossier ne doit pas pouvoir sortir des téléchargements.
+  assert.equal(phoneRemoteRelativePath('./Docs/notes.md'), 'Docs/notes.md');
+  assert.equal(phoneRemoteRelativePath('../../etc/passwd'), null);
+  assert.equal(phoneRemoteRelativePath('Docs/../../passwd'), null);
+  assert.equal(phoneRemoteRelativePath(''), null);
+  // Les apostrophes et guillemets partent : le chemin distant est cité dans un
+  // shell.
+  assert.equal(phoneRemoteRelativePath("Mes'docs/a\"b.txt"), 'Mesdocs/ab.txt');
+});
+
+test('normalizePhoneSettings : l’ancien bureau en booléens est converti', () => {
+  // Ce que portent les réglages de quelqu'un qui utilise déjà le Téléphone.
+  // Son bureau ne doit ni se vider ni se remplir tout seul.
+  const converted = normalizePhoneSettings({
+    homeWidgets: {
+      clock: true,
+      device: true,
+      favorites: true,
+      recent: true,
+      notifications: true,
+      quickControls: true,
+      calls: false,
+    },
+  }).homeWidgets;
+  const types = converted.map((w) => w.type);
+  assert.deepEqual(types, ['clock', 'device', 'notifications', 'favorites', 'recent']);
+  // Ce qui était désactivé reste absent…
+  assert.equal(types.includes('calls'), false);
+  // …et les widgets qui n'existaient pas encore ne s'invitent pas.
+  for (const nouveau of ['screen', 'calendar', 'media', 'storage']) {
+    assert.equal(types.includes(nouveau), false, nouveau);
+  }
+  // Chaque carte a un identifiant unique et une taille connue.
+  assert.equal(new Set(converted.map((w) => w.id)).size, converted.length);
+  for (const widget of converted) assert.ok(widget.size, widget.type);
+});
+
+// ---------------------------------------------------------------------------
+// Sources des widgets du bureau
+// ---------------------------------------------------------------------------
+
+test('calendarQueryCommand : filtre et tri faits SUR l’appareil', () => {
+  const cmd = calendarQueryCommand({ from: 1700000000000, limit: 20 });
+  assert.match(cmd, /content:\/\/com\.android\.calendar\/events/);
+  assert.match(cmd, /--where "dtstart>=1700000000000"/);
+  assert.match(cmd, /LIMIT 20/);
+  // Bornes : une limite absurde ne part pas sur le téléphone.
+  assert.match(calendarQueryCommand({ limit: 9999 }), /LIMIT 100/);
+  assert.match(calendarQueryCommand({ limit: 0 }), /LIMIT 40/);
+  assert.match(calendarQueryCommand({ from: -5 }), /dtstart>=0/);
+});
+
+test('parseCalendarEvents : virgules dans le titre, doublons, tri', () => {
+  const now = 1700000000000;
+  const out = [
+    // Une virgule DANS le titre : le motif s'ancre sur le champ suivant.
+    'Row: 0 title=Réunion, puis déjeuner, dtstart=1700003600000, dtend=1700007200000, allDay=0, eventLocation=Bureau',
+    // Deux agendas synchronisés donnent deux fois le même évènement.
+    'Row: 1 title=Noël, dtstart=1700100000000, dtend=1700186400000, allDay=1, eventLocation=',
+    'Row: 2 title=Noël, dtstart=1700100000000, dtend=1700186400000, allDay=1, eventLocation=',
+    // En cours à l'instant : doit passer devant.
+    'Row: 3 title=Appel client, dtstart=1699999000000, dtend=1700001000000, allDay=0, eventLocation=',
+    // Titre vide ou « null » : écarté.
+    'Row: 4 title=null, dtstart=1700200000000, dtend=-1, allDay=0, eventLocation=',
+    'Row: 5 title=, dtstart=1700300000000, dtend=-1, allDay=0, eventLocation=',
+    'bruit qui ne ressemble à rien',
+  ].join('\n');
+
+  const events = parseCalendarEvents(out, { now });
+  assert.deepEqual(events.map((e) => e.title), ['Appel client', 'Réunion, puis déjeuner', 'Noël']);
+  assert.equal(events[1].location, 'Bureau');
+  assert.equal(events[2].allDay, true);
+  // `dtend=-1` n'est pas une fin : null plutôt qu'une date absurde.
+  assert.equal(parseCalendarEvents('Row: 0 title=X, dtstart=100, dtend=-1, allDay=0, eventLocation=')[0].end, null);
+  assert.deepEqual(parseCalendarEvents(''), []);
+});
+
+test('parseMediaSession : la session qui JOUE gagne', () => {
+  const dump = [
+    '  Headset com.android.server.telecom/HeadsetMediaButton (userId=0)',
+    '    package=com.android.server.telecom',
+    '    state=null',
+    '    metadata: null',
+    '  Music com.spotify.music/Session (userId=0)',
+    '    package=com.spotify.music',
+    '    state=PlaybackState {state=3, position=42000}',
+    '    metadata: size=7, description=Redemption Song, Bob Marley, Legend',
+    '  Autre com.sec.android.app.music/MBR (userId=0)',
+    '    package=com.sec.android.app.music',
+    '    state=PlaybackState {state=2, position=0}',
+    '    metadata: size=3, description=Un titre, Un artiste, Un album',
+  ].join('\n');
+
+  const media = parseMediaSession(dump);
+  assert.equal(media.package, 'com.spotify.music');
+  assert.equal(media.state, 'playing');
+  assert.equal(media.title, 'Redemption Song');
+  assert.equal(media.artist, 'Bob Marley');
+
+  // Rien en lecture : la session en pause remonte quand même (on peut la
+  // relancer depuis la carte).
+  const pause = parseMediaSession(dump.replace('state=3,', 'state=1,'));
+  assert.equal(pause.state, 'paused');
+  assert.equal(pause.package, 'com.sec.android.app.music');
+
+  // Aucune session exploitable → null, pas une carte vide pleine de « null ».
+  assert.equal(parseMediaSession('MEDIA SESSION SERVICE\n\n0 sessions.'), null);
+  assert.equal(parseMediaSession(''), null);
+});
+
+test('mediaKeyCommand : liste fermée de touches', () => {
+  assert.equal(mediaKeyCommand('play-pause'), 'cmd media_session dispatch play-pause');
+  assert.equal(mediaKeyCommand('next'), 'cmd media_session dispatch next');
+  // Tout le reste est refusé : la commande part sur une ligne de shell.
+  for (const refuse of ['', null, 'rewind; rm -rf /', 'PLAY-PAUSE', 'dispatch']) {
+    assert.equal(mediaKeyCommand(refuse), null, String(refuse));
+  }
+});
+
+test('parseStorage : pourcentage et octets depuis df', () => {
+  const out = [
+    'Filesystem       1K-blocks      Used Available Use% Mounted on',
+    '/dev/block/sda32 114971500 107283704   7556724  94% /data/user/0',
+  ].join('\n');
+  const storage = parseStorage(out);
+  assert.equal(storage.percent, 94);
+  assert.equal(storage.total, 114971500 * 1024);
+  assert.equal(storage.used, 107283704 * 1024);
+  assert.equal(storage.free, 7556724 * 1024);
+  // Une sortie sans ligne exploitable ne devient pas un stockage à 0 %.
+  assert.equal(parseStorage('df: /data: Permission denied'), null);
+  assert.equal(parseStorage(''), null);
+});
+
+test('normalizePhoneSettings : les valeurs offertes par l’interface sont acceptées', () => {
+  // Un curseur qui propose une valeur que le schéma corrige en silence ment
+  // sur ce qui a été enregistré. Ce test lie les deux : si quelqu'un resserre
+  // une borne du schéma, le contrôle correspondant doit suivre.
+  for (const fps of [15, 20, 25, 30, 35, 40, 45, 50, 55, 60]) {
+    assert.equal(normalizePhoneSettings({ mirrorFps: fps }).mirrorFps, fps, `fps ${fps}`);
+  }
+  for (const rate of ['2M', '4M', '6M', '8M', '12M', '16M', '24M']) {
+    assert.equal(normalizePhoneSettings({ mirrorBitrate: rate }).mirrorBitrate, rate, rate);
+  }
+  for (const mode of ['name', 'recent', 'package']) {
+    assert.equal(normalizePhoneSettings({ sortMode: mode }).sortMode, mode, mode);
+  }
+  for (const width of [88, 120, 160, 200, 240]) {
+    assert.equal(normalizePhoneSettings({ gridMin: width }).gridMin, width, `gridMin ${width}`);
+  }
+  for (const size of ['small', 'medium', 'large']) {
+    assert.equal(normalizePhoneSettings({ iconSize: size }).iconSize, size, size);
+  }
+});
+
+test('normalizePhoneSettings : les réglages retirés ne reviennent pas', () => {
+  // `openMode`, `appGridColumns`, `appGridRows` et `homeShadeOpen` ont été
+  // supprimés parce qu'ils ne pilotaient plus rien. Une installation qui les
+  // porte encore ne doit pas les voir réapparaître dans l'objet normalisé.
+  const s = normalizePhoneSettings({
+    openMode: 'mirror',
+    appGridColumns: 9,
+    appGridRows: 7,
+    homeShadeOpen: true,
+  });
+  for (const mort of ['openMode', 'appGridColumns', 'appGridRows', 'homeShadeOpen']) {
+    assert.equal(mort in s, false, mort);
+  }
 });

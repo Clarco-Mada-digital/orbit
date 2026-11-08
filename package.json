@@ -99,8 +99,7 @@
       "dist/**/*",
       "electron/**/*",
       "!electron/extensions/**/*",
-      "extensions-dist/*.zip",
-      "extensions-dist/catalog.json",
+      "src/lib/extensionCatalog.js",
       "src/lib/shortcuts.js",
       "src/lib/rules.js",
       "src/lib/fileTypes.js",
@@ -111,6 +110,7 @@
       "src/lib/downloadOptions.js",
       "src/lib/javaRuntime.js",
       "src/lib/phone.js",
+      "src/lib/phoneDesktop.js",
       "src/lib/annotate.js",
       "src/lib/sensitive.js",
       "src/lib/aiProviders.js",
@@ -119,8 +119,7 @@
     ],
     "asarUnpack": [
       "dist/icons/**",
-      "build/icon.png",
-      "extensions-dist/**"
+      "build/icon.png"
     ],
     "electronFuses": {
       "runAsNode": false,
