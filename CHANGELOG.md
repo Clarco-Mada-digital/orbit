@@ -8,7 +8,7 @@ Format : une section `## [X.Y.Z] — AAAA-MM-JJ` par version, puis des
 sous-sections `### Ajouté` / `### Modifié` / `### Corrigé` / `### Sécurité`.
 La plus récente en premier.
 
-## [1.20.0] — 2026-11-08
+## [1.19.1] — 2026-11-08
 
 ### Ajouté
 - **Les extensions ne sont plus embarquées : elles se téléchargent.** Orbit lit
