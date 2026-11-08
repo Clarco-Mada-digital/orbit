@@ -8,6 +8,81 @@ Format : une section `## [X.Y.Z] — AAAA-MM-JJ` par version, puis des
 sous-sections `### Ajouté` / `### Modifié` / `### Corrigé` / `### Sécurité`.
 La plus récente en premier.
 
+## [1.20.0] — 2026-11-08
+
+### Ajouté
+- **Les extensions ne sont plus embarquées : elles se téléchargent.** Orbit lit
+  un catalogue publié en ligne et récupère l'archive au moment où vous
+  installez. Une application qui portera peut-être cent extensions ne grossit
+  plus de toutes celles que personne n'installe, et une extension corrigée
+  n'attend plus la prochaine version d'Orbit pour arriver. Hors ligne, le
+  magasin affiche la dernière liste connue, datée ; un champ de recherche
+  apparaît dès que le catalogue s'allonge, et le poids de chaque archive est
+  annoncé avant le téléchargement.
+- **Une page pour les extensions** sur le site : la liste se construit depuis
+  le même catalogue que l'application, et chaque archive s'y télécharge
+  directement — pour l'installer ensuite depuis son ordinateur.
+- **Un guide pour écrire son extension** (`docs/guide-extensions.md`) : format
+  attendu, ce que le moteur sait faire et ce qu'il ne sait pas, essais et
+  publication.
+- **Téléphone : un vrai bureau, à composer soi-même.** La barre d'état sert de
+  poignée à un volet qui descend avec les notifications et les contrôles, comme
+  sur le téléphone. Entre les deux, des cartes que l'on ajoute, déplace,
+  redimensionne et retire ; en bas, un dock. Le bureau est **sobre par défaut**
+  — l'heure et les favoris — et « tout afficher » le remplit d'un clic.
+- **Téléphone : cinq cartes qui montrent le téléphone lui-même.** L'écran
+  vivant (un aperçu rafraîchi, qui ouvre le miroir), l'agenda, la lecture en
+  cours avec ses commandes, le stockage, et la tuile d'application — n'importe
+  quelle application avec son compteur et sa dernière notification. Les widgets
+  Android d'autres applications ne sont pas hébergeables (Android ne les expose
+  qu'à un lanceur installé sur le téléphone) : ces cartes lisent les mêmes
+  données directement sur l'appareil.
+- **Téléphone : sonnerie, Ne pas déranger, Wi-Fi et Bluetooth** dans le volet et
+  dans l'accès rapide flottant, avec l'état réel lu sur l'appareil.
+- **Téléphone : envoyer un dossier entier**, son arborescence recréée dans les
+  téléchargements. L'envoi de plusieurs fichiers à la fois existait déjà mais ne
+  se devinait pas — le libellé le dit maintenant.
+- **Miroir : images par seconde et débit vidéo réglables.** Ils étaient
+  appliqués sans être réglables nulle part ; ce sont les deux boutons que l'on
+  cherche sur une liaison sans fil.
+
+### Modifié
+- **Accès rapide au téléphone : la pastille flottante porte sa propre
+  identité.** Elle affichait l'icône de la première application épinglée, donc
+  elle annonçait une application alors qu'un clic ouvre un panneau. Ce panneau
+  réunit désormais les applications épinglées *et* les raccourcis du téléphone.
+- **Téléphone : une barre de moins.** L'en-tête répétait ce que la barre d'état
+  du bureau affiche déjà, et son engrenage doublait l'onglet Réglages.
+- **Le bouton Téléphone de la barre du haut ne se réimpose plus.** Il était
+  réinséré à chaque démarrage : l'enlever ne servait à rien. C'est un module
+  comme un autre, que l'on place soi-même.
+- **Réglages du Téléphone : le ménage.** Quatre réglages qui ne pilotaient rien
+  ont disparu ; trois autres, à moitié branchés, fonctionnent enfin — le tri du
+  tiroir est mémorisé, « largeur minimale d'une tuile » agit vraiment, et
+  « taille des icônes » vaut aussi pour le bureau.
+- **Les listes d'applications remplissent la largeur.** Favoris, récentes et
+  tiroir s'étalaient sur un nombre fixe de colonnes ou défilaient
+  horizontalement : ils s'adaptent maintenant à la fenêtre.
+
+### Corrigé
+- **Un appel entrant pouvait s'annoncer « null ».** Le champ `tickerText` d'une
+  notification Android vaut littéralement « null » quand il est vide, et ce mot
+  passait pour le nom de l'appelant dès que le titre était générique.
+- **Souris & Défilement 1.1.1** : correctif d'accessibilité de la page d'options
+  qui n'avait jamais été publié, l'archive étant restée en retard sur ses
+  sources. La publication refuse désormais cet écart.
+- Un test de coffre-fort échouait au hasard une fois sur cinquante : il
+  cherchait un identifiant de trois lettres dans une archive chiffrée, où une
+  telle suite apparaît par pur hasard.
+
+### Sécurité
+- **Les archives d'extensions sont vérifiées avant installation.** L'adresse de
+  téléchargement ne peut pas quitter le dossier du catalogue, la taille reçue
+  est bornée pendant la réception, et l'empreinte SHA-256 doit correspondre à
+  celle que le catalogue annonce — sans quoi l'archive est refusée, pas
+  installée. Le catalogue lui-même n'est lu qu'en HTTPS, et chacune de ses
+  entrées est validée avant d'être proposée.
+
 ## [1.19.0] — 2026-11-06
 
 ### Ajouté

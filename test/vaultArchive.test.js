@@ -13,7 +13,12 @@ const payload = {
       id: 'e_1',
       title: 'Banque',
       url: 'https://banque.example',
-      username: 'ada',
+      // Volontairement LONG et distinctif. Avec « ada », le test « aucun
+      // secret en clair » échouait une fois sur cinquante : trois caractères
+      // se retrouvent par hasard dans le base64 d'une enveloppe chiffrée
+      // (mesuré : 2,1 % des scellements). Un identifiant court ne peut pas se
+      // distinguer du bruit, donc l'assertion ne voulait rien dire.
+      username: 'ada.lovelace@banque.example',
       password: 'correct horse battery staple',
       totp: 'JBSWY3DPEHPK3PXP',
       notes: 'coffre',
@@ -41,7 +46,7 @@ test('archive keeps no secret in clear text', () => {
   const serialized = JSON.stringify(envelope);
   assert.ok(!serialized.includes('correct horse battery staple'));
   assert.ok(!serialized.includes('JBSWY3DPEHPK3PXP'));
-  assert.ok(!serialized.includes('ada'));
+  assert.ok(!serialized.includes('ada.lovelace@banque.example'));
   assert.ok(!serialized.includes('phrase-de-passe'));
 });
 
