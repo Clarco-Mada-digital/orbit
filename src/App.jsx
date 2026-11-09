@@ -46,7 +46,12 @@ import { appViewKey, appPartition, resolveProxy } from './lib/session';
 import { matchShortcut, normalizeAssistantChatShortcutKey } from './lib/shortcuts';
 import { dueTimeRules } from './lib/rules';
 import { layoutFor, areaLetter, parseTracks } from './lib/splitLayouts';
-import { reloadApp, navigateApp } from './lib/webviewRegistry';
+import {
+  reloadApp,
+  navigateApp,
+  getRegisteredWebviews,
+  getWebContentsIdFor,
+} from './lib/webviewRegistry';
 import { logDiagnostic } from './lib/diagnosticsStore';
 import { useT } from './lib/i18n';
 import { attachTtsPlayer, setVolume as setTtsVolume } from './lib/ttsPlayer';
@@ -222,6 +227,39 @@ const [editUrlFor, setEditUrlFor] = useState(null); // { id, url } — boîte «
     onboarded,
     setOnboarded,
   } = useStore();
+
+  // Animation de passage : un voile bref par-dessus la zone de contenu à
+  // chaque changement d'app ou de profil. Un <webview> est une surface native :
+  // on ne peut pas l'animer en CSS, mais on PEUT poser un voile au-dessus.
+  const animStyle =
+    settings.animationStyle ?? (settings.animationsEnabled === false ? 'none' : 'fade');
+  const [viewAnim, setViewAnim] = useState(0);
+  const viewAnimFirst = useRef(true);
+  useEffect(() => {
+    if (viewAnimFirst.current) {
+      viewAnimFirst.current = false;
+      return;
+    }
+    if (animStyle === 'none') return;
+    setViewAnim((n) => n + 1);
+  }, [activeApp, activeProfile, animStyle]);
+
+  // Zoom à la molette (Ctrl + molette) : le preload du <webview> applique le
+  // zoom dans la page et nous prévient ; on persiste la valeur sur l'app, pour
+  // que les boutons de la barre et le prochain démarrage la retrouvent.
+  useEffect(() => {
+    const off = window.electronAPI?.onGuestZoom?.(({ wcId, factor } = {}) => {
+      const zoom = Number(factor);
+      if (!Number.isFinite(zoom)) return;
+      const found = getRegisteredWebviews().find(
+        ([appId]) => getWebContentsIdFor(appId) === wcId
+      );
+      if (found) updateApp(found[0], { zoom: Math.min(3, Math.max(0.5, zoom)) });
+    });
+    return () => {
+      if (typeof off === 'function') off();
+    };
+  }, [updateApp]);
 
   // App de démarrage : au lancement, ouvre l'app choisie (une seule fois).
   // '' = reprendre la dernière (activeApp persisté), 'none' = aucune.
@@ -905,7 +943,14 @@ const [editUrlFor, setEditUrlFor] = useState(null); // { id, url } — boîte «
 
     // Taille de police + échelle UI : la base rem est multipliée,
     // tout le UI (textes ET espacements Tailwind) suit, sans clipping.
-    const base = FONT_SIZES[settings.fontSize] ?? 14;
+    // Police : un préréglage, ou une taille personnalisée en pixels. La valeur
+    // est bornée aux mêmes limites que le champ des réglages, pour qu'une
+    // saisie aberrante (ou un ancien profil) ne rende pas l'interface illisible.
+    const customPx = Number(settings.fontSizePx);
+    const base =
+      settings.fontSize === 'custom'
+        ? Math.min(24, Math.max(10, Number.isFinite(customPx) && customPx > 0 ? customPx : 14))
+        : FONT_SIZES[settings.fontSize] ?? 14;
     const scale = (settings.uiScale ?? 100) / 100;
     root.style.fontSize = `${Math.round(base * scale)}px`;
     // La police doit être appliquée sur <body> : la règle CSS de body
@@ -913,7 +958,9 @@ const [editUrlFor, setEditUrlFor] = useState(null); // { id, url } — boîte «
     document.body.style.fontFamily = settings.fontFamily || 'Inter';
 
     root.classList.toggle('compact-mode', !!settings.compactMode);
-    root.classList.toggle('no-animations', !settings.animationsEnabled);
+    const animStyle =
+      settings.animationStyle ?? (settings.animationsEnabled === false ? 'none' : 'fade');
+    root.classList.toggle('no-animations', animStyle === 'none' || settings.animationsEnabled === false);
 
     if (settings.theme === 'auto') {
       const mq = window.matchMedia('(prefers-color-scheme: light)');
@@ -1257,6 +1304,18 @@ const openEditUrl = useCallback((id) => {
           className="relative flex-1 flex flex-col min-w-0 transition-[margin-left] duration-300"
           style={{ marginLeft: sidebarOffset }}
         >
+          {/* Voile d'animation (changement d'app / de profil). Il reste
+              AU-DESSUS des webviews mais ne capte aucun clic. */}
+          {viewAnim > 0 && animStyle !== 'none' && (
+            <div
+              key={viewAnim}
+              aria-hidden="true"
+              className={`orbit-view-anim orbit-view-${
+                ['fade', 'slide', 'zoom'].includes(animStyle) ? animStyle : 'fade'
+              }`}
+            />
+          )}
+
           {/* Apps embarquées : un <webview> par app, reste vivant en arrière-plan.
               Écran partagé :
                 • 2 apps → côte à côte (row) ou haut/bas (col), séparateur AJUSTABLE

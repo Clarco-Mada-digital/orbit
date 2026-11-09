@@ -24,6 +24,8 @@ import {
   Eye,
   EyeOff,
   GripVertical,
+  Scissors,
+  Trash2,
 } from 'lucide-react';
 import { useT } from '../lib/i18n';
 import { useStore } from '../stores/useStore';
@@ -60,6 +62,7 @@ import {
   MAX_PRESETS,
 } from '../lib/studioLayout';
 import { drawFrame } from '../lib/studioRenderer';
+import { keptDuration, normalizeCuts } from '../lib/videoEdit';
 
 // ---------------------------------------------------------------------------
 // Studio d'enregistrement : écran + caméra, composés en direct.
@@ -119,12 +122,24 @@ export default function RecordingStudio({ onClose }) {
   const styleRef = useRef(style);
   const OUTPUT = RESOLUTIONS[style.resolution] || RESOLUTIONS['720p'];
   const FPS = style.fps || 24;
+  const audioSource = style.audioSource || 'mic';
+  const wantsMicAudio = audioSource === 'mic' || audioSource === 'both';
   const [error, setError] = useState('');
   const [countdown, setCountdown] = useState(0);
   const [elapsed, setElapsed] = useState(0);
   const [paused, setPaused] = useState(false);
   const [result, setResult] = useState(null);
+  const [editing, setEditing] = useState(false);
+  const [editedMsg, setEditedMsg] = useState('');
   const [busy, setBusy] = useState(false);
+
+  // Le chemin de la copie éditée s'efface tout seul : c'est une confirmation,
+  // pas un état dont il faut ensuite se débarrasser à la main.
+  useEffect(() => {
+    if (!editedMsg) return undefined;
+    const timer = setTimeout(() => setEditedMsg(''), 7000);
+    return () => clearTimeout(timer);
+  }, [editedMsg]);
   const [ffmpeg, setFfmpeg] = useState(false);
   // Périphériques nommés ? (voir loadDevices) et demande en cours.
   const [hasHardware, setHasHardware] = useState(false);
@@ -349,11 +364,37 @@ export default function RecordingStudio({ onClose }) {
       // (`chromeMediaSource: 'desktop'` dans getUserMedia) déclenchait, lui, la
       // demande d'autorisation « caméra et micro » — refuser la caméra faisait
       // alors échouer la capture d'écran, pour laquelle on n'avait rien demandé.
-      await api()?.prepare(id);
+      const audioSource = styleRef.current?.audioSource || 'mic';
+      const wantsSystem = audioSource === 'system' || audioSource === 'both';
+      await api()?.prepare(id, { audio: wantsSystem });
       const stream = await navigator.mediaDevices.getDisplayMedia({
-        audio: false,
+        // Le son du système suit la même demande que la vidéo. S'il n'est pas
+        // disponible, le flux arrive avec la vidéo seule : le studio continue.
+        audio: wantsSystem,
         video: { frameRate: FPS, width: OUTPUT.width, height: OUTPUT.height },
       });
+      // Repli pour les systèmes sans boucle audio (fréquent sous Linux) : les
+      // distributions PipeAudio/PulseAudio exposent souvent une entrée
+      // « Monitor of … ». On l'ajoute au MÊME flux, donc elle est arrêtée avec
+      // lui et rien ne reste ouvert après la prise.
+      if (wantsSystem && stream.getAudioTracks().length === 0) {
+        try {
+          const inputs = await navigator.mediaDevices.enumerateDevices();
+          const monitor = inputs.find(
+            (d) =>
+              d.kind === 'audioinput' &&
+              /monitor|loopback|stereo mix|what u hear/i.test(d.label || '')
+          );
+          if (monitor) {
+            const system = await navigator.mediaDevices.getUserMedia({
+              audio: { deviceId: { exact: monitor.deviceId } },
+            });
+            system.getAudioTracks().forEach((track) => stream.addTrack(track));
+          }
+        } catch {
+          /* pas de source système : la vidéo part sans son système */
+        }
+      }
       setError('');
       return stream;
     } catch (err) {
@@ -391,7 +432,9 @@ export default function RecordingStudio({ onClose }) {
       owned?.getTracks().forEach((track) => track.stop());
       if (screenStream.current === owned) screenStream.current = null;
     };
-  }, [sourceId, openScreenStream]);
+    // Changer la source audio doit rouvrir la capture : la piste « son du
+    // système » n'existe que si elle a été demandée à l'ouverture du flux.
+  }, [sourceId, openScreenStream, style.audioSource]);
 
   const toggleCamera = useCallback(async (id) => {
     if (!id) {
@@ -607,10 +650,21 @@ export default function RecordingStudio({ onClose }) {
   }, [zoomPulse]);
 
   // --- Enregistrement ------------------------------------------------------
+  // Assemble la piste audio de la prise selon le choix « ce qui s'entend » :
+  // micro, son du système, les deux, ou rien. Le son du système vient du flux
+  // d'écran (voir openScreenStream) ; il peut être absent selon la plateforme,
+  // auquel cas on garde ce qui est disponible.
   const buildAudioStream = () => {
-    const tracks = micStream.current?.getAudioTracks() || [];
+    const audioSource = styleRef.current?.audioSource || 'mic';
+    if (audioSource === 'none') return null;
+    const wantsMic = audioSource === 'mic' || audioSource === 'both';
+    const wantsSystem = audioSource === 'system' || audioSource === 'both';
+    const tracks = [
+      ...(wantsMic ? micStream.current?.getAudioTracks() || [] : []),
+      ...(wantsSystem ? screenStream.current?.getAudioTracks() || [] : []),
+    ].filter(Boolean);
     if (tracks.length === 0) return null;
-    // Un seul micro : inutile de passer par un graphe audio.
+    // Une seule piste : inutile de passer par un graphe audio.
     if (tracks.length === 1) return new MediaStream([tracks[0]]);
     const ctx = new AudioContext();
     audioCtxRef.current = ctx;
@@ -1095,7 +1149,9 @@ export default function RecordingStudio({ onClose }) {
         >
           <PenLine size={13} />
         </button>
-        {micId && <MicMeter streamRef={micStream} streamKey={micId} paused={paused} compact />}
+        {micId && wantsMicAudio && (
+          <MicMeter streamRef={micStream} streamKey={micId} paused={paused} compact />
+        )}
         <button
           onClick={() => set({ monitor: !style.monitor })}
           className={`btn-icon w-7 h-7 ${style.monitor ? 'text-accent-primary' : ''}`}
@@ -1143,7 +1199,7 @@ export default function RecordingStudio({ onClose }) {
               {t('studio.fpsNow', { fps, target: FPS })}
             </span>
           )}
-          {step === 'recording' && micId && (
+          {step === 'recording' && micId && wantsMicAudio && (
             <MicMeter streamRef={micStream} streamKey={micId} paused={paused} compact />
           )}
           <div className="flex-1" />
@@ -1294,7 +1350,19 @@ export default function RecordingStudio({ onClose }) {
                       {busy ? <Loader2 size={14} className="animate-spin" /> : null} {t('studio.toMp4')}
                     </button>
                   )}
-                  <button onClick={() => { setResult(null); setStep('setup'); }} className="btn btn-primary btn-sm">
+                  {/* Édition légère : couper les extrémités, retirer le son.
+                      Elle n'apparaît que si ffmpeg est là, comme la conversion. */}
+                  {ffmpeg && (
+                    <button
+                      onClick={() => setEditing(true)}
+                      disabled={busy || !result.url}
+                      className="btn btn-secondary btn-sm"
+                      title={t('studio.editHint')}
+                    >
+                      <Scissors size={14} /> {t('studio.edit')}
+                    </button>
+                  )}
+                  <button onClick={() => { setResult(null); setStep('setup'); setEditedMsg(''); }} className="btn btn-primary btn-sm">
                     {t('studio.again')}
                   </button>
                 </div>
@@ -1358,24 +1426,46 @@ export default function RecordingStudio({ onClose }) {
                 ))}
               </select>
               <label className="block text-xs text-text-muted mb-1">{t('studio.mic')}</label>
-              <select value={micId} onChange={(e) => toggleMic(e.target.value)} className="input">
+              <select
+                value={micId}
+                onChange={(e) => toggleMic(e.target.value)}
+                disabled={!wantsMicAudio}
+                className="input"
+              >
                 <option value="">{t('studio.noMic')}</option>
                 {devices.mics.map((d, i) => (
                   <option key={d.deviceId} value={d.deviceId}>{d.label || `${t('studio.mic')} ${i + 1}`}</option>
                 ))}
               </select>
+              {/* Ce qui s'entend : le choix qui manquait. Le micro seul reste
+                  le défaut, car il fonctionne sur toutes les plateformes. */}
+              <label className="block text-xs text-text-muted mt-3 mb-1">{t('studio.audio')}</label>
+              <select
+                value={audioSource}
+                onChange={(e) => set({ audioSource: e.target.value })}
+                disabled={step === 'recording'}
+                className="input"
+              >
+                <option value="mic">{t('studio.audio.mic')}</option>
+                <option value="system">{t('studio.audio.system')}</option>
+                <option value="both">{t('studio.audio.both')}</option>
+                <option value="none">{t('studio.audio.none')}</option>
+              </select>
               {/* Onde du micro : on voit qu'il capte AVANT de lancer la prise,
                   pas à la relecture. */}
-              {micId && (
+              {micId && wantsMicAudio && (
                 <div className="mt-2" title={t('studio.micLevel')}>
                   <MicMeter streamRef={micStream} streamKey={micId} />
                 </div>
               )}
               <p className="text-[11px] text-text-muted mt-2 flex items-center gap-1">
                 {cameraId ? <Video size={11} /> : <VideoOff size={11} />}
-                {micId ? <Mic size={11} /> : <MicOff size={11} />}
+                {wantsMicAudio && micId ? <Mic size={11} /> : <MicOff size={11} />}
                 {t('studio.devicesHint')}
               </p>
+              {(audioSource === 'system' || audioSource === 'both') && (
+                <p className="text-[11px] text-text-muted mt-1">{t('studio.audioHint')}</p>
+              )}
               </>
               )}
             </Section>
@@ -1728,7 +1818,422 @@ export default function RecordingStudio({ onClose }) {
       <video ref={screenVideo} autoPlay muted playsInline aria-hidden className={OFFSCREEN} />
       <video ref={cameraVideo} autoPlay muted playsInline aria-hidden className={OFFSCREEN} />
     </div>
+
+    {/* Éditeur de la prise terminée. Une fenêtre par-dessus le studio : la
+        prise reste intacte, on écrit une copie. */}
+    {editing && result && (
+      <VideoEditor
+        result={result}
+        onClose={() => setEditing(false)}
+        onSaved={(res) => {
+          setResult((r) => (r ? { ...r, edited: res.path, editedBytes: res.bytes } : r));
+          setEditedMsg(res.path);
+        }}
+      />
+    )}
+
+    {/* Confirmation discrète : le chemin de la copie éditée. */}
+    {editedMsg && (
+      <div className="fixed bottom-4 left-1/2 -translate-x-1/2 z-[10003] px-3 py-2 rounded-lg bg-bg-elevated border border-border text-xs shadow-xl">
+        {t('studio.editDone', { name: editedMsg.split(/[/\\]/).pop() })}
+      </div>
+    )}
     </>
+  );
+}
+
+// Éditeur de prise : aperçu, timeline avec vignettes, recadrage aux poignées,
+// tête de lecture et suppression de portions AU MILIEU. Le fichier d'origine
+// n'est jamais modifié : tout part dans une copie MP4.
+function VideoEditor({ result, onClose, onSaved }) {
+  const t = useT();
+  const [duration, setDuration] = useState(0);
+  const [start, setStart] = useState(0);
+  const [end, setEnd] = useState(0);
+  const [cuts, setCuts] = useState([]);
+  const [pendingCut, setPendingCut] = useState(null);
+  const [current, setCurrent] = useState(0);
+  const [playing, setPlaying] = useState(false);
+  const [mute, setMute] = useState(false);
+  const [thumbs, setThumbs] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const videoRef = useRef(null);
+  const trackRef = useRef(null);
+
+  const fmt = (seconds) => formatDuration(Math.max(0, seconds) * 1000);
+  const activeCuts = normalizeCuts(cuts, start, end);
+  const finalDuration = keptDuration({ start, end, cuts: activeCuts, duration });
+  const ratio = (value) => (duration > 0 ? Math.min(1, Math.max(0, value / duration)) : 0);
+  const pct = (value) => `${ratio(value) * 100}%`;
+
+  // Vignettes de la timeline : on échantillonne la vidéo avec un élément
+  // détaché, pour ne pas déplacer la tête de lecture de l'aperçu.
+  useEffect(() => {
+    const src = result?.url;
+    if (!src) return undefined;
+    let cancelled = false;
+    const video = document.createElement('video');
+    video.preload = 'auto';
+    video.muted = true;
+    video.playsInline = true;
+    video.src = src;
+    const canvas = document.createElement('canvas');
+    canvas.width = 160;
+    canvas.height = 90;
+    const ctx = canvas.getContext('2d');
+
+    const seekTo = (time) =>
+      new Promise((resolve) => {
+        let done = false;
+        const finish = () => {
+          if (done) return;
+          done = true;
+          video.removeEventListener('seeked', finish);
+          resolve();
+        };
+        video.addEventListener('seeked', finish);
+        // Un média sans index (WebM en direct) peut ne jamais émettre
+        // `seeked` : on avance quand même plutôt que de bloquer l'éditeur.
+        setTimeout(finish, 1500);
+        try {
+          video.currentTime = time;
+        } catch {
+          finish();
+        }
+      });
+
+    const build = async () => {
+      const d = video.duration;
+      if (!Number.isFinite(d) || d <= 0) return;
+      const count = 12;
+      const out = [];
+      for (let i = 0; i < count; i += 1) {
+        if (cancelled) return;
+        await seekTo(((i + 0.5) / count) * d);
+        try {
+          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+          out.push(canvas.toDataURL('image/jpeg', 0.55));
+        } catch {
+          out.push('');
+        }
+        if (!cancelled) setThumbs([...out]);
+      }
+    };
+
+    video.addEventListener('loadeddata', build);
+    return () => {
+      cancelled = true;
+      video.removeAttribute('src');
+      video.load();
+    };
+  }, [result?.url]);
+
+  const seek = (time) => {
+    const video = videoRef.current;
+    const next = Math.min(duration || 0, Math.max(0, time));
+    if (video) video.currentTime = next;
+    setCurrent(next);
+  };
+
+  const togglePlay = () => {
+    const video = videoRef.current;
+    if (!video) return;
+    if (video.paused) {
+      if (current < start || current >= end) video.currentTime = start;
+      video.play().catch(() => {});
+    } else {
+      video.pause();
+    }
+  };
+
+  // Pendant la lecture, les portions supprimées sont sautées : l'aperçu
+  // ressemble à ce que donnera le fichier, au lieu de montrer des passages
+  // qui n'existeront plus.
+  const onTimeUpdate = (event) => {
+    const video = event.currentTarget;
+    const time = video.currentTime;
+    setCurrent(time);
+    if (video.paused) return;
+    const cut = activeCuts.find((c) => time >= c.start && time < c.end - 0.02);
+    if (cut) {
+      video.currentTime = Math.min(cut.end, end);
+      setCurrent(video.currentTime);
+      return;
+    }
+    if (end > 0 && time >= end - 0.02) video.pause();
+  };
+
+  const dragHandle = (which) => (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    const track = trackRef.current;
+    if (!track || !duration) return;
+    const rect = track.getBoundingClientRect();
+    const move = (e) => {
+      const value = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width)) * duration;
+      if (which === 'start') setStart(Math.min(value, Math.max(0, end - 0.1)));
+      else setEnd(Math.max(value, Math.min(duration, start + 0.1)));
+    };
+    move(event);
+    const up = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+    };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
+
+  const seekFromTrack = (event) => {
+    const track = trackRef.current;
+    if (!track || !duration) return;
+    const rect = track.getBoundingClientRect();
+    seek(((event.clientX - rect.left) / rect.width) * duration);
+  };
+
+  const markCut = () => {
+    if (pendingCut === null) {
+      setPendingCut(current);
+      return;
+    }
+    const a = Math.min(pendingCut, current);
+    const b = Math.max(pendingCut, current);
+    setPendingCut(null);
+    // Un clic au même endroit (moins de 0,2 s) annule : c'est le geste le plus
+    // simple pour se raviser, sans chercher un bouton.
+    if (b - a > 0.2) {
+      setCuts(normalizeCuts([...cuts, { start: a, end: b }], start, end));
+    }
+  };
+
+  const apply = async () => {
+    setBusy(true);
+    setError('');
+    try {
+      const res = await api()?.edit({
+        path: result.path,
+        start,
+        end,
+        mute,
+        cuts: activeCuts,
+      });
+      if (res?.success) {
+        onSaved?.(res);
+        onClose();
+      } else {
+        setError(
+          res?.error === 'no-ffmpeg' ? t('studio.editNoFfmpeg') : t('studio.err.edit')
+        );
+      }
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 z-[10002] bg-black/70 flex items-center justify-center p-4">
+      <div className="w-full max-w-4xl max-h-[94vh] overflow-y-auto bg-bg-secondary border border-border rounded-2xl shadow-2xl p-5 space-y-4">
+        <div className="flex items-center gap-2">
+          <Scissors size={18} className="text-accent-primary" />
+          <h3 className="font-semibold flex-1">{t('studio.editTitle')}</h3>
+          <button onClick={onClose} className="btn-icon w-8 h-8" title={t('common.close')}>
+            <X size={16} />
+          </button>
+        </div>
+
+        {/* Aperçu. Un clic sur l'image lance / met en pause. */}
+        <video
+          ref={videoRef}
+          src={result.url}
+          preload="auto"
+          playsInline
+          onClick={togglePlay}
+          onPlay={() => setPlaying(true)}
+          onPause={() => setPlaying(false)}
+          onTimeUpdate={onTimeUpdate}
+          onLoadedMetadata={() => {
+            const d = videoRef.current?.duration;
+            const safe = Number.isFinite(d) && d > 0 ? d : (result.duration || 0) / 1000;
+            setDuration(safe);
+            setEnd((prev) => (prev > 0 ? prev : safe));
+          }}
+          className="w-full max-h-[38vh] rounded-xl border border-border bg-black cursor-pointer"
+        />
+
+        <div className="flex flex-wrap items-center gap-2">
+          <button onClick={togglePlay} className="btn btn-secondary btn-sm" title={playing ? t('studio.pause') : t('studio.resume')}>
+            {playing ? <Pause size={14} /> : <Play size={14} />}
+          </button>
+          <button onClick={() => seek(current - 5)} className="btn btn-secondary btn-sm">−5 s</button>
+          <button onClick={() => seek(current + 5)} className="btn btn-secondary btn-sm">+5 s</button>
+          <span className="text-xs tabular-nums text-text-muted ml-auto">
+            {fmt(current)} / {fmt(duration)}
+          </span>
+        </div>
+
+        {/* Timeline : vignettes, zones supprimées, poignées et tête de lecture. */}
+        <div className="space-y-1.5">
+          <div
+            ref={trackRef}
+            onClick={seekFromTrack}
+            className="relative h-20 rounded-lg overflow-hidden border border-border bg-black cursor-crosshair select-none touch-none"
+          >
+            <div className="absolute inset-0 flex">
+              {thumbs.length > 0 ? (
+                thumbs.map((src, index) =>
+                  src ? (
+                    <img
+                      key={index}
+                      src={src}
+                      alt=""
+                      draggable={false}
+                      className="h-full flex-1 object-cover"
+                    />
+                  ) : (
+                    <div key={index} className="flex-1 bg-bg-hover/50" />
+                  )
+                )
+              ) : (
+                <div className="w-full bg-bg-hover/40" />
+              )}
+            </div>
+
+            {/* Parties hors sélection, assombries */}
+            <div className="absolute inset-y-0 left-0 bg-black/65 pointer-events-none" style={{ width: pct(start) }} />
+            <div
+              className="absolute inset-y-0 right-0 bg-black/65 pointer-events-none"
+              style={{ width: `${Math.max(0, 100 - ratio(end) * 100)}%` }}
+            />
+
+            {activeCuts.map((cut, index) => (
+              <div
+                key={`${cut.start}-${cut.end}-${index}`}
+                className="absolute inset-y-0 bg-error/40 border-x border-error/80 pointer-events-none"
+                style={{ left: pct(cut.start), width: `${Math.max(0, ratio(cut.end - cut.start) * 100)}%` }}
+              />
+            ))}
+
+            {pendingCut !== null && (
+              <div
+                className="absolute inset-y-0 w-0.5 bg-warning pointer-events-none"
+                style={{ left: pct(pendingCut) }}
+              />
+            )}
+
+            <div
+              className="absolute inset-y-0 w-0.5 bg-white/90 pointer-events-none"
+              style={{ left: pct(current) }}
+            />
+
+            {/* Poignées de recadrage */}
+            <button
+              type="button"
+              aria-label={t('studio.editStart')}
+              onPointerDown={dragHandle('start')}
+              onClick={(e) => e.stopPropagation()}
+              className="absolute top-0 bottom-0 w-4 -translate-x-1/2 bg-accent-primary/90 hover:bg-accent-primary cursor-ew-resize flex items-center justify-center z-10"
+              style={{ left: pct(start) }}
+            >
+              <span className="block w-0.5 h-6 rounded bg-white/90" />
+            </button>
+            <button
+              type="button"
+              aria-label={t('studio.editEnd')}
+              onPointerDown={dragHandle('end')}
+              onClick={(e) => e.stopPropagation()}
+              className="absolute top-0 bottom-0 w-4 -translate-x-1/2 bg-accent-primary/90 hover:bg-accent-primary cursor-ew-resize flex items-center justify-center z-10"
+              style={{ left: pct(end) }}
+            >
+              <span className="block w-0.5 h-6 rounded bg-white/90" />
+            </button>
+          </div>
+
+          <div className="flex items-center justify-between text-[11px] text-text-muted tabular-nums">
+            <span>{fmt(start)}</span>
+            <span>{t('studio.editFinalDuration', { duration: fmt(finalDuration) })}</span>
+            <span>{fmt(end)}</span>
+          </div>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <button onClick={() => setStart(Math.min(current, Math.max(0, end - 0.1)))} className="btn btn-secondary btn-sm">
+            {t('studio.editStartHere')}
+          </button>
+          <button onClick={() => setEnd(Math.max(current, start + 0.1))} className="btn btn-secondary btn-sm">
+            {t('studio.editEndHere')}
+          </button>
+          <button
+            onClick={markCut}
+            className={`btn btn-sm ${pendingCut !== null ? 'btn-primary' : 'btn-secondary'}`}
+          >
+            <Scissors size={12} />
+            {pendingCut !== null ? t('studio.editCutEnd') : t('studio.editCutStart')}
+          </button>
+          <button
+            onClick={() => {
+              setStart(0);
+              setEnd(duration);
+              setCuts([]);
+              setPendingCut(null);
+            }}
+            className="btn btn-secondary btn-sm ml-auto"
+          >
+            {t('studio.editReset')}
+          </button>
+        </div>
+
+        {activeCuts.length > 0 && (
+          <div className="rounded-lg border border-border p-3 space-y-1.5">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-semibold uppercase tracking-wide text-text-muted">
+                {t('studio.editCuts')}
+              </span>
+              <button onClick={() => setCuts([])} className="text-xs text-text-muted hover:text-text-primary">
+                {t('studio.editClearCuts')}
+              </button>
+            </div>
+            {activeCuts.map((cut, index) => (
+              <div key={`${cut.start}-${cut.end}-${index}`} className="flex items-center gap-3 text-xs">
+                <span className="tabular-nums text-text-secondary">
+                  {fmt(cut.start)} → {fmt(cut.end)}
+                </span>
+                <button
+                  onClick={() => setCuts(activeCuts.filter((_, i) => i !== index))}
+                  className="ml-auto flex items-center gap-1 text-text-muted hover:text-error"
+                  title={t('studio.editRemoveCut')}
+                >
+                  <Trash2 size={12} /> {t('studio.editRemoveCut')}
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+
+        <Toggle
+          label={t('studio.editMute')}
+          checked={mute}
+          onChange={setMute}
+          icon={MicOff}
+        />
+        <p className="text-[11px] text-text-muted">{t('studio.editTimelineHint')}</p>
+        <p className="text-[11px] text-text-muted">{t('studio.editHint')}</p>
+        {error && <p className="text-sm text-error">{error}</p>}
+
+        <div className="flex justify-end gap-2">
+          <button onClick={onClose} className="btn btn-secondary btn-sm">
+            {t('common.cancel')}
+          </button>
+          <button
+            onClick={apply}
+            disabled={busy || !duration || finalDuration <= 0.05}
+            className="btn btn-primary btn-sm"
+          >
+            {busy ? <Loader2 size={14} className="animate-spin" /> : <Scissors size={14} />}
+            {t('studio.editApply')}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -1808,7 +2313,7 @@ function Section({ title, action, children }) {
   );
 }
 
-function Slider({ label, value, min, max, onChange, format }) {
+function Slider({ label, value, min, max, step = 1, onChange, format }) {
   return (
     <div className="mb-3">
       <div className="flex items-center justify-between text-xs mb-1">
@@ -1819,6 +2324,7 @@ function Slider({ label, value, min, max, onChange, format }) {
         type="range"
         min={min}
         max={max}
+        step={step}
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
         className="w-full accent-accent-primary"

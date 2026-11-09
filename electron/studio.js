@@ -17,6 +17,7 @@ import { app, desktopCapturer, screen, shell, dialog, globalShortcut } from 'ele
 import fs from 'fs';
 import path from 'path';
 import { execFile, execFileSync } from 'child_process';
+import { keepSegments } from '../src/lib/videoEdit.js';
 
 // Dossier des enregistrements : « Vidéos/Orbit », avec repli sur Images puis
 // Téléchargements — certains systèmes minimalistes n'ont pas de dossier Vidéos.
@@ -120,9 +121,9 @@ function screenBounds(source, screens, displays) {
 let pending = null;
 const PENDING_TTL = 15000;
 
-export function setPendingSource(id) {
+export function setPendingSource(id, { audio = false } = {}) {
   if (!id) return { success: false, error: 'no-source' };
-  pending = { id, at: Date.now() };
+  pending = { id, audio: Boolean(audio), at: Date.now() };
   return { success: true };
 }
 
@@ -139,13 +140,16 @@ export function hasPendingSource() {
 }
 
 // Rend la source Electron correspondante, ou null. Consomme le jeton.
+// `audio` dit si l'utilisateur a demandé AUSSI le son du système : le
+// gestionnaire de partage d'écran s'en sert pour demander une boucle audio.
 export async function takePendingSource() {
   const token = pending;
   pending = null;
   if (!token || Date.now() - token.at > PENDING_TTL) return null;
   try {
     const sources = await desktopCapturer.getSources({ types: ['screen', 'window'] });
-    return sources.find((s) => s.id === token.id) || null;
+    const source = sources.find((s) => s.id === token.id) || null;
+    return source ? { source, audio: token.audio } : null;
   } catch {
     return null;
   }
@@ -343,6 +347,142 @@ function safeSize(file) {
   } catch {
     return 0;
   }
+}
+
+// Durée et présence d'une piste audio, lues une seule fois. `ffprobe` arrive
+// avec ffmpeg : sans lui, on considère prudemment qu'il n'y a pas d'audio —
+// mieux vaut une copie muette qu'un échec après un long ré-encodage.
+function probeMedia(file) {
+  try {
+    const out = execFileSync(
+      'ffprobe',
+      [
+        '-v', 'error',
+        '-show_entries', 'format=duration:stream=codec_type',
+        '-of', 'json',
+        file,
+      ],
+      { timeout: 5000, maxBuffer: 1024 * 1024 }
+    );
+    const data = JSON.parse(String(out));
+    return {
+      duration: Number(data?.format?.duration) || 0,
+      hasAudio: (data?.streams || []).some((stream) => stream.codec_type === 'audio'),
+    };
+  } catch {
+    return { duration: 0, hasAudio: false };
+  }
+}
+
+const ffTime = (value) => String(Math.round(Math.max(0, value) * 1000) / 1000);
+
+// --- Édition d'une prise ----------------------------------------------------
+// Recadrer le début / la fin, supprimer une ou plusieurs portions AU MILIEU, et
+// retirer le son. On écrit TOUJOURS une copie à côté de l'original : une
+// édition ne doit jamais détruire la prise brute.
+//
+// La coupe ré-encode (H.264/AAC) au lieu de copier les flux : un `-c copy` ne
+// tombe que sur les images-clés et déplace la coupe de plusieurs secondes.
+// Plusieurs portions gardées sont recollées par `concat`, sans réencodage
+// supplémentaire.
+export function editRecording({ path: source, start = 0, end = 0, mute = false, cuts = [] } = {}) {
+  if (!source || !fs.existsSync(source)) {
+    return Promise.resolve({ success: false, error: 'no-file' });
+  }
+  if (!hasFfmpeg()) return Promise.resolve({ success: false, error: 'no-ffmpeg' });
+
+  const info = probeMedia(source);
+  const from = Math.max(0, Number(start) || 0);
+  const to = Number(end) > 0 ? Number(end) : info.duration;
+  if (!(to > from + 0.05)) {
+    return Promise.resolve({ success: false, error: 'bad-range' });
+  }
+
+  const segments = keepSegments({ start: from, end: to, cuts, duration: info.duration });
+  if (segments.length === 0) {
+    return Promise.resolve({ success: false, error: 'bad-range' });
+  }
+
+  const base = source.replace(/\.[^.]+$/, '');
+  const target = uniquePath(`${base} — édité.mp4`);
+  const withAudio = !mute && info.hasAudio;
+  const kept = segments.reduce((total, segment) => total + (segment.end - segment.start), 0);
+
+  // Un seul morceau : le chemin rapide (décalage à la lecture) suffit.
+  const only = segments.length === 1 ? segments[0] : null;
+  const args = ['-y'];
+  if (only) {
+    if (only.start > 0) args.push('-ss', ffTime(only.start));
+    args.push('-i', source);
+    const length = only.end - only.start;
+    if (length > 0) args.push('-t', ffTime(length));
+    args.push(
+      '-c:v', 'libx264',
+      '-preset', 'veryfast',
+      '-crf', '21',
+      '-pix_fmt', 'yuv420p',
+      // Dimensions paires exigées par H.264.
+      '-vf', 'scale=trunc(iw/2)*2:trunc(ih/2)*2'
+    );
+    if (!withAudio) args.push('-an');
+    else args.push('-c:a', 'aac', '-b:a', '160k');
+  } else {
+    // Plusieurs morceaux : chaque portion est découpée, puis recollée.
+    const chains = [];
+    segments.forEach((segment, index) => {
+      chains.push(
+        `[0:v]trim=start=${ffTime(segment.start)}:end=${ffTime(segment.end)},` +
+          `setpts=PTS-STARTPTS,scale=trunc(iw/2)*2:trunc(ih/2)*2[v${index}]`
+      );
+      if (withAudio) {
+        chains.push(
+          `[0:a]atrim=start=${ffTime(segment.start)}:end=${ffTime(segment.end)},` +
+            `asetpts=PTS-STARTPTS[a${index}]`
+        );
+      }
+    });
+    const inputs = segments
+      .map((_, index) => `[v${index}]${withAudio ? `[a${index}]` : ''}`)
+      .join('');
+    chains.push(
+      `${inputs}concat=n=${segments.length}:v=1:a=${withAudio ? 1 : 0}[v]${withAudio ? '[a]' : ''}`
+    );
+    args.push('-i', source, '-filter_complex', chains.join(';'), '-map', '[v]');
+    if (withAudio) args.push('-map', '[a]');
+    args.push(
+      '-c:v', 'libx264',
+      '-preset', 'veryfast',
+      '-crf', '21',
+      '-pix_fmt', 'yuv420p'
+    );
+    if (!withAudio) args.push('-an');
+    else args.push('-c:a', 'aac', '-b:a', '160k');
+  }
+  args.push('-movflags', '+faststart', target);
+
+  return new Promise((resolve) => {
+    execFile(
+      'ffmpeg',
+      args,
+      { timeout: 15 * 60 * 1000, maxBuffer: 1024 * 1024 },
+      (err, _stdout, stderr) => {
+        if (err || !fs.existsSync(target) || fs.statSync(target).size === 0) {
+          try {
+            fs.unlinkSync(target);
+          } catch {
+            /* rien à nettoyer */
+          }
+          console.error(
+            '[studio] édition échouée :',
+            String(err?.message || stderr || 'sortie vide').slice(0, 200)
+          );
+          resolve({ success: false, error: 'edit-failed' });
+          return;
+        }
+        resolve({ success: true, path: target, bytes: safeSize(target), duration: kept });
+      }
+    );
+  });
 }
 
 // --- Raccourcis globaux pendant l'enregistrement ---------------------------

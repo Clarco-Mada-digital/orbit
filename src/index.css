@@ -65,6 +65,71 @@
   }
 }
 
+/* Passage d'une app / d'un profil à l'autre. Un <webview> ne se laisse pas
+   animer (surface native) : on pose donc un voile AU-DESSUS, qui se retire en
+   un quart de seconde. Les trois styles partagent la même durée pour que le
+   changement reste rapide quel que soit le choix. */
+@keyframes orbitViewFade {
+  0% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+
+@keyframes orbitViewSlide {
+  0% {
+    transform: translateX(-100%);
+    opacity: 0.95;
+  }
+  55% {
+    opacity: 0.55;
+  }
+  100% {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+}
+
+@keyframes orbitViewZoom {
+  0% {
+    opacity: 1;
+    transform: scale(1.04);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1);
+  }
+}
+
+.orbit-view-anim {
+  position: absolute;
+  inset: 0;
+  z-index: 15;
+  pointer-events: none;
+}
+
+.orbit-view-anim.orbit-view-fade {
+  background: rgb(var(--bg-secondary));
+  animation: orbitViewFade 0.28s ease-out forwards;
+}
+
+.orbit-view-anim.orbit-view-slide {
+  background: linear-gradient(
+    90deg,
+    rgb(var(--bg-secondary)) 0%,
+    rgb(var(--bg-secondary) / 0.92) 55%,
+    transparent 100%
+  );
+  animation: orbitViewSlide 0.32s cubic-bezier(0.2, 0.8, 0.2, 1) forwards;
+}
+
+.orbit-view-anim.orbit-view-zoom {
+  background: rgb(var(--accent-primary) / 0.22);
+  animation: orbitViewZoom 0.34s ease-out forwards;
+}
+
 @layer base {
   /* ===== Thème sombre (défaut) — valeurs en triplets RGB pour Tailwind ===== */
   :root {

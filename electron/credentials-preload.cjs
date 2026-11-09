@@ -27,7 +27,146 @@
 // passe transitent uniquement du principal vers le champ à remplir ; rien
 // n'est conservé dans la page au-delà du remplissage.
 // ---------------------------------------------------------------------------
-const { ipcRenderer, contextBridge } = require('electron');
+const { ipcRenderer, contextBridge, webFrame } = require('electron');
+
+// ---------------------------------------------------------------------------
+// Détection des champs de CONNEXION
+// ---------------------------------------------------------------------------
+// Cette préload tourne dans un webview SANDBOXÉ : `require` ne peut pas charger
+// un fichier local. Les helpers restent donc dans ce fichier — ils sont purs
+// (aucun accès au DOM global) pour rester lisibles et vérifiables.
+//
+// Une détection trop large faisait apparaître le 🔑 et sa bulle sur une barre
+// de recherche ou un filtre, où ils masquaient le contenu voisin.
+// --- début helpers de détection (extraits par test/loginFields.test.js) ---
+const LOGIN_HINTS =
+  /(user|login|mail|account|identifier|email|identifiant|utilisateur|courriel|pseudo|compte)/i;
+const SEARCH_HINTS = /(search|recherche|rechercher|filter|filtre|query|\bq\b)/i;
+
+function attr(el, name) {
+  if (!el || typeof el.getAttribute !== 'function') return '';
+  return el.getAttribute(name) || '';
+}
+
+// Texte descriptif d'un champ. Le `type` est volontairement exclu : sinon tout
+// `input[type=email]` contiendrait « email » et passerait pour un identifiant,
+// même dans un formulaire d'inscription à une infolettre.
+function fieldText(el) {
+  if (!el) return '';
+  return `${el.name || ''} ${el.id || ''} ${el.autocomplete || ''} ${attr(el, 'placeholder')} ${attr(
+    el,
+    'aria-label'
+  )} ${attr(el, 'title')}`;
+}
+
+// Un champ de recherche ou de filtre. On le reconnaît au type HTML, au rôle
+// ARIA, à son conteneur de recherche, et à défaut à ses libellés.
+function isSearchField(el) {
+  if (!el || !el.tagName) return false;
+  const tag = el.tagName.toLowerCase();
+  if (tag !== 'input' && tag !== 'textarea' && tag !== 'select') return false;
+
+  const type = `${attr(el, 'type') || el.type || ''}`.toLowerCase();
+  if (type === 'search') return true;
+  if (`${attr(el, 'role')}`.toLowerCase() === 'searchbox') return true;
+  if (`${attr(el, 'enterkeyhint')}`.toLowerCase() === 'search') return true;
+  if (typeof el.closest === 'function' && el.closest('[role="search"], search')) return true;
+
+  return SEARCH_HINTS.test(fieldText(el));
+}
+
+// Conteneur qui donne un sens au mot « formulaire de connexion » : le <form>
+// d'abord, puis une boîte de dialogue (beaucoup de sites modernes n'utilisent
+// plus de <form>).
+function authScope(el) {
+  if (!el) return null;
+  if (el.form) return el.form;
+  if (typeof el.closest !== 'function') return null;
+  return el.closest('form, dialog, [role="dialog"]') || null;
+}
+
+function sameAuthScope(a, b) {
+  const scope = authScope(a);
+  if (!scope || scope !== authScope(b)) return false;
+  if (typeof scope.contains !== 'function') return false;
+  return scope.contains(a) && scope.contains(b);
+}
+
+// Champ qui peut porter un identifiant : jamais un mot de passe, jamais une
+// recherche, jamais un select/textarea, jamais un champ de nouveau mot de passe
+// ou de code à usage unique.
+function isLoginUserField(el, pass) {
+  if (!el || el.tagName?.toLowerCase() !== 'input') return false;
+  if (el === pass || el.disabled || el.readOnly) return false;
+  if (isSearchField(el)) return false;
+
+  const type = `${attr(el, 'type') || el.type || 'text'}`.toLowerCase();
+  if (!['text', 'email', 'tel'].includes(type)) return false;
+
+  const autocomplete = `${el.autocomplete || attr(el, 'autocomplete')}`.toLowerCase();
+  if (/\bnew-password\b|\bone-time-code\b/.test(autocomplete)) return false;
+
+  if (
+    autocomplete === 'username' ||
+    autocomplete === 'email' ||
+    LOGIN_HINTS.test(fieldText(el))
+  ) {
+    return true;
+  }
+
+  // Un identifiant sans aucun libellé reste valable s'il partage le formulaire
+  // (ou la boîte de dialogue) du champ mot de passe.
+  return Boolean(pass && sameAuthScope(el, pass));
+}
+
+function isLoginInput(el, pass) {
+  if (!el || el.tagName?.toLowerCase() !== 'input') return false;
+  const type = `${attr(el, 'type') || el.type || ''}`.toLowerCase();
+  if (type === 'password') return true;
+  return isLoginUserField(el, pass);
+}
+// --- fin helpers de détection ---
+
+// ---------------------------------------------------------------------------
+// Ctrl + molette → zoom de la page
+// ---------------------------------------------------------------------------
+// Le geste standard d'un navigateur. Chromium ne l'applique pas aux pages
+// embarquées d'Electron : on le reproduit ici, et on prévient le processus
+// principal pour que le zoom soit mémorisé sur l'app (il survit au prochain
+// démarrage, et les boutons de la barre restent cohérents).
+//
+// Seul Ctrl est intercepté : la molette seule, le défilement horizontal et le
+// pincement du trackpad gardent leur comportement d'origine.
+let lastZoomNotice = 0;
+try {
+  window.addEventListener(
+    'wheel',
+    (event) => {
+      if (!event.ctrlKey || event.altKey || event.metaKey) return;
+      if (!event.deltaY) return;
+      event.preventDefault();
+      const current = webFrame.getZoomFactor();
+      const next = Math.min(
+        3,
+        Math.max(0.5, Math.round((current - Math.sign(event.deltaY) * 0.1) * 100) / 100)
+      );
+      if (next === current) return;
+      webFrame.setZoomFactor(next);
+      const now = Date.now();
+      if (now - lastZoomNotice > 120) {
+        lastZoomNotice = now;
+        try {
+          ipcRenderer.send('guest:zoom', { factor: next });
+        } catch {
+          /* fenêtre en cours de fermeture */
+        }
+      }
+    },
+    { passive: false }
+  );
+} catch {
+  /* pas de webFrame dans ce contexte : on laisse le geste au système */
+}
 
 // ---------------------------------------------------------------------------
 // Dialogues de la page : alert / confirm / prompt
@@ -269,44 +408,43 @@ function deepQueryAll(root, selector) {
 
 function findFields() {
   const pass = deepQueryAll(document, PASSWORD_SELECTOR).find(reallyVisible) || null;
-  const inputs = deepQueryAll(document, 'input');
-  const visible = reallyVisible;
-
-  const hints = (el) =>
-    `${el.name || ''} ${el.id || ''} ${el.autocomplete || ''} ${el.getAttribute('placeholder') || ''}`;
-  const loginHint = /(user|login|mail|account|identifier|email)/i;
+  const inputs = deepQueryAll(document, 'input').filter(reallyVisible);
 
   let user = null;
   if (pass) {
-    // Formulaire classique : identifiant + mot de passe
+    // Formulaire classique : on reste dans le même formulaire (ou la même
+    // boîte de dialogue) que le mot de passe. Une recherche ailleurs sur la
+    // page ne doit jamais hériter du 🔑 ni de sa bulle.
+    const scope = authScope(pass);
+    const candidates = inputs.filter(
+      (i) => isLoginUserField(i, pass) && (!scope || scope.contains(i))
+    );
+    const beforePass = (i) => {
+      const index = inputs.indexOf(i);
+      const passIndex = inputs.indexOf(pass);
+      return index < 0 || passIndex < 0 || index < passIndex;
+    };
     user =
-      inputs.find(
-        (i) =>
-          visible(i) &&
-          i !== pass &&
-          /^(text|email|tel)$/.test(i.type || '') &&
-          loginHint.test(hints(i))
+      candidates.find((i) => beforePass(i) && LOGIN_HINTS.test(fieldText(i))) ||
+      candidates.find(
+        (i) => beforePass(i) && (i.autocomplete === 'username' || i.autocomplete === 'email')
       ) ||
-      inputs.find(
-        (i) =>
-          visible(i) &&
-          i !== pass &&
-          (i.type === 'text' || i.type === 'email') &&
-          i.autocomplete === 'username'
-      ) ||
-      inputs.find((i) => visible(i) && i !== pass && (i.type === 'text' || i.type === 'email'));
+      candidates.find((i) => beforePass(i) && i.type === 'email') ||
+      candidates.find(beforePass) ||
+      null;
   } else {
     // Pas encore de champ mot de passe (ex. Gmail : identifiant d'abord) :
-    // on ne cible que des champs « identifiant » explicites pour éviter de
-    // s'accrocher à n'importe quel champ email de la page (ex. champ « À »).
+    // on ne cible que des champs explicitement marqués comme identifiant.
     user =
-      inputs.find((i) => visible(i) && i.type === 'email' && loginHint.test(hints(i))) ||
+      inputs.find(
+        (i) => i.type === 'email' && isLoginUserField(i, null) && LOGIN_HINTS.test(fieldText(i))
+      ) ||
       inputs.find(
         (i) =>
-          visible(i) &&
-          (i.type === 'email' || i.type === 'text') &&
+          isLoginUserField(i, null) &&
           (i.autocomplete === 'username' || i.autocomplete === 'email')
-      );
+      ) ||
+      null;
   }
 
   return user || pass ? { user, pass } : null;
@@ -383,7 +521,7 @@ function showFakeInfo(message) {
 // Remplit le formulaire avec le compte choisi et mémorise le choix (pour les
 // pages à plusieurs étapes comme Gmail).
 function fillEntry(fields, entry) {
-  if (fields.user && entry.login) {
+  if (fields.user && entry.login && !isSearchField(fields.user)) {
     setValue(fields.user, entry.login);
     highlight(fields.user);
   }
@@ -542,9 +680,14 @@ function removeKeyBtn() {
 function showKeyBtn(anchor) {
   removeKeyBtn();
   if (!anchor) return;
+  // Jamais sur une recherche ou un select : la bulle sous le bouton finit par
+  // masquer le champ voisin, et il n'y a rien à remplir dans un filtre.
+  if (anchor.tagName?.toLowerCase() !== 'input' || isSearchField(anchor)) return;
   keyBtn = document.createElement('button');
   keyBtn.textContent = '🔑';
-  keyBtn.title = 'Identifiants Orbit — remplir ou choisir un compte';
+  // Pas de `title` : l'infobulle native s'affiche sous le bouton et recouvre
+  // le contenu. `aria-label` garde l'explication pour les lecteurs d'écran.
+  keyBtn.setAttribute('aria-label', 'Identifiants Orbit — remplir ou choisir un compte');
   Object.assign(keyBtn.style, {
     position: 'fixed',
     zIndex: '2147483647',
@@ -587,9 +730,20 @@ function positionKeyBtn(anchor) {
   }
 }
 
+function removeHint() {
+  if (hintEl) {
+    hintEl.remove();
+    hintEl = null;
+  }
+  clearTimeout(hintTimer);
+}
+
 function showHint(message, anchorEl) {
   try {
-    if (hintEl) hintEl.remove();
+    removeHint();
+    // Une recherche ne doit jamais recevoir de bulle d'identifiants : elle
+    // n'en a pas besoin, et la bulle recouvrait le champ situé dessous.
+    if (anchorEl && anchorEl.tagName?.toLowerCase() === 'input' && isSearchField(anchorEl)) return;
     hintEl = document.createElement('div');
     hintEl.textContent = '🔑 ' + message;
     Object.assign(hintEl.style, {
@@ -603,21 +757,22 @@ function showHint(message, anchorEl) {
       borderRadius: '6px',
       boxShadow: '0 2px 8px rgba(0,0,0,0.35)',
       pointerEvents: 'none',
-      whiteSpace: 'nowrap',
-      maxWidth: '60vw',
+      lineHeight: '1.35',
+      // On laisse le texte revenir à la ligne : une bulle de 60 vw sur une
+      // seule ligne masquait tout ce qui se trouvait derrière.
+      maxWidth: 'min(420px, calc(100vw - 16px))',
       overflow: 'hidden',
-      textOverflow: 'ellipsis',
     });
     document.body.appendChild(hintEl);
     const rect = anchorEl ? anchorEl.getBoundingClientRect() : null;
     hintEl.style.left =
       (rect ? Math.max(4, Math.min(rect.left, window.innerWidth - hintEl.offsetWidth - 8)) : 8) + 'px';
-    hintEl.style.top = (rect ? rect.bottom + 6 : 8) + 'px';
-    clearTimeout(hintTimer);
-    hintTimer = setTimeout(() => {
-      if (hintEl) hintEl.remove();
-      hintEl = null;
-    }, 4500);
+    const below = rect ? rect.bottom + 6 : 8;
+    const above = rect ? rect.top - hintEl.offsetHeight - 6 : 8;
+    hintEl.style.top =
+      (rect && below + hintEl.offsetHeight > window.innerHeight - 8 ? Math.max(8, above) : below) +
+      'px';
+    hintTimer = setTimeout(removeHint, 4500);
   } catch {
     /* jamais bloquant */
   }
@@ -768,6 +923,9 @@ function removePicker() {
 // ---------------------------------------------------------------------------
 async function doFill(fields, manual) {
   if (busy || !fields) return;
+  // Garde-fou : même si un appelant se trompe, on ne propose jamais de
+  // remplir une barre de recherche.
+  if (fields.user && isSearchField(fields.user)) return;
 
   // Remplissage AUTOMATIQUE (focus) : ne jamais s'imposer.
   //   • si l'utilisateur a déjà saisi quelque chose → on ne touche à rien
@@ -846,6 +1004,14 @@ function maybeFill(event) {
   const target = event.target;
   if (!target || typeof target.matches !== 'function') return;
 
+  // Un select ou une recherche ne doit jamais garder le 🔑 ni la bulle d'un
+  // champ précédent : c'est précisément ce qui masquait le contenu voisin.
+  if (isSearchField(target) || target.tagName?.toLowerCase() === 'select') {
+    removeKeyBtn();
+    removeHint();
+    return;
+  }
+
   let fields = findFields();
 
   // Si findFields() ne trouve rien (Shadow DOM fermé — ex. Google, Microsoft),
@@ -854,8 +1020,16 @@ function maybeFill(event) {
   // même quand event.target est re-targeté vers l'hôte shadow.
   if (!fields) {
     const path = typeof event.composedPath === 'function' ? event.composedPath() : [];
-    const realInput = path.find((el) => el && el.matches && el.matches('input'));
-    if (realInput && reallyVisible(realInput)) {
+    const pathPass = path.find((el) => el && el.matches && el.matches(PASSWORD_SELECTOR)) || null;
+    const realInput = path.find(
+      (el) =>
+        el &&
+        el.matches &&
+        el.matches('input') &&
+        reallyVisible(el) &&
+        isLoginInput(el, pathPass)
+    );
+    if (realInput) {
       const isPassword = realInput.matches(PASSWORD_SELECTOR);
       if (isPassword) {
         fields = { user: null, pass: realInput };
@@ -929,8 +1103,16 @@ document.addEventListener(
     // Shadow DOM fermé : composedPath() pour trouver le vrai <input>
     if (!fields) {
       const path = typeof event.composedPath === 'function' ? event.composedPath() : [];
-      const realInput = path.find((el) => el && el.matches && el.matches('input'));
-      if (realInput && reallyVisible(realInput)) {
+      const pathPass = path.find((el) => el && el.matches && el.matches(PASSWORD_SELECTOR)) || null;
+      const realInput = path.find(
+        (el) =>
+          el &&
+          el.matches &&
+          el.matches('input') &&
+          reallyVisible(el) &&
+          isLoginInput(el, pathPass)
+      );
+      if (realInput) {
         const isPassword = realInput.matches(PASSWORD_SELECTOR);
         fields = isPassword ? { user: null, pass: realInput } : { user: realInput, pass: null };
       } else {
@@ -1718,7 +1900,9 @@ function showFakeBtn(anchor) {
   removeFakeBtn();
   fakeBtn = document.createElement('button');
   fakeBtn.textContent = '🎲';
-  fakeBtn.title = 'Remplir avec des données de test';
+  // Pas de `title` : l'infobulle native s'affichait sous le bouton et
+  // recouvrait le champ voisin, notamment sur les selects et les recherches.
+  fakeBtn.setAttribute('aria-label', 'Remplir avec des données de test (Alt+F)');
   Object.assign(fakeBtn.style, {
     position: 'fixed',
     zIndex: '2147483647',

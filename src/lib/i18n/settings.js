@@ -30,6 +30,9 @@ export const fr = {
   'update.later': 'Plus tard',
   'update.downloading': 'Téléchargement de la mise à jour… {percent}%',
   'update.available': 'Mise à jour {version} disponible',
+  'update.failed': 'Mise à jour impossible',
+  'update.failedDesc': 'La vérification a échoué : {detail}',
+  'update.openReleases': 'Ouvrir la page des versions',
 
   // Réglages — langue
   'settings.language': 'Langue',
@@ -102,6 +105,7 @@ export const fr = {
   // Réglages — mises à jour
   'st.upd.unsupported': "Mise à jour auto indisponible dans ce mode (dispo uniquement sur l'AppImage).",
   'st.upd.cantCheck': 'Impossible de vérifier pour le moment.',
+  'st.upd.cantCheckDetail': 'Impossible de vérifier : {detail}',
   'st.upd.available': 'Version {version} disponible — téléchargement en cours…',
   'st.upd.upToDate': 'Orbit est à jour.',
   'st.upd.check': 'Rechercher les mises à jour',
@@ -141,6 +145,9 @@ export const fr = {
 
   // Réglages — Affichage
   'st.fontSize': 'Taille de police',
+  'st.fontSizeCustom': 'Personnalisé',
+  'st.fontSizePx': 'Taille en pixels',
+  'st.fontSizePxHint': 'Entre 10 et 24 px. Le zoom de l’interface s’applique en plus.',
   'st.small': 'Petite',
   'st.medium': 'Moyenne',
   'st.large': 'Grande',
@@ -153,6 +160,13 @@ export const fr = {
   'st.compactDesc': "Réduit l'espacement entre les éléments",
   'st.animations': 'Animations',
   'st.animationsDesc': 'Active les transitions et animations',
+  'st.animationStyle': 'Animation des changements',
+  'st.animationStyleDesc':
+    'Quand vous changez d’app ou de profil. « Aucune » coupe aussi les animations de l’interface.',
+  'st.animationNone': 'Aucune',
+  'st.animationFade': 'Fondu',
+  'st.animationSlide': 'Glissement',
+  'st.animationZoom': 'Zoom',
   'st.appIcons': "Icônes d'applications",
   'st.appIconsDesc': 'Affiche les icônes colorées dans la sidebar',
 
@@ -503,6 +517,9 @@ export const en = {
   'update.later': 'Later',
   'update.downloading': 'Downloading update… {percent}%',
   'update.available': 'Update {version} available',
+  'update.failed': 'Update failed',
+  'update.failedDesc': 'The check failed: {detail}',
+  'update.openReleases': 'Open the releases page',
 
   // Settings — language
   'settings.language': 'Language',
@@ -575,6 +592,7 @@ export const en = {
   // Settings — updates
   'st.upd.unsupported': 'Auto-update unavailable in this mode (AppImage only).',
   'st.upd.cantCheck': 'Unable to check right now.',
+  'st.upd.cantCheckDetail': 'Unable to check: {detail}',
   'st.upd.available': 'Version {version} available — downloading…',
   'st.upd.upToDate': 'Orbit is up to date.',
   'st.upd.check': 'Check for updates',
@@ -614,6 +632,9 @@ export const en = {
 
   // Settings — Display
   'st.fontSize': 'Font size',
+  'st.fontSizeCustom': 'Custom',
+  'st.fontSizePx': 'Size in pixels',
+  'st.fontSizePxHint': 'Between 10 and 24 px. The interface zoom is applied on top.',
   'st.small': 'Small',
   'st.medium': 'Medium',
   'st.large': 'Large',
@@ -626,6 +647,13 @@ export const en = {
   'st.compactDesc': 'Reduces spacing between elements',
   'st.animations': 'Animations',
   'st.animationsDesc': 'Enables transitions and animations',
+  'st.animationStyle': 'Change animation',
+  'st.animationStyleDesc':
+    'When you switch app or profile. “None” also turns off interface animations.',
+  'st.animationNone': 'None',
+  'st.animationFade': 'Fade',
+  'st.animationSlide': 'Slide',
+  'st.animationZoom': 'Zoom',
   'st.appIcons': 'App icons',
   'st.appIconsDesc': 'Shows colored icons in the sidebar',
 

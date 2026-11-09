@@ -112,6 +112,7 @@
       "src/lib/phone.js",
       "src/lib/phoneDesktop.js",
       "src/lib/annotate.js",
+      "src/lib/videoEdit.js",
       "src/lib/sensitive.js",
       "src/lib/aiProviders.js",
       "build/icon.png",

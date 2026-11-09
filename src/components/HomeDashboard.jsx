@@ -44,7 +44,11 @@ export default function HomeDashboard({ apps = [], onOpenSearch, onOpenStore, on
   // Taille de police réglée par l'utilisateur : sur le fond d'écran on ne
   // reprend pas l'échelle de l'interface (elle est en rem, tout suivrait), on
   // l'applique en `px` — sinon l'accueil deviendrait démesuré en 120 %.
-  const basePx = ({ small: 12, medium: 14, large: 16, xlarge: 18 })[settings?.fontSize] ?? 14;
+  const customPx = Number(settings?.fontSizePx);
+  const basePx =
+    settings?.fontSize === 'custom'
+      ? Math.min(24, Math.max(10, Number.isFinite(customPx) && customPx > 0 ? customPx : 14))
+      : ({ small: 12, medium: 14, large: 16, xlarge: 18 })[settings?.fontSize] ?? 14;
   const scale = (settings?.uiScale ?? 100) / 100;
 
   // Libellé du raccourci de recherche, adapté à la plateforme (Alt+K / ⌘K).

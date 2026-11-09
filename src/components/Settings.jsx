@@ -110,7 +110,13 @@ export default function Settings({ onClose }) {
     setChecking(false);
     if (!r) return;
     if (r.success === false) {
-      setUpdateMsg(r.reason === 'unsupported' ? t('st.upd.unsupported') : t('st.upd.cantCheck'));
+      setUpdateMsg(
+        r.reason === 'unsupported'
+          ? t('st.upd.unsupported')
+          : r.detail
+            ? t('st.upd.cantCheckDetail', { detail: r.detail })
+            : t('st.upd.cantCheck')
+      );
     } else if (r.version && appVersion && r.version !== appVersion) {
       setUpdateMsg(t('st.upd.available', { version: r.version }));
     } else {
@@ -121,6 +127,8 @@ export default function Settings({ onClose }) {
   const t = useT();
 
   const currentProfile = profiles.find((profile) => profile.id === activeProfile);
+  const animationStyle =
+    settings.animationStyle ?? (settings.animationsEnabled === false ? 'none' : 'fade');
   const homeSource = currentProfile?.home || settings.home;
   const home = normalizeHome(homeSource);
   const updateHome = (updates) =>
@@ -665,6 +673,41 @@ export default function Settings({ onClose }) {
                           </button>
                         ))}
                       </div>
+                      {/* Taille libre : les quatre préréglages ne couvrent pas
+                          tous les écrans. On saisit la valeur en pixels, bornée
+                          à 10-24 px pour rester utilisable. */}
+                      <div
+                        className={`flex items-center gap-3 rounded-lg border-2 p-3 ${
+                          settings.fontSize === 'custom'
+                            ? 'border-accent-primary bg-accent-primary/10'
+                            : 'border-border'
+                        }`}
+                      >
+                        <button
+                          onClick={() => updateSettings({ fontSize: 'custom' })}
+                          className="text-sm font-medium flex-1 text-left"
+                        >
+                          {t('st.fontSizeCustom')}
+                        </button>
+                        <input
+                          type="number"
+                          min="10"
+                          max="24"
+                          step="1"
+                          value={settings.fontSizePx ?? 14}
+                          onChange={(e) => {
+                            const px = parseInt(e.target.value, 10);
+                            updateSettings({
+                              fontSize: 'custom',
+                              fontSizePx: Number.isFinite(px) ? px : 14,
+                            });
+                          }}
+                          className="input w-20 text-center"
+                          aria-label={t('st.fontSizePx')}
+                        />
+                        <span className="text-sm text-text-muted">px</span>
+                      </div>
+                      <p className="text-xs text-text-muted">{t('st.fontSizePxHint')}</p>
                     </div>
                   </div>
 
@@ -729,7 +772,7 @@ export default function Settings({ onClose }) {
                           type="range"
                           min="80"
                           max="120"
-                          step="5"
+                          step="1"
                           value={settings.uiScale ?? 100}
                           onChange={(e) => updateSettings({ uiScale: parseInt(e.target.value) })}
                           className="flex-1"
@@ -774,18 +817,29 @@ export default function Settings({ onClose }) {
                         />
                       </label>
 
-                      <label className="flex items-center justify-between">
+                      <div className="flex items-center justify-between gap-4">
                         <div>
-                          <div className="font-medium">{t('st.animations')}</div>
-                          <div className="text-sm text-text-muted">{t('st.animationsDesc')}</div>
+                          <div className="font-medium">{t('st.animationStyle')}</div>
+                          <div className="text-sm text-text-muted">{t('st.animationStyleDesc')}</div>
                         </div>
-                        <input
-                          type="checkbox"
-                          checked={settings.animationsEnabled}
-                          onChange={(e) => updateSettings({ animationsEnabled: e.target.checked })}
-                          className="w-12 h-6 bg-bg-hover rounded-full relative cursor-pointer appearance-none checked:bg-accent-primary transition-colors after:content-[''] after:absolute after:top-1 after:left-1 after:w-4 after:h-4 after:bg-white after:rounded-full after:transition-transform checked:after:translate-x-6"
-                        />
-                      </label>
+                        {/* Un seul choix porte l'arrêt ET le style : « aucune »
+                            coupe aussi les transitions de l'interface. */}
+                        <select
+                          value={animationStyle}
+                          onChange={(e) =>
+                            updateSettings({
+                              animationStyle: e.target.value,
+                              animationsEnabled: e.target.value !== 'none',
+                            })
+                          }
+                          className="input w-40 flex-shrink-0"
+                        >
+                          <option value="none">{t('st.animationNone')}</option>
+                          <option value="fade">{t('st.animationFade')}</option>
+                          <option value="slide">{t('st.animationSlide')}</option>
+                          <option value="zoom">{t('st.animationZoom')}</option>
+                        </select>
+                      </div>
 
                       <label className="flex items-center justify-between">
                         <div>

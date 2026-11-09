@@ -185,6 +185,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getVersion: () => ipcRenderer.invoke('app:getVersion'),
   checkForUpdate: () => ipcRenderer.invoke('update:check'),
   installUpdate: () => ipcRenderer.invoke('update:install'),
+  // Zoom appliqué dans une page (Ctrl + molette) : l'interface met à jour le
+  // zoom mémorisé de l'app correspondante.
+  onGuestZoom: (callback) => {
+    const listener = (_e, payload) => callback(payload);
+    ipcRenderer.on('orbit:guest-zoom', listener);
+    return () => ipcRenderer.removeListener('orbit:guest-zoom', listener);
+  },
   onUpdate: (callback) => {
     const channels = ['update:available', 'update:progress', 'update:downloaded', 'update:error'];
     const listeners = channels.map((ch) => {
@@ -366,7 +373,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Studio d'enregistrement (écran + caméra, composition et export)
   studio: {
     sources: () => ipcRenderer.invoke('studio:sources'),
-    prepare: (id) => ipcRenderer.invoke('studio:prepare', { id }),
+    prepare: (id, options) =>
+      ipcRenderer.invoke('studio:prepare', { id, ...(options || {}) }),
     cancelPrepare: () => ipcRenderer.invoke('studio:cancelPrepare'),
     // Appelé à la cadence de l'animation pendant le zoom suivi : volontairement
     // minimal, il ne fait que lire la position du pointeur.
@@ -385,6 +393,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     reveal: (path) => ipcRenderer.invoke('studio:reveal', { path }),
     hasFfmpeg: () => ipcRenderer.invoke('studio:hasFfmpeg'),
     toMp4: (path) => ipcRenderer.invoke('studio:toMp4', { path }),
+    edit: (payload) => ipcRenderer.invoke('studio:edit', payload),
   },
   // Coffre-fort de mots de passe intégré (trousseaux chiffrés)
   vault: {

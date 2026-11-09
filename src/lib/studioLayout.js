@@ -59,6 +59,10 @@ export const CAMERA_ALIGNS = ['middle', 'top', 'bottom'];
 export const DEFAULT_STYLE = {
   resolution: '720p',
   fps: 24,
+  // Ce qui s'entend dans la vidéo : 'mic' (défaut), 'system', 'both', 'none'.
+  // Le micro seul reste le défaut : il fonctionne partout, alors que le son du
+  // système dépend du système d'exploitation.
+  audioSource: 'mic',
   background: 'indigo',
   padding: 6, // % de la plus petite dimension
   radius: 14, // px à l'échelle de la sortie

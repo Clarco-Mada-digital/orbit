@@ -82,12 +82,16 @@ export const defaultSettings = {
   quietStart: '22:00',
   quietEnd: '07:00',
   startMinimized: false,
-  fontSize: 'medium', // small | medium | large | xlarge
+  fontSize: 'medium', // small | medium | large | xlarge | custom
+  fontSizePx: 14, // utilisé quand fontSize === 'custom' (10-24 px)
   fontFamily: 'Inter',
   uiScale: 100, // 80-120%
   compactMode: false,
   showAppIcons: true,
   animationsEnabled: true,
+  // Animation jouée au changement d'app / de profil.
+  // none | fade | slide | zoom — « none » coupe aussi les animations d'UI.
+  animationStyle: 'fade',
   // Couleur d'accent qui suit la couleur du profil actif
   accentPerProfile: false,
   // Barre système (tray) : fermer la fenêtre la réduit dans le tray (opt-in)
@@ -1106,7 +1110,10 @@ export const useStore = create(
       // la crée dans un profil verrouillé.
       // v16 : historique des conversations de l’assistant (`assistantSessions`).
       // Une installation existante démarre simplement avec un historique vide.
-      version: 16,
+      // v17 : style d'animation choisi (aucune / fondu / glissement / zoom).
+      // Une ancienne installation qui avait coupé les animations reste sans
+      // animation, au lieu de les voir revenir au premier lancement.
+      version: 17,
       migrate: (persistedState, version) => {
         // Fusionne les anciennes données avec les paramètres par défaut
         // (évite les champs manquants → bug "input non contrôlé")
@@ -1115,6 +1122,16 @@ export const useStore = create(
           ...base,
           settings: { ...defaultSettings, ...(base.settings || {}) },
         };
+        if (version < 17) {
+          next = {
+            ...next,
+            settings: {
+              ...next.settings,
+              animationStyle:
+                next.settings.animationsEnabled === false ? 'none' : 'fade',
+            },
+          };
+        }
         // v3 : nouveau champ `sleeping` sur les apps (veille)
         if (version < 3) {
           next = {

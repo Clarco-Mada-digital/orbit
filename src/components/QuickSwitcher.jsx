@@ -459,6 +459,24 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
         color: '#7c3aed',
         action: () => openFlyPage(url, { private: true }),
       });
+      // Fenêtre détachée : une vraie fenêtre Orbit, hors de la barre latérale.
+      // C'est le geste « je veux juste voir cette page, sans l'installer » —
+      // ni app, ni page volante qui reste ouverte dans l'espace de travail.
+      // Session en mémoire : rien n'est gardé sur le disque à la fermeture.
+      list.push({
+        type: 'url',
+        id: 'smart-url-detached',
+        name: t('qs.openUrlDetached'),
+        subtitle: `${url} — ${t('qs.openUrlDetachedDesc')}`,
+        color: '#0d9488',
+        action: () =>
+          window.electronAPI?.openDetached?.({
+            appId: `palette:${url}`,
+            url,
+            partition: 'priv:palette-detached',
+            title: url,
+          }),
+      });
       list.push({
         type: 'url',
         id: 'smart-url-external',

@@ -952,9 +952,17 @@ function setupPermissions(ses) {
             // usage unique et expire vite : une page embarquée qui demanderait
             // l'écran ensuite repasse par le choix explicite ci-dessous.
             const chosen = await studio.takePendingSource();
-            if (chosen) {
-              permLog(`partage d'écran — source choisie dans le studio : ${chosen.name}`);
-              callback({ video: chosen });
+            if (chosen?.source) {
+              permLog(`partage d'écran — source choisie dans le studio : ${chosen.source.name}`);
+              // Son du système : Electron ne sait demander une boucle audio que
+              // sous Windows. Ailleurs, on rend la vidéo seule — le studio
+              // explique déjà que le micro reste alors la seule source fiable.
+              callback({
+                video: chosen.source,
+                ...(chosen.audio && process.platform === 'win32'
+                  ? { audio: 'loopback' }
+                  : {}),
+              });
               return;
             }
 
@@ -3780,7 +3788,27 @@ async function openActiveEditorCorrection(wc, action) {
   }
 }
 
+// Boutons « précédent / suivant » de la souris. Chromium les signale par
+// `app-command` sur le webContents de la page ; sans écoute, le clic ne fait
+// rien dans une app embarquée. On les traite donc comme les boutons de la
+// barre du haut : retour / avance dans l'historique de la page.
+const mouseNavAttached = new WeakSet();
+function attachMouseNavigation(contents) {
+  if (!contents || mouseNavAttached.has(contents)) return;
+  mouseNavAttached.add(contents);
+  contents.on('app-command', (_event, command) => {
+    try {
+      const nav = contents.navigationHistory;
+      if (command === 'browser-backward' && nav?.canGoBack?.()) nav.goBack();
+      else if (command === 'browser-forward' && nav?.canGoForward?.()) nav.goForward();
+    } catch {
+      /* page en cours de destruction : rien à faire */
+    }
+  });
+}
+
 function attachPageShortcuts(contents) {
+  attachMouseNavigation(contents);
   contents.on('before-input-event', (event, input) => {
     const action = matchShortcutInput(input, assistantChatShortcutKey);
     if (!action) return;
@@ -5772,10 +5800,23 @@ ipcMain.handle('app:openDetached', async (_e, { appId, url, partition, title } =
     });
   };
   attachDetachedPopupHandler(win.webContents, win);
+  attachMouseNavigation(win.webContents);
   win.loadURL(url);
   detachedWindows.set(appId, win);
   win.on('closed', () => detachedWindows.delete(appId));
   return { success: true };
+});
+
+// Zoom à la molette : le preload de la page a déjà appliqué le facteur dans le
+// guest ; on le renvoie à l'interface pour le persister sur l'app concernée.
+ipcMain.on('guest:zoom', (event, payload = {}) => {
+  const factor = Number(payload?.factor);
+  if (!Number.isFinite(factor)) return;
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  mainWindow.webContents.send('orbit:guest-zoom', {
+    wcId: event.sender.id,
+    factor: Math.min(3, Math.max(0.5, factor)),
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -6752,7 +6793,8 @@ function handleFromUi(channel, fn) {
 // énumérer les écrans, lire la position du curseur, ni écrire une vidéo.
 handleFromUi('studio:sources', () => studio.listSources());
 // Dépose le choix de source juste avant la capture (voir studio.js).
-handleFromUi('studio:prepare', (_e, { id } = {}) => studio.setPendingSource(id));
+handleFromUi('studio:prepare', (_e, payload = {}) =>
+  studio.setPendingSource(payload.id, { audio: payload.audio }));
 handleFromUi('studio:cancelPrepare', () => studio.clearPendingSource());
 handleFromUi('studio:cursor', () => studio.cursorPoint());
 // Pendant l'enregistrement seulement : voir setThrottling dans studio.js.
@@ -6771,6 +6813,7 @@ handleFromUi('studio:saveAs', (e, payload = {}) =>
 handleFromUi('studio:reveal', (_e, payload = {}) => studio.revealRecording(payload));
 handleFromUi('studio:hasFfmpeg', () => ({ success: true, available: studio.hasFfmpeg() }));
 handleFromUi('studio:toMp4', (_e, payload = {}) => studio.convertToMp4(payload));
+handleFromUi('studio:edit', (_e, payload = {}) => studio.editRecording(payload));
 
 handleFromUi('vault:state', () => vault.getState());
 handleFromUi('vault:create', (_e, payload) => vault.create(payload));
@@ -7271,29 +7314,55 @@ function updateSupported() {
 }
 
 let updateInitDone = false;
+// Dernière erreur connue de l'auto-update. Elle est renvoyée au bouton
+// « Vérifier les mises à jour » : « impossible de vérifier » sans la raison
+// laissait l'utilisateur devant un échec muet, sans piste (réseau, dépôt
+// privé, release sans latest.yml…).
+let lastUpdateError = '';
 function initAutoUpdate() {
   if (updateInitDone || !updateSupported()) return;
   updateInitDone = true;
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
+  // Les journaux d'electron-updater passent par la console : c'est la seule
+  // trace disponible dans les journaux d'Orbit quand le flux échoue.
+  try {
+    autoUpdater.logger = console;
+  } catch {
+    /* version sans journalisation : sans importance */
+  }
   const send = (channel, payload) => {
     if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload);
   };
   autoUpdater.on('update-available', (info) => send('update:available', { version: info?.version }));
   autoUpdater.on('download-progress', (p) => send('update:progress', { percent: Math.round(p?.percent || 0) }));
   autoUpdater.on('update-downloaded', (info) => send('update:downloaded', { version: info?.version }));
-  autoUpdater.on('error', (e) => send('update:error', { message: String(e?.message || e) }));
-  autoUpdater.checkForUpdates().catch(() => {});
+  autoUpdater.on('error', (e) => {
+    lastUpdateError = String(e?.message || e);
+    console.error('[orbit] mise à jour :', lastUpdateError);
+    send('update:error', { message: lastUpdateError });
+  });
+  autoUpdater.checkForUpdates().catch((e) => {
+    lastUpdateError = String(e?.message || e);
+  });
 }
 
 ipcMain.handle('update:check', async () => {
   if (!updateSupported()) return { success: false, reason: 'unsupported' };
   initAutoUpdate();
+  lastUpdateError = '';
   try {
     const r = await autoUpdater.checkForUpdates();
-    return { success: true, version: r?.updateInfo?.version || null };
+    return {
+      success: true,
+      version: r?.updateInfo?.version || null,
+      currentVersion: app.getVersion(),
+    };
   } catch (e) {
-    return { success: false, reason: String(e?.message || e) };
+    const detail = String(e?.message || e) || lastUpdateError;
+    lastUpdateError = detail;
+    console.error('[orbit] vérification de mise à jour échouée :', detail);
+    return { success: false, reason: 'error', detail };
   }
 });
 ipcMain.handle('update:install', () => {
