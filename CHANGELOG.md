@@ -31,6 +31,23 @@ La plus récente en premier.
   remplissage du formulaire actif (`Alt+Maj+F`), listes déroulantes, images et
   nouveaux types.
 
+### Corrigé
+- **Fenêtre détachée : zoom, rechargement et clic droit.** Cette fenêtre n'avait
+  ni barre d'outils ni raccourcis : une page trop petite ou bloquée n'offrait
+  aucune issue. Elle reçoit maintenant le même preload que les pages
+  embarquées (donc `Ctrl + molette`), `Ctrl +` / `Ctrl -` / `Ctrl 0` pour le
+  zoom, `Ctrl + R` / `F5` pour recharger, `Alt + ←/→` pour l'historique, et un
+  clic droit avec copier/coller, précédent/suivant, recharger et zoom. Le zoom
+  part de la valeur de l'app et y est mémorisé.
+- **Pages volantes : le vrai nom et la vraie icône du site.** Un lien libre
+  s'appelait jusqu'ici par son domaine et retombait sur un globe ou l'icône
+  d'un service tiers. La barre latérale affiche désormais le titre de la page
+  (comme un onglet de navigateur) dès que le moteur le connaît, et l'icône est
+  le favicon réellement déclaré par le site. En cause : l'écouteur de favicon
+  était branché sur `favicon-updated`, un événement qui n'existe pas dans
+  Electron — le bon nom est `page-favicon-updated`. Une page privée en profite
+  aussi ; sa pastille de lunettes la distingue toujours.
+
 ## [1.19.1] — 2026-11-08
 
 ### Ajouté

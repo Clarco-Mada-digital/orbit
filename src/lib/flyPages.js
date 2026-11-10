@@ -75,6 +75,21 @@ export function buildFlyPage({ id, target, isPrivate = false, filePath = null, o
   };
 }
 
+// Nom AFFICHÉ dans la barre latérale.
+//
+// Une page volante n'a pas de nom choisi par l'utilisateur : `name` n'est que
+// le domaine (ou le fichier), calculé avant tout chargement. Dès que le moteur
+// connaît le titre de la page (`page-title-updated`, déjà enregistré dans
+// `title`), c'est lui qu'on montre — comme un onglet de navigateur. Un
+// document local, lui, garde son nom de fichier : le titre de son contenu
+// (« Rapport annuel ») ne dit pas quel fichier est ouvert.
+export function flyPageLabel(page) {
+  const name = String(page?.name || '').trim();
+  if (!page?.ephemeral || page.filePath) return name;
+  const title = String(page?.title || '').replace(/\s+/g, ' ').trim();
+  return title || name;
+}
+
 // Identifiant d'une page volante.
 //
 // L'horodatage ne suffit PAS : le système peut passer plusieurs fichiers d'un

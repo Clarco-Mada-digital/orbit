@@ -54,10 +54,16 @@ export default function AppIcon({ app, className = '', fallbackClassName = '' })
 
   // Une image « placeholder » se charge sans erreur mais n'est pas la vraie
   // icône (générique 16×16). On la considère comme un échec → source suivante.
+  //
+  // Exception : le favicon qu'une page déclare elle-même. Beaucoup de sites
+  // n'en publient qu'un 16×16, et c'est malgré tout LEUR icône — pour un lien
+  // libre (page volante), mieux vaut la vraie petite icône que le dessin
+  // générique d'un service tiers.
   const handleLoad = (e) => {
     const el = e.currentTarget;
     try {
-      if (el.naturalWidth > 0 && el.naturalWidth < 24 && el.naturalHeight < 24) {
+      const ownFavicon = Boolean(app.ephemeral) && Boolean(app.favicon) && current === app.favicon;
+      if (!ownFavicon && el.naturalWidth > 0 && el.naturalWidth < 24 && el.naturalHeight < 24) {
         setSrcIdx((i) => i + 1);
       }
     } catch {

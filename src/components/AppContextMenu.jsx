@@ -180,6 +180,8 @@ export default function AppContextMenu({ appId, x, y, onClose }) {
       url: app.url,
       partition: appPartition(app, sharedSession),
       title: app.name,
+      // Même taille de texte que l'onglet embarqué (et zoom mémorisé).
+      zoom: app.zoom,
     });
     onClose();
   };

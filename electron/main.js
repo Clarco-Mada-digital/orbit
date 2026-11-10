@@ -2407,6 +2407,26 @@ function buildGuestContextMenu(wc, params) {
   t.push({ label: 'Précédent', enabled: canBack, click: goBack });
   t.push({ label: 'Suivant', enabled: canFwd, click: goForward });
   t.push({ label: 'Recharger', click: () => wc.reload() });
+  // Zoom : la barre du haut ne s'applique qu'aux apps embarquées. Dans une
+  // fenêtre secondaire (détachée, pop-up), c'est ici — ou au clavier — qu'on
+  // règle la taille du texte.
+  t.push({
+    label: 'Zoom',
+    submenu: [
+      {
+        label: 'Agrandir (Ctrl +)',
+        click: () => applyWindowZoom(wc, wc.getZoomFactor() + 0.1),
+      },
+      {
+        label: 'Réduire (Ctrl -)',
+        click: () => applyWindowZoom(wc, wc.getZoomFactor() - 0.1),
+      },
+      {
+        label: `Taille normale — ${Math.round(wc.getZoomFactor() * 100)} %`,
+        click: () => applyWindowZoom(wc, 1),
+      },
+    ],
+  });
   t.push({ label: "Copier l'adresse de la page", click: () => clipboard.writeText(wc.getURL()) });
   if (isDev) {
     t.push({ type: 'separator' });
@@ -3804,6 +3824,111 @@ function attachMouseNavigation(contents) {
     } catch {
       /* page en cours de destruction : rien à faire */
     }
+  });
+}
+
+// Zoom d'une page : mêmes bornes que dans Orbit (0.5 → 3, pas de 0.1).
+function clampPageZoom(factor) {
+  const value = Number(factor);
+  if (!Number.isFinite(value)) return 1;
+  return Math.min(3, Math.max(0.5, Math.round(value * 100) / 100));
+}
+
+// App de la fenêtre détachée qui héberge ce webContents (null sinon).
+function detachedAppIdForWc(wcId) {
+  for (const [appId, win] of detachedWindows) {
+    if (!win.isDestroyed() && win.webContents.id === wcId) return appId;
+  }
+  return null;
+}
+
+// Applique un zoom à une fenêtre dont la page n'est pas un <webview> géré par
+// l'interface, et prévient celle-ci pour que la valeur soit mémorisée sur
+// l'app (boutons de la barre cohérents, zoom retrouvé au redémarrage).
+function applyWindowZoom(contents, factor) {
+  const zoom = clampPageZoom(factor);
+  try {
+    contents.setZoomFactor(zoom);
+  } catch {
+    return;
+  }
+  if (!mainWindow || mainWindow.isDestroyed()) return;
+  const appId = detachedAppIdForWc(contents.id);
+  mainWindow.webContents.send('orbit:guest-zoom', {
+    wcId: contents.id,
+    factor: zoom,
+    ...(appId ? { appId } : {}),
+  });
+}
+
+// Raccourcis d'une fenêtre SANS habitacle Orbit (fenêtre détachée, pop-up).
+// Ces fenêtres n'ont ni barre d'outils ni menu d'application : sans ça, une
+// page au zoom illisible ou une page bloquée n'offre aucune issue. On
+// reproduit donc les gestes d'un navigateur.
+const windowShortcutsAttached = new WeakSet();
+function attachWindowShortcuts(contents) {
+  if (!contents || windowShortcutsAttached.has(contents)) return;
+  windowShortcutsAttached.add(contents);
+  contents.on('before-input-event', (event, input) => {
+    if (input.type !== 'keyDown') return;
+    const mod = process.platform === 'darwin' ? input.meta : input.control;
+    const key = String(input.key || '');
+    const lower = key.toLowerCase();
+    const code = String(input.code || '');
+
+    if (mod) {
+      // Ctrl/Cmd + « + » : le clavier envoie « = » sans Maj et « + » avec.
+      if (key === '+' || key === '=' || code === 'NumpadAdd') {
+        event.preventDefault();
+        applyWindowZoom(contents, contents.getZoomFactor() + 0.1);
+        return;
+      }
+      if (key === '-' || key === '_' || code === 'NumpadSubtract') {
+        event.preventDefault();
+        applyWindowZoom(contents, contents.getZoomFactor() - 0.1);
+        return;
+      }
+      if (key === '0' || code === 'Numpad0') {
+        event.preventDefault();
+        applyWindowZoom(contents, 1);
+        return;
+      }
+      if (lower === 'r') {
+        event.preventDefault();
+        if (input.shift) contents.reloadIgnoringCache();
+        else contents.reload();
+        return;
+      }
+    }
+    if (key === 'F5') {
+      event.preventDefault();
+      if (input.shift) contents.reloadIgnoringCache();
+      else contents.reload();
+      return;
+    }
+    // Historique au clavier, comme dans un navigateur (Alt + flèches).
+    if (input.alt && (lower === 'arrowleft' || lower === 'arrowright')) {
+      try {
+        const nav = contents.navigationHistory;
+        event.preventDefault();
+        if (lower === 'arrowleft') nav?.goBack?.();
+        else nav?.goForward?.();
+      } catch {
+        /* page en cours de destruction */
+      }
+    }
+  });
+}
+
+// Clic droit dans une fenêtre sans interface Orbit : menu natif (copier,
+// coller, lien, précédent/suivant, recharger, zoom).
+const windowContextMenuAttached = new WeakSet();
+function attachWindowContextMenu(contents, ownerWindow) {
+  if (!contents || windowContextMenuAttached.has(contents)) return;
+  windowContextMenuAttached.add(contents);
+  contents.on('context-menu', (event, params) => {
+    event.preventDefault();
+    showGuestContextMenu(contents, params, ownerWindow);
   });
 }
 
@@ -5726,7 +5851,7 @@ ipcMain.handle('downloads:openTorrent', async (_event, value) => {
 // Ouvrir une app dans une fenêtre DÉTACHÉE (séparée), en réutilisant la même
 // partition → session/connexion partagée avec l'onglet embarqué.
 const detachedWindows = new Map();
-ipcMain.handle('app:openDetached', async (_e, { appId, url, partition, title } = {}) => {
+ipcMain.handle('app:openDetached', async (_e, { appId, url, partition, title, zoom } = {}) => {
   if (!url || !/^https?:\/\//.test(url) || !partition) return { success: false };
   if (!isPrivatePartition(partition)) {
     const extensionsReady = await ensureExtensionsForPartition(partition);
@@ -5759,11 +5884,17 @@ ipcMain.handle('app:openDetached', async (_e, { appId, url, partition, title } =
       nodeIntegration: false,
       sandbox: true,
       spellcheck: true,
+      // Le même preload que les pages embarquées : Ctrl + molette, vrais
+      // dialogues (alert/confirm/prompt), remplissage des identifiants et
+      // bouton de données de test marchent donc ici aussi.
+      preload: path.join(__dirname, 'credentials-preload.cjs'),
     },
   });
   win.setMenuBarVisibility(false);
   win.webContents.setUserAgent(CHROME_UA);
   attachPageShortcuts(win.webContents);
+  attachWindowShortcuts(win.webContents);
+  attachWindowContextMenu(win.webContents, win);
   const attachDetachedPopupHandler = (contents, parentWindow) => {
     contents.setWindowOpenHandler(({ url: popupUrl }) => {
       if (
@@ -5796,11 +5927,26 @@ ipcMain.handle('app:openDetached', async (_e, { appId, url, partition, title } =
     contents.on('did-create-window', (childWindow) => {
       childWindow.webContents.setUserAgent(CHROME_UA);
       attachPageShortcuts(childWindow.webContents);
+      attachWindowShortcuts(childWindow.webContents);
+      attachWindowContextMenu(childWindow.webContents, childWindow);
       attachDetachedPopupHandler(childWindow.webContents, childWindow);
     });
   };
   attachDetachedPopupHandler(win.webContents, win);
   attachMouseNavigation(win.webContents);
+  // Zoom mémorisé de l'app : la fenêtre s'ouvre à la même taille de texte que
+  // l'onglet embarqué, pas à 100 % à chaque fois.
+  const initialZoom = clampPageZoom(zoom);
+  if (initialZoom !== 1) {
+    win.webContents.once('did-finish-load', () => {
+      if (win.isDestroyed()) return;
+      try {
+        win.webContents.setZoomFactor(initialZoom);
+      } catch {
+        /* fenêtre fermée entre-temps */
+      }
+    });
+  }
   win.loadURL(url);
   detachedWindows.set(appId, win);
   win.on('closed', () => detachedWindows.delete(appId));
@@ -5812,10 +5958,23 @@ ipcMain.handle('app:openDetached', async (_e, { appId, url, partition, title } =
 ipcMain.on('guest:zoom', (event, payload = {}) => {
   const factor = Number(payload?.factor);
   if (!Number.isFinite(factor)) return;
+  const zoom = Math.min(3, Math.max(0.5, factor));
+  // Fenêtre détachée : sa page n'est pas un <webview> de l'interface, donc on
+  // applique aussi le zoom au webContents (il survit aux navigations) et on
+  // nomme l'app d'origine pour que l'interface la retrouve.
+  const appId = detachedAppIdForWc(event.sender.id);
+  if (appId) {
+    try {
+      event.sender.setZoomFactor(zoom);
+    } catch {
+      /* fenêtre en cours de fermeture */
+    }
+  }
   if (!mainWindow || mainWindow.isDestroyed()) return;
   mainWindow.webContents.send('orbit:guest-zoom', {
     wcId: event.sender.id,
-    factor: Math.min(3, Math.max(0.5, factor)),
+    factor: zoom,
+    ...(appId ? { appId } : {}),
   });
 });
 

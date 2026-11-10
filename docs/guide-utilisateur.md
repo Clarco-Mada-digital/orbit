@@ -81,6 +81,10 @@ intégrée ou ajoutez une URL web.
   les apps.
 - Le clic droit sur une app donne accès aux actions telles que favori, veille,
   fenêtre détachée, déplacement de profil ou gestion de session.
+- La **fenêtre détachée** garde les gestes d’un navigateur : `Ctrl + molette`
+  pour le zoom (aussi `Ctrl +`, `Ctrl -` et `Ctrl 0`), `Ctrl + R` ou `F5` pour
+  recharger, `Alt + ←/→` pour l’historique. Le clic droit y propose copier,
+  coller, précédent, suivant, recharger et le zoom.
 
 ### Profils et sessions
 

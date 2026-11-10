@@ -248,13 +248,20 @@ const [editUrlFor, setEditUrlFor] = useState(null); // { id, url } — boîte «
   // zoom dans la page et nous prévient ; on persiste la valeur sur l'app, pour
   // que les boutons de la barre et le prochain démarrage la retrouvent.
   useEffect(() => {
-    const off = window.electronAPI?.onGuestZoom?.(({ wcId, factor } = {}) => {
+    const off = window.electronAPI?.onGuestZoom?.(({ appId, wcId, factor } = {}) => {
       const zoom = Number(factor);
       if (!Number.isFinite(zoom)) return;
+      const value = Math.min(3, Math.max(0.5, zoom));
+      // Fenêtre détachée : son webContents n'est pas un <webview> enregistré
+      // côté interface, c'est le processus principal qui nomme l'app.
+      if (appId) {
+        updateApp(appId, { zoom: value });
+        return;
+      }
       const found = getRegisteredWebviews().find(
-        ([appId]) => getWebContentsIdFor(appId) === wcId
+        ([id]) => getWebContentsIdFor(id) === wcId
       );
-      if (found) updateApp(found[0], { zoom: Math.min(3, Math.max(0.5, zoom)) });
+      if (found) updateApp(found[0], { zoom: value });
     });
     return () => {
       if (typeof off === 'function') off();

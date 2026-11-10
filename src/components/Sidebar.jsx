@@ -12,6 +12,7 @@ import { getWebview, getRegisteredWebviews } from '../lib/webviewRegistry';
 import { useT } from '../lib/i18n';
 import { useZoneHold, REVEALED_BAR_Z } from '../lib/autoHide';
 import { useDismiss } from '../lib/useDismiss';
+import { flyPageLabel } from '../lib/flyPages';
 import {
   groupByFolder,
   foldersFor,
@@ -1074,6 +1075,9 @@ export default function Sidebar({
               </div>
             )}
             <div className={collapsed ? 'space-y-1 px-2' : 'space-y-0.5 px-2'}>
+              {/* Nom affiché : le titre de la page dès qu'il est connu (comme
+                  un onglet de navigateur), sinon le domaine — voir
+                  flyPageLabel(). L'adresse complète reste dans l'infobulle. */}
               {flyPages.map((page) => (
                 <div
                   key={page.id}
@@ -1081,7 +1085,7 @@ export default function Sidebar({
                   onContextMenu={(e) => onFlyPageMenu?.(e, page)}
                   onMouseEnter={(e) => showMemPopup(page, e)}
                   onMouseLeave={hideMemPopup}
-                  title={`${page.private ? `${t('fly.privateBadge')} — ` : ''}${collapsed ? page.name : page.url}`}
+                  title={`${page.private ? `${t('fly.privateBadge')} — ` : ''}${flyPageLabel(page)}${page.url ? ` — ${page.url}` : ''}`}
                   className={`w-full flex items-center gap-2 ${
                     settings.compactMode ? 'px-2 py-1.5' : 'px-2 py-1.5'
                   } rounded-lg cursor-pointer transition-all group relative border border-dashed ${
@@ -1106,7 +1110,7 @@ export default function Sidebar({
                   </div>
                   {!collapsed && (
                     <>
-                      <span className="flex-1 min-w-0 truncate text-xs">{page.name}</span>
+                      <span className="flex-1 min-w-0 truncate text-xs">{flyPageLabel(page)}</span>
                       <button
                         onClick={(e) => {
                           e.stopPropagation(); // sans ça, le clic sélectionnerait la page

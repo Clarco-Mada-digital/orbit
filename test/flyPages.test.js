@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { buildFlyPage, flyPageId, flyPageIcon, flyPageColor } from '../src/lib/flyPages.js';
+import { buildFlyPage, flyPageId, flyPageIcon, flyPageColor, flyPageLabel } from '../src/lib/flyPages.js';
 import { flyPageTarget } from '../src/lib/urls.js';
 
 // La FORME d'une page volante décide de son affichage : `kind` envoie le
@@ -69,6 +69,40 @@ test('le chemin local est ignoré pour une adresse web', () => {
   // la page affichée.
   const page = pageFor('https://exemple.com/a.md', { filePath: '/tmp/autre.md' });
   assert.equal(page.filePath, null);
+});
+
+test('le nom affiché d’un lien libre devient le titre de la page', () => {
+  // Avant chargement, une page volante n'a que son domaine : c'est‑à‑dire le
+  // lien brut. Dès que le moteur annonce le titre, la barre latérale doit s'en
+  // servir — comme un onglet de navigateur.
+  const page = pageFor('https://exemple.com/article');
+  assert.equal(flyPageLabel(page), 'exemple.com', 'sans titre : le domaine');
+  assert.equal(flyPageLabel({ ...page, title: 'Exemple — Actualités' }), 'Exemple — Actualités');
+  assert.equal(
+    flyPageLabel({ ...page, title: '  Un   titre\n très  long  ' }),
+    'Un titre très long',
+    'espaces réduits au rendu d’un seul nom'
+  );
+  assert.equal(flyPageLabel({ ...page, title: '   ' }), 'exemple.com', 'titre vide : repli');
+  assert.equal(flyPageLabel({ ...page, title: '' }), 'exemple.com');
+  // Une page privée est aussi un lien : son titre est pertinent (la pastille
+  // de lunettes reste affichée sur l'icône).
+  const priv = pageFor('https://exemple.com', { isPrivate: true, id: 'priv-1' });
+  assert.equal(flyPageLabel({ ...priv, title: 'Boîte de réception' }), 'Boîte de réception');
+});
+
+test('le nom d’une app installée et d’un document local ne bougent pas', () => {
+  // Le titre d'une page ne doit JAMAIS écraser le nom choisi par l'utilisateur.
+  assert.equal(
+    flyPageLabel({ name: 'Mon Gmail', title: 'Boîte de réception', ephemeral: false }),
+    'Mon Gmail'
+  );
+  // Un fichier local garde son nom de fichier : le titre de son contenu
+  // désignerait mal ce qui est ouvert sur le disque.
+  const target = { url: 'file:///tmp/rapport.html', name: 'rapport.html', kind: 'page', local: true };
+  const doc = buildFlyPage({ id: 'fly-3', target, filePath: '/tmp/rapport.html', now: 1 });
+  assert.equal(flyPageLabel({ ...doc, title: 'Rapport annuel' }), 'rapport.html');
+  assert.equal(flyPageLabel(null), '');
 });
 
 test('deux pages ouvertes dans la même milliseconde ont des identifiants distincts', () => {

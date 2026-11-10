@@ -256,6 +256,9 @@ export default function WebView({ app, active, visible, flexLayout }) {
       }
     };
 
+    // Favicon RÉEL de la page, comme un onglet de navigateur. Il vaut aussi
+    // pour une page privée : l'icône n'apprend rien de plus que le domaine
+    // (déjà visible) et les lunettes restent affichées en pastille.
     const handleFavicon = (e) => {
       const icon = e.favicons && e.favicons.length > 0 ? e.favicons[0] : undefined;
       if (icon) updateApp(app.id, { favicon: icon });
@@ -358,7 +361,10 @@ export default function WebView({ app, active, visible, flexLayout }) {
     wv.addEventListener('did-navigate', handleNavigate);
     wv.addEventListener('did-navigate-in-page', handleNavigate);
     wv.addEventListener('page-title-updated', handleTitle);
-    wv.addEventListener('favicon-updated', handleFavicon);
+    // L'événement du <webview> est `page-favicon-updated` (et non
+    // `favicon-updated`) : mal orthographié, il ne se déclenchait jamais et
+    // l'icône retombait sur le service de favicons par domaine.
+    wv.addEventListener('page-favicon-updated', handleFavicon);
     wv.addEventListener('did-fail-load', handleDidFailLoad);
     wv.addEventListener('render-process-gone', handleRenderGone);
     wv.addEventListener('crashed', handleRenderGone); // héritage (Electron ancien)
@@ -376,7 +382,7 @@ export default function WebView({ app, active, visible, flexLayout }) {
       wv.removeEventListener('did-navigate', handleNavigate);
       wv.removeEventListener('did-navigate-in-page', handleNavigate);
       wv.removeEventListener('page-title-updated', handleTitle);
-      wv.removeEventListener('favicon-updated', handleFavicon);
+      wv.removeEventListener('page-favicon-updated', handleFavicon);
       wv.removeEventListener('did-fail-load', handleDidFailLoad);
       wv.removeEventListener('render-process-gone', handleRenderGone);
       wv.removeEventListener('crashed', handleRenderGone);
