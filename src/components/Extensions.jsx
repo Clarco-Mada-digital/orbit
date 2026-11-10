@@ -820,6 +820,27 @@ export default function Extensions() {
                           {t('fakeExt.export')}
                         </button>
                       </div>
+                      {/* Photos : seules valeurs qui passent par un service
+                          externe (portraits de stock / Lorem Picsum). */}
+                      <label className="flex items-start gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={settings.fakeData?.photos !== 'off'}
+                          onChange={(e) => {
+                            const fakeData = {
+                              ...(settings.fakeData || {}),
+                              photos: e.target.checked ? 'on' : 'off',
+                            };
+                            updateSettings({ fakeData });
+                            saveFakeDataSettings(fakeData);
+                          }}
+                          className="mt-0.5 accent-accent-primary"
+                        />
+                        <span>
+                          <span className="block text-xs text-text-primary">{t('fake.photos')}</span>
+                          <span className="block text-xs text-text-muted">{t('fake.photosHint')}</span>
+                        </span>
+                      </label>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                         {[
                           { key: 'firstName', label: 'fake.firstName' },
@@ -827,10 +848,14 @@ export default function Extensions() {
                           { key: 'email', label: 'fake.email' },
                           { key: 'phone', label: 'fake.phone' },
                           { key: 'username', label: 'fake.username' },
+                          { key: 'avatar', label: 'fake.avatar' },
                           { key: 'city', label: 'fake.city' },
                           { key: 'zip', label: 'fake.zip' },
                           { key: 'address', label: 'fake.address' },
                           { key: 'company', label: 'fake.company' },
+                          { key: 'country', label: 'fake.country' },
+                          { key: 'region', label: 'fake.region' },
+                          { key: 'jobTitle', label: 'fake.jobTitle' },
                           { key: 'text', label: 'fake.text' },
                         ].map(({ key, label }) => {
                           const TextField = key === 'text' ? 'textarea' : 'input';

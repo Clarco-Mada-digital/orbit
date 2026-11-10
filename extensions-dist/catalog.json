@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generatedAt": "2026-11-08T06:30:55.823Z",
+  "generatedAt": "2026-11-10T08:56:37.601Z",
   "extensions": [
     {
       "file": "color-picker.zip",
@@ -14,11 +14,11 @@
     {
       "file": "fake-data-filler-orbit.zip",
       "name": "Fake Data Filler (Orbit)",
-      "version": "1.6.0",
-      "description": "Remplit des champs ou un formulaire actif avec des données réalistes et du Lorem Ipsum.",
+      "version": "1.7.0",
+      "description": "Remplit les champs de formulaires non de connexion avec des données réalistes (identité, adresse, IBAN et carte de test, dates) et des images de test : photo de profil et fichier image généré localement. Inspiré des extensions Fake Filler / Fill Millier.",
       "nativeApp": null,
-      "size": 27119,
-      "sha256": "298b9d8a8bbe1a5745925373bdf69660f4028e8b618eaa1b759db30fd9b38b73"
+      "size": 29448,
+      "sha256": "aab1f66f53e29693b85bc649dc4dd99cfdc18d11f6ac30fbb8d7cb4b414816a4"
     },
     {
       "file": "mouse-scroll.zip",

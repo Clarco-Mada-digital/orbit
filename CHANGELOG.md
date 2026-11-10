@@ -8,6 +8,29 @@ Format : une section `## [X.Y.Z] — AAAA-MM-JJ` par version, puis des
 sous-sections `### Ajouté` / `### Modifié` / `### Corrigé` / `### Sécurité`.
 La plus récente en premier.
 
+## [1.20.0] — 2026-11-10
+
+### Ajouté
+- **Fake data : les images de test.** Un champ d’avatar ou d’URL de photo reçoit
+  l’adresse d’un portrait de stock (Random User Generator) ou d’une photo
+  aléatoire (Lorem Picsum). Un champ de fichier qui attend une image reçoit un
+  vrai fichier PNG **dessiné localement** dans un `<canvas>` et injecté via
+  `DataTransfer` : aperçus et contrôles de type le voient comme un fichier
+  choisi à la main, sans aucune requête réseau. Les champs de fichier qui
+  n’acceptent pas d’image (`.pdf`, documents) sont ignorés.
+- **Fake data : identité et paiement de test.** Le détecteur reconnaît en plus le
+  sexe, la date de naissance, l’âge, l’IBAN français (clé modulo 97 valide), le
+  numéro de carte (valide au sens de Luhn, préfixe de test 4242), la date
+  d’expiration future et le cryptogramme. Les listes déroulantes, cases à cocher,
+  boutons radio, plages, couleurs, dates et heures sont remplies comme avant,
+  désormais aussi depuis l’extension ZIP.
+- **Réglages → Extensions : nouveaux champs personnalisés** (photo de profil,
+  pays, région, fonction) et option **« Photos et images de test »** pour couper
+  les adresses d’images externes et n’utiliser que le dessin local.
+- **Extension Fake Data Filler 1.7.0** (ZIP) alignée sur le chemin natif :
+  remplissage du formulaire actif (`Alt+Maj+F`), listes déroulantes, images et
+  nouveaux types.
+
 ## [1.19.1] — 2026-11-08
 
 ### Ajouté

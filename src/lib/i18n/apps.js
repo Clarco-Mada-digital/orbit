@@ -25,6 +25,13 @@ export const fr = {
   'fake.zip': 'Code postal',
   'fake.address': 'Adresse',
   'fake.company': 'Société',
+  'fake.country': 'Pays',
+  'fake.region': 'Région',
+  'fake.jobTitle': 'Fonction',
+  'fake.avatar': 'Photo de profil (URL)',
+  'fake.photos': 'Photos et images de test',
+  'fake.photosHint':
+    'Insère l’adresse d’un portrait de stock (randomuser.me) ou d’une photo aléatoire (picsum.photos). Décochez pour n’utiliser aucun service externe ; les images téléversées sont toujours dessinées localement.',
 
   // Extension Fake Data Filler (native, built into Orbit)
   'fakeExt.title': 'Fake Data Filler',
@@ -36,7 +43,7 @@ export const fr = {
   'fakeExt.exporting': 'Exportation…',
   'fakeExt.settingsDesc': 'Personnalisez les valeurs du bouton 🎲, y compris le texte des champs libres. Laissez vide pour une valeur aléatoire.',
   'fakeExt.saved': 'Enregistré avec succès',
-  'fakeExt.usageNote': 'Le bouton 🎲 apparaît automatiquement sur les champs de formulaire (sauf connexion). Alt+F remplit le champ focalisé ; Alt+Maj+F remplit les champs visibles du formulaire actif. Les champs de connexion sont ignorés. Vos valeurs personnalisées sont utilisées en priorité.',
+  'fakeExt.usageNote': 'Le bouton 🎲 apparaît automatiquement sur les champs de formulaire (sauf connexion), y compris les champs d’image (avatar, couverture) qui reçoivent un fichier PNG dessiné localement. Alt+F remplit le champ focalisé ; Alt+Maj+F remplit les champs visibles du formulaire actif. Les champs de connexion sont ignorés. Vos valeurs personnalisées sont utilisées en priorité.',
   'fakeExt.enable': 'Activer',
   'fakeExt.disable': 'Désactiver',
   'fakeExt.remove': 'Supprimer',
@@ -550,6 +557,13 @@ export const en = {
   'fake.zip': 'Postal code',
   'fake.address': 'Address',
   'fake.company': 'Company',
+  'fake.country': 'Country',
+  'fake.region': 'Region',
+  'fake.jobTitle': 'Job title',
+  'fake.avatar': 'Profile picture (URL)',
+  'fake.photos': 'Test photos and images',
+  'fake.photosHint':
+    'Inserts a stock portrait address (randomuser.me) or a random photo (picsum.photos). Clear it to use no external service; uploaded images are always drawn locally.',
 
   // Extension Fake Data Filler (native, built into Orbit)
   'fakeExt.title': 'Fake Data Filler',
@@ -561,7 +575,7 @@ export const en = {
   'fakeExt.exporting': 'Exporting…',
   'fakeExt.settingsDesc': 'Customize 🎲 values, including text for free-form fields. Leave a field empty for random data.',
   'fakeExt.saved': 'Saved successfully',
-  'fakeExt.usageNote': 'The 🎲 button appears automatically on form fields (except login). Alt+F fills the focused field; Alt+Shift+F fills visible fields in the active form. Login fields are skipped. Your custom values take priority.',
+  'fakeExt.usageNote': 'The 🎲 button appears automatically on form fields (except login), including image fields (avatar, cover) that receive a locally drawn PNG file. Alt+F fills the focused field; Alt+Shift+F fills visible fields in the active form. Login fields are skipped. Your custom values take priority.',
   'fakeExt.enable': 'Enable',
   'fakeExt.disable': 'Disable',
   'fakeExt.remove': 'Remove',

@@ -484,7 +484,14 @@ version plus récente est livrée avec une mise à jour d’Orbit, le bouton
 - **Fake Data Filler (Orbit)** : 🎲 ou `Alt+F` remplit le champ focalisé ;
   `Alt+Maj+F` remplit les champs visibles du formulaire actif. Les champs de
   connexion sont ignorés. Les valeurs sont générées localement ; les champs
-  personnalisés se règlent dans Extensions.
+  personnalisés se règlent dans Extensions. Un champ qui attend une image
+  (avatar, couverture, photo de produit) reçoit un fichier PNG dessiné sur
+  l’appareil, sans aucun envoi réseau. Les champs d’adresse de photo
+  reçoivent un portrait ou une photo aléatoire, ce qui peut être coupé par
+  « Photos et images de test » dans les réglages de l’extension.
+  Les types reconnus couvrent aussi le sexe, la date de naissance, l’âge,
+  l’IBAN (clé valide) et les cartes de test (numéro valide au sens de Luhn,
+  expiration et cryptogramme).
 - **Web Clipper** : conserve localement une sélection ou le contenu principal
   d’une page, puis permet de rechercher et d’exporter les captures en Markdown.
 - **Souris & Défilement** : défilement **lissé** et réglable (souplesse, pixels
@@ -593,7 +600,9 @@ pastille qui mène au navigateur. Le bouton **Source** affiche le fichier brut.
   l’appareil. Les fonctions connectées envoient les données nécessaires au
   fournisseur choisi.
 - Fake Data et Text Snippets n’ont pas besoin de services externes pour
-  fonctionner.
+  fonctionner. Seule exception, facultative et désactivable : les adresses de
+  photo de test (portraits de stock et photos aléatoires), qui ne sont que des
+  liens insérés dans le champ — aucune donnée de la page n’est envoyée.
 - Les services web intégrés continuent de recevoir les données que vous saisissez
   directement sur leurs pages.
 

@@ -129,16 +129,26 @@ commits.
 
 Orbit intègre un bouton **🎲 « Remplir avec des données de test »** sur les champs de
 formulaire non de connexion. Il détecte le type du champ (email, nom, téléphone, ville,
-date, etc.) et le remplit avec des données réalistes depuis des listes locales, sans
-dépendance externe — comme les extensions **Fake Filler** (Chrome) ou **Fake Data
-Filler** (Firefox).
+date, IBAN, carte de test, etc.) et le remplit avec des données réalistes depuis des
+listes locales — comme les extensions **Fake Filler** (Chrome) ou **Fake Data Filler**
+(Firefox).
+
+**Images de test.** Un champ d’avatar (ou d’URL de photo) reçoit l’adresse d’un portrait
+de stock ([randomuser.me](https://randomuser.me)) ou d’une photo aléatoire
+([picsum.photos](https://picsum.photos)) ; l’insertion d’une image est facultative et se
+coupe dans **Réglages → Extensions** (« Photos et images de test »). Un
+`<input type="file">` qui attend une image reçoit, lui, un fichier PNG **dessiné
+localement** dans un `<canvas>` puis injecté via `DataTransfer` : aucun réseau, et les
+sites qui vérifient le type MIME ou affichent un aperçu y voient un vrai fichier.
+Seuls les champs de fichier qui acceptent une image sont touchés (un `accept=".pdf"`
+est ignoré).
 
 #### Architecture des extensions
 
 ```
 extensions-dist/            ← ZIPs distribuables (SUIVI EN GIT, publiés sur GitHub Pages,
                                PAS embarqués dans l'application)
-  └── fake-data-filler-orbit.zip   (24 Ko, Manifest V3)
+  └── fake-data-filler-orbit.zip   (29 Ko, Manifest V3)
   └── color-picker.zip             (28 Ko) — pipette de couleur (bouton 🎨, Alt+C)
   └── page-to-markdown.zip         (21 Ko) — page → Markdown (clic droit, Alt+M)
   └── text-snippets.zip            (14 Ko) — abréviations extensibles (;email → texte complet)
@@ -158,9 +168,15 @@ userData/extensions/         ← Extensions installées par l'utilisateur (Elect
 
 #### Fake Data Filler — intégré nativement
 
-- Le bouton 🎲 apparaît automatiquement sur les champs de formulaire
+- Le bouton 🎲 apparaît automatiquement sur les champs de formulaire, y compris
+  les champs d’image (avatar, couverture) et les listes déroulantes
 - Raccourci **Alt+F** pour remplir le champ focalisé
 - Raccourci **Alt+Maj+F** pour remplir les champs visibles du formulaire actif
+- Types reconnus : identité (prénom, nom, nom complet, identifiant, sexe, date de
+  naissance, âge), coordonnées (email, téléphone, adresse, ville, code postal, pays,
+  région), société/fonction, sujet et texte libre, URL, avatar et images, dates et
+  heures, couleurs, cases et boutons radio, IBAN français valide (clé modulo 97),
+  numéro de carte de test valide au sens de Luhn, date d’expiration et CVC
 - Personnalisation dans **Réglages → Extensions** → section Fake Data Filler
 - Toggle **Activer/Désactiver** pour masquer le bouton 🎲
 - Export en ZIP pour partage : **Réglages → Extensions → Exporter en ZIP**

@@ -1603,6 +1603,12 @@ const FAKE_COUNTRY = ['France', 'Belgique', 'Suisse', 'Canada', 'Allemagne', 'Es
 const FAKE_REGION = ['Île-de-France', 'Auvergne-Rhône-Alpes', 'Occitanie', 'Nouvelle-Aquitaine', 'Bretagne', 'Normandie'];
 const FAKE_JOBS = ['Product designer', 'Développeur logiciel', 'Chef de projet', 'Analyste de données', 'Responsable marketing', 'Technicien support'];
 const FAKE_SUBJECTS = ['Demande de démonstration', 'Question sur le produit', 'Retour utilisateur', 'Proposition de partenariat', 'Demande de renseignements'];
+const FAKE_GENDERS = ['Femme', 'Homme', 'Non précisé'];
+// Photos de test : portraits de stock (Random User Generator) et photos
+// quelconques (Lorem Picsum). Aucune clé, aucun compte ; l'URL seule est
+// insérée — la page décide de la charger. « photos: off » dans les Réglages
+// coupe ces adresses et laisse une adresse neutre (aucun service externe).
+const FAKE_AVATAR_DIRS = ['women', 'men'];
 const LOREM_WORDS = [
   'lorem', 'ipsum', 'dolor', 'sit', 'amet', 'consectetur', 'adipiscing', 'elit', 'integer',
   'vitae', 'justo', 'efficitur', 'congue', 'nunc', 'sagittis', 'sollicitudin', 'nullam',
@@ -1620,26 +1626,131 @@ const loremText = (min = 2, max = 5) =>
   }).join(' ');
 const fslug = (s) =>
   String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z]/g, '');
+const fakePhotosEnabled = () => fakeCustom.photos !== 'off';
+const portraitUrl = () =>
+  `https://randomuser.me/api/portraits/${frand(FAKE_AVATAR_DIRS)}/${frandInt(100)}.jpg`;
+const pictureUrl = () =>
+  `https://picsum.photos/seed/${Math.random().toString(36).slice(2, 10)}/1200/800`;
+
+// IBAN français de test, VALIDE (clé ISO 13616 calculée par modulo 97) : les
+// formulaires qui vérifient l'IBAN avant d'envoyer acceptent la valeur.
+function fakeIban() {
+  const digits = (n) => Array.from({ length: n }, () => frandInt(10)).join('');
+  const bban = digits(23);
+  const rearranged = `${bban}FR00`.replace(/[A-Z]/g, (c) => String(c.charCodeAt(0) - 55));
+  let rest = 0;
+  for (const digit of rearranged) rest = (rest * 10 + Number(digit)) % 97;
+  return `FR${String(98 - rest).padStart(2, '0')}${bban}`;
+}
+
+// Numéro de carte de test à 16 chiffres, VALIDE au sens de Luhn, préfixé 4242
+// (le préfixe des cartes de test Visa) : refusé par les vrais paiements, mais
+// accepté par les formulaires qui ne font que vérifier la forme.
+function fakeCardNumber() {
+  const base = `4242${Array.from({ length: 11 }, () => frandInt(10)).join('')}`;
+  let sum = 0;
+  for (let i = 0; i < base.length; i += 1) {
+    let n = Number(base[base.length - 1 - i]);
+    if (i % 2 === 0) {
+      n *= 2;
+      if (n > 9) n -= 9;
+    }
+    sum += n;
+  }
+  return `${base}${(10 - (sum % 10)) % 10}`;
+}
+
+function futureExpiry() {
+  const month = 1 + frandInt(12);
+  const year = (new Date().getFullYear() + 1 + frandInt(4)) % 100;
+  return `${String(month).padStart(2, '0')}/${String(year).padStart(2, '0')}`;
+}
+
+function fakeBirthDate() {
+  const date = new Date(Date.UTC(1950 + frandInt(55), frandInt(12), 1 + frandInt(28)));
+  return date.toISOString().slice(0, 10);
+}
+
+// Champ de fichier pouvant recevoir une image (avatar, couverture, produit).
+// Un `<input type="file" accept=".pdf">` n'est JAMAIS touché : on ne remplit
+// que les champs qui attendent une image (ou qui ne précisent rien).
+function acceptsFakeImage(el) {
+  if (el?.tagName?.toLowerCase() !== 'input') return false;
+  if ((el.getAttribute('type') || '').toLowerCase() !== 'file') return false;
+  const accept = (el.getAttribute('accept') || '').toLowerCase().trim();
+  if (!accept) {
+    // Aucun `accept` : on ne remplit que si le champ parle d'image. Sinon un
+    // « déposez votre CV » recevrait un PNG.
+    const hint = [
+      el.name,
+      el.id,
+      el.placeholder,
+      el.getAttribute('aria-label'),
+      el.closest?.('label')?.textContent,
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+    return /avatar|photo|image|picture|portrait|logo|cover|banner|illustration|profil/.test(hint);
+  }
+  return accept
+    .split(',')
+    .map((part) => part.trim())
+    .some(
+      (part) =>
+        part.startsWith('image/') ||
+        /\.(png|jpe?g|gif|webp|avif|bmp|svg)$/.test(part)
+    );
+}
 
 function detectFieldKind(el) {
   const t = (el.getAttribute('type') || el.type || 'text').toLowerCase();
+  // Indices lus avant les types : un `<input type="url" name="avatarUrl">`
+  // attend une photo, pas un site web.
+  const hint = [el.autocomplete, el.name, el.id, el.placeholder, el.getAttribute && el.getAttribute('aria-label')]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
   if (t === 'password') return 'password';
   if (t === 'email') return 'email';
   if (t === 'tel') return 'phone';
-  if (t === 'url') return 'url';
+  if (t === 'url') {
+    if (/avatar|profile.?pic|profile.?image|profile.?photo|photo.?de.?profil|image.?de.?profil|portrait|headshot/.test(hint))
+      return 'avatar';
+    if (/image|picture|photo|cover.?image|cover.?photo|banner|thumbnail|illustration|logo|affiche/.test(hint))
+      return 'image';
+    return 'url';
+  }
   if (t === 'number') return 'number';
+  if (t === 'file') return acceptsFakeImage(el) ? 'imageFile' : 'file';
   if (['date', 'datetime-local', 'month', 'week', 'time'].includes(t)) return t;
   if (t === 'range') return 'number';
   if (t === 'color') return 'color';
   if (t === 'checkbox') return 'boolean';
   if (t === 'radio' || el.tagName?.toLowerCase() === 'select') return 'choice';
-  const hint = [el.autocomplete, el.name, el.id, el.placeholder, el.getAttribute && el.getAttribute('aria-label')]
-    .filter(Boolean)
-    .join(' ')
-    .toLowerCase();
   if (el.tagName?.toLowerCase() === 'textarea' || el.isContentEditable) return 'lorem';
   if (/e-?mail|courriel/.test(hint)) return 'email';
   if (/phone|t[eé]l|mobile|portable|whatsapp/.test(hint)) return 'phone';
+  // Images : l'avatar (une personne) avant les images décoratives.
+  if (/avatar|profile.?pic|profile.?image|profile.?photo|photo.?de.?profil|image.?de.?profil|portrait|headshot/.test(hint))
+    return 'avatar';
+  if (/image|picture|photo|cover.?image|cover.?photo|banner|thumbnail|illustration|logo|affiche/.test(hint))
+    return 'image';
+  // Identité
+  if (/sexe|gender|genre/.test(hint)) return 'gender';
+  if (/birth.?date|date.?of.?birth|\bdob\b|birthday|naissance/.test(hint)) return 'birthdate';
+  if (/(^|[^a-z])age([^a-z]|$)/.test(hint) && !/message|image|page|usage|language|stage/.test(hint))
+    return 'age';
+  // Paiement / banque (données de test uniquement)
+  if (/\biban\b/.test(hint)) return 'iban';
+  if (/card.?number|cc.?number|num[eé]ro.?de.?carte|cardno|ccnum/.test(hint)) return 'creditCard';
+  if (/expir|exp.?date|valid.?thru|date.?d.expiration|mm\s*\/?\s*yy/.test(hint)) return 'cardExpiry';
+  if (/\b(cvc|cvv|cvn|security.?code|cryptogramme)\b/.test(hint)) return 'cardCvc';
+  // Coordonnées et société (avant « name », qui est trop large)
+  if (/company|soci[eé]t[eé]|entreprise|organi[sz]ation/.test(hint)) return 'company';
+  if (/country|pays/.test(hint)) return 'country';
+  if (/state|province|r[eé]gion/.test(hint)) return 'region';
+  if (/job.?title|position|poste|profession|occupation/.test(hint)) return 'jobTitle';
   if (/first.?name|pr[eé]nom|given/.test(hint)) return 'firstName';
   if (/(last.?name|surname|family)|(^|[^a-z])nom([^a-z]|$)/.test(hint) && !/pr[eé]nom|user|soci|entreprise/.test(hint))
     return 'lastName';
@@ -1648,10 +1759,6 @@ function detectFieldKind(el) {
   if (/city|ville/.test(hint)) return 'city';
   if (/zip|postal|code.?postal|\bcp\b/.test(hint)) return 'zip';
   if (/address|adresse|street|rue/.test(hint)) return 'address';
-  if (/company|soci[eé]t[eé]|entreprise|organi[sz]ation/.test(hint)) return 'company';
-  if (/country|pays/.test(hint)) return 'country';
-  if (/state|province|r[eé]gion/.test(hint)) return 'region';
-  if (/job.?title|position|poste/.test(hint)) return 'jobTitle';
   if (/subject|objet/.test(hint)) return 'subject';
   if (/description|comment|message|bio|about|notes|detail|content|texte/.test(hint)) return 'lorem';
   if (/url|site|website/.test(hint)) return 'url';
@@ -1679,6 +1786,24 @@ async function fakeValueFor(kind) {
       return `${fslug(first)}${frandInt(1000)}`;
     case 'phone':
       return fakeCustom.phone || `06${String(frandInt(1e8)).padStart(8, '0')}`;
+    case 'avatar':
+      return fakeCustom.avatar || (fakePhotosEnabled() ? portraitUrl() : 'https://example.com/avatar.png');
+    case 'image':
+      return fakeCustom.image || (fakePhotosEnabled() ? pictureUrl() : 'https://example.com/image.jpg');
+    case 'gender':
+      return frand(FAKE_GENDERS);
+    case 'birthdate':
+      return fakeBirthDate();
+    case 'age':
+      return String(18 + frandInt(53));
+    case 'iban':
+      return fakeIban();
+    case 'creditCard':
+      return fakeCardNumber();
+    case 'cardExpiry':
+      return fakeCustom.cardExpiry || futureExpiry();
+    case 'cardCvc':
+      return String(100 + frandInt(900));
     case 'city':
       return fakeCustom.city || frand(FAKE_CITY);
     case 'zip':
@@ -1699,6 +1824,8 @@ async function fakeValueFor(kind) {
       return `https://${fslug(first)}-${fslug(last)}.example.com`;
     case 'number':
       return String(1 + frandInt(9999));
+    case 'imageFile':
+      return '';
     case 'date':
     case 'datetime-local':
     case 'month':
@@ -1744,10 +1871,94 @@ function isFillable(el) {
   }
   if (tag !== 'input') return false;
   const t = (el.getAttribute('type') || 'text').toLowerCase();
-  if (['hidden', 'file', 'submit', 'reset', 'button', 'image'].includes(t)) return false;
+  if (t === 'file') return acceptsFakeImage(el) && !el.disabled && reallyVisible(el);
+  if (['hidden', 'submit', 'reset', 'button', 'image'].includes(t)) return false;
   if (!FAKE_TYPES.has(t)) return false;
   if (el.readOnly || el.disabled) return false;
   return reallyVisible(el);
+}
+
+// ---------------------------------------------------------------------------
+// Image de test pour un <input type="file">.
+// Dessinée LOCALEMENT dans un <canvas> (aucune requête réseau), puis injectée
+// comme un vrai fichier via DataTransfer : les aperçus, les contrôles de type
+// et les envois multipart la voient exactement comme un fichier choisi à la
+// main. Avatar (carré, tête + épaules) ou image générique (paysage) selon le
+// champ.
+// ---------------------------------------------------------------------------
+function fakeImageCanvas(el) {
+  const square = /avatar|profile|portrait|photo|headshot|profil/i.test(
+    [el.name, el.id, el.getAttribute('accept'), el.closest('label')?.textContent]
+      .filter(Boolean)
+      .join(' ')
+  );
+  const width = square ? 512 : 1200;
+  const height = square ? 512 : 800;
+  const canvas = document.createElement('canvas');
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return null;
+
+  const hue = frandInt(360);
+  const gradient = ctx.createLinearGradient(0, 0, width, height);
+  gradient.addColorStop(0, `hsl(${hue} 62% 52%)`);
+  gradient.addColorStop(1, `hsl(${(hue + 48) % 360} 58% 32%)`);
+  ctx.fillStyle = gradient;
+  ctx.fillRect(0, 0, width, height);
+
+  ctx.fillStyle = 'rgba(255,255,255,0.22)';
+  if (square) {
+    // Silhouette simple : tête + épaules, lisible en vignette.
+    ctx.beginPath();
+    ctx.arc(width / 2, height * 0.38, width * 0.17, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(width / 2, height * 0.95, width * 0.34, height * 0.34, 0, Math.PI, 0);
+    ctx.fill();
+  } else {
+    // Paysage abstrait : collines + soleil.
+    ctx.beginPath();
+    ctx.arc(width * 0.76, height * 0.28, width * 0.09, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.beginPath();
+    ctx.ellipse(width * 0.3, height * 1.05, width * 0.55, height * 0.42, 0, Math.PI, 0);
+    ctx.fill();
+    ctx.fillStyle = 'rgba(255,255,255,0.14)';
+    ctx.beginPath();
+    ctx.ellipse(width * 0.8, height * 1.1, width * 0.5, height * 0.36, 0, Math.PI, 0);
+    ctx.fill();
+  }
+  return { canvas, square };
+}
+
+function fakeImageBlob(el) {
+  const drawn = fakeImageCanvas(el);
+  if (!drawn) return Promise.resolve(null);
+  return new Promise((resolve) => {
+    try {
+      drawn.canvas.toBlob((blob) => resolve(blob), 'image/png');
+    } catch {
+      resolve(null);
+    }
+  });
+}
+
+async function fillFakeImageFile(el) {
+  const blob = await fakeImageBlob(el);
+  if (!blob || typeof DataTransfer !== 'function') return false;
+  try {
+    const file = new File([blob], 'orbit-test.png', { type: 'image/png', lastModified: Date.now() });
+    const transfer = new DataTransfer();
+    transfer.items.add(file);
+    el.files = transfer.files;
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    el.dispatchEvent(new Event('change', { bubbles: true }));
+    return true;
+  } catch (err) {
+    console.error('[orbit] image de test impossible:', err);
+    return false;
+  }
 }
 
 function isFakeLoginField(el) {
@@ -1770,6 +1981,10 @@ function focusedFakeField(event) {
 async function fillFakeElement(el) {
   const tag = el.tagName?.toLowerCase();
   const type = (el.getAttribute('type') || el.type || 'text').toLowerCase();
+  if (type === 'file') {
+    await fillFakeImageFile(el);
+    return;
+  }
   if (tag === 'select') {
     const options = Array.from(el.options || []).filter(
       (option) => !option.disabled && !option.hidden && option.value.trim()

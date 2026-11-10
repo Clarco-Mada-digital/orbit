@@ -108,7 +108,10 @@ disponibles. La CI release exécute des builds Linux, Windows et macOS séparés
 Fake Data Filler possède aussi un chemin natif dans
 `electron/credentials-preload.cjs`. Les comportements accessibles dans Orbit
 doivent rester cohérents entre ce chemin et l’extension ZIP, qui est distribuée
-séparément. Ni les sources d’extensions ni les ZIP ne sont inclus dans
+séparément. La détection des types (identité, adresse, IBAN, carte de test,
+avatar et fichier image) et les valeurs générées sont donc dupliquées : toute
+nouvelle catégorie doit être ajoutée aux deux, et le ZIP réexporté
+(`npm run export:extensions`) avec une version de manifeste incrémentée. Ni les sources d’extensions ni les ZIP ne sont inclus dans
 l’archive application : le magasin lit le catalogue publié en HTTPS et
 télécharge l’archive au moment de l’installation, après contrôle de sa taille
 et de son empreinte (`electron/extension-store.js`,
