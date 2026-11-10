@@ -38,7 +38,10 @@ La plus récente en premier.
   embarquées (donc `Ctrl + molette`), `Ctrl +` / `Ctrl -` / `Ctrl 0` pour le
   zoom, `Ctrl + R` / `F5` pour recharger, `Alt + ←/→` pour l'historique, et un
   clic droit avec copier/coller, précédent/suivant, recharger et zoom. Le zoom
-  part de la valeur de l'app et y est mémorisé.
+  est conservé : Chromium le remettait à 100 % à chaque navigation, il est
+  maintenant réappliqué au chargement suivant (y compris dans les fenêtres
+  ouvertes depuis la page) et un badge affiche le palier atteint (« 125 % »).
+  La fenêtre s'ouvre aussi directement au zoom de l'app.
 - **Pages volantes : le vrai nom et la vraie icône du site.** Un lien libre
   s'appelait jusqu'ici par son domaine et retombait sur un globe ou l'icône
   d'un service tiers. La barre latérale affiche désormais le titre de la page

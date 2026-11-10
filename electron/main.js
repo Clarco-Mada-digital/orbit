@@ -3842,6 +3842,47 @@ function detachedAppIdForWc(wcId) {
   return null;
 }
 
+// Zoom de chaque fenêtre sans interface Orbit. Chromium remet le zoom à 100 %
+// à CHAQUE navigation : sans cette mémoire, régler le zoom puis cliquer un
+// lien (ou changer de section) ramenait la page à sa taille d'origine. On
+// garde donc la valeur le temps de la fenêtre — c'est ce que fait un
+// navigateur — et on la réapplique à chaque chargement.
+const windowZoomFactors = new Map(); // webContents.id → facteur de zoom
+
+function windowZoomFor(contents) {
+  const factor = contents ? windowZoomFactors.get(contents.id) : undefined;
+  return Number.isFinite(factor) ? factor : 1;
+}
+
+function attachWindowZoomPersistence(contents) {
+  if (!contents) return;
+  contents.once('destroyed', () => windowZoomFactors.delete(contents.id));
+  const reapply = () => {
+    const factor = windowZoomFor(contents);
+    // À 100 %, rien à faire : le zoom par défaut est déjà le bon.
+    if (factor === 1) return;
+    try {
+      contents.setZoomFactor(factor);
+    } catch {
+      /* fenêtre fermée pendant le chargement */
+    }
+  };
+  contents.on('did-navigate', reapply);
+  contents.on('did-navigate-in-page', reapply);
+  contents.on('dom-ready', reapply);
+  contents.on('did-finish-load', reapply);
+}
+
+// Affiche le palier de zoom dans la page elle-même (ces fenêtres n'ont ni
+// barre d'outils ni pourcentage visible) : un petit badge qui s'efface.
+function showWindowZoom(contents, factor) {
+  try {
+    contents.send('orbit-window:zoom', { factor });
+  } catch {
+    /* page en cours de destruction */
+  }
+}
+
 // Applique un zoom à une fenêtre dont la page n'est pas un <webview> géré par
 // l'interface, et prévient celle-ci pour que la valeur soit mémorisée sur
 // l'app (boutons de la barre cohérents, zoom retrouvé au redémarrage).
@@ -3852,6 +3893,8 @@ function applyWindowZoom(contents, factor) {
   } catch {
     return;
   }
+  windowZoomFactors.set(contents.id, zoom);
+  showWindowZoom(contents, zoom);
   if (!mainWindow || mainWindow.isDestroyed()) return;
   const appId = detachedAppIdForWc(contents.id);
   mainWindow.webContents.send('orbit:guest-zoom', {
@@ -5929,24 +5972,22 @@ ipcMain.handle('app:openDetached', async (_e, { appId, url, partition, title, zo
       attachPageShortcuts(childWindow.webContents);
       attachWindowShortcuts(childWindow.webContents);
       attachWindowContextMenu(childWindow.webContents, childWindow);
+      attachWindowZoomPersistence(childWindow.webContents);
+      // Une fenêtre ouverte depuis la page reprend son zoom, comme dans un
+      // navigateur (sinon chaque lien ouvert repartait à 100 %).
+      const inherited = windowZoomFor(contents);
+      if (inherited !== 1) windowZoomFactors.set(childWindow.webContents.id, inherited);
       attachDetachedPopupHandler(childWindow.webContents, childWindow);
     });
   };
   attachDetachedPopupHandler(win.webContents, win);
   attachMouseNavigation(win.webContents);
+  attachWindowZoomPersistence(win.webContents);
   // Zoom mémorisé de l'app : la fenêtre s'ouvre à la même taille de texte que
-  // l'onglet embarqué, pas à 100 % à chaque fois.
+  // l'onglet embarqué, pas à 100 % à chaque fois. La persistance ci-dessus
+  // l'applique dès le premier chargement terminé (et après chaque navigation).
   const initialZoom = clampPageZoom(zoom);
-  if (initialZoom !== 1) {
-    win.webContents.once('did-finish-load', () => {
-      if (win.isDestroyed()) return;
-      try {
-        win.webContents.setZoomFactor(initialZoom);
-      } catch {
-        /* fenêtre fermée entre-temps */
-      }
-    });
-  }
+  if (initialZoom !== 1) windowZoomFactors.set(win.webContents.id, initialZoom);
   win.loadURL(url);
   detachedWindows.set(appId, win);
   win.on('closed', () => detachedWindows.delete(appId));
@@ -5959,16 +6000,14 @@ ipcMain.on('guest:zoom', (event, payload = {}) => {
   const factor = Number(payload?.factor);
   if (!Number.isFinite(factor)) return;
   const zoom = Math.min(3, Math.max(0.5, factor));
-  // Fenêtre détachée : sa page n'est pas un <webview> de l'interface, donc on
-  // applique aussi le zoom au webContents (il survit aux navigations) et on
-  // nomme l'app d'origine pour que l'interface la retrouve.
+  // Fenêtre détachée : la page a déjà appliqué son zoom (Ctrl + molette, côté
+  // preload). On retient seulement la valeur pour la réappliquer après chaque
+  // navigation, on affiche le palier et on nomme l'app d'origine pour que
+  // l'interface la retrouve.
   const appId = detachedAppIdForWc(event.sender.id);
   if (appId) {
-    try {
-      event.sender.setZoomFactor(zoom);
-    } catch {
-      /* fenêtre en cours de fermeture */
-    }
+    windowZoomFactors.set(event.sender.id, zoom);
+    showWindowZoom(event.sender, zoom);
   }
   if (!mainWindow || mainWindow.isDestroyed()) return;
   mainWindow.webContents.send('orbit:guest-zoom', {

@@ -85,6 +85,8 @@ intégrée ou ajoutez une URL web.
   pour le zoom (aussi `Ctrl +`, `Ctrl -` et `Ctrl 0`), `Ctrl + R` ou `F5` pour
   recharger, `Alt + ←/→` pour l’historique. Le clic droit y propose copier,
   coller, précédent, suivant, recharger et le zoom.
+- Le zoom y reste appliqué pendant toute la durée de la fenêtre (il survit aux
+  changements de page) et un badge affiche brièvement le pourcentage atteint.
 
 ### Profils et sessions
 

@@ -137,7 +137,41 @@ function isLoginInput(el, pass) {
 //
 // Seul Ctrl est intercepté : la molette seule, le défilement horizontal et le
 // pincement du trackpad gardent leur comportement d'origine.
+//
+// Les annonces au processus principal sont regroupées (une rafale de molette
+// ne doit pas inonder l'IPC), mais la DERNIÈRE valeur part toujours : c'est
+// elle que le principal réapplique après une navigation. Sans ce dernier envoi,
+// un zoom rapide était oublié et la page revenait à 100 % au chargement suivant.
 let lastZoomNotice = 0;
+let zoomNoticeTimer = null;
+let pendingZoomNotice = null;
+
+function notifyZoom(factor) {
+  const send = (value) => {
+    try {
+      ipcRenderer.send('guest:zoom', { factor: value });
+    } catch {
+      /* fenêtre en cours de fermeture */
+    }
+  };
+  pendingZoomNotice = factor;
+  const elapsed = Date.now() - lastZoomNotice;
+  if (elapsed >= 120) {
+    lastZoomNotice = Date.now();
+    pendingZoomNotice = null;
+    send(factor);
+    return;
+  }
+  clearTimeout(zoomNoticeTimer);
+  zoomNoticeTimer = setTimeout(() => {
+    if (pendingZoomNotice === null) return;
+    const value = pendingZoomNotice;
+    pendingZoomNotice = null;
+    lastZoomNotice = Date.now();
+    send(value);
+  }, 120 - elapsed);
+}
+
 try {
   window.addEventListener(
     'wheel',
@@ -152,20 +186,67 @@ try {
       );
       if (next === current) return;
       webFrame.setZoomFactor(next);
-      const now = Date.now();
-      if (now - lastZoomNotice > 120) {
-        lastZoomNotice = now;
-        try {
-          ipcRenderer.send('guest:zoom', { factor: next });
-        } catch {
-          /* fenêtre en cours de fermeture */
-        }
-      }
+      notifyZoom(next);
     },
     { passive: false }
   );
 } catch {
   /* pas de webFrame dans ce contexte : on laisse le geste au système */
+}
+
+// Palier de zoom affiché dans la page (fenêtres sans barre d'outils : fenêtre
+// détachée, pop-up). Un badge discret en haut au centre, comme celui d'un
+// navigateur, qui s'efface tout seul.
+let zoomBadgeEl = null;
+let zoomBadgeTimer = null;
+
+function showZoomBadge(factor) {
+  const percent = Math.round(Number(factor) * 100);
+  if (!Number.isFinite(percent) || !document.body) return;
+  try {
+    if (!zoomBadgeEl || !zoomBadgeEl.isConnected) {
+      zoomBadgeEl = document.createElement('div');
+      zoomBadgeEl.id = '__orbit_zoom_badge__';
+      Object.assign(zoomBadgeEl.style, {
+        position: 'fixed',
+        zIndex: '2147483647',
+        left: '50%',
+        top: '14px',
+        transform: 'translateX(-50%)',
+        background: 'rgba(17, 24, 39, 0.94)',
+        color: '#f3f4f6',
+        border: '1px solid #374151',
+        borderRadius: '999px',
+        padding: '7px 14px',
+        font: '600 13px/1 system-ui, -apple-system, sans-serif',
+        letterSpacing: '0.01em',
+        boxShadow: '0 8px 24px rgba(0,0,0,0.45)',
+        pointerEvents: 'none',
+        opacity: '0',
+        transition: 'opacity 160ms ease',
+      });
+      document.body.appendChild(zoomBadgeEl);
+    }
+    zoomBadgeEl.textContent = `${percent} %`;
+    // Redémarre le fondu même si le badge était encore affiché.
+    zoomBadgeEl.style.opacity = '0';
+    void zoomBadgeEl.offsetWidth;
+    zoomBadgeEl.style.opacity = '1';
+    clearTimeout(zoomBadgeTimer);
+    zoomBadgeTimer = setTimeout(() => {
+      if (zoomBadgeEl) zoomBadgeEl.style.opacity = '0';
+    }, 1100);
+  } catch {
+    /* jamais bloquant pour la page */
+  }
+}
+
+try {
+  ipcRenderer.on('orbit-window:zoom', (_event, payload) => {
+    showZoomBadge(payload && payload.factor);
+  });
+} catch {
+  /* IPC indisponible : on continue sans badge */
 }
 
 // ---------------------------------------------------------------------------
