@@ -52,6 +52,18 @@ La plus récente en premier.
   fermeture d'Orbit : le transfert reprend à l'octet près sans redemander ce qui
   est déjà écrit. Une coupure est réessayée automatiquement, avec attente
   croissante.
+- **Téléchargements : dialogue « Nouveau téléchargement ».** Le bouton
+  **Options…** ouvre un vrai formulaire où chaque choix ne vaut que pour le
+  fichier en cours d'ajout : nom, catégorie et sous-dossier, dossier de
+  destination avec parcours, description (et la recherche la trouve), connexions
+  par fichier, débit maximal propre au fichier, priorité haute/normale/basse, et
+  **Télécharger maintenant** ou **Plus tard** (l'élément attend dans la file
+  jusqu'à ce qu'on presse ▶).
+- **Téléchargements : nom des vidéos.** Une vidéo enregistrée par le bouton
+  **Vidéo**/**Audio** prend le titre de la vidéo, y compris quand la boîte
+  d'enregistrement est affichée (le titre est demandé avant, il n'y a plus de
+  « video.mp4 » par défaut). Un lien de page (`…/watch?v=…`) est refusé avec un
+  message clair au lieu d'être enregistré en HTML sous un nom sans titre.
 - **Téléchargements : vitesse et file d'attente réglables.** Connexions par
   fichier, transferts simultanés (les suivants attendent leur tour), plafond de
   débit global et plafond par fichier en Ko/s, réessais automatiques, classement

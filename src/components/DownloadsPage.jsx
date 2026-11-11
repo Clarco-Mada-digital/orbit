@@ -18,6 +18,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react';
+import DownloadOptionsDialog from './DownloadOptionsDialog';
 import { useDownloadsStore } from '../lib/downloadsStore';
 import { parseDownloadUrl } from '../lib/downloadOptions';
 import { useStore } from '../stores/useStore';
@@ -64,6 +65,8 @@ export default function DownloadsPage({ onClose }) {
   const [url, setUrl] = useState('');
   const [busy, setBusy] = useState('');
   const [message, setMessage] = useState('');
+  const [note, setNote] = useState('');
+  const [optionsOpen, setOptionsOpen] = useState(false);
 
   const activeCount = downloads.filter((item) => isActive(item.state)).length;
   const completedCount = downloads.filter((item) => item.state === 'completed').length;
@@ -75,7 +78,8 @@ export default function DownloadsPage({ onClose }) {
         if (filter === 'active' && !isActive(item.state)) return false;
         if (filter === 'completed' && item.state !== 'completed') return false;
         if (filter === 'interrupted' && item.state !== 'interrupted' && item.state !== 'cancelled') return false;
-        return !needle || `${item.filename} ${item.url}`.toLocaleLowerCase().includes(needle);
+        const haystack = `${item.filename} ${item.url} ${item.description || ''}`;
+        return !needle || haystack.toLocaleLowerCase().includes(needle);
       })
       .sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
   }, [downloads, filter, query]);
@@ -213,6 +217,18 @@ export default function DownloadsPage({ onClose }) {
               <button type="submit" disabled={!url.trim() || Boolean(busy)} className="btn btn-primary justify-center">
                 <Download size={15} /> {t('dl.addFile')}
               </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setMessage('');
+                  setNote('');
+                  setOptionsOpen(true);
+                }}
+                className="btn btn-secondary justify-center"
+                title={t('dl.optionsHint')}
+              >
+                <Settings2 size={15} /> {t('dl.options')}
+              </button>
             </form>
             <div className="mt-2 flex flex-wrap items-center gap-2">
               <button type="button" onClick={() => start('video')} disabled={!url.trim() || Boolean(busy)} className="btn btn-secondary btn-sm">
@@ -224,6 +240,7 @@ export default function DownloadsPage({ onClose }) {
               <span className="text-xs text-text-muted">{t('dl.addHint')}</span>
             </div>
             {message && <p role="alert" className="mt-3 rounded-lg border border-error/25 bg-error/5 px-3 py-2 text-sm text-error">{message}</p>}
+            {note && <p role="status" className="mt-3 rounded-lg border border-border bg-bg-hover/60 px-3 py-2 text-sm text-text-muted">{note}</p>}
           </section>
 
           <section className="grid grid-cols-1 gap-3 sm:grid-cols-3">
@@ -301,8 +318,16 @@ export default function DownloadsPage({ onClose }) {
                           <span className="max-w-full truncate text-sm font-medium" title={item.filename}>{item.filename}</span>
                           {item.kind === 'media' && <span className="rounded-full bg-accent-primary/10 px-2 py-0.5 text-[10px] font-medium text-accent-primary">{t(item.mode === 'audio' ? 'dl.audioTag' : 'dl.videoTag')}</span>}
                           <span className="text-[11px] text-text-muted">{t(`dl.state.${item.state}`)}</span>
+                          {item.priority === 1 && (
+                            <span className="rounded-full bg-amber-500/15 px-2 py-0.5 text-[10px] font-medium text-amber-600 dark:text-amber-400">
+                              {t('dl.priority.high')}
+                            </span>
+                          )}
                         </div>
                         <p className="mt-1 truncate text-xs text-text-muted" title={item.url}>{item.url}</p>
+                        {item.description && (
+                          <p className="mt-1 truncate text-xs text-text-primary/80" title={item.description}>{item.description}</p>
+                        )}
                         <div className="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[11px] text-text-muted">
                           <span>{humanSize(item.receivedBytes)}{item.totalBytes > 0 ? ` / ${humanSize(item.totalBytes)}` : ''}</span>
                           {percent !== null && <span>{percent}%</span>}
@@ -338,8 +363,16 @@ export default function DownloadsPage({ onClose }) {
                         {item.state === 'progressing' && item.canPause && (
                           <button type="button" onClick={() => controlDownload('pauseDownload', item.id)} className="btn-icon h-8 w-8" title={t('dl.pause')} aria-label={t('dl.pause')}><Pause size={15} /></button>
                         )}
-                        {item.state === 'paused' && (
-                          <button type="button" onClick={() => controlDownload('resumeDownload', item.id)} className="btn-icon h-8 w-8" title={t('dl.resume')} aria-label={t('dl.resume')}><Play size={15} /></button>
+                        {(item.state === 'paused' || item.state === 'queued') && (
+                          <button
+                            type="button"
+                            onClick={() => controlDownload('resumeDownload', item.id)}
+                            className="btn-icon h-8 w-8"
+                            title={item.state === 'queued' ? t('dl.startNow') : t('dl.resume')}
+                            aria-label={item.state === 'queued' ? t('dl.startNow') : t('dl.resume')}
+                          >
+                            <Play size={15} />
+                          </button>
                         )}
                         {active && (
                           <button type="button" onClick={() => controlDownload('cancelDownload', item.id)} className="btn-icon h-8 w-8 text-error" title={t('common.cancel')} aria-label={t('common.cancel')}><X size={15} /></button>
@@ -484,6 +517,16 @@ export default function DownloadsPage({ onClose }) {
           </details>
         </main>
       </section>
+      {optionsOpen && (
+        <DownloadOptionsDialog
+          initialUrl={url.trim()}
+          onClose={() => setOptionsOpen(false)}
+          onStarted={(deferred) => {
+            setUrl('');
+            setNote(t(deferred ? 'dl.addedToQueue' : 'dl.addedNow'));
+          }}
+        />
+      )}
     </div>
   );
 }

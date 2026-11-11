@@ -128,6 +128,51 @@ async function ensureYtDlp() {
   return destination;
 }
 
+// Titre de la vidéo, demandé AVANT d'ouvrir la boîte "Enregistrer sous" :
+// c'est ce titre qui sert de nom de fichier proposé. Sans lui, le dialogue
+// proposait « video.mp4 », un nom qui ne dit plus rien de la vidéo une fois le
+// téléchargement terminé. Un échec (site injoignable, outil absent) n'est pas
+// une erreur : on retombe simplement sur le nom générique.
+export async function fetchMediaTitle(url) {
+  let bin;
+  try {
+    bin = await ensureYtDlp();
+  } catch {
+    return '';
+  }
+  return new Promise((resolve) => {
+    let output = '';
+    let settled = false;
+    let timer = null;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      if (timer) clearTimeout(timer);
+      resolve(String(value || '').trim());
+    };
+    const proc = spawn(
+      bin,
+      ['--no-playlist', '--no-warnings', '--skip-download', '--print', '%(title).180s', '--', url],
+      { windowsHide: true, stdio: ['ignore', 'pipe', 'ignore'] }
+    );
+    timer = setTimeout(() => {
+      try {
+        proc.kill('SIGTERM');
+      } catch {
+        /* déjà terminé */
+      }
+      finish('');
+    }, 20_000);
+    timer.unref?.();
+    proc.stdout?.on('data', (chunk) => {
+      output += chunk.toString('utf8');
+      if (output.length > 4096) output = output.slice(0, 4096);
+    });
+    proc.once('error', () => finish(''));
+    proc.once('close', (code) => finish(code === 0 ? output.split(/\r?\n/).filter(Boolean).pop() : ''));
+  });
+}
+
 function parseProgress(text, id, onEvent, state) {
   const progress = /ORBIT_PROGRESS:(\d+)\|(\d+)\|([^|]*)\|([^|]*)/g;
   for (const match of text.matchAll(progress)) {

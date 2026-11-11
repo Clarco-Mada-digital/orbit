@@ -49,33 +49,79 @@ export class DownloadManager {
     };
     this.globalLimiter.set(this.settings.globalRate);
     for (const task of this.entries.values()) {
-      task.setConnections(this.settings.connections);
-      task.limiter.set(this.settings.perFileRate);
+      // Un téléchargement dont l'utilisateur a fixé le nombre de connexions ou
+      // le débit dans le dialogue garde SON choix : changer un réglage général
+      // ne doit pas défaire une décision explicite.
+      if (!task.explicitConnections) task.setConnections(this.settings.connections);
+      if (!task.explicitRate) task.limiter.set(this.settings.perFileRate);
       task.retries = this.settings.retries;
     }
     this.pump();
     return this.settings;
   }
 
-  add({ url, headers = {}, rate = null }) {
+  add({
+    url,
+    headers = {},
+    rate = null,
+    connections = null,
+    priority = 0,
+    deferred = false,
+    directory = '',
+    name = '',
+    description = '',
+  }) {
     const id = `dm-${Date.now()}-${(sequence += 1)}`;
+    const chosenConnections = Number.isFinite(connections) ? connections : null;
+    const chosenRate = Number.isFinite(rate) ? rate : null;
     const task = new DownloadTask({
       id,
       url,
       headers,
-      connections: this.settings.connections,
-      rate: rate === null ? this.settings.perFileRate : rate,
+      connections: chosenConnections ?? this.settings.connections,
+      rate: chosenRate ?? this.settings.perFileRate,
       retries: this.settings.retries,
+      directory,
+      name,
+      description,
+      priority,
       fetchImpl: this.fetchImpl,
       resolveTarget: this.resolveTarget,
       globalLimiter: this.globalLimiter,
       onEvent: (event) => this.handle(task, event),
     });
+    task.explicitConnections = chosenConnections !== null;
+    task.explicitRate = chosenRate !== null;
+    task.deferred = Boolean(deferred);
     this.entries.set(id, task);
     this.queue.push(id);
     this.announce(task, { state: 'queued', event: 'started', receivedBytes: 0, totalBytes: 0 });
     this.pump();
     return { success: true, id };
+  }
+
+  // Options modifiables après coup (connexions, débit propre, priorité,
+  // description). Elles s'appliquent tout de suite, y compris en transfert.
+  setOptions(id, { rate, connections, priority, description } = {}) {
+    const task = this.entries.get(id);
+    if (!task) return false;
+    if (Number.isFinite(rate)) {
+      task.explicitRate = true;
+      task.setRate(Math.max(0, Math.min(10 * 1024 * 1024, rate)));
+    }
+    if (Number.isFinite(connections)) {
+      task.explicitConnections = true;
+      task.setConnections(connections);
+    }
+    if (Number.isFinite(priority)) task.setPriority(priority);
+    if (typeof description === 'string') task.setDescription(description);
+    this.announce(task, { state: task.state, event: 'updated' });
+    return true;
+  }
+
+  // « Télécharger plus tard » : la tâche est dans la file, sans transfert.
+  start(id) {
+    return this.resume(id);
   }
 
   handle(task, event) {
@@ -102,12 +148,29 @@ export class DownloadManager {
     this.onEvent(task.snapshot({ ...extra, connections: 0 }));
   }
 
+  // La file est ordonnée par priorité (haute d'abord), l'ordre d'ajout
+  // tranchant les égalités.
   pump() {
-    while (this.running.size < this.settings.maxConcurrent && this.queue.length > 0) {
-      const id = this.queue.shift();
+    for (;;) {
+      this.queue = this.queue.filter((id) => {
+        const queued = this.entries.get(id);
+        return (
+          queued &&
+          !queued.deferred &&
+          queued.state !== 'completed' &&
+          queued.state !== 'cancelled'
+        );
+      });
+      if (this.running.size >= this.settings.maxConcurrent || this.queue.length === 0) return;
+      let pick = 0;
+      for (let index = 1; index < this.queue.length; index += 1) {
+        const best = this.entries.get(this.queue[pick]);
+        const candidate = this.entries.get(this.queue[index]);
+        if ((candidate?.priority || 0) > (best?.priority || 0)) pick = index;
+      }
+      const [id] = this.queue.splice(pick, 1);
       const task = this.entries.get(id);
-      if (!task || task.state === 'completed' || task.state === 'cancelled') continue;
-      if (task.state === 'paused') continue;
+      if (!task) continue;
       this.running.add(id);
       task.start().catch((error) => {
         console.error('[orbit] téléchargement accéléré interrompu:', error.message);
@@ -123,17 +186,16 @@ export class DownloadManager {
     return true;
   }
 
+  // Reprise : la tâche retourne dans la file, qui la relance dans l'ordre des
+  // priorités (une tâche déjà préparée reprend à son dernier segment).
   resume(id) {
     const task = this.entries.get(id);
     if (!task) return false;
     if (task.state === 'completed' || task.state === 'cancelled') return false;
-    if (!this.queue.includes(id) && !this.running.has(id)) this.queue.push(id);
-    if (!task.prepared) {
-      // Tâche jamais démarrée : start() fera la reconnaissance.
-      this.pump();
-      return true;
-    }
-    task.resume().catch(() => {});
+    task.deferred = false;
+    this.queue = this.queue.filter((queued) => queued !== id);
+    this.queue.push(id);
+    this.pump();
     return true;
   }
 

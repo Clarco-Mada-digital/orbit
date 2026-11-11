@@ -300,6 +300,29 @@ test('serveur qui ignore le Range en cours de route : on bascule en flux simple'
   }
 });
 
+test('un lien de page est refusé plutôt qu’enregistré sous un nom sans titre', async () => {
+  const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'orbit-dl-'));
+  const server = http.createServer((_req, res) => {
+    const body = '<html><head><title>Une vidéo</title></head><body>…</body></html>';
+    res.writeHead(200, { 'content-type': 'text/html; charset=utf-8', 'content-length': body.length });
+    res.end(body);
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const { port } = server.address();
+  try {
+    const target = path.join(dir, 'watch');
+    const { task, events } = await makeTask(target, { url: `http://127.0.0.1:${port}/watch` });
+    await task.start();
+    assert.equal(task.state, 'interrupted');
+    assert.match(events.at(-1).error, /page web/);
+    assert.equal(fs.existsSync(target), false);
+  } finally {
+    server.closeAllConnections?.();
+    await new Promise((resolve) => server.close(resolve));
+    await fsp.rm(dir, { recursive: true, force: true });
+  }
+});
+
 test('la limite de débit ralentit réellement le téléchargement', async () => {
   const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'orbit-dl-'));
   const data = sampleBytes(256 * 1024);

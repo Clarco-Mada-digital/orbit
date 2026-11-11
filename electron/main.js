@@ -1148,6 +1148,8 @@ function rememberDownload(payload) {
       : current?.speedBytesPerSecond || 0,
     etaSeconds: Number.isFinite(payload.etaSeconds) ? payload.etaSeconds : current?.etaSeconds || 0,
     error: String(payload.error || current?.error || ''),
+    description: String(payload.description ?? current?.description ?? '').slice(0, 200),
+    priority: Number.isFinite(payload.priority) ? payload.priority : current?.priority || 0,
     createdAt: current?.createdAt || Date.now(),
     updatedAt: Date.now(),
   };
@@ -1381,7 +1383,7 @@ function getDownloadEngine() {
 // Où écrire le fichier : reprise d'un téléchargement interrompu de la même
 // adresse si son fichier partiel est encore là, sinon dossier choisi (avec
 // classement par type si demandé) et nom unique.
-async function pickEngineTarget({ url, filename, id }) {
+async function pickEngineTarget({ url, filename, id, directory = '', name = '' }) {
   const resumable = getDownloadHistory().find(
     (entry) =>
       entry.url === url &&
@@ -1392,7 +1394,13 @@ async function pickEngineTarget({ url, filename, id }) {
   if (resumable) return { filePath: resumable.savePath };
 
   const baseDir = ensureDownloadDir(downloadPrefs.dir || systemDownloadsDir());
-  const safeName = sanitizeFilename(filename) || `telechargement-${id}`;
+  // Nom choisi dans le dialogue d'abord, puis celui annoncé par le serveur.
+  const safeName = sanitizeFilename(name) || sanitizeFilename(filename) || `telechargement-${id}`;
+  // Dossier choisi explicitement : il fait foi, même si « demander où
+  // enregistrer » est coché — la question vient d'être posée.
+  if (directory) {
+    return { filePath: uniquePath(path.join(ensureDownloadDir(directory), safeName)) };
+  }
   if (downloadPrefs.ask) {
     const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined;
     const { canceled, filePath } = await dialog.showSaveDialog(win, {
@@ -6011,34 +6019,44 @@ function startMediaDownload(url, mode) {
     });
     pendingSavePrompts.add(parsed.url);
     const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined;
-    dialog.showSaveDialog(win, {
-      title: mode === 'audio' ? 'Enregistrer l’audio' : 'Enregistrer la vidéo',
-      defaultPath: path.join(dir, mode === 'audio' ? 'audio.m4a' : 'video.mp4'),
-      buttonLabel: 'Enregistrer',
-    }).then(({ canceled, filePath }) => {
-      if (canceled || !filePath) {
+    // Le titre de la vidéo est demandé avant la boîte de dialogue : le nom
+    // proposé doit dire de quelle vidéo il s'agit, pas « video.mp4 ».
+    downloader.fetchMediaTitle(parsed.url)
+      .catch(() => '')
+      .then((title) => {
+        const extension = mode === 'audio' ? (downloadPrefs.audioFormat || 'm4a') : 'mp4';
+        const suggested =
+          sanitizeFilename(title) || (mode === 'audio' ? 'audio' : 'video');
+        return dialog.showSaveDialog(win, {
+          title: mode === 'audio' ? 'Enregistrer l’audio' : 'Enregistrer la vidéo',
+          defaultPath: path.join(dir, `${suggested}.${extension}`),
+          buttonLabel: 'Enregistrer',
+        });
+      })
+      .then(({ canceled, filePath }) => {
+        if (canceled || !filePath) {
+          pendingSavePrompts.delete(parsed.url);
+          record.active = false;
+          progress({ id, filename: record.filename, state: 'cancelled', error: '' });
+          return;
+        }
+        const ext = path.extname(filePath);
+        const base = ext ? filePath.slice(0, -ext.length) : filePath;
+        const safeTemplate = `${base}.%(ext)s`;
+        record.active = true;
+        start(safeTemplate, formatConfig);
         pendingSavePrompts.delete(parsed.url);
+      }).catch((error) => {
+          pendingSavePrompts.delete(parsed.url);
+        console.error('[orbit] dialogue de destination du média échoué:', error);
         record.active = false;
-        progress({ id, filename: record.filename, state: 'cancelled', error: '' });
-        return;
-      }
-      const ext = path.extname(filePath);
-      const base = ext ? filePath.slice(0, -ext.length) : filePath;
-      const safeTemplate = `${base}.%(ext)s`;
-      record.active = true;
-      start(safeTemplate, formatConfig);
-      pendingSavePrompts.delete(parsed.url);
-    }).catch((error) => {
-      pendingSavePrompts.delete(parsed.url);
-      console.error('[orbit] dialogue de destination du média échoué:', error);
-      record.active = false;
-      progress({
-        id,
-        filename: record.filename,
-        state: 'interrupted',
-        error: String(error.message || error),
+        progress({
+          id,
+          filename: record.filename,
+          state: 'interrupted',
+          error: String(error.message || error),
+        });
       });
-    });
   } else {
     const template = path.join(dir, '%(title).200s [%(id)s].%(ext)s');
     start(template, formatConfig);
@@ -6047,14 +6065,34 @@ function startMediaDownload(url, mode) {
 }
 ipcMain.handle('media:download', (_e, { url, mode } = {}) => startMediaDownload(url, mode));
 
-ipcMain.handle('downloads:startUrl', (_event, value) => {
+// Options facultatives du dialogue « Nouveau téléchargement » : nom, dossier,
+// description, connexions, plafond propre et priorité. Absentes = réglages
+// généraux.
+function normalizeDownloadOptions(options = {}) {
+  const number = (value) => {
+    if (value === '' || value === null || value === undefined) return null;
+    const n = Number(value);
+    return Number.isFinite(n) ? n : null;
+  };
+  return {
+    directory: typeof options.directory === 'string' ? options.directory.trim() : '',
+    name: sanitizeFilename(typeof options.name === 'string' ? options.name : ''),
+    description: String(options.description || '').slice(0, 200),
+    connections: number(options.connections),
+    rate: number(options.rateBytesPerSecond),
+    priority: number(options.priority) ?? 0,
+    deferred: Boolean(options.deferred),
+  };
+}
+
+ipcMain.handle('downloads:startUrl', (_event, value, options = {}) => {
   const parsed = parseDownloadUrl(value);
   if (!parsed.success || parsed.type !== 'file') return { success: false, error: parsed.reason || 'invalid-url' };
   try {
     // Moteur accéléré : c'est ici qu'il apporte tout (connexions multiples,
     // reprise, limites de débit). Il retombe de lui-même en flux simple si le
     // serveur ne gère pas les plages d'octets.
-    return getDownloadEngine().add({ url: parsed.url });
+    return getDownloadEngine().add({ url: parsed.url, ...normalizeDownloadOptions(options) });
   } catch (error) {
     console.error('[orbit] démarrage du téléchargement URL échoué:', error);
     try {
@@ -6064,6 +6102,30 @@ ipcMain.handle('downloads:startUrl', (_event, value) => {
       return { success: false, error: String(fallbackError.message || fallbackError) };
     }
   }
+});
+
+// Cible proposée par défaut au dialogue : dossier de base, sous-dossier de
+// classement éventuel et nom suggéré par l'URL.
+ipcMain.handle('downloads:defaultTarget', (_event, name) => {
+  const baseDir = ensureDownloadDir(downloadPrefs.dir || systemDownloadsDir());
+  const safeName = sanitizeFilename(name || '') || 'telechargement';
+  const directory = downloadPrefs.categorize
+    ? ensureDownloadDir(path.join(baseDir, downloadCategory(safeName)))
+    : baseDir;
+  return { success: true, baseDir, directory, filename: safeName };
+});
+
+// Réglages d'un téléchargement déjà lancé (connexions, débit, priorité).
+ipcMain.handle('downloads:updateOptions', (_event, id, options = {}) => {
+  const normalized = normalizeDownloadOptions(options);
+  return {
+    success: getDownloadEngine().setOptions(id, {
+      connections: normalized.connections,
+      rate: normalized.rate,
+      priority: normalized.priority,
+      description: normalized.description,
+    }),
+  };
 });
 
 ipcMain.handle('downloads:openTorrent', async (_event, value) => {

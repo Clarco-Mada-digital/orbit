@@ -453,6 +453,14 @@ téléchargements de médias pris en charge et les réglages de destination. Vou
 pouvez choisir un dossier permanent ou demander un emplacement à chaque
 téléchargement. Les liens magnet sont transmis au client torrent associé par le
 système ; Orbit n’est pas lui-même un client torrent.</p>
+<h4 id="nouveau-telechargement-tout-choisir-avant-de-commencer">Nouveau téléchargement : tout choisir avant de commencer</h4>
+<p>Le champ d’adresse reste le chemin rapide : collez un lien, appuyez sur
+<strong>Entrée</strong>, le fichier part avec les réglages généraux. Le bouton <strong>Options…</strong>
+ouvre le dialogue complet, où chaque choix ne vaut que pour ce fichier :</p>
+<ul><li><strong>Adresse</strong> — modifiable sur place.</li><li><strong>Nom du fichier</strong> — déduit de l’adresse au départ, réécrivable.</li><li><strong>Catégorie</strong> — Images, Vidéos, Audio, Documents, Archives, Programmes, Autres ; changer de catégorie propose le sous-dossier correspondant.</li><li><strong>Dossier de destination</strong> — avec <strong>Parcourir…</strong> pour en choisir un autre.</li><li><strong>Description</strong> — une note à vous : elle s’affiche sous le nom du fichier et la recherche la trouve.</li><li><strong>Connexions par fichier</strong>, <strong>débit maximal</strong> propre à ce fichier et <strong>priorité</strong> (haute, normale, basse) : la priorité décide qui passe devant quand plusieurs transferts attendent leur tour.</li></ul>
+<p>Puis <strong>Télécharger maintenant</strong>, ou <strong>Plus tard</strong> : le fichier entre dans la
+file à l’état « En attente » et ne touche pas au réseau avant que vous ne
+pressiez ▶ sur sa ligne.</p>
 <h4 id="vitesse-et-connexions">Vitesse et connexions</h4>
 <p>Un lien ajouté à la main (champ « Ajouter un téléchargement ») est téléchargé
 par le <strong>moteur accéléré</strong> : le fichier est découpé en plusieurs parts
@@ -475,6 +483,14 @@ les téléchargements <strong>lancés depuis une page</strong> (clic sur un lien
 l’image sous… ») restent au moteur du navigateur, qui seul rejoue correctement
 un formulaire POST, le cookie du site et son Referer ; ils ne profitent donc pas
 des connexions multiples ni des plafonds de débit.</p>
+<h4 id="le-nom-des-videos">Le nom des vidéos</h4>
+<p>Une vidéo ou un audio téléchargé depuis le bouton <strong>Vidéo</strong> / <strong>Audio</strong> est
+enregistré sous le titre de la vidéo (<code>Titre [identifiant].mp4</code>), et non sous un
+nom générique : si vous avez demandé à choisir vous-même l’emplacement, Orbit
+demande d’abord le titre et le propose comme nom dans la boîte d’enregistrement.</p>
+<p>Un lien qui pointe vers une <strong>page</strong> (par exemple <code>…/watch?v=…</code>) n’est pas un
+fichier : Orbit le refuse avec un message qui renvoie vers <strong>Vidéo</strong> ou
+<strong>Audio</strong>, plutôt que d’enregistrer la page HTML sous un nom tiré de l’adresse.</p>
 <p>La disponibilité du téléchargement de vidéos/audio dépend des outils et des
 conditions du site source. Respectez les droits d’auteur, les conditions
 d’utilisation et les lois applicables.</p>

@@ -117,6 +117,12 @@ export class DownloadTask {
     connections = 8,
     rate = 0,
     retries = 3,
+    // Choix faits par l'utilisateur pour CE téléchargement (voir le dialogue
+    // « Nouveau téléchargement »). Vides = on suit les réglages généraux.
+    directory = '',
+    name = '',
+    description = '',
+    priority = 0,
     fetchImpl,
     resolveTarget,
     globalLimiter = null,
@@ -124,6 +130,12 @@ export class DownloadTask {
   }) {
     this.id = id;
     this.url = url;
+    this.directory = directory;
+    this.wantedName = name;
+    this.description = description;
+    this.priority = priority;
+    // Une tâche « plus tard » attend dans la file sans démarrer d'elle-même.
+    this.deferred = false;
     this.requestHeaders = { ...headers };
     this.connections = Math.max(1, Math.min(MAX_CONNECTIONS, Number(connections) || 8));
     this.retries = Math.max(0, Math.min(10, Number(retries) || 0));
@@ -165,6 +177,11 @@ export class DownloadTask {
       url: this.url,
       filename: this.filename || 'Téléchargement',
       savePath: this.savePath,
+      description: this.description,
+      priority: this.priority,
+      deferred: this.deferred,
+      connectionsLimit: this.connections,
+      rateLimit: this.limiter.get(),
       state: this.state,
       receivedBytes: this.downloaded,
       totalBytes: this.totalBytes,
@@ -328,6 +345,14 @@ export class DownloadTask {
     if (next !== this.connections) this.connections = next;
   }
 
+  setPriority(value) {
+    this.priority = Math.max(-1, Math.min(1, Math.round(Number(value) || 0)));
+  }
+
+  setDescription(value) {
+    this.description = String(value || '').slice(0, 200);
+  }
+
   // --- préparation -------------------------------------------------------
 
   async prepare() {
@@ -343,8 +368,12 @@ export class DownloadTask {
       filename: probe.filename || 'telechargement',
       totalBytes: probe.totalBytes,
       suggestedName: probe.filename,
+      directory: this.directory,
+      name: this.wantedName,
     });
-    this.filename = probe.filename || path.basename(target.filePath || '');
+    // Le nom affiché est le nom RÉEL sur le disque : si l'utilisateur a choisi
+    // un autre nom dans le dialogue, c'est celui-là qui compte.
+    this.filename = path.basename(target.filePath || '') || probe.filename || 'telechargement';
     this.savePath = target.filePath;
     this.partPath = `${target.filePath}.orbitpart`;
     this.statePath = `${target.filePath}.orbitdl`;
@@ -390,6 +419,19 @@ export class DownloadTask {
     }
     if (!response.ok && status !== 206) {
       throw taggedError(`Le serveur a répondu ${status}.`, 'HTTP');
+    }
+
+    // Une adresse de PAGE (« youtube.com/watch?v=… ») ne porte aucun nom de
+    // fichier : sans cette garde on enregistrait le HTML sous le nom du dernier
+    // segment de l'adresse, donc sans le titre de la vidéo. Mieux vaut le dire
+    // et laisser l'utilisateur passer par le téléchargement vidéo.
+    const contentType = (response.headers.get('content-type') || '').toLowerCase();
+    const addressName = filenameFromUrl(response.url || this.url);
+    if (contentType.includes('text/html') && !/\.[a-z0-9]{1,8}$/i.test(addressName)) {
+      throw taggedError(
+        'Ce lien renvoie une page web, pas un fichier. Utilisez « Vidéo » ou « Audio » pour enregistrer son contenu.',
+        'PAGE'
+      );
     }
 
     const contentRange = response.headers.get('content-range') || '';

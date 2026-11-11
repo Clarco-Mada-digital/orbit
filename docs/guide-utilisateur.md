@@ -476,6 +476,27 @@ pouvez choisir un dossier permanent ou demander un emplacement à chaque
 téléchargement. Les liens magnet sont transmis au client torrent associé par le
 système ; Orbit n’est pas lui-même un client torrent.
 
+#### Nouveau téléchargement : tout choisir avant de commencer
+
+Le champ d’adresse reste le chemin rapide : collez un lien, appuyez sur
+**Entrée**, le fichier part avec les réglages généraux. Le bouton **Options…**
+ouvre le dialogue complet, où chaque choix ne vaut que pour ce fichier :
+
+- **Adresse** — modifiable sur place.
+- **Nom du fichier** — déduit de l’adresse au départ, réécrivable.
+- **Catégorie** — Images, Vidéos, Audio, Documents, Archives, Programmes,
+  Autres ; changer de catégorie propose le sous-dossier correspondant.
+- **Dossier de destination** — avec **Parcourir…** pour en choisir un autre.
+- **Description** — une note à vous : elle s’affiche sous le nom du fichier et
+  la recherche la trouve.
+- **Connexions par fichier**, **débit maximal** propre à ce fichier et
+  **priorité** (haute, normale, basse) : la priorité décide qui passe devant
+  quand plusieurs transferts attendent leur tour.
+
+Puis **Télécharger maintenant**, ou **Plus tard** : le fichier entre dans la
+file à l’état « En attente » et ne touche pas au réseau avant que vous ne
+pressiez ▶ sur sa ligne.
+
 #### Vitesse et connexions
 
 Un lien ajouté à la main (champ « Ajouter un téléchargement ») est téléchargé
@@ -512,6 +533,17 @@ les téléchargements **lancés depuis une page** (clic sur un lien, « Enregist
 l’image sous… ») restent au moteur du navigateur, qui seul rejoue correctement
 un formulaire POST, le cookie du site et son Referer ; ils ne profitent donc pas
 des connexions multiples ni des plafonds de débit.
+
+#### Le nom des vidéos
+
+Une vidéo ou un audio téléchargé depuis le bouton **Vidéo** / **Audio** est
+enregistré sous le titre de la vidéo (`Titre [identifiant].mp4`), et non sous un
+nom générique : si vous avez demandé à choisir vous-même l’emplacement, Orbit
+demande d’abord le titre et le propose comme nom dans la boîte d’enregistrement.
+
+Un lien qui pointe vers une **page** (par exemple `…/watch?v=…`) n’est pas un
+fichier : Orbit le refuse avec un message qui renvoie vers **Vidéo** ou
+**Audio**, plutôt que d’enregistrer la page HTML sous un nom tiré de l’adresse.
 
 La disponibilité du téléchargement de vidéos/audio dépend des outils et des
 conditions du site source. Respectez les droits d’auteur, les conditions

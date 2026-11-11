@@ -173,7 +173,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   openOutside: (url) => ipcRenderer.invoke('document:openOutside', url),
   // Téléchargement vidéo/audio (yt-dlp) — mode: 'video' | 'audio'
   downloadMedia: (url, mode) => ipcRenderer.invoke('media:download', { url, mode }),
-  startDownloadUrl: (url) => ipcRenderer.invoke('downloads:startUrl', url),
+  startDownloadUrl: (url, options) => ipcRenderer.invoke('downloads:startUrl', url, options),
+  downloadDefaultTarget: (name) => ipcRenderer.invoke('downloads:defaultTarget', name),
+  updateDownloadOptions: (id, options) => ipcRenderer.invoke('downloads:updateOptions', id, options),
   openTorrentLink: (url) => ipcRenderer.invoke('downloads:openTorrent', url),
   // Ouvrir une app dans une fenêtre détachée (même session)
   openDetached: (payload) => ipcRenderer.invoke('app:openDetached', payload),
