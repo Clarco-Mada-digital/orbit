@@ -41,6 +41,24 @@ La plus récente en premier.
   pistage) ou *Complet* (avec les nuisances : bandeaux de cookies, widgets
   sociaux), persisté côté processus principal avec son propre cache. Le panneau
   **Boucliers** propose de recharger la page après un changement de réglage.
+- **Téléchargements : moteur accéléré multi-connexions.** Un lien ajouté à la
+  main est découpé en parts téléchargées en parallèle (1 à 16 connexions), la
+  plus grosse part restante étant recoupée dès qu'une connexion se libère — une
+  connexion lente ne plafonne plus tout le transfert. Le fichier n'apparaît sous
+  son vrai nom qu'une fois complet (`.orbitpart` pendant le transfert).
+- **Téléchargements : reprise exacte, même après un redémarrage.** Une table de
+  segments (`.orbitdl`) retient la position de chaque part, la taille et les
+  validateurs du serveur (ETag / Last-Modified). Coupure réseau, pause ou
+  fermeture d'Orbit : le transfert reprend à l'octet près sans redemander ce qui
+  est déjà écrit. Une coupure est réessayée automatiquement, avec attente
+  croissante.
+- **Téléchargements : vitesse et file d'attente réglables.** Connexions par
+  fichier, transferts simultanés (les suivants attendent leur tour), plafond de
+  débit global et plafond par fichier en Ko/s, réessais automatiques, classement
+  par type (Images, Vidéos, Audio, Documents, Archives, Programmes, Autres).
+  Les limites s'appliquent **à chaud**, y compris aux transferts en cours, et
+  depuis les deux endroits où on les cherche : Réglages → Téléchargements et
+  panneau Téléchargements → Préférences.
 - **Fenêtres détachées : relecture et assistant sur place.** Depuis une fenêtre
   détachée, la relecture (clic droit ou `Alt/⌘ + Maj + E`) et l'assistant
   (`Alt/⌘ + Maj + I`) s'ouvrent dans une fenêtre sœur collée à la page, au lieu

@@ -21,6 +21,7 @@ import {
   Upload,
   Link2,
   Download,
+  Network,
   Bot,
 } from 'lucide-react';
 import { useStore } from '../stores/useStore';
@@ -426,6 +427,109 @@ export default function Settings({ onClose }) {
                       />
                     </label>
                     <p className="text-xs text-text-muted mt-3">{t('st.dl.askFallback')}</p>
+                  </div>
+
+                  {/* Moteur accéléré : les mêmes réglages que dans le panneau
+                      Téléchargements, là où l'utilisateur les cherche aussi. */}
+                  <div className="card">
+                    <div className="flex items-center gap-2 mb-1">
+                      <Network size={18} className="text-accent-primary" />
+                      <h4 className="font-semibold">{t('st.dl.turbo')}</h4>
+                    </div>
+                    <p className="text-sm text-text-muted mb-4">{t('st.dl.turboDesc')}</p>
+
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <label className="space-y-1.5 text-sm">
+                        <span className="block font-medium">{t('dl.connections')}</span>
+                        <select
+                          value={settings.downloadConnections ?? 8}
+                          onChange={(e) => updateSettings({ downloadConnections: Number(e.target.value) })}
+                          className="input w-full"
+                        >
+                          {[1, 2, 4, 6, 8, 12, 16].map((value) => (
+                            <option key={value} value={value}>
+                              {value === 1 ? t('dl.connectionsOne') : `${value}`}
+                            </option>
+                          ))}
+                        </select>
+                        <span className="block text-xs text-text-muted">{t('dl.connectionsHint')}</span>
+                      </label>
+
+                      <label className="space-y-1.5 text-sm">
+                        <span className="block font-medium">{t('dl.simultaneous')}</span>
+                        <select
+                          value={settings.downloadMaxConcurrent ?? 3}
+                          onChange={(e) => updateSettings({ downloadMaxConcurrent: Number(e.target.value) })}
+                          className="input w-full"
+                        >
+                          {[1, 2, 3, 4, 5].map((value) => (
+                            <option key={value} value={value}>{value}</option>
+                          ))}
+                        </select>
+                        <span className="block text-xs text-text-muted">{t('dl.simultaneousHint')}</span>
+                      </label>
+
+                      <label className="space-y-1.5 text-sm">
+                        <span className="block font-medium">{t('dl.globalLimit')}</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="64"
+                          inputMode="numeric"
+                          value={settings.downloadSpeedLimit ?? 0}
+                          onChange={(e) =>
+                            updateSettings({ downloadSpeedLimit: Math.max(0, Number(e.target.value) || 0) })
+                          }
+                          className="input w-full"
+                        />
+                        <span className="block text-xs text-text-muted">{t('dl.globalLimitHint')}</span>
+                      </label>
+
+                      <label className="space-y-1.5 text-sm">
+                        <span className="block font-medium">{t('dl.fileLimit')}</span>
+                        <input
+                          type="number"
+                          min="0"
+                          step="64"
+                          inputMode="numeric"
+                          value={settings.downloadFileSpeedLimit ?? 0}
+                          onChange={(e) =>
+                            updateSettings({ downloadFileSpeedLimit: Math.max(0, Number(e.target.value) || 0) })
+                          }
+                          className="input w-full"
+                        />
+                        <span className="block text-xs text-text-muted">{t('dl.fileLimitHint')}</span>
+                      </label>
+
+                      <label className="space-y-1.5 text-sm">
+                        <span className="block font-medium">{t('dl.autoretry')}</span>
+                        <select
+                          value={settings.downloadRetries ?? 3}
+                          onChange={(e) => updateSettings({ downloadRetries: Number(e.target.value) })}
+                          className="input w-full"
+                        >
+                          {[0, 1, 2, 3, 5, 8].map((value) => (
+                            <option key={value} value={value}>
+                              {value === 0 ? t('dl.autoretryNone') : `${value}`}
+                            </option>
+                          ))}
+                        </select>
+                        <span className="block text-xs text-text-muted">{t('dl.autoretryHint')}</span>
+                      </label>
+
+                      <label className="flex items-start justify-between gap-3 rounded-lg border border-border bg-bg-elevated/40 p-3 sm:mt-6">
+                        <span>
+                          <span className="block font-medium">{t('dl.categorize')}</span>
+                          <span className="text-xs text-text-muted">{t('dl.categorizeHint')}</span>
+                        </span>
+                        <input
+                          type="checkbox"
+                          checked={settings.downloadCategorize === true}
+                          onChange={(e) => updateSettings({ downloadCategorize: e.target.checked })}
+                          className="mt-0.5 h-5 w-5 shrink-0 accent-[var(--accent-primary)]"
+                        />
+                      </label>
+                    </div>
                   </div>
                 </div>
               )}

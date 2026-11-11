@@ -379,12 +379,27 @@ const [editUrlFor, setEditUrlFor] = useState(null); // { id, url } — boîte «
       ask: settings.askDownloadPath === true,
       videoQuality: settings.downloadVideoQuality || 'best',
       audioFormat: settings.downloadAudioFormat || 'm4a',
+      // Moteur accéléré. L'interface raisonne en Ko/s (lisible), le processus
+      // principal en octets par seconde (utile) : la conversion est ici, un
+      // seul endroit à corriger si l'unité change.
+      connections: settings.downloadConnections ?? 8,
+      maxConcurrent: settings.downloadMaxConcurrent ?? 3,
+      globalRate: Math.max(0, Number(settings.downloadSpeedLimit) || 0) * 1024,
+      perFileRate: Math.max(0, Number(settings.downloadFileSpeedLimit) || 0) * 1024,
+      retries: settings.downloadRetries ?? 3,
+      categorize: settings.downloadCategorize === true,
     });
   }, [
     settings.downloadDir,
     settings.askDownloadPath,
     settings.downloadVideoQuality,
     settings.downloadAudioFormat,
+    settings.downloadConnections,
+    settings.downloadMaxConcurrent,
+    settings.downloadSpeedLimit,
+    settings.downloadFileSpeedLimit,
+    settings.downloadRetries,
+    settings.downloadCategorize,
   ]);
 
   // Média : pour synchroniser le mini-lecteur flottant

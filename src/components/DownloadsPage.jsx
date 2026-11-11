@@ -9,6 +9,7 @@ import {
   File,
   FolderOpen,
   Gauge,
+  Network,
   Pause,
   Play,
   RefreshCw,
@@ -45,8 +46,11 @@ function humanTime(seconds) {
 }
 
 function isActive(state) {
-  return state === 'progressing' || state === 'paused' || state === 'selecting';
+  return (
+    state === 'progressing' || state === 'paused' || state === 'selecting' || state === 'queued'
+  );
 }
+
 
 export default function DownloadsPage({ onClose }) {
   const t = useT();
@@ -303,13 +307,24 @@ export default function DownloadsPage({ onClose }) {
                           <span>{humanSize(item.receivedBytes)}{item.totalBytes > 0 ? ` / ${humanSize(item.totalBytes)}` : ''}</span>
                           {percent !== null && <span>{percent}%</span>}
                           {item.speedBytesPerSecond > 0 && <span className="inline-flex items-center gap-1"><Gauge size={12} />{humanSize(item.speedBytesPerSecond)}/s</span>}
+                          {active && item.connections > 0 && (
+                            <span className="inline-flex items-center gap-1" title={t('dl.connectionsHint')}>
+                              <Network size={12} />
+                              {item.connections > 1
+                                ? t('dl.connectionsCount', { n: item.connections })
+                                : t('dl.connectionOne')}
+                            </span>
+                          )}
                           {active && item.etaSeconds > 0 && <span className="inline-flex items-center gap-1"><Clock3 size={12} />{humanTime(item.etaSeconds)}</span>}
                           {item.updatedAt && <span>{new Date(item.updatedAt).toLocaleString()}</span>}
                         </div>
                         {item.error && <p className="mt-2 break-words text-xs text-error">{item.error}</p>}
                         {active && (
                           <div className="mt-3 h-1.5 overflow-hidden rounded-full bg-bg-hover">
-                            <div className="h-full rounded-full bg-accent-primary transition-[width] duration-300" style={{ width: percent === null ? '35%' : `${percent}%` }} />
+                            <div
+                              className={`h-full rounded-full bg-accent-primary transition-[width] duration-300 ${item.state === 'queued' || percent === null ? 'animate-pulse' : ''}`}
+                              style={{ width: item.state === 'queued' ? '100%' : percent === null ? '35%' : `${percent}%` }}
+                            />
                           </div>
                         )}
                       </div>
@@ -347,6 +362,100 @@ export default function DownloadsPage({ onClose }) {
             <summary className="flex cursor-pointer list-none items-center gap-2 px-4 py-3 text-sm font-medium">
               <Settings2 size={16} className="text-text-muted" /> {t('dl.preferences')}
             </summary>
+
+            <div className="border-t border-border p-4">
+              <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-text-muted">
+                <Network size={14} /> {t('dl.turboTitle')}
+              </div>
+              <p className="mb-3 text-xs text-text-muted">{t('dl.turboHint')}</p>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="space-y-1.5 text-sm">
+                  <span className="block font-medium">{t('dl.connections')}</span>
+                  <select
+                    value={settings.downloadConnections ?? 8}
+                    onChange={(event) => updateSettings({ downloadConnections: Number(event.target.value) })}
+                    className="input w-full"
+                  >
+                    {[1, 2, 4, 6, 8, 12, 16].map((value) => (
+                      <option key={value} value={value}>
+                        {value === 1 ? t('dl.connectionsOne') : `${value}`}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="block text-xs text-text-muted">{t('dl.connectionsHint')}</span>
+                </label>
+                <label className="space-y-1.5 text-sm">
+                  <span className="block font-medium">{t('dl.simultaneous')}</span>
+                  <select
+                    value={settings.downloadMaxConcurrent ?? 3}
+                    onChange={(event) => updateSettings({ downloadMaxConcurrent: Number(event.target.value) })}
+                    className="input w-full"
+                  >
+                    {[1, 2, 3, 4, 5].map((value) => <option key={value} value={value}>{value}</option>)}
+                  </select>
+                  <span className="block text-xs text-text-muted">{t('dl.simultaneousHint')}</span>
+                </label>
+                <label className="space-y-1.5 text-sm">
+                  <span className="block font-medium">{t('dl.globalLimit')}</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="64"
+                    inputMode="numeric"
+                    value={settings.downloadSpeedLimit ?? 0}
+                    onChange={(event) =>
+                      updateSettings({ downloadSpeedLimit: Math.max(0, Number(event.target.value) || 0) })
+                    }
+                    className="input w-full"
+                  />
+                  <span className="block text-xs text-text-muted">{t('dl.globalLimitHint')}</span>
+                </label>
+                <label className="space-y-1.5 text-sm">
+                  <span className="block font-medium">{t('dl.fileLimit')}</span>
+                  <input
+                    type="number"
+                    min="0"
+                    step="64"
+                    inputMode="numeric"
+                    value={settings.downloadFileSpeedLimit ?? 0}
+                    onChange={(event) =>
+                      updateSettings({ downloadFileSpeedLimit: Math.max(0, Number(event.target.value) || 0) })
+                    }
+                    className="input w-full"
+                  />
+                  <span className="block text-xs text-text-muted">{t('dl.fileLimitHint')}</span>
+                </label>
+                <label className="space-y-1.5 text-sm">
+                  <span className="block font-medium">{t('dl.autoretry')}</span>
+                  <select
+                    value={settings.downloadRetries ?? 3}
+                    onChange={(event) => updateSettings({ downloadRetries: Number(event.target.value) })}
+                    className="input w-full"
+                  >
+                    {[0, 1, 2, 3, 5, 8].map((value) => (
+                      <option key={value} value={value}>
+                        {value === 0 ? t('dl.autoretryNone') : `${value}`}
+                      </option>
+                    ))}
+                  </select>
+                  <span className="block text-xs text-text-muted">{t('dl.autoretryHint')}</span>
+                </label>
+                <label className="flex items-start justify-between gap-3 rounded-lg border border-border bg-bg-elevated/40 p-3 sm:mt-6">
+                  <span>
+                    <span className="block font-medium">{t('dl.categorize')}</span>
+                    <span className="text-xs text-text-muted">{t('dl.categorizeHint')}</span>
+                  </span>
+                  <input
+                    type="checkbox"
+                    checked={settings.downloadCategorize === true}
+                    onChange={(event) => updateSettings({ downloadCategorize: event.target.checked })}
+                    className="mt-0.5 h-5 w-5 shrink-0 accent-[var(--accent-primary)]"
+                  />
+                </label>
+              </div>
+              <p className="mt-3 text-xs text-text-muted">{t('dl.folderHint')}</p>
+            </div>
+
             <div className="grid gap-4 border-t border-border p-4 sm:grid-cols-2">
               <label className="space-y-1.5 text-sm">
                 <span className="block font-medium">{t('dl.videoQuality')}</span>

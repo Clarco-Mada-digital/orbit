@@ -476,6 +476,43 @@ pouvez choisir un dossier permanent ou demander un emplacement à chaque
 téléchargement. Les liens magnet sont transmis au client torrent associé par le
 système ; Orbit n’est pas lui-même un client torrent.
 
+#### Vitesse et connexions
+
+Un lien ajouté à la main (champ « Ajouter un téléchargement ») est téléchargé
+par le **moteur accéléré** : le fichier est découpé en plusieurs parts
+téléchargées en parallèle, et la plus grosse part restante est recoupée dès
+qu’une connexion se libère. Une connexion lente ne plafonne donc plus tout le
+transfert.
+
+Ces réglages se trouvent dans **Réglages → Téléchargements → Vitesse et
+connexions** et dans le panneau **Téléchargements → Préférences** :
+
+- **Connexions par fichier** (1 à 16) — `1` désactive l’accélération.
+- **Téléchargements simultanés** — au-delà, les transferts attendent leur tour
+  (état « En attente ») au lieu de se partager la bande passante.
+- **Débit maximal global** et **débit maximal par fichier**, en Ko/s ; `0`
+  signifie aucune limite. Les limites s’appliquent **à chaud**, y compris aux
+  transferts déjà en cours.
+- **Réessais automatiques** — quand le réseau lâche, la part en cours reprend
+  là où elle s’est arrêtée, avec une attente croissante entre les essais.
+- **Classer par type** — crée des sous-dossiers `Images`, `Vidéos`, `Audio`,
+  `Documents`, `Archives`, `Programmes` et `Autres` dans le dossier choisi.
+
+Le fichier n’apparaît sous son vrai nom qu’une fois complet : tant qu’il
+télécharge, il s’appelle `<nom>.orbitpart`. Une table de segments
+(`<nom>.orbitdl`) retient la position de chaque part, la taille et les
+validateurs du serveur (ETag, Last-Modified). Un téléchargement interrompu —
+coupure réseau, pause, ou fermeture d’Orbit — **reprend donc à l’octet près**,
+y compris au lancement suivant ; il suffit de rouvrir la page Téléchargements et
+de relancer l’élément interrompu.
+
+Deux limites à connaître. Un serveur qui ne gère pas les plages d’octets est
+téléchargé en flux simple (une connexion, sans reprise) : c’est automatique. Et
+les téléchargements **lancés depuis une page** (clic sur un lien, « Enregistrer
+l’image sous… ») restent au moteur du navigateur, qui seul rejoue correctement
+un formulaire POST, le cookie du site et son Referer ; ils ne profitent donc pas
+des connexions multiples ni des plafonds de débit.
+
 La disponibilité du téléchargement de vidéos/audio dépend des outils et des
 conditions du site source. Respectez les droits d’auteur, les conditions
 d’utilisation et les lois applicables.

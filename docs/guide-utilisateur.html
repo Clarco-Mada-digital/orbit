@@ -453,6 +453,28 @@ téléchargements de médias pris en charge et les réglages de destination. Vou
 pouvez choisir un dossier permanent ou demander un emplacement à chaque
 téléchargement. Les liens magnet sont transmis au client torrent associé par le
 système ; Orbit n’est pas lui-même un client torrent.</p>
+<h4 id="vitesse-et-connexions">Vitesse et connexions</h4>
+<p>Un lien ajouté à la main (champ « Ajouter un téléchargement ») est téléchargé
+par le <strong>moteur accéléré</strong> : le fichier est découpé en plusieurs parts
+téléchargées en parallèle, et la plus grosse part restante est recoupée dès
+qu’une connexion se libère. Une connexion lente ne plafonne donc plus tout le
+transfert.</p>
+<p>Ces réglages se trouvent dans <strong>Réglages → Téléchargements → Vitesse et
+connexions</strong> et dans le panneau <strong>Téléchargements → Préférences</strong> :</p>
+<ul><li><strong>Connexions par fichier</strong> (1 à 16) — <code>1</code> désactive l’accélération.</li><li><strong>Téléchargements simultanés</strong> — au-delà, les transferts attendent leur tour (état « En attente ») au lieu de se partager la bande passante.</li><li><strong>Débit maximal global</strong> et <strong>débit maximal par fichier</strong>, en Ko/s ; <code>0</code> signifie aucune limite. Les limites s’appliquent <strong>à chaud</strong>, y compris aux transferts déjà en cours.</li><li><strong>Réessais automatiques</strong> — quand le réseau lâche, la part en cours reprend là où elle s’est arrêtée, avec une attente croissante entre les essais.</li><li><strong>Classer par type</strong> — crée des sous-dossiers <code>Images</code>, <code>Vidéos</code>, <code>Audio</code>, <code>Documents</code>, <code>Archives</code>, <code>Programmes</code> et <code>Autres</code> dans le dossier choisi.</li></ul>
+<p>Le fichier n’apparaît sous son vrai nom qu’une fois complet : tant qu’il
+télécharge, il s’appelle <code>&lt;nom&gt;.orbitpart</code>. Une table de segments
+(<code>&lt;nom&gt;.orbitdl</code>) retient la position de chaque part, la taille et les
+validateurs du serveur (ETag, Last-Modified). Un téléchargement interrompu —
+coupure réseau, pause, ou fermeture d’Orbit — <strong>reprend donc à l’octet près</strong>,
+y compris au lancement suivant ; il suffit de rouvrir la page Téléchargements et
+de relancer l’élément interrompu.</p>
+<p>Deux limites à connaître. Un serveur qui ne gère pas les plages d’octets est
+téléchargé en flux simple (une connexion, sans reprise) : c’est automatique. Et
+les téléchargements <strong>lancés depuis une page</strong> (clic sur un lien, « Enregistrer
+l’image sous… ») restent au moteur du navigateur, qui seul rejoue correctement
+un formulaire POST, le cookie du site et son Referer ; ils ne profitent donc pas
+des connexions multiples ni des plafonds de débit.</p>
 <p>La disponibilité du téléchargement de vidéos/audio dépend des outils et des
 conditions du site source. Respectez les droits d’auteur, les conditions
 d’utilisation et les lois applicables.</p>

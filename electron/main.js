@@ -24,6 +24,8 @@ import * as studio from './studio.js';
 import * as sitePermissions from './site-permissions.js';
 import * as tts from './tts.js';
 import * as downloader from './downloader.js';
+import { DownloadManager } from './download/manager.js';
+import { sanitizeFilename } from './download/engine.js';
 import electronUpdater from 'electron-updater';
 import { matchShortcutInput } from '../src/lib/shortcuts.js';
 import { matchLinkRule } from '../src/lib/rules.js';
@@ -35,6 +37,7 @@ import {
   sensitiveMatchIsValid,
 } from '../src/lib/sensitive.js';
 import { savePlan } from '../src/lib/downloadPath.js';
+import { downloadCategory } from '../src/lib/downloadCategories.js';
 import { mediaFormatOptions, parseDownloadUrl } from '../src/lib/downloadOptions.js';
 import { getDomain } from 'tldts-experimental';
 import { fileURLToPath } from 'url';
@@ -64,6 +67,8 @@ let isQuitting = false;
 let closeToTray = false; // synchronisé depuis les réglages du renderer (opt-in)
 // L'utilisateur a confirmé vouloir quitter malgré des téléchargements en cours
 let downloadQuitConfirmed = false;
+// Une seule écriture de l'état des transferts accélérés à la fermeture.
+let engineFlushed = false;
 let trayInfoShown = false;
 let summonAccel = null;
 
@@ -1214,6 +1219,15 @@ let downloadPrefs = {
   ask: false,
   videoQuality: 'best',
   audioFormat: 'm4a',
+  // Moteur accéléré (voir electron/download/) : nombre de connexions par
+  // fichier, transferts simultanés, plafonds de débit (octets/s, 0 = aucune
+  // limite), réessais automatiques, classement par type.
+  connections: 8,
+  maxConcurrent: 3,
+  globalRate: 0,
+  perFileRate: 0,
+  retries: 3,
+  categorize: false,
 };
 
 // Le dossier de l'utilisateur a pu être supprimé depuis le dernier lancement :
@@ -1336,6 +1350,88 @@ function setupDownloads(ses) {
       refreshDownloadPowerBlocker();
     });
   });
+}
+
+// ---------------------------------------------------------------------------
+// Téléchargements ACCÉLÉRÉS (moteur maison, voir electron/download/)
+// ---------------------------------------------------------------------------
+// Le moteur du navigateur télécharge sur UNE connexion, sans limite de débit
+// ni reprise après un redémarrage. Pour les liens ajoutés à la main (et les
+// reprises), on prend donc le relais : plusieurs connexions Range, coupure
+// dynamique des parts, reprise exacte, plafonds de débit, réessais.
+//
+// Les téléchargements déclenchés PAR UNE PAGE restent au moteur du navigateur :
+// lui seul rejoue correctement un POST de formulaire, le cookie du site et un
+// Referer exotique. C'est un choix assumé, pas un oubli.
+let downloadEngine = null;
+
+function getDownloadEngine() {
+  if (downloadEngine) return downloadEngine;
+  downloadEngine = new DownloadManager({
+    // `session.fetch` envoie les cookies et le proxy de la session par défaut,
+    // exactement comme le navigateur : un lien authentifié fonctionne.
+    fetchImpl: (url, init) => session.defaultSession.fetch(url, init),
+    resolveTarget: pickEngineTarget,
+    onEvent: handleEngineEvent,
+  });
+  downloadEngine.setSettings(downloadPrefs);
+  return downloadEngine;
+}
+
+// Où écrire le fichier : reprise d'un téléchargement interrompu de la même
+// adresse si son fichier partiel est encore là, sinon dossier choisi (avec
+// classement par type si demandé) et nom unique.
+async function pickEngineTarget({ url, filename, id }) {
+  const resumable = getDownloadHistory().find(
+    (entry) =>
+      entry.url === url &&
+      entry.savePath &&
+      (entry.state === 'interrupted' || entry.state === 'paused') &&
+      fs.existsSync(`${entry.savePath}.orbitdl`)
+  );
+  if (resumable) return { filePath: resumable.savePath };
+
+  const baseDir = ensureDownloadDir(downloadPrefs.dir || systemDownloadsDir());
+  const safeName = sanitizeFilename(filename) || `telechargement-${id}`;
+  if (downloadPrefs.ask) {
+    const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined;
+    const { canceled, filePath } = await dialog.showSaveDialog(win, {
+      title: 'Enregistrer le téléchargement',
+      defaultPath: path.join(baseDir, safeName),
+      buttonLabel: 'Enregistrer',
+    });
+    if (canceled || !filePath) {
+      const error = new Error('Enregistrement annulé.');
+      error.code = 'CANCELLED';
+      throw error;
+    }
+    return { filePath };
+  }
+  const dir = downloadPrefs.categorize
+    ? ensureDownloadDir(path.join(baseDir, downloadCategory(safeName)))
+    : baseDir;
+  return { filePath: uniquePath(path.join(dir, safeName)) };
+}
+
+// Le moteur parle la même langue que le téléchargement natif : l'interface
+// n'a qu'un seul format d'événement à connaître.
+function handleEngineEvent(payload) {
+  const id = payload?.id;
+  if (!id) return;
+  const previous = downloads.get(id) || {};
+  downloads.set(id, {
+    ...previous,
+    url: payload.url || previous.url || '',
+    filename: payload.filename || previous.filename || 'Téléchargement',
+    savePath: payload.savePath || previous.savePath || '',
+    kind: 'file',
+    engine: true,
+    canPause: true,
+    item: null,
+    active: payload.state === 'progressing',
+  });
+  broadcastDownload({ ...payload, kind: 'file', canPause: true });
+  refreshDownloadPowerBlocker();
 }
 
 // ---------------------------------------------------------------------------
@@ -5665,6 +5761,7 @@ ipcMain.handle('downloads:reveal', (_event, id) => {
 
 ipcMain.handle('downloads:cancel', (_event, id) => {
   const rec = downloads.get(id);
+  if (rec?.engine) return { success: getDownloadEngine().cancel(id) };
   try {
     rec?.item?.cancel();
   } catch {
@@ -5675,6 +5772,7 @@ ipcMain.handle('downloads:cancel', (_event, id) => {
 
 ipcMain.handle('downloads:pause', (_event, id) => {
   const rec = downloads.get(id);
+  if (rec?.engine) return { success: getDownloadEngine().pause(id) };
   try {
     if (typeof rec?.item?.pause !== 'function') return { success: false, error: 'not-pausable' };
     rec.item.pause();
@@ -5691,6 +5789,7 @@ ipcMain.handle('downloads:pause', (_event, id) => {
 
 ipcMain.handle('downloads:resume', (_event, id) => {
   const rec = downloads.get(id);
+  if (rec?.engine) return { success: getDownloadEngine().resume(id) };
   try {
     if (typeof rec?.item?.resume !== 'function') return { success: false, error: 'not-resumable' };
     rec.active = true;
@@ -5710,6 +5809,11 @@ ipcMain.handle('downloads:list', () => ({ success: true, downloads: getDownloadH
 ipcMain.handle('downloads:remove', (_event, id) => {
   const rec = downloads.get(id);
   if (rec?.active || rec?.item) return { success: false, error: 'download-active' };
+  if (rec?.engine) {
+    const manager = getDownloadEngine();
+    // Une tâche encore connue du moteur (en pause) doit aussi en sortir.
+    if (manager.has(id) && !manager.remove(id)) return { success: false, error: 'download-active' };
+  }
   downloads.delete(id);
   downloadHistory = getDownloadHistory().filter((entry) => entry.id !== id);
   saveDownloadHistory();
@@ -5737,6 +5841,11 @@ ipcMain.handle('downloads:openFolder', () => {
 
 // Réglages de téléchargement poussés par l'interface (dossier + « demander »).
 ipcMain.handle('downloads:setPrefs', (_event, prefs = {}) => {
+  const number = (value, min, max, fallback) => {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return fallback;
+    return Math.min(max, Math.max(min, Math.round(n)));
+  };
   downloadPrefs = {
     dir: String(prefs.dir || '').trim(),
     ask: Boolean(prefs.ask),
@@ -5744,7 +5853,15 @@ ipcMain.handle('downloads:setPrefs', (_event, prefs = {}) => {
       ? prefs.videoQuality
       : 'best',
     audioFormat: ['m4a', 'mp3'].includes(prefs.audioFormat) ? prefs.audioFormat : 'm4a',
+    connections: number(prefs.connections, 1, 16, downloadPrefs.connections),
+    maxConcurrent: number(prefs.maxConcurrent, 1, 10, downloadPrefs.maxConcurrent),
+    globalRate: number(prefs.globalRate, 0, 10 * 1024 * 1024, downloadPrefs.globalRate),
+    perFileRate: number(prefs.perFileRate, 0, 10 * 1024 * 1024, downloadPrefs.perFileRate),
+    retries: number(prefs.retries, 0, 10, downloadPrefs.retries),
+    categorize: Boolean(prefs.categorize),
   };
+  // Les limites s'appliquent À CHAUD, y compris aux transferts en cours.
+  getDownloadEngine().setSettings(downloadPrefs);
   return { success: true, prefs: downloadPrefs };
 });
 
@@ -5934,11 +6051,18 @@ ipcMain.handle('downloads:startUrl', (_event, value) => {
   const parsed = parseDownloadUrl(value);
   if (!parsed.success || parsed.type !== 'file') return { success: false, error: parsed.reason || 'invalid-url' };
   try {
-    session.defaultSession.downloadURL(parsed.url);
-    return { success: true };
+    // Moteur accéléré : c'est ici qu'il apporte tout (connexions multiples,
+    // reprise, limites de débit). Il retombe de lui-même en flux simple si le
+    // serveur ne gère pas les plages d'octets.
+    return getDownloadEngine().add({ url: parsed.url });
   } catch (error) {
     console.error('[orbit] démarrage du téléchargement URL échoué:', error);
-    return { success: false, error: String(error.message || error) };
+    try {
+      session.defaultSession.downloadURL(parsed.url);
+      return { success: true };
+    } catch (fallbackError) {
+      return { success: false, error: String(fallbackError.message || fallbackError) };
+    }
   }
 });
 
@@ -8024,7 +8148,8 @@ app.on('before-quit', (event) => {
         pending === 1
           ? 'Un téléchargement est en cours.'
           : `${pending} téléchargements sont en cours.`,
-      detail: "Quitter Orbit les interrompt définitivement. Les fichiers incomplets seront perdus.",
+      detail:
+        'Quitter Orbit les interrompt. Les téléchargements du moteur accéléré reprendront là où ils en étaient au prochain lancement ; les autres sont abandonnés.',
     });
     if (choice === 0) return;
     downloadQuitConfirmed = true;
@@ -8032,6 +8157,17 @@ app.on('before-quit', (event) => {
     return;
   }
   isQuitting = true;
+  // Les transferts du moteur accéléré savent reprendre : on laisse leur état
+  // (table des segments + fichier partiel) s'écrire sur le disque avant de
+  // partir. Trois secondes au maximum : quitter ne doit jamais rester bloqué.
+  if (downloadEngine && !engineFlushed) {
+    engineFlushed = true;
+    event.preventDefault();
+    Promise.race([
+      downloadEngine.stopAll().catch(() => {}),
+      new Promise((resolve) => setTimeout(resolve, 3000)),
+    ]).finally(() => app.quit());
+  }
 });
 
 // Mise en veille / verrouillage de session de l'OS : on ferme les trousseaux.

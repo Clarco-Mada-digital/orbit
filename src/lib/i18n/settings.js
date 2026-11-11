@@ -480,6 +480,9 @@ export const fr = {
   'st.dl.askHint': 'La boîte d’enregistrement du système s’ouvre, pré-remplie avec le dossier ci-dessus.',
   'st.dl.askFallback':
     'Si vous annulez, rien n’est enregistré. Si aucun dossier n’est réglé, la boîte s’ouvre sur le dossier Téléchargements du système.',
+  'st.dl.turbo': 'Vitesse et connexions',
+  'st.dl.turboDesc':
+    'Un fichier peut être téléchargé en plusieurs parts simultanées, avec un débit plafonné et des réessais automatiques. Les réglages s’appliquent aussi aux transferts déjà en cours.',
 
   'st.sysint.title': 'Ouvrir des liens avec Orbit',
   'st.sysint.desc':
@@ -976,6 +979,9 @@ export const en = {
   'st.dl.askHint': 'The system save dialog opens, pre-filled with the folder above.',
   'st.dl.askFallback':
     'Cancelling saves nothing. If no folder is set, the dialog opens on the system Downloads folder.',
+  'st.dl.turbo': 'Speed and connections',
+  'st.dl.turboDesc':
+    'A file can be downloaded in several simultaneous parts, with a capped speed and automatic retries. These settings also apply to transfers already in progress.',
 
   'st.sysint.title': 'Open links with Orbit',
   'st.sysint.desc':

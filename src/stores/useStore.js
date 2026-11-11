@@ -127,6 +127,15 @@ export const defaultSettings = {
   // Désactivé par défaut : la majorité des fichiers vont au même endroit et
   // une question à chaque fois devient vite un réflexe d'acquiescement.
   askDownloadPath: false,
+  // Moteur de téléchargement accéléré (voir electron/download/) : nombre de
+  // connexions Range par fichier, transferts simultanés, plafonds de débit en
+  // Ko/s (0 = illimité), réessais automatiques, classement par type.
+  downloadConnections: 8,
+  downloadMaxConcurrent: 3,
+  downloadSpeedLimit: 0,
+  downloadFileSpeedLimit: 0,
+  downloadRetries: 3,
+  downloadCategorize: false,
   // Menu contextuel des apps : celui d'Orbit par défaut, celui du système en
   // repli pour qui le préfère (ou si le nôtre pose problème).
   nativeContextMenu: false,

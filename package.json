@@ -108,6 +108,7 @@
       "src/lib/urls.js",
       "src/lib/downloadPath.js",
       "src/lib/downloadOptions.js",
+      "src/lib/downloadCategories.js",
       "src/lib/javaRuntime.js",
       "src/lib/phone.js",
       "src/lib/phoneDesktop.js",
