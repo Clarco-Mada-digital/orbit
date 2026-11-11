@@ -205,6 +205,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   adblock: {
     setEnabled: (on) => ipcRenderer.invoke('adblock:setEnabled', on),
     getState: () => ipcRenderer.invoke('adblock:getState'),
+    // Niveau de filtrage : 'standard' (pub + pistage) ou 'complet' (avec les
+    // nuisances : bandeaux de cookies, widgets sociaux).
+    setLevel: (level) => ipcRenderer.invoke('adblock:setLevel', level),
     // Réglage par app : 'on' | 'off' | null (suit le réglage global)
     setForContents: (webContentsId, mode) =>
       ipcRenderer.invoke('adblock:setForContents', { webContentsId, mode }),
@@ -222,6 +225,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('shields:getBlockedStats', webContentsId),
     clearBlockedStats: (webContentsId) =>
       ipcRenderer.invoke('shields:clearBlockedStats', webContentsId),
+    // Applique un réglage qui ne prend effet qu'au chargement suivant.
+    reload: (webContentsId) => ipcRenderer.invoke('shields:reload', webContentsId),
   },
 
   // Lecture vocale (moteur système / Piper hors ligne)

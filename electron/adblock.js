@@ -15,18 +15,43 @@
 // publics de `BlockingContext` ne s'auto-enregistrent pas, on les invoque à la
 // demande, puis main.js applique la logique CSP par-dessus.
 //
+// TROIS étages, et il faut les trois pour qu'un bloqueur « marche » :
+//   1. RÉSEAU — les requêtes des régies sont annulées avant de partir
+//      (`beforeRequest`), et un `$csp` peut être ajouté aux en-têtes ;
+//   2. COSMÉTIQUE ET SCRIPTLETS — un preload de frame (fourni par Ghostery,
+//      posé ici par session) demande au processus principal les filtres du
+//      site AVANT l'exécution des scripts de la page : il masque les
+//      emplacements construits en JavaScript et injecte les scriptlets
+//      (neutralisation de `window.open`, anti-détection…). Sans lui, un site
+//      qui fabrique sa pub après le chargement gardait ses cadres ;
+//   3. FENÊTRES — une pop-up publicitaire n'est pas une requête : elle naît
+//      d'un `window.open`. main.js demande ici si l'URL visée est filtrée
+//      (`matchesFilter`) et refuse alors la fenêtre.
+//
 // Le moteur est mis en CACHE sur disque : téléchargé une fois, puis rechargé
 // instantanément et hors-ligne aux lancements suivants.
 // ---------------------------------------------------------------------------
-import { ElectronBlocker, BlockingContext } from '@ghostery/adblocker-electron';
-import { getDomain, getHostname } from 'tldts-experimental';
+import { BlockingContext, ElectronBlocker, Request } from '@ghostery/adblocker-electron';
+import { createRequire } from 'module';
+import { ipcMain } from 'electron';
 import fs from 'fs';
 import path from 'path';
+import { DEFAULT_ADBLOCK_LEVEL, engineFileFor, normalizeLevel } from './adblock-levels.js';
+
+const require = createRequire(import.meta.url);
 
 let blocker = null;
 let enabled = false;
-let cachePath = null;
+let level = DEFAULT_ADBLOCK_LEVEL;
+// Dossier de cache des moteurs + fichier où l'on retient le niveau choisi.
+let cacheDir = null;
+let configPath = null;
 let loadingPromise = null;
+
+// Décision « le blocage est-il actif pour ce webContents ? », fournie par
+// main.js : elle tient compte des boucliers du site et du réglage par app.
+// Un défaut prudent avant le premier attachement : suivre le réglage global.
+let activeFor = () => enabled;
 
 // Compteur de requêtes bloquées par webContents (par ID) : vidé à chaque
 // chargement de page, et utilisé pour afficher le panneau « Boucliers » de l'app.
@@ -42,8 +67,8 @@ function blockKey(domain, type, reason) {
 }
 
 // Enregistre un blocage et renvoie true s'il est nouveau pour cette page.
-// `reason` ∈ 'ads' | 'trackers' | 'script' | 'https' : le panneau affiche un
-// décompte par catégorie, pas un total indifférencié.
+// `reason` ∈ 'ads' | 'trackers' | 'script' | 'https' | 'popup' : le panneau
+// affiche un décompte par catégorie, pas un total indifférencié.
 export function recordBlock(webContentsId, domain, type = 'other', reason = 'ads') {
   if (webContentsId == null) return false;
   const id = contentId(webContentsId);
@@ -57,25 +82,68 @@ export function recordBlock(webContentsId, domain, type = 'other', reason = 'ads
 
 // Un BlockingContext par session (fournit les handlers onBeforeRequest /
 // onHeadersReceived publics, SANS enregistrer d'écouteur webRequest).
-const contexts = new WeakMap();
+// Remplaçable : changer de niveau remplace le moteur, donc les contextes.
+let contexts = new WeakMap();
+
+// Sessions où le preload cosmétique a déjà été posé (une seule fois chacune).
+const preloadedSessions = new WeakSet();
+let ipcReady = false;
 
 export function initAdblock(userDataPath, initialEnabled) {
-  cachePath = path.join(userDataPath, 'adblocker-engine.bin');
+  cacheDir = userDataPath;
+  configPath = path.join(userDataPath, 'adblocker.json');
+  level = readLevel();
   enabled = Boolean(initialEnabled);
   // Si activé au démarrage, on lance le chargement du moteur en tâche de fond.
   if (enabled) getBlocker().catch(() => {});
 }
 
+// Niveau retenu sur le disque. Un fichier absent ou corrompu n'est pas une
+// erreur à signaler : c'est un premier lancement.
+function readLevel() {
+  try {
+    const raw = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    return normalizeLevel(raw?.level);
+  } catch {
+    return DEFAULT_ADBLOCK_LEVEL;
+  }
+}
+
+function saveLevel() {
+  if (!configPath) return;
+  try {
+    fs.writeFileSync(configPath, JSON.stringify({ level }, null, 2));
+  } catch (err) {
+    console.error('[orbit] sauvegarde du niveau du bloqueur impossible :', err.message);
+  }
+}
+
+function loadEngine(forLevel) {
+  const caching = {
+    path: path.join(cacheDir, engineFileFor(forLevel)),
+    read: fs.promises.readFile,
+    write: fs.promises.writeFile,
+  };
+  // `complet` ajoute les listes de nuisances (bandeaux de cookies, widgets
+  // sociaux) à celles de publicité et de pistage.
+  return forLevel === 'complet'
+    ? ElectronBlocker.fromPrebuiltFull(fetch, caching)
+    : ElectronBlocker.fromPrebuiltAdsAndTracking(fetch, caching);
+}
+
+// Numéro de génération du moteur. Changer de niveau pendant qu'un moteur se
+// charge laissait sinon ce moteur-là s'installer après coup : le réglage
+// affiché disait « complet » et le blocage utilisait encore les listes
+// standard.
+let engineGeneration = 0;
+
 async function getBlocker() {
   if (blocker) return blocker;
   if (loadingPromise) return loadingPromise;
-  loadingPromise = ElectronBlocker.fromPrebuiltAdsAndTracking(fetch, {
-    path: cachePath,
-    read: fs.promises.readFile,
-    write: fs.promises.writeFile,
-  })
+  const generation = engineGeneration;
+  loadingPromise = loadEngine(level)
     .then((b) => {
-      blocker = b;
+      if (generation === engineGeneration) blocker = b;
       return b;
     })
     .catch((err) => {
@@ -93,6 +161,80 @@ function contextFor(ses) {
     contexts.set(ses, ctx);
   }
   return ctx;
+}
+
+// Chemin du preload fourni par Ghostery. Il n'est pas exposé par le champ
+// `exports` du paquet : on le résout depuis l'emplacement du paquet lui-même
+// (le paquet `-preload` est sa dépendance, où qu'il soit rangé).
+function preloadPath() {
+  try {
+    const pkg = require.resolve('@ghostery/adblocker-electron/package.json');
+    return require.resolve('@ghostery/adblocker-electron-preload', {
+      paths: [path.dirname(pkg)],
+    });
+  } catch (err) {
+    console.error('[orbit] preload du bloqueur introuvable :', err.message);
+    return null;
+  }
+}
+
+// Handlers IPC appelés par le preload de frame. Enregistrés une seule fois :
+// `ipcMain.handle` refuse un doublon.
+function registerIpc() {
+  if (ipcReady) return;
+  ipcReady = true;
+  ipcMain.handle('@ghostery/adblocker/inject-cosmetic-filters', async (event, url, msg) => {
+    if (!blocker || !activeFor(event.sender.id)) return;
+    // `file://` (interface Orbit), `devtools://`, `about:` : aucun filtre.
+    if (!/^https?:/i.test(String(url || ''))) return;
+    try {
+      return await blocker.onInjectCosmeticFilters(event, url, msg);
+    } catch (err) {
+      // Un scriptlet qui jette ne doit jamais casser la page : Ghostery
+      // journalise déjà, on garde la trace côté Orbit.
+      console.error('[orbit] injection cosmétique échouée :', err.message);
+    }
+  });
+  // Observateur de mutations : c'est lui qui reclasse la page quand JavaScript
+  // ajoute un emplacement publicitaire après coup. Refusé pour l'interface
+  // Orbit (`file://`) et pour les pages dont les boucliers sont coupés —
+  // surveiller le DOM n'y servirait à rien et coûterait un listener permanent.
+  ipcMain.handle('@ghostery/adblocker/is-mutation-observer-enabled', (event) => {
+    if (!blocker || !activeFor(event.sender.id)) return false;
+    if (!blocker.config?.enableMutationObserver) return false;
+    try {
+      return /^https?:/i.test(event.sender.getURL());
+    } catch {
+      return false;
+    }
+  });
+}
+
+// Branche une session : preload de frame (scriptlets + masquage dynamique) et
+// handlers IPC. Idempotent — main.js appelle ceci pour chaque partition.
+// `isActive` : décision par webContents (boucliers du site, réglage par app).
+export function attachSession(ses, isActive) {
+  if (!ses) return;
+  if (typeof isActive === 'function') activeFor = isActive;
+  registerIpc();
+  if (preloadedSessions.has(ses)) return;
+  const filePath = preloadPath();
+  if (!filePath) return;
+  try {
+    if (typeof ses.registerPreloadScript === 'function') {
+      ses.registerPreloadScript({ type: 'frame', filePath });
+    } else {
+      // Electron plus ancien : `setPreloads` s'applique aux webContents créés
+      // ensuite. On ne duplique jamais une entrée déjà présente.
+      const existing = ses.getPreloads?.() || [];
+      if (!existing.includes(filePath)) ses.setPreloads([...existing, filePath]);
+    }
+    preloadedSessions.add(ses);
+  } catch (err) {
+    // Privée, déjà détruite, API absente : le blocage réseau reste en place,
+    // seul le masquage cosmétique manquerait.
+    console.error('[orbit] preload cosmétique non posé :', err.message);
+  }
 }
 
 // Appelé par l'écouteur onBeforeRequest unique de main.js.
@@ -137,6 +279,30 @@ export function headersReceived(ses, details, callback, active = enabled) {
   callback({}); // aucune modification côté adblock
 }
 
+// Une URL visée par un `window.open` est-elle filtrée par les listes ?
+//
+// C'est ce qui distingue une vraie fenêtre (OAuth, « ouvrir dans un nouvel
+// onglet », un lien qu'on choisit) d'une pub qui s'ouvre toute seule : la
+// première n'est pas dans les listes, la seconde oui. On ne peut pas savoir
+// s'il y a eu un geste utilisateur côté Electron, mais on sait ce que le
+// domaine trafique — et c'est un signal bien plus fiable.
+export function matchesFilter(url, sourceUrl) {
+  if (!blocker) return false;
+  if (!/^https?:/i.test(String(url || ''))) return false;
+  try {
+    const request = Request.fromRawDetails({
+      requestId: 'orbit-popup',
+      tabId: 0,
+      url,
+      sourceUrl: /^https?:/i.test(String(sourceUrl || '')) ? sourceUrl : undefined,
+      type: 'mainFrame',
+    });
+    return Boolean(blocker.match(request).match);
+  } catch {
+    return false;
+  }
+}
+
 // Catégorise un blocage pour l'UI. L'adblocker ne dit pas POURQUOI il bloque,
 // et les listes qu'on embarque sont mélangées : on approxime sur le nom
 // d'hôte, en restant conservatrice (le doute va vers « publicité »).
@@ -165,52 +331,50 @@ export async function setEnabled(on) {
   if (enabled) {
     try {
       await getBlocker();
-      return { success: true, enabled };
+      return { success: true, enabled, level };
     } catch (err) {
-      return { success: false, error: String(err.message || err), enabled };
+      return { success: false, error: String(err.message || err), enabled, level };
     }
   }
-  return { success: true, enabled };
+  return { success: true, enabled, level };
 }
 
-// Filtrage COSMÉTIQUE : renvoie le CSS de masquage des emplacements
-// publicitaires pour une URL (règles génériques + spécifiques à l'hôte).
-// Injecté par main.js via webContents.insertCSS à chaque chargement de page.
-// Compatible Electron 33 (n'utilise pas registerPreloadScript, réservé aux
-// versions récentes).
-export function getCosmeticStyles(url, active = enabled) {
-  if (!active || !blocker) return '';
+// Change le jeu de listes. Le moteur est remplacé (et rechargé tout de suite si
+// le blocage est actif) : les pages déjà ouvertes gardent l'ancien jusqu'au
+// prochain chargement, ce que l'interface dit explicitement.
+export async function setLevel(next) {
+  const wanted = normalizeLevel(next);
+  if (wanted === level) return { success: true, level, enabled };
+  level = wanted;
+  saveLevel();
+  engineGeneration += 1;
+  blocker = null;
+  loadingPromise = null;
+  contextsClear();
+  if (!enabled) return { success: true, level, enabled };
   try {
-    const hostname = getHostname(url) || '';
-    const domain = getDomain(url) || '';
-    const { styles } = blocker.getCosmeticsFilters({
-      url,
-      hostname,
-      domain,
-      classes: [],
-      ids: [],
-      hrefs: [],
-      getBaseRules: true,
-      getInjectionRules: false,
-      getExtendedRules: false,
-      getRulesFromDOM: false,
-      getRulesFromHostname: true,
-    });
-    return styles || '';
-  } catch {
-    return '';
+    await getBlocker();
+    return { success: true, level, enabled };
+  } catch (err) {
+    return { success: false, error: String(err.message || err), level, enabled };
   }
+}
+
+// Les contextes gardent une référence au moteur précédent : on repart de zéro
+// pour que le chargement suivant utilise bien les nouvelles listes.
+function contextsClear() {
+  contexts = new WeakMap();
 }
 
 export function getState() {
-  return { enabled };
+  return { enabled, level, loaded: Boolean(blocker) };
 }
 
 // Renvoie les statistiques de blocage d'un webContents, pour le panneau UI.
 // `domains` : la liste des sites bloqués (dédupliquée, ordre d'arrivée) ;
 // `byReason` : le décompte par catégorie, pour distinguer pubs et traceurs ;
 // `total` : le nombre de requêtes réellement annulées.
-const REASON_ORDER = ['ads', 'trackers', 'script', 'https'];
+const REASON_ORDER = ['ads', 'trackers', 'script', 'https', 'popup'];
 
 export function getBlockedStats(webContentsId) {
   const blocks = blockedRequests.get(contentId(webContentsId));

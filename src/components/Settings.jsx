@@ -98,6 +98,10 @@ export default function Settings({ onClose }) {
   const [downloadFolderError, setDownloadFolderError] = useState('');
   const [pickingDownloadFolder, setPickingDownloadFolder] = useState(false);
   const [homeImageError, setHomeImageError] = useState('');
+  // Niveau de listes du bloqueur : il vit dans le processus principal (il doit
+  // survivre au redémarrage et reste lié au cache du moteur), pas dans les
+  // réglages de l'interface.
+  const [adblockLevel, setAdblockLevel] = useState('standard');
 
   useEffect(() => {
     window.electronAPI?.getVersion?.().then((v) => v && setAppVersion(v));
@@ -188,6 +192,33 @@ export default function Settings({ onClose }) {
   // seul sait quel fichier .desktop existe et qui ouvre quoi aujourd'hui).
   const [sysint, setSysint] = useState(null);
   const [sysintBusy, setSysintBusy] = useState(false);
+  // Le niveau du bloqueur est retenu par le processus principal : on relit son
+  // état réel plutôt que de le dupliquer dans les réglages de l'interface.
+  useEffect(() => {
+    let alive = true;
+    const probe = window.electronAPI?.adblock?.getState?.();
+    if (probe && typeof probe.then === 'function') {
+      probe
+        .then((state) => {
+          if (alive && state?.level) setAdblockLevel(state.level);
+        })
+        .catch(() => {});
+    }
+    return () => {
+      alive = false;
+    };
+  }, []);
+
+  // Le changement est immédiat côté moteur ; les pages déjà ouvertes gardent
+  // leurs anciennes listes jusqu'au prochain chargement (l'interface le dit).
+  const changeAdblockLevel = async (level) => {
+    const previous = adblockLevel;
+    setAdblockLevel(level);
+    const res = await window.electronAPI?.adblock?.setLevel?.(level);
+    if (!res || res.success === false) setAdblockLevel(previous);
+    else setAdblockLevel(res.level || level);
+  };
+
   useEffect(() => {
     let alive = true;
     // L'état arrive par un aller-retour IPC : on ne le pose que dans le
@@ -1215,6 +1246,25 @@ export default function Settings({ onClose }) {
                         className="w-12 h-6 bg-bg-hover rounded-full relative cursor-pointer appearance-none checked:bg-accent-primary transition-colors after:content-[''] after:absolute after:top-1 after:left-1 after:w-4 after:h-4 after:bg-white after:rounded-full after:transition-transform checked:after:translate-x-6"
                       />
                     </label>
+                    {settings.adblock !== false && (
+                      <div className="mt-4 pt-4 border-t border-border">
+                        <div className="flex items-center justify-between gap-4">
+                          <div>
+                            <div className="font-medium">{t('st.adblockLevel')}</div>
+                            <div className="text-sm text-text-muted">{t('st.adblockLevelDesc')}</div>
+                          </div>
+                          <select
+                            value={adblockLevel}
+                            onChange={(e) => changeAdblockLevel(e.target.value)}
+                            className="input max-w-[15rem]"
+                          >
+                            <option value="standard">{t('st.adblock.level.standard')}</option>
+                            <option value="complet">{t('st.adblock.level.complet')}</option>
+                          </select>
+                        </div>
+                        <p className="text-xs text-text-muted mt-3">{t('st.adblockLevelHint')}</p>
+                      </div>
+                    )}
                     <p className="text-xs text-text-muted mt-3">{t('st.adblockHint')}</p>
                   </div>
 

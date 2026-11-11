@@ -15,6 +15,8 @@ function originOf(url) {
   }
 }
 
+const EMPTY_REASONS = { ads: 0, trackers: 0, script: 0, https: 0, popup: 0 };
+
 const DEFAULT_SHIELDS = {
   enabled: true,
   adblock: 'standard',
@@ -27,8 +29,11 @@ const DEFAULT_SHIELDS = {
 
 const ShieldsPanel = ({ webContentsId, url, onClose, onSiteEnabledChange }) => {
   const t = useT();
-  const [stats, setStats] = useState({ total: 0, count: 0, domains: [], byReason: { ads: 0, trackers: 0, script: 0, https: 0 } });
+  const [stats, setStats] = useState({ total: 0, count: 0, domains: [], byReason: EMPTY_REASONS });
   const [settings, setShieldSettings] = useState(DEFAULT_SHIELDS);
+  // Un réglage de bouclier ne s'applique qu'au chargement suivant : on le dit,
+  // et on offre le geste au lieu de laisser croire que rien n'a changé.
+  const [dirty, setDirty] = useState(false);
   const [error, setError] = useState(null);
 
   const api = window.electronAPI?.shields;
@@ -61,6 +66,7 @@ const ShieldsPanel = ({ webContentsId, url, onClose, onSiteEnabledChange }) => {
 
   const handleSettingChange = async (key, value) => {
     setShieldSettings((prev) => ({ ...prev, [key]: value }));
+    setDirty(true);
     try {
       if (!origin) return;
       // Le processus principal renvoie les réglages EFFECTIFS après écriture :
@@ -85,7 +91,16 @@ const ShieldsPanel = ({ webContentsId, url, onClose, onSiteEnabledChange }) => {
   // pour ne jamais laisser un champ absentbreaker l'affichage du panneau.
   const total = stats.total || 0;
   const domains = stats.domains || [];
-  const byReason = stats.byReason || { ads: 0, trackers: 0, script: 0, https: 0 };
+  const byReason = { ...EMPTY_REASONS, ...(stats.byReason || {}) };
+
+  const reloadPage = async () => {
+    setDirty(false);
+    try {
+      await api?.reload?.(webContentsId);
+    } catch (err) {
+      console.error('[ShieldsPanel] rechargement impossible:', err);
+    }
+  };
 
   const advancedSettings = [
     { key: 'adblock', type: 'select', options: [{ value: 'standard' }, { value: 'off' }] },
@@ -168,6 +183,12 @@ const ShieldsPanel = ({ webContentsId, url, onClose, onSiteEnabledChange }) => {
                     <span>{byReason.https}</span>
                   </div>
                 )}
+                {byReason.popup > 0 && (
+                  <div className="flex items-center justify-between">
+                    <span>{t('shields.popupsLabel')}</span>
+                    <span>{byReason.popup}</span>
+                  </div>
+                )}
                 <div className="pt-1 border-t border-border space-y-0.5">
                   {domains.slice(0, 5).map((domain) => (
                     <div key={domain} className="truncate">{domain}</div>
@@ -181,6 +202,15 @@ const ShieldsPanel = ({ webContentsId, url, onClose, onSiteEnabledChange }) => {
               <div className="text-xs text-text-muted">{t('shields.noBlocked')}</div>
             )}
           </div>
+
+          {dirty && (
+            <div className="card p-3 space-y-2">
+              <p className="text-xs text-text-muted">{t('shields.reloadHint')}</p>
+              <button onClick={reloadPage} className="btn btn-primary btn-sm w-full">
+                {t('shields.reload')}
+              </button>
+            </div>
+          )}
 
           <details className="card p-3 rounded-lg border border-border">
             <summary className="font-medium text-sm cursor-pointer flex items-center justify-between">

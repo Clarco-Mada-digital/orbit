@@ -237,7 +237,7 @@ intégrée ou ajoutez une URL web.</p>
 <p><img src="images/orbit-bienvenue.png" alt="L’écran de bienvenue au premier démarrage d’Orbit" /></p>
 <h2 id="3-organiser-son-espace">3. Organiser son espace</h2>
 <h3 id="applications">Applications</h3>
-<ul><li>Utilisez <strong>+</strong> ou la boutique pour ajouter une app.</li><li>Ajoutez une URL personnelle si le service n’est pas dans le catalogue.</li><li>Réorganisez la liste par glisser-déposer ; créez des dossiers pour regrouper les apps.</li><li>Le clic droit sur une app donne accès aux actions telles que favori, veille, fenêtre détachée, déplacement de profil ou gestion de session.</li><li>La <strong>fenêtre détachée</strong> garde les gestes d’un navigateur : <code>Ctrl + molette</code> pour le zoom (aussi <code>Ctrl +</code>, <code>Ctrl -</code> et <code>Ctrl 0</code>), <code>Ctrl + R</code> ou <code>F5</code> pour recharger, <code>Alt + ←/→</code> pour l’historique. Le clic droit y propose copier, coller, précédent, suivant, recharger et le zoom.</li><li>Le zoom y reste appliqué pendant toute la durée de la fenêtre (il survit aux changements de page) et un badge affiche brièvement le pourcentage atteint.</li></ul>
+<ul><li>Utilisez <strong>+</strong> ou la boutique pour ajouter une app.</li><li>Ajoutez une URL personnelle si le service n’est pas dans le catalogue.</li><li>Réorganisez la liste par glisser-déposer ; créez des dossiers pour regrouper les apps.</li><li>Le clic droit sur une app donne accès aux actions telles que favori, veille, fenêtre détachée, déplacement de profil ou gestion de session.</li><li>La <strong>fenêtre détachée</strong> garde les gestes d’un navigateur : <code>Ctrl + molette</code> pour le zoom (aussi <code>Ctrl +</code>, <code>Ctrl -</code> et <code>Ctrl 0</code>), <code>Ctrl + R</code> ou <code>F5</code> pour recharger, <code>Alt + ←/→</code> pour l’historique. Le clic droit y propose copier, coller, précédent, suivant, recharger et le zoom.</li><li>Le zoom y reste appliqué pendant toute la durée de la fenêtre (il survit aux changements de page) et un badge affiche brièvement le pourcentage atteint.</li><li><strong>Relecture et assistant y fonctionnent aussi.</strong> Une sélection corrigée depuis une fenêtre détachée (<code>Alt/⌘ + Maj + E</code>, <code>Alt/⌘ + Maj + I</code> ou clic droit) ouvre son propre panneau dans une fenêtre sœur, collée à la fenêtre détachée : la correction s’applique dans le champ d’origine, sans quitter la page. Le panneau de relecture se referme une fois les corrections posées.</li></ul>
 <h3 id="profils-et-sessions">Profils et sessions</h3>
 <p>Créez des profils séparés, par exemple Travail et Personnel. Par défaut, les
 sessions sont cloisonnées pour réduire les mélanges de comptes. L’option de
@@ -403,14 +403,17 @@ cadre :</p>
 quand le réglage ne se voit pas encore (le cadrage sans caméra, par exemple) :
 un raccourci sans effet visible est sinon indiscernable d’un raccourci cassé.</p>
 <p><strong>Depuis l’application que vous filmez.</strong> Les touches ci-dessus ne répondent
-que si Orbit a le focus — or pendant une prise, vous êtes ailleurs. Le temps
-de l’enregistrement, Orbit pose donc les mêmes actions en raccourcis système :
+que si Orbit a le focus — or pendant une prise, vous êtes ailleurs, et même en
+préparant le cadrage on regarde la fenêtre à filmer. Tant que le studio est
+ouvert, Orbit pose donc les mêmes actions en raccourcis système :
 <code>Alt+Maj+D</code> (disposition), <code>Alt+Maj+F</code> (fond), <code>Alt+Maj+C</code> (place de la
 caméra), <code>Alt+Maj+Z</code> (zoom suivi), <code>Alt+Maj+X</code> (coup de zoom), <code>Alt+Maj+O</code>
 (cadrage), <code>Alt+Maj+P</code> (pause) et <code>Alt+Maj+K</code> (arrêt). Ils sont libérés à la
-fin de la prise. La liste affichée sous l’aperçu ne montre que ceux qui ont
-réellement pu être enregistrés : votre gestionnaire de fenêtres s’en réserve
-parfois un.</p>
+fermeture du studio, et restent sans effet pendant que vous écrivez dans un
+champ de l’interface (un nom de préréglage, par exemple). La liste affichée
+sous l’aperçu ne montre que ceux qui ont réellement pu être enregistrés : votre
+gestionnaire de fenêtres s’en réserve parfois un — sous Wayland, Orbit demande
+les raccourcis au portail du bureau, sans lequel ils resteraient muets.</p>
 <p>« Réduire » est ce qui permet de filmer Orbit lui-même : il ne reste qu’un
 chronomètre, la pause, l’arrêt et l’annotation. La cadence <strong>réellement tenue</strong>
 est affichée pendant l’enregistrement — une vidéo saccadée se découvrirait
@@ -498,7 +501,7 @@ vidéo</strong>.</p>
 ne sont chargés d’office : un média s’ouvre au clic, une image reste une
 pastille qui mène au navigateur. Le bouton <strong>Source</strong> affiche le fichier brut.</p>
 <h2 id="9-confidentialite-et-securite">9. Confidentialité et sécurité</h2>
-<ul><li>Les profils et applications utilisent des sessions web isolées selon la configuration ; le SSO est facultatif.</li><li>Le stockage des cookies dans les versions empaquetées utilise le mécanisme de chiffrement d’Electron et le trousseau du système lorsqu’il est disponible.</li><li>Les données de l’assistant local et de la relecture rapide restent sur l’appareil. Les fonctions connectées envoient les données nécessaires au fournisseur choisi.</li><li>Fake Data et Text Snippets n’ont pas besoin de services externes pour fonctionner. Seule exception, facultative et désactivable : les adresses de photo de test (portraits de stock et photos aléatoires), qui ne sont que des liens insérés dans le champ — aucune donnée de la page n’est envoyée.</li><li>Les services web intégrés continuent de recevoir les données que vous saisissez directement sur leurs pages.</li></ul>
+<ul><li>Les profils et applications utilisent des sessions web isolées selon la configuration ; le SSO est facultatif.</li><li>Le stockage des cookies dans les versions empaquetées utilise le mécanisme de chiffrement d’Electron et le trousseau du système lorsqu’il est disponible.</li><li>Les données de l’assistant local et de la relecture rapide restent sur l’appareil. Les fonctions connectées envoient les données nécessaires au fournisseur choisi.</li><li>Fake Data et Text Snippets n’ont pas besoin de services externes pour fonctionner. Seule exception, facultative et désactivable : les adresses de photo de test (portraits de stock et photos aléatoires), qui ne sont que des liens insérés dans le champ — aucune donnée de la page n’est envoyée.</li><li>Le <strong>bloqueur de publicités et de traceurs</strong> agit au niveau réseau, sans extension, sur toutes les apps et tous les profils. Trois étages : les requêtes des régies sont annulées, les emplacements construits en JavaScript sont masqués (avec les scriptlets que les listes prévoient), et une <strong>fenêtre publicitaire</strong> ouverte par un script est refusée quand son adresse figure dans les listes. Le panneau <strong>Boucliers</strong> compte séparément publicités, traceurs, scripts, passages en HTTPS et fenêtres bloquées.</li><li><strong>Deux jeux de listes</strong> dans <strong>Réglages → Confidentialité</strong> : <em>Standard</em> (publicités et pistage) ou <em>Complet</em>, qui ajoute les nuisances — bandeaux de cookies, widgets sociaux. Repassez en standard si un site perd un élément qui lui servait de contenu. Un réglage ne s’applique qu’au chargement suivant : le panneau propose alors de recharger la page.</li><li>Les services web intégrés continuent de recevoir les données que vous saisissez directement sur leurs pages.</li></ul>
 <p>Protégez votre compte système, votre mot de passe maître et vos fichiers de
 sauvegarde. Le chiffrement local ne remplace pas une sauvegarde sécurisée.</p>
 <h2 id="10-depannage">10. Dépannage</h2>

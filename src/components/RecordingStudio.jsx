@@ -1019,8 +1019,13 @@ export default function RecordingStudio({ onClose }) {
   });
 
   const [globalKeys, setGlobalKeys] = useState([]);
+  // Les raccourcis sont posés pendant TOUTE la vie du studio, pas seulement
+  // une fois la prise lancée. Préparer le cadrage, choisir un fond ou passer le
+  // décompte se fait souvent en regardant la fenêtre qu'on va filmer — donc
+  // sans le focus sur Orbit : les touches n'arrivaient nulle part et l'on
+  // croyait le raccourci cassé. Elles restent libérées à la fermeture du
+  // studio (voir releaseStudioKeys côté processus principal).
   useEffect(() => {
-    if (step !== 'recording') return undefined;
     let annule = false;
     api()?.setGlobalKeys?.(true).then((res) => {
       // Ce qui a RÉELLEMENT été enregistré : un gestionnaire de fenêtres peut
@@ -1028,14 +1033,25 @@ export default function RecordingStudio({ onClose }) {
       // pas serait pire que de ne rien proposer.
       if (!annule) setGlobalKeys(res?.keys || []);
     });
-    const off = api()?.onKey?.((action) => actionRef.current?.(action));
+    const off = api()?.onKey?.((action) => {
+      // ...sauf quand on écrit dans un champ de l'interface : une lettre tapée
+      // dans un nom de préréglage ne doit pas changer le fond de la vidéo.
+      const el = document.activeElement;
+      if (
+        el instanceof HTMLElement &&
+        el.closest('input, select, textarea, [contenteditable="true"]')
+      ) {
+        return;
+      }
+      actionRef.current?.(action);
+    });
     return () => {
       annule = true;
       off?.();
       api()?.setGlobalKeys?.(false);
       setGlobalKeys([]);
     };
-  }, [step]);
+  }, []);
 
   // Libération des ressources : la caméra et le micro doivent s'éteindre à la
   // fermeture, sans exception.
@@ -1297,9 +1313,9 @@ export default function RecordingStudio({ onClose }) {
             )}
 
             {/* Les raccourcis ci-dessus ne répondent que si Orbit a le focus.
-                Pendant la prise on est ailleurs : ceux-là marchent depuis
-                l'application filmée. */}
-            {step === 'recording' && globalKeys.length > 0 && (
+                Ceux-là marchent depuis n'importe où — y compris pendant
+                qu'on prépare la prise en regardant la fenêtre à filmer. */}
+            {globalKeys.length > 0 && (
               <p className="flex flex-wrap items-center justify-center gap-x-3 gap-y-1 text-[11px] text-text-muted">
                 <span className="text-accent-primary">{t('studio.globalKeys')}</span>
                 {globalKeys.map(({ accelerator, action }) => (

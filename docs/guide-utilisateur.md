@@ -87,6 +87,11 @@ intégrée ou ajoutez une URL web.
   coller, précédent, suivant, recharger et le zoom.
 - Le zoom y reste appliqué pendant toute la durée de la fenêtre (il survit aux
   changements de page) et un badge affiche brièvement le pourcentage atteint.
+- **Relecture et assistant y fonctionnent aussi.** Une sélection corrigée depuis
+  une fenêtre détachée (`Alt/⌘ + Maj + E`, `Alt/⌘ + Maj + I` ou clic droit) ouvre
+  son propre panneau dans une fenêtre sœur, collée à la fenêtre détachée : la
+  correction s’applique dans le champ d’origine, sans quitter la page. Le
+  panneau de relecture se referme une fois les corrections posées.
 
 ### Profils et sessions
 
@@ -409,14 +414,17 @@ quand le réglage ne se voit pas encore (le cadrage sans caméra, par exemple) :
 un raccourci sans effet visible est sinon indiscernable d’un raccourci cassé.
 
 **Depuis l’application que vous filmez.** Les touches ci-dessus ne répondent
-que si Orbit a le focus — or pendant une prise, vous êtes ailleurs. Le temps
-de l’enregistrement, Orbit pose donc les mêmes actions en raccourcis système :
+que si Orbit a le focus — or pendant une prise, vous êtes ailleurs, et même en
+préparant le cadrage on regarde la fenêtre à filmer. Tant que le studio est
+ouvert, Orbit pose donc les mêmes actions en raccourcis système :
 `Alt+Maj+D` (disposition), `Alt+Maj+F` (fond), `Alt+Maj+C` (place de la
 caméra), `Alt+Maj+Z` (zoom suivi), `Alt+Maj+X` (coup de zoom), `Alt+Maj+O`
 (cadrage), `Alt+Maj+P` (pause) et `Alt+Maj+K` (arrêt). Ils sont libérés à la
-fin de la prise. La liste affichée sous l’aperçu ne montre que ceux qui ont
-réellement pu être enregistrés : votre gestionnaire de fenêtres s’en réserve
-parfois un.
+fermeture du studio, et restent sans effet pendant que vous écrivez dans un
+champ de l’interface (un nom de préréglage, par exemple). La liste affichée
+sous l’aperçu ne montre que ceux qui ont réellement pu être enregistrés : votre
+gestionnaire de fenêtres s’en réserve parfois un — sous Wayland, Orbit demande
+les raccourcis au portail du bureau, sans lequel ils resteraient muets.
 
 « Réduire » est ce qui permet de filmer Orbit lui-même : il ne reste qu’un
 chronomètre, la pause, l’arrêt et l’annotation. La cadence **réellement tenue**
@@ -612,6 +620,18 @@ pastille qui mène au navigateur. Le bouton **Source** affiche le fichier brut.
   fonctionner. Seule exception, facultative et désactivable : les adresses de
   photo de test (portraits de stock et photos aléatoires), qui ne sont que des
   liens insérés dans le champ — aucune donnée de la page n’est envoyée.
+- Le **bloqueur de publicités et de traceurs** agit au niveau réseau, sans
+  extension, sur toutes les apps et tous les profils. Trois étages :
+  les requêtes des régies sont annulées, les emplacements construits en
+  JavaScript sont masqués (avec les scriptlets que les listes prévoient), et une
+  **fenêtre publicitaire** ouverte par un script est refusée quand son adresse
+  figure dans les listes. Le panneau **Boucliers** compte séparément publicités,
+  traceurs, scripts, passages en HTTPS et fenêtres bloquées.
+- **Deux jeux de listes** dans **Réglages → Confidentialité** : *Standard*
+  (publicités et pistage) ou *Complet*, qui ajoute les nuisances — bandeaux de
+  cookies, widgets sociaux. Repassez en standard si un site perd un élément qui
+  lui servait de contenu. Un réglage ne s’applique qu’au chargement suivant : le
+  panneau propose alors de recharger la page.
 - Les services web intégrés continuent de recevoir les données que vous saisissez
   directement sur leurs pages.
 

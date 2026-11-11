@@ -500,8 +500,10 @@ export function editRecording({ path: source, start = 0, end = 0, mute = false, 
 //     capte la touche dans TOUTE l'application filmée : enregistrer « D » ou
 //     « S » rendrait impossible d'écrire ces lettres ailleurs, ce qui est
 //     inacceptable. La combinaison suit celles qu'Orbit s'est déjà réservées.
-//   • Enregistrés à l'ouverture de la prise, libérés à sa fin — y compris en
-//     cas de fermeture brutale (voir releaseStudioKeys, appelé au démontage).
+//   • Enregistrés tant que le studio est ouvert (pas seulement pendant la
+//     prise) : on prépare souvent le cadrage en regardant la fenêtre à filmer,
+//     donc sans le focus. Libérés à la fermeture — y compris en cas de
+//     fermeture brutale (voir releaseStudioKeys, appelé au démontage).
 //     Un raccourci global qui survit à ce qui l'a posé est un bogue qu'on
 //     découvre des heures plus tard, dans une autre application.
 //   • Les touches de l'interface restent actives telles quelles quand Orbit a

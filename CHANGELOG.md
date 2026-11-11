@@ -30,6 +30,22 @@ La plus récente en premier.
 - **Extension Fake Data Filler 1.7.0** (ZIP) alignée sur le chemin natif :
   remplissage du formulaire actif (`Alt+Maj+F`), listes déroulantes, images et
   nouveaux types.
+- **Bloqueur : trois étages au lieu d'un.** Le blocage réseau existait, mais
+  rien ne masquait les emplacements fabriqués après le chargement et rien
+  n'arrêtait les **fenêtres publicitaires** — `window.open` ne passe jamais par
+  les requêtes. Un preload de frame (fourni par le moteur) demande désormais les
+  filtres du site **avant** l'exécution de ses scripts : masquage dynamique,
+  scriptlets, suivi des mutations du DOM. Une fenêtre dont l'adresse figure
+  dans les listes est refusée, et le panneau **Boucliers** la compte séparément.
+- **Bloqueur : deux jeux de listes, au choix.** *Standard* (publicités et
+  pistage) ou *Complet* (avec les nuisances : bandeaux de cookies, widgets
+  sociaux), persisté côté processus principal avec son propre cache. Le panneau
+  **Boucliers** propose de recharger la page après un changement de réglage.
+- **Fenêtres détachées : relecture et assistant sur place.** Depuis une fenêtre
+  détachée, la relecture (clic droit ou `Alt/⌘ + Maj + E`) et l'assistant
+  (`Alt/⌘ + Maj + I`) s'ouvrent dans une fenêtre sœur collée à la page, au lieu
+  de la fenêtre principale restée derrière. La sélection est mémorisée pour le
+  menu natif aussi : elle ne l'était que pour le menu HTML de l'interface.
 
 ### Corrigé
 - **Bandeau d'appel : le bon bouton, au bon moment.** Le bandeau se fiait à la
@@ -45,6 +61,12 @@ La plus récente en premier.
   **Raccourcis** quitte le haut de liste et **Profils** descend en bas, à côté
   d'**À propos**. **Affichage** fusionne dans **Apparence** : même sujet, même
   icône.
+- **Studio : les raccourcis répondent sans le focus.** Ils n'étaient posés
+  qu'une fois la prise lancée, alors qu'on prépare le cadrage en regardant la
+  fenêtre à filmer. Ils vivent maintenant tant que le studio est ouvert, sont
+  ignorés pendant une saisie dans l'interface, et passent par le portail
+  `GlobalShortcuts` de Wayland — sans lui, Chromium ignore `globalShortcut`
+  sans le moindre message.
 - **Fenêtre détachée : zoom, rechargement et clic droit.** Cette fenêtre n'avait
   ni barre d'outils ni raccourcis : une page trop petite ou bloquée n'offrait
   aucune issue. Elle reçoit maintenant le même preload que les pages

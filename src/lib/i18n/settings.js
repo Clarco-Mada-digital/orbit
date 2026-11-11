@@ -219,6 +219,13 @@ export const fr = {
     'Blocage natif intégré (listes type EasyList), au niveau réseau, pour toutes les apps et tous les profils — sans extension. Plus efficace et fiable que les extensions de blocage, qui ne fonctionnent pas dans Orbit.',
   'st.adblockEnable': 'Activer le blocage',
   'st.adblockEnableDesc': 'Bloque les publicités et traceurs connus',
+  'st.adblockLevel': 'Niveau de filtrage',
+  'st.adblockLevelDesc':
+    'Ce que les listes retirent des pages. Le niveau « complet » ajoute les nuisances : bandeaux de cookies, widgets sociaux, sondages.',
+  'st.adblock.level.standard': 'Standard — publicités et traceurs',
+  'st.adblock.level.complet': 'Complet — avec les nuisances (cookies, widgets)',
+  'st.adblockLevelHint':
+    'Le niveau complet est plus efficace, mais certains sites y perdent un élément qui leur servait de contenu : repassez en standard si une page se casse. Les pages déjà ouvertes gardent l’ancien jeu de listes jusqu’au prochain chargement.',
   'st.adblockHint':
     "Interrupteur général du moteur de blocage. Après changement, rechargez une app déjà ouverte (bouton ⟳) pour que l'effet s'applique. La première activation télécharge les listes (puis elles sont mises en cache, y compris hors-ligne). Un site peut le désactiver individuellement ci-dessus, dans « Boucliers ».",
   'st.search.title': 'Recherche (Alt+K)',
@@ -710,6 +717,13 @@ export const en = {
     'Built-in native blocking (EasyList-style lists), at the network level, for all apps and profiles — no extension. More effective and reliable than blocking extensions, which do not work in Orbit.',
   'st.adblockEnable': 'Enable blocking',
   'st.adblockEnableDesc': 'Blocks known ads and trackers',
+  'st.adblockLevel': 'Filtering level',
+  'st.adblockLevelDesc':
+    'What the lists remove from pages. The “complete” level adds annoyances: cookie banners, social widgets, surveys.',
+  'st.adblock.level.standard': 'Standard — ads and trackers',
+  'st.adblock.level.complet': 'Complete — with annoyances (cookies, widgets)',
+  'st.adblockLevelHint':
+    'The complete level is more effective, but some sites lose an element that was part of their content: switch back to standard if a page breaks. Pages already open keep the old list set until the next load.',
   'st.adblockHint':
     'Master switch for the blocking engine. After changing this, reload an already-open app (⟳ button) for the effect to apply. The first activation downloads the lists (then they are cached, including offline). Individual sites can turn it off on their own, under “Shields” above.',
   'st.search.title': 'Search (Alt+K)',

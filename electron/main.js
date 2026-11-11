@@ -432,6 +432,15 @@ function setSummonHotkey(accelerator) {
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
 app.commandLine.appendSwitch('disable-renderer-backgrounding');
 
+// Wayland : sans le portail GlobalShortcuts, Chromium IGNORE `globalShortcut`
+// — aucun message, aucun raccourci. C'est ce qui rendait les touches du studio
+// muettes dès que la fenêtre perdait le focus sur une session Wayland. Le
+// portail passe par le compositeur, qui seul peut prendre une combinaison
+// globale. Inoffensif sous X11.
+if (process.platform === 'linux') {
+  app.commandLine.appendSwitch('enable-features', 'GlobalShortcutsPortal');
+}
+
 // Instance unique : relancer Orbit ne crée pas une 2e fenêtre mais RAMÈNE
 // l'existante au premier plan (filet de sécurité si la fenêtre est masquée).
 const gotInstanceLock = app.requestSingleInstanceLock();
@@ -515,7 +524,28 @@ const GOOGLE_UA = `Mozilla/5.0 (${UA_PLATFORM}) AppleWebKit/537.36 (KHTML, like 
 app.userAgentFallback = CHROME_UA;
 
 app.on('web-contents-created', (event, contents) => {
-  if (contents.getType() !== 'webview') return;
+  const contentsType = contents.getType();
+  // Fenêtres SANS <webview> : fenêtres détachées et pop-ups d'applications.
+  // Elles doivent avoir les mêmes boucliers que les apps embarquées — sans
+  // origine connue, tout réglage par site (bloqueur coupé, cookies, HTTPS)
+  // restait sans effet, et leurs compteurs de blocage ne repartaient jamais
+  // de zéro.
+  if (contentsType === 'window') {
+    const trackWindowOrigin = () => {
+      try {
+        if (!contents.isDestroyed()) shields.setContentsOrigin(contents.id, contents.getURL());
+      } catch {
+        /* fenêtre en cours de destruction */
+      }
+    };
+    trackWindowOrigin();
+    contents.on('did-start-loading', () => adblock.clearBlockedStats(contents.id));
+    contents.on('did-navigate', trackWindowOrigin);
+    contents.on('did-navigate-in-page', trackWindowOrigin);
+    contents.once('destroyed', () => shields.clearContentsOrigin(contents.id));
+    return;
+  }
+  if (contentsType !== 'webview') return;
   try {
     // Fixée AVANT toute navigation : l'attribut `useragent` du <webview>
     // pourrait arriver après le début du chargement (ordre des attributs
@@ -759,6 +789,22 @@ function hostOfUrl(url) {
   }
 }
 
+// Une pop-up peut être une publicité — et `window.open` ne passe JAMAIS par
+// webRequest : les listes ne peuvent donc pas l'arrêter au niveau réseau.
+// On demande au moteur si l'URL visée est filtrée. Un lien qu'on a choisi
+// (OAuth, « ouvrir dans un nouvel onglet », un pop-up de connexion) n'y figure
+// pas ; une fenêtre ouverte par une régie, si. C'est un signal plus fiable que
+// l'heuristique « ça sent le chargement automatique ».
+function denyAdPopup(contents, url) {
+  if (!contents || contents.isDestroyed()) return false;
+  if (!adblockActiveFor(contents.id)) return false;
+  if (!adblock.matchesFilter(url, contents.getURL())) return false;
+  const domain = hostOfUrl(url);
+  adblock.recordBlock(contents.id, domain, 'mainFrame', 'popup');
+  permLog(`fenêtre publicitaire refusée : ${domain} (bloqueur)`);
+  return true;
+}
+
 ipcMain.handle('adblock:setForContents', (_event, { webContentsId, mode } = {}) => {
   const id = Number(webContentsId);
   if (!Number.isInteger(id)) return { success: false };
@@ -781,6 +827,10 @@ ipcMain.handle('adblock:setForContents', (_event, { webContentsId, mode } = {}) 
 
 function setupHeaderBypass(ses) {
   if (!ses || !ses.webRequest) return;
+  // Preload cosmétique + scriptlets de l'adblock (une fois par session) : c'est
+  // lui qui masque les emplacements construits par JavaScript et neutralise
+  // les scripts d'anti-blocage, sur TOUTES les fenêtres de la session.
+  adblock.attachSession(ses, adblockActiveFor);
   try {
     // Blocage réseau des pubs/traceurs (no-op si l'adblock est désactivé)
     ses.webRequest.onBeforeRequest((details, callback) => {
@@ -3115,6 +3165,10 @@ function openInAppPopup(guestContents, url) {
     return { action: 'deny' };
   }
 
+  // Pub déguisée en fenêtre : refusée par le bloqueur, avant les automatisations
+  // (une règle utilisateur n'a pas à rouvrir une fenêtre qu'on vient de filtrer).
+  if (denyAdPopup(guestContents, url)) return { action: 'deny' };
+
   // Automatisations : une règle peut décider du sort de ce lien avant tout
   // le reste (voir src/lib/rules.js).
   const rule = matchLinkRule(linkRules, url);
@@ -3409,27 +3463,11 @@ function createWindow() {
     // Réinitialise les stats de blocage au début de chaque chargement de page.
     guestContents.on('did-start-loading', () => adblock.clearBlockedStats(guestContents.id));
 
-    
-
-    // Filtrage cosmétique de l'adblock : masque les emplacements publicitaires
-    // résiduels (cadres vides). On injecte le CSS calculé pour l'URL à chaque
-    // chargement de page (insertCSS — compatible Electron 33).
-    const injectCosmetics = () => {
-      try {
-        const styles = adblock.getCosmeticStyles(
-          guestContents.getURL(),
-          adblockActiveFor(guestContents.id)
-        );
-        if (styles) guestContents.insertCSS(styles, { cssOrigin: 'user' });
-      } catch {
-        /* jamais bloquant */
-      }
-    };
-    guestContents.on('dom-ready', injectCosmetics);
-    guestContents.on('did-frame-navigate', injectCosmetics);
-
-    
-
+    // Le filtrage cosmétique n'est plus injecté ici : le preload de frame de
+    // l'adblock (voir adblock.attachSession) s'en charge AVANT l'exécution des
+    // scripts de la page, suit les mutations du DOM et injecte les scriptlets.
+    // Un simple insertCSS au dom-ready laissait passer les pubs fabriquées
+    // après le chargement.
     // Menu contextuel natif (clic droit) : copier/enregistrer une image,
     // ouvrir/copier/télécharger un lien, rechercher la sélection, couper/
     // coller dans un champ, précédent/suivant/recharger. Absent par défaut
@@ -3689,15 +3727,19 @@ async function captureProofreadSelection(wc, params) {
 }
 
 async function openActiveEditorCorrection(wc, action) {
-  if (!mainWindow || mainWindow.isDestroyed() || wc.isDestroyed()) return;
+  if (wc.isDestroyed()) return;
+  // Même règle que pour un clic droit : le panneau s'ouvre près de la page qui
+  // a demandé la relecture (fenêtre principale ou fenêtre sœur détachée).
+  const target = uiWindowFor(wc, action === 'proofread-editor' ? 'proofread' : 'assistant');
+  if (!target) return;
   const reportMissingEditor = () => {
     if (action === 'proofread-editor') {
-      mainWindow.webContents.send('orbit:proofreader:open', {
+      sendToUi(target, 'orbit:proofreader:open', {
         wcId: wc.id,
         error: 'selection-capture-failed',
       });
     } else {
-      mainWindow.webContents.send('orbit:assistant:selection', {
+      sendToUi(target, 'orbit:assistant:selection', {
         wcId: wc.id,
         text: '',
         editable: true,
@@ -4043,7 +4085,15 @@ async function showGuestContextMenu(guestContents, params, ownerWindow) {
     ownerWindow === mainWindow &&
     mainWindow &&
     !mainWindow.isDestroyed();
-  if (custom && params.isEditable && params.inputFieldType !== 'password') {
+  // La sélection est mémorisée pour TOUT menu qui propose « Relire » — y
+  // compris le menu NATIF d'une fenêtre détachée. Elle ne l'était que pour le
+  // menu HTML de la fenêtre principale : ailleurs, la correction ne savait plus
+  // où écrire et échouait aussitôt (ou écrivait dans la mauvaise page).
+  if (
+    params.isEditable &&
+    params.inputFieldType !== 'password' &&
+    String(params.selectionText || '').trim()
+  ) {
     params.proofreadBookmark = await captureProofreadSelection(guestContents, params);
   }
   lastContextParams.set(guestContents.id, params);
@@ -4072,9 +4122,13 @@ function requestProofread(wc, params) {
   if (!params.isEditable || params.inputFieldType === 'password' || !text.trim()) {
     return { success: false, error: 'no-editable-selection' };
   }
-  if (!mainWindow || mainWindow.isDestroyed()) return { success: false, error: 'window-unavailable' };
+  // Le panneau s'affiche dans la fenêtre d'où vient la sélection : l'interface
+  // principale pour une app embarquée, une fenêtre sœur pour une fenêtre
+  // détachée (voir uiWindowFor).
+  const target = uiWindowFor(wc, 'proofread');
+  if (!target) return { success: false, error: 'window-unavailable' };
   if (text.length > 20000) {
-    mainWindow.webContents.send('orbit:proofreader:open', {
+    sendToUi(target, 'orbit:proofreader:open', {
       wcId: wc.id,
       bookmarkToken: params.proofreadBookmark?.token,
       error: 'selection-too-long',
@@ -4082,13 +4136,13 @@ function requestProofread(wc, params) {
     return { success: false, error: 'selection-too-long' };
   }
   if (!params.proofreadBookmark) {
-    mainWindow.webContents.send('orbit:proofreader:open', {
+    sendToUi(target, 'orbit:proofreader:open', {
       wcId: wc.id,
       error: 'selection-capture-failed',
     });
     return { success: false, error: 'selection-capture-failed' };
   }
-  mainWindow.webContents.send('orbit:proofreader:open', {
+  sendToUi(target, 'orbit:proofreader:open', {
     wcId: wc.id,
     text,
     bookmarkToken: params.proofreadBookmark.token,
@@ -4101,8 +4155,9 @@ function requestAssistantSelection(wc, params) {
   if (!text.trim() || params.inputFieldType === 'password') {
     return { success: false, error: 'no-editable-selection' };
   }
-  if (!mainWindow || mainWindow.isDestroyed()) return { success: false, error: 'window-unavailable' };
-  mainWindow.webContents.send('orbit:assistant:selection', {
+  const target = uiWindowFor(wc, 'assistant');
+  if (!target) return { success: false, error: 'window-unavailable' };
+  sendToUi(target, 'orbit:assistant:selection', {
     wcId: wc.id,
     text,
     editable: Boolean(params.isEditable),
@@ -4255,6 +4310,8 @@ handleFromUi('ctx:action', async (_event, { wcId, action, value } = {}) => {
           return 'stale-selection';
         })()`);
         if (result !== 'success') return { success: false, error: result };
+        // Corrections posées : le panneau détaché a fini son travail.
+        closePanelFor(wc);
         return { success: true };
       } catch (err) {
         console.error('[orbit] application de la correction locale échouée:', err);
@@ -4271,6 +4328,9 @@ handleFromUi('ctx:action', async (_event, { wcId, action, value } = {}) => {
           console.error('[orbit] nettoyage de la sélection mémorisée échoué:', error);
         });
       }
+      // Relecture abandonnée depuis un panneau détaché : la fenêtre n'a plus
+      // rien à montrer, on la referme au lieu de laisser un cadre vide.
+      closePanelFor(wc);
       return { success: true };
     }
     case 'replaceMisspelling': {
@@ -4540,8 +4600,11 @@ async function loadGrammar() {
   if (!grammarModule) {
     grammarModule = await import('./grammar.js');
     grammarModule.setGrammarProgressReporter((payload) => {
-      if (mainWindow && !mainWindow.isDestroyed()) {
-        mainWindow.webContents.send('orbit:grammar:progress', payload);
+      // L'installation peut être lancée depuis une fenêtre-panneau : la barre
+      // de progression doit s'y afficher aussi, sinon le téléchargement semble
+      // figé pendant plusieurs minutes.
+      for (const win of [mainWindow, ...orbitPanelWindows.values()]) {
+        if (win && !win.isDestroyed()) win.webContents.send('orbit:grammar:progress', payload);
       }
     });
   }
@@ -5178,6 +5241,17 @@ ipcMain.handle('miniplayer:action', (_e, action = {}) => {
 // ---------------------------------------------------------------------------
 ipcMain.handle('adblock:setEnabled', (_e, on) => adblock.setEnabled(on));
 ipcMain.handle('adblock:getState', () => adblock.getState());
+// Niveau de filtrage (listes « pub + pistage » ou listes complètes). Le choix
+// est retenu par le processus principal : il doit survivre au redémarrage.
+ipcMain.handle('adblock:setLevel', (_e, level) => adblock.setLevel(level));
+// Recharge une page après un changement de réglage : sans ça, « j'ai coupé le
+// bloqueur » ne se voyait qu'au rechargement suivant, donc jamais tout de suite.
+ipcMain.handle('shields:reload', (_e, webContentsId) => {
+  const wc = webContents.fromId(Number(webContentsId));
+  if (!wc || wc.isDestroyed()) return { success: false, error: 'stale' };
+  wc.reload();
+  return { success: true };
+});
 
 // Bloqueur de pub (Shields) par site / origine
 ipcMain.handle('shields:getSiteSettings', (_e, url) => shields.getSiteSettings(shields.originOf(url)));
@@ -5891,6 +5965,132 @@ ipcMain.handle('downloads:openTorrent', async (_event, value) => {
   }
 });
 
+// ---------------------------------------------------------------------------
+// Fenêtres-PANNEAUX : relecture et assistant à côté d'une fenêtre détachée.
+// ---------------------------------------------------------------------------
+// La relecture et l'assistant sont des surcouches de l'interface principale.
+// Depuis une fenêtre détachée (ou une pop-up d'app), la demande partait donc
+// dans la fenêtre principale — souvent derrière, parfois masquée : le panneau
+// s'ouvrait bel et bien, mais hors du champ de vision, d'où « ça ne marche
+// pas ». On ouvre ici une petite fenêtre sœur, chargée par la page
+// `panel.html`, qui n'affiche QUE ce panneau-là.
+// Une seule fenêtre par propriétaire, et par type de panneau : cliquer deux
+// fois « Relire » ne doit pas empiler deux fenêtres.
+const orbitPanelWindows = new Map(); // `${id du wc propriétaire}:${type}` -> BrowserWindow
+
+// Fenêtre qui HÉBERGE un contenu : elle-même pour une page, la fenêtre hôte
+// pour un <webview> (dont le webContents n'appartient à aucune BrowserWindow).
+function owningWindow(contents) {
+  if (!contents || contents.isDestroyed()) return null;
+  try {
+    if (contents.getType() === 'webview' && contents.hostWebContents) {
+      return BrowserWindow.fromWebContents(contents.hostWebContents);
+    }
+    return BrowserWindow.fromWebContents(contents);
+  } catch {
+    return null;
+  }
+}
+
+function panelWindowFor(ownerContents, kind) {
+  const ownerWindow = owningWindow(ownerContents);
+  if (!ownerWindow || ownerWindow.isDestroyed()) return null;
+  const key = `${ownerWindow.webContents.id}:${kind}`;
+  const existing = orbitPanelWindows.get(key);
+  if (existing && !existing.isDestroyed()) {
+    if (existing.isMinimized()) existing.restore();
+    existing.show();
+    existing.focus();
+    return existing;
+  }
+  const assistant = kind === 'assistant';
+  const win = new BrowserWindow({
+    width: assistant ? 1080 : 900,
+    height: 820,
+    minWidth: 520,
+    minHeight: 380,
+    parent: ownerWindow,
+    title: assistant ? 'Assistant – Orbit' : 'Relecture – Orbit',
+    backgroundColor: '#0a0a0f',
+    autoHideMenuBar: true,
+    show: false,
+    webPreferences: {
+      // Même preload que l'interface : le panneau a besoin des mêmes canaux
+      // (relecture, grammaire, assistant). Aucun accès au nœud pour la page.
+      preload: path.join(__dirname, 'preload.cjs'),
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      spellcheck: true,
+    },
+  });
+  win.setMenuBarVisibility(false);
+  win.webContents.setUserAgent(CHROME_UA);
+  // Aucun <webview> ici : un lien qu'une réponse de l'assistant demanderait
+  // d'ouvrir part vers le navigateur système, comme depuis l'interface.
+  win.webContents.setWindowOpenHandler(openExternalHandler);
+  win.once('ready-to-show', () => win.show());
+  const load = isDev
+    ? win.loadURL(`${VITE_DEV_SERVER_URL}/panel.html?panel=${kind}`)
+    : win.loadFile(path.join(__dirname, '../dist/panel.html'), { query: { panel: kind } });
+  load.catch((err) => console.error('[orbit] panneau : chargement impossible', err?.message || err));
+  orbitPanelWindows.set(key, win);
+  win.on('closed', () => orbitPanelWindows.delete(key));
+  return win;
+}
+
+// Envoi d'un panneau à sa fenêtre. Une fenêtre qui vient d'être créée n'a pas
+// fini de charger sa page : un `send` immédiat se perdrait dans le vide (et
+// l'utilisateur verrait une fenêtre vide). On attend donc la fin du chargement,
+// plus un tour de boucle pour que React ait posé ses écouteurs.
+function sendToUi(target, channel, payload) {
+  const wc = target && !target.isDestroyed() ? target.webContents : null;
+  if (!wc) return false;
+  if (wc.isLoading()) {
+    wc.once('did-finish-load', () => {
+      setTimeout(() => {
+        if (!wc.isDestroyed()) wc.send(channel, payload);
+      }, 60);
+    });
+    return true;
+  }
+  wc.send(channel, payload);
+  return true;
+}
+
+// Fenêtre d'interface qui doit recevoir une relecture / une sélection pour ce
+// webContents. La fenêtre principale garde le comportement historique ; tout le
+// reste reçoit son propre panneau.
+function uiWindowFor(ownerContents, kind) {
+  const ownerWindow = owningWindow(ownerContents);
+  // Fenêtre principale (ou inconnue) : le panneau reste dans l'interface.
+  if (ownerWindow && ownerWindow !== mainWindow && !ownerWindow.isDestroyed()) {
+    const panel = panelWindowFor(ownerContents, kind);
+    if (panel) return panel;
+  }
+  return mainWindow && !mainWindow.isDestroyed() ? mainWindow : null;
+}
+
+// Referme le panneau de RELECTURE d'une fenêtre détachée (correction appliquée
+// ou relecture abandonnée). L'assistant reste ouvert : c'est une conversation,
+// pas une boîte de dialogue qu'on referme.
+function closePanelFor(ownerContents) {
+  const ownerWindow = owningWindow(ownerContents);
+  if (!ownerWindow) return;
+  const win = orbitPanelWindows.get(`${ownerWindow.webContents.id}:proofread`);
+  if (win && !win.isDestroyed()) win.close();
+}
+
+// Un panneau est une fenêtre d'interface comme les autres : ses appels IPC
+// (correction, grammaire, assistant) doivent être acceptés.
+function isOrbitPanel(contents) {
+  if (!contents) return false;
+  for (const win of orbitPanelWindows.values()) {
+    if (!win.isDestroyed() && win.webContents.id === contents.id) return true;
+  }
+  return false;
+}
+
 // Ouvrir une app dans une fenêtre DÉTACHÉE (séparée), en réutilisant la même
 // partition → session/connexion partagée avec l'onglet embarqué.
 const detachedWindows = new Map();
@@ -5944,6 +6144,11 @@ ipcMain.handle('app:openDetached', async (_e, { appId, url, partition, title, zo
         popupUrl !== 'about:blank' &&
         !/^https?:\/\//.test(popupUrl)
       ) {
+        return { action: 'deny' };
+      }
+      // Même filtre que dans la fenêtre principale : une pop-up publicitaire
+      // n'a pas à s'ouvrir parce qu'on est dans une fenêtre détachée.
+      if (popupUrl !== 'about:blank' && denyAdPopup(contents, popupUrl)) {
         return { action: 'deny' };
       }
       return {
@@ -6971,12 +7176,14 @@ const vaultWindow = (event) => BrowserWindow.fromWebContents(event.sender) || ma
 // `credentials:*`, qui ne lui rend que les identifiants de SON propre domaine.
 function fromOrbitUi(event) {
   try {
-    return (
-      event.sender.getType() !== 'webview' &&
+    // Les fenêtres-panneaux (relecture, assistant) hébergent la MÊME interface
+    // — mêmes composants, même preload — et doivent donc passer les contrôles
+    // réservés à l'interface. Une page embarquée, non.
+    const isMainUi =
       mainWindow &&
       !mainWindow.isDestroyed() &&
-      event.sender.id === mainWindow.webContents.id
-    );
+      event.sender.id === mainWindow.webContents.id;
+    return event.sender.getType() !== 'webview' && (isMainUi || isOrbitPanel(event.sender));
   } catch {
     return false;
   }
