@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Puzzle, FolderOpen, Trash2, Loader2, Info, Globe, Download, Settings2, AlertTriangle, RotateCw, Dice6, Check, X, Upload, Smartphone, CloudOff, WifiOff, Search } from 'lucide-react';
+import { Puzzle, FolderOpen, Trash2, Loader2, Info, Globe, Download, Settings2, AlertTriangle, RotateCw, Dice6, Check, X, Upload, Smartphone, CloudOff, WifiOff, Search, FileJson } from 'lucide-react';
 import { useStore } from '../stores/useStore';
 import { getRegisteredWebviews } from '../lib/webviewRegistry';
 import { appPartition } from '../lib/session';
@@ -151,6 +151,65 @@ const FAKE_DATA_EXT = {
 // (le ZIP porte le même nom « Fake Data Filler (Orbit) »).
 const isFakeDataExt = (ext) => ext.native || /fake data/i.test(ext.name || '');
 
+// Types de champs configurables, dans l'ordre d'affichage. Les clés sont
+// exactement celles que le remplissage 🎲 demande (`detectFieldKind`) : tout
+// autre type peut être ajouté par le JSON, sans case dédiée ici.
+const FAKE_FIELD_KEYS = [
+  { key: 'firstName', label: 'fake.firstName' },
+  { key: 'lastName', label: 'fake.lastName' },
+  { key: 'fullName', label: 'fake.fullName' },
+  { key: 'email', label: 'fake.email' },
+  { key: 'username', label: 'fake.username' },
+  { key: 'phone', label: 'fake.phone' },
+  { key: 'birthdate', label: 'fake.birthdate' },
+  { key: 'gender', label: 'fake.gender' },
+  { key: 'avatar', label: 'fake.avatar' },
+  { key: 'image', label: 'fake.image' },
+  { key: 'address', label: 'fake.address' },
+  { key: 'zip', label: 'fake.zip' },
+  { key: 'city', label: 'fake.city' },
+  { key: 'region', label: 'fake.region' },
+  { key: 'country', label: 'fake.country' },
+  { key: 'company', label: 'fake.company' },
+  { key: 'jobTitle', label: 'fake.jobTitle' },
+  { key: 'iban', label: 'fake.iban' },
+  { key: 'subject', label: 'fake.subject' },
+  { key: 'text', label: 'fake.text' },
+];
+
+// Les valeurs d'un type, telles qu'on les écrit dans les Réglages : une par
+// ligne. Le format stocké accepte aussi bien ce texte qu'un tableau (import
+// JSON) ou une valeur unique (ancien format) — le remplissage lit les trois.
+const fakeLinesOf = (value) => {
+  if (Array.isArray(value)) return value.map((item) => String(item ?? '')).join('\n');
+  return typeof value === 'string' ? value : '';
+};
+
+const fakeValuesOf = (value) =>
+  fakeLinesOf(value)
+    .split('\n')
+    .map((line) => line.trim())
+    .filter(Boolean);
+
+// Un document JSON pour tous les types : `{ "city": ["Lyon", "Nantes"] }`.
+// Les valeurs uniques (chaîne) et les nombres sont acceptés et normalisés.
+function normalizeFakeLists(parsed) {
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+    throw new Error('le document doit être un objet { type: [valeurs] }');
+  }
+  const source = parsed.lists && typeof parsed.lists === 'object' ? parsed.lists : parsed;
+  const lists = {};
+  for (const [key, value] of Object.entries(source)) {
+    if (key === 'source' || key === 'photos' || key === 'lists') continue;
+    const values = Array.isArray(value)
+      ? value.map((item) => String(item ?? '').trim()).filter(Boolean)
+      : fakeValuesOf(value);
+    if (values.length) lists[key] = values;
+  }
+  if (!Object.keys(lists).length) throw new Error('aucune valeur trouvée dans ce document');
+  return lists;
+}
+
 // Gestion des extensions Chrome : installation (ZIP, dossier, Chrome Web Store),
 // activation/désactivation et désinstallation. Fake Data Filler (natif) apparaît
 // dans la même liste avec les mêmes contrôles.
@@ -162,6 +221,9 @@ export default function Extensions() {
   const [error, setError] = useState(null);
   const [exportingFakeData, setExportingFakeData] = useState(false);
   const [fakeDataSaved, setFakeDataSaved] = useState(false);
+  // Zone JSON des listes : `null` = fermée, une chaîne = en cours d'édition.
+  const [fakeJsonDraft, setFakeJsonDraft] = useState(null);
+  const [fakeJsonError, setFakeJsonError] = useState(null);
   const [nativeConfigOpen, setNativeConfigOpen] = useState(null); // id de l'extension dont le panneau inline est ouvert
   const [extQuery, setExtQuery] = useState('');
   // Archives optionnelles présentes à côté de l'application. Il n'y en a plus
@@ -263,6 +325,82 @@ export default function Extensions() {
       setTimeout(() => setFakeDataSaved(false), 2000);
     } catch (err) {
       console.error('[orbit] saveFakeData échoué:', err);
+    }
+  };
+
+  // ── Listes de valeurs Fake Data ───────────────────────────────────────────
+  // Un type de champ = une liste de valeurs (une par ligne) où le 🎲 pioche au
+  // hasard. Le texte saisi est stocké TEL QUEL (découpé au remplissage) : rien
+  // ne bouge sous le curseur pendant la frappe.
+  const fakeData = settings.fakeData || {};
+  const fakeLists = fakeData.lists || {};
+  const fakeBuiltinOnly = fakeData.source === 'builtin';
+
+  const applyFakeData = (next, { save = true } = {}) => {
+    updateSettings({ fakeData: next });
+    if (save) saveFakeDataSettings(next);
+  };
+
+  const setFakeList = (key, text, { save = false } = {}) => {
+    const lists = { ...fakeLists };
+    if (text.trim()) lists[key] = text;
+    else delete lists[key];
+    // L'ancien format (une valeur unique à la racine) ferait doublon avec la
+    // liste : on le retire dès que l'utilisateur touche au type.
+    const next = { ...fakeData, lists };
+    delete next[key];
+    applyFakeData(next, { save });
+  };
+
+  const setFakeSource = (source) => applyFakeData({ ...fakeData, source });
+
+  // Import d'un document JSON : `{ "city": ["Lyon"], "firstName": [...] }`.
+  // Lu dans le renderer (FileReader), donc sans passer par le disque côté main.
+  const importFakeJson = (file) => {
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const lists = normalizeFakeLists(JSON.parse(String(reader.result || '')));
+        const next = { ...fakeData, source: 'custom', lists: { ...fakeLists, ...lists } };
+        for (const key of Object.keys(lists)) delete next[key];
+        applyFakeData(next);
+        setFakeJsonError(null);
+        setFakeJsonDraft(null);
+      } catch (err) {
+        setFakeJsonError(String(err?.message || err));
+      }
+    };
+    reader.onerror = () => setFakeJsonError(t('fake.jsonUnreadable'));
+    reader.readAsText(file);
+  };
+
+  // Le JSON de toutes les listes, y compris les types qui n'ont pas de case
+  // dédiée dans l'interface (iban, cvc, un type inventé par l'utilisateur…).
+  const fakeListsJson = () => {
+    const out = {};
+    for (const [key, value] of Object.entries(fakeLists)) {
+      const values = fakeValuesOf(value);
+      if (values.length) out[key] = values;
+    }
+    for (const { key } of FAKE_FIELD_KEYS) {
+      if (!out[key] && typeof fakeData[key] === 'string' && fakeData[key].trim()) {
+        out[key] = [fakeData[key].trim()];
+      }
+    }
+    return JSON.stringify(out, null, 2);
+  };
+
+  const applyFakeJsonDraft = () => {
+    try {
+      const lists = normalizeFakeLists(JSON.parse(fakeJsonDraft || '{}'));
+      const next = { ...fakeData, lists };
+      for (const { key } of FAKE_FIELD_KEYS) delete next[key];
+      applyFakeData(next);
+      setFakeJsonError(null);
+      setFakeJsonDraft(null);
+    } catch (err) {
+      setFakeJsonError(String(err?.message || err));
     }
   };
 
@@ -825,15 +963,13 @@ export default function Extensions() {
                       <label className="flex items-start gap-2 cursor-pointer">
                         <input
                           type="checkbox"
-                          checked={settings.fakeData?.photos !== 'off'}
-                          onChange={(e) => {
-                            const fakeData = {
-                              ...(settings.fakeData || {}),
+                          checked={fakeData.photos !== 'off'}
+                          onChange={(e) =>
+                            applyFakeData({
+                              ...fakeData,
                               photos: e.target.checked ? 'on' : 'off',
-                            };
-                            updateSettings({ fakeData });
-                            saveFakeDataSettings(fakeData);
-                          }}
+                            })
+                          }
                           className="mt-0.5 accent-accent-primary"
                         />
                         <span>
@@ -841,57 +977,69 @@ export default function Extensions() {
                           <span className="block text-xs text-text-muted">{t('fake.photosHint')}</span>
                         </span>
                       </label>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        {[
-                          { key: 'firstName', label: 'fake.firstName' },
-                          { key: 'lastName', label: 'fake.lastName' },
-                          { key: 'email', label: 'fake.email' },
-                          { key: 'phone', label: 'fake.phone' },
-                          { key: 'username', label: 'fake.username' },
-                          { key: 'avatar', label: 'fake.avatar' },
-                          { key: 'city', label: 'fake.city' },
-                          { key: 'zip', label: 'fake.zip' },
-                          { key: 'address', label: 'fake.address' },
-                          { key: 'company', label: 'fake.company' },
-                          { key: 'country', label: 'fake.country' },
-                          { key: 'region', label: 'fake.region' },
-                          { key: 'jobTitle', label: 'fake.jobTitle' },
-                          { key: 'text', label: 'fake.text' },
-                        ].map(({ key, label }) => {
-                          const TextField = key === 'text' ? 'textarea' : 'input';
+                      {/* Source des valeurs : les listes de l'utilisateur ou
+                          celles intégrées à Orbit. Basculer ne SUPPRIME rien —
+                          les listes restent enregistrées. */}
+                      <div>
+                        <p className="text-xs text-text-primary mb-1">{t('fake.sourceTitle')}</p>
+                        <div className="flex gap-2">
+                          {[
+                            { value: 'custom', label: 'fake.sourceCustom' },
+                            { value: 'builtin', label: 'fake.sourceBuiltin' },
+                          ].map((option) => (
+                            <button
+                              key={option.value}
+                              onClick={() => setFakeSource(option.value)}
+                              className={`text-xs px-2.5 py-1.5 rounded-lg border transition-colors ${
+                                (option.value === 'builtin') === fakeBuiltinOnly
+                                  ? 'border-accent-primary text-accent-primary bg-accent-primary/10'
+                                  : 'border-border text-text-muted hover:bg-bg-hover'
+                              }`}
+                            >
+                              {t(option.label)}
+                            </button>
+                          ))}
+                        </div>
+                        <p className="text-xs text-text-muted mt-1">
+                          {t(fakeBuiltinOnly ? 'fake.sourceBuiltinHint' : 'fake.sourceCustomHint')}
+                        </p>
+                      </div>
+
+                      {/* Listes de valeurs : une par ligne, tirage au hasard. */}
+                      <div
+                        className={`grid grid-cols-1 sm:grid-cols-2 gap-3 ${
+                          fakeBuiltinOnly ? 'opacity-50' : ''
+                        }`}
+                      >
+                        {FAKE_FIELD_KEYS.map(({ key, label }) => {
+                          const lines = fakeLinesOf(fakeLists[key] ?? fakeData[key]);
+                          const count = fakeValuesOf(lines).length;
                           return (
                             <div key={key} className="block">
-                              <label className="block text-xs text-text-muted mb-1">
+                              <label className="flex items-center gap-1 text-xs text-text-muted mb-1">
                                 {t(label)}
-                                {settings.fakeData?.[key] && (
-                                  <span className="text-emerald-500 ml-1">
+                                {count > 0 && (
+                                  <span className="text-emerald-500 flex items-center gap-0.5">
                                     <Check size={10} />
+                                    {count > 1 && <span>{t('fake.valueCount', { count })}</span>}
                                   </span>
                                 )}
                               </label>
                               <div className="flex gap-2">
-                                <TextField
-                                  {...(key === 'text' ? { rows: 3 } : { type: 'text' })}
-                                  value={settings.fakeData?.[key] || ''}
-                                  onChange={(e) =>
-                                    updateSettings({
-                                      fakeData: { ...(settings.fakeData || {}), [key]: e.target.value },
-                                    })
-                                  }
-                                  onBlur={() => saveFakeDataSettings(settings.fakeData)}
-                                  placeholder="Laisser vide pour aléatoire"
-                                  className="input flex-1 text-sm"
+                                <textarea
+                                  rows={Math.min(6, Math.max(2, count))}
+                                  value={lines}
+                                  disabled={fakeBuiltinOnly}
+                                  onChange={(e) => setFakeList(key, e.target.value)}
+                                  onBlur={(e) => setFakeList(key, e.target.value, { save: true })}
+                                  placeholder={t('fake.listPlaceholder')}
+                                  className="input flex-1 text-sm font-mono resize-y"
                                 />
-                                {settings.fakeData?.[key] && (
+                                {count > 0 && (
                                   <button
-                                    onClick={() => {
-                                      const updated = { ...(settings.fakeData || {}) };
-                                      delete updated[key];
-                                      updateSettings({ fakeData: updated });
-                                      saveFakeDataSettings(updated);
-                                    }}
-                                    className="btn-icon p-1.5 text-error hover:bg-error/10 rounded"
-                                    title="Effacer"
+                                    onClick={() => setFakeList(key, '', { save: true })}
+                                    className="btn-icon p-1.5 text-error hover:bg-error/10 rounded self-start"
+                                    title={t('fake.clear')}
                                   >
                                     <X size={14} />
                                   </button>
@@ -900,6 +1048,67 @@ export default function Extensions() {
                             </div>
                           );
                         })}
+                      </div>
+
+                      {/* Document JSON : importer un jeu de données complet, ou
+                          régler des types qui n'ont pas de case ci-dessus. */}
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-3 flex-wrap">
+                          <label className="text-xs text-accent-primary hover:text-accent-hover flex items-center gap-1 cursor-pointer">
+                            <Upload size={12} />
+                            {t('fake.importJson')}
+                            <input
+                              type="file"
+                              accept="application/json,.json"
+                              className="hidden"
+                              onChange={(e) => {
+                                importFakeJson(e.target.files?.[0]);
+                                e.target.value = '';
+                              }}
+                            />
+                          </label>
+                          <button
+                            onClick={() =>
+                              setFakeJsonDraft(fakeJsonDraft === null ? fakeListsJson() : null)
+                            }
+                            className="text-xs text-accent-primary hover:text-accent-hover flex items-center gap-1"
+                          >
+                            <FileJson size={12} />
+                            {t(fakeJsonDraft === null ? 'fake.showJson' : 'fake.hideJson')}
+                          </button>
+                        </div>
+                        <p className="text-xs text-text-muted">{t('fake.jsonHint')}</p>
+                        {fakeJsonDraft !== null && (
+                          <div className="space-y-2">
+                            <textarea
+                              rows={10}
+                              value={fakeJsonDraft}
+                              onChange={(e) => setFakeJsonDraft(e.target.value)}
+                              spellCheck={false}
+                              className="input w-full text-xs font-mono resize-y"
+                            />
+                            <div className="flex gap-2">
+                              <button onClick={applyFakeJsonDraft} className="btn-primary text-xs">
+                                {t('fake.applyJson')}
+                              </button>
+                              <button
+                                onClick={() => {
+                                  setFakeJsonDraft(null);
+                                  setFakeJsonError(null);
+                                }}
+                                className="btn-secondary text-xs"
+                              >
+                                {t('common.cancel')}
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                        {fakeJsonError && (
+                          <p className="text-xs text-error flex items-center gap-1">
+                            <AlertTriangle size={12} />
+                            {fakeJsonError}
+                          </p>
+                        )}
                       </div>
                       {fakeDataSaved && (
                         <p className="text-xs text-emerald-500 flex items-center gap-1">

@@ -1685,11 +1685,6 @@ const FAKE_REGION = ['Île-de-France', 'Auvergne-Rhône-Alpes', 'Occitanie', 'No
 const FAKE_JOBS = ['Product designer', 'Développeur logiciel', 'Chef de projet', 'Analyste de données', 'Responsable marketing', 'Technicien support'];
 const FAKE_SUBJECTS = ['Demande de démonstration', 'Question sur le produit', 'Retour utilisateur', 'Proposition de partenariat', 'Demande de renseignements'];
 const FAKE_GENDERS = ['Femme', 'Homme', 'Non précisé'];
-// Photos de test : portraits de stock (Random User Generator) et photos
-// quelconques (Lorem Picsum). Aucune clé, aucun compte ; l'URL seule est
-// insérée — la page décide de la charger. « photos: off » dans les Réglages
-// coupe ces adresses et laisse une adresse neutre (aucun service externe).
-const FAKE_AVATAR_DIRS = ['women', 'men'];
 const LOREM_WORDS = [
   'lorem', 'ipsum', 'dolor', 'sit', 'amet', 'consectetur', 'adipiscing', 'elit', 'integer',
   'vitae', 'justo', 'efficitur', 'congue', 'nunc', 'sagittis', 'sollicitudin', 'nullam',
@@ -1708,10 +1703,6 @@ const loremText = (min = 2, max = 5) =>
 const fslug = (s) =>
   String(s).toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z]/g, '');
 const fakePhotosEnabled = () => fakeCustom.photos !== 'off';
-const portraitUrl = () =>
-  `https://randomuser.me/api/portraits/${frand(FAKE_AVATAR_DIRS)}/${frandInt(100)}.jpg`;
-const pictureUrl = () =>
-  `https://picsum.photos/seed/${Math.random().toString(36).slice(2, 10)}/1200/800`;
 
 // IBAN français de test, VALIDE (clé ISO 13616 calculée par modulo 97) : les
 // formulaires qui vérifient l'IBAN avant d'envoyer acceptent la valeur.
@@ -1752,111 +1743,461 @@ function fakeBirthDate() {
   return date.toISOString().slice(0, 10);
 }
 
+// --- début bloc fake data partagé ---
+// Ce bloc est COPIÉ À L'IDENTIQUE dans electron/credentials-preload.cjs et dans
+// electron/extensions/fake-data-filler-orbit/content.js : le remplissage 🎲
+// doit deviner le même type de champ qu'on passe par le natif ou par
+// l'extension installée depuis le ZIP. test/fakeFieldKind.test.js extrait les
+// deux copies, vérifie qu'elles sont identiques et teste les règles.
+// Il ne dépend de rien : ni require, ni electronAPI, ni réseau.
+
+// Texte d'indice normalisé : accents retirés, camelCase et snake_case coupés
+// en mots, tout séparateur réduit à une espace. « Prénom », « firstName » et
+// « first_name » donnent tous le même texte, ce qui permet d'écrire les règles
+// sur des MOTS entiers (\b…\b) au lieu de chercher des morceaux au hasard —
+// c'est ce qui faisait prendre le « nom » de « prenom_2 » pour un patronyme.
+function fakeNorm(value) {
+  return String(value == null ? '' : value)
+    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+function fakeAttr(el, name) {
+  if (!el || typeof el.getAttribute !== 'function') return '';
+  return el.getAttribute(name) || '';
+}
+
+function fakeShortText(value) {
+  const text = String(value == null ? '' : value).replace(/\s+/g, ' ').trim();
+  // Un « libellé » de 200 caractères est en réalité un paragraphe voisin : le
+  // lire ferait entrer n'importe quel mot dans les indices.
+  return text.length > 0 && text.length <= 120 ? text : '';
+}
+
+// Libellé visible d'un champ. C'est LA correction du « champ Nom rempli avec
+// du Lorem » : beaucoup de formulaires ne mettent aucun indice dans name/id
+// (« field_3 », « input-2 », des identifiants générés) et ne comptent que sur
+// le <label>. Sans ce texte, la détection n'avait rien à lire et retombait sur
+// « text ».
+function fakeLabelText(el) {
+  if (!el) return '';
+  const parts = [];
+  const push = (value) => {
+    const text = fakeShortText(value);
+    if (text) parts.push(text);
+  };
+
+  try {
+    // <label for="…"> : el.labels le fait nativement ; sinon on cherche.
+    const labels = el.labels && el.labels.length ? Array.from(el.labels) : [];
+    for (const label of labels) push(label.textContent);
+    if (!labels.length && el.id && typeof document !== 'undefined') {
+      const id =
+        typeof CSS !== 'undefined' && CSS.escape
+          ? CSS.escape(el.id)
+          : String(el.id).replace(/["\\]/g, '\\$&');
+      push(document.querySelector(`label[for="${id}"]`)?.textContent);
+    }
+  } catch {
+    /* ignore */
+  }
+
+  try {
+    // aria-labelledby et aria-describedby : le libellé est ailleurs dans la page.
+    for (const attribute of ['aria-labelledby', 'aria-describedby']) {
+      const ids = fakeAttr(el, attribute).split(/\s+/).filter(Boolean);
+      for (const id of ids) {
+        if (typeof document === 'undefined') break;
+        push(document.getElementById(id)?.textContent);
+      }
+    }
+  } catch {
+    /* ignore */
+  }
+
+  try {
+    // Champ enveloppé dans son libellé : <label>Nom <input></label>.
+    if (typeof el.closest === 'function') {
+      const wrapping = el.closest('label');
+      if (wrapping) push(wrapping.textContent);
+      const legend = el.closest('fieldset')?.querySelector?.('legend');
+      if (legend) push(legend.textContent);
+    }
+  } catch {
+    /* ignore */
+  }
+
+  try {
+    // Dernier recours : le texte juste avant le champ (libellé posé en frère,
+    // sans `for`). On ne remonte que de deux niveaux pour ne pas ramasser la
+    // moitié du formulaire.
+    let node = el;
+    for (let depth = 0; depth < 2 && node; depth += 1) {
+      const previous = node.previousElementSibling;
+      const tag = previous && previous.tagName ? previous.tagName.toLowerCase() : '';
+      if (['label', 'span', 'div', 'p', 'dt', 'th', 'strong', 'b'].includes(tag)) {
+        push(previous.textContent);
+        break;
+      }
+      node = node.parentElement;
+    }
+  } catch {
+    /* ignore */
+  }
+
+  return parts.join(' ');
+}
+
+// Tous les indices d'un champ, normalisés. Les attributs des frameworks
+// (formControlName d'Angular, data-testid, v-model) portent souvent le seul
+// nom métier du champ.
+function fakeFieldHint(el) {
+  if (!el) return '';
+  return fakeNorm(
+    [
+      el.name,
+      el.id,
+      el.autocomplete || fakeAttr(el, 'autocomplete'),
+      fakeAttr(el, 'placeholder'),
+      fakeAttr(el, 'aria-label'),
+      fakeAttr(el, 'title'),
+      fakeAttr(el, 'data-testid'),
+      fakeAttr(el, 'data-test'),
+      fakeAttr(el, 'data-name'),
+      fakeAttr(el, 'data-field'),
+      fakeAttr(el, 'formcontrolname'),
+      fakeAttr(el, 'ng-model'),
+      fakeAttr(el, 'v-model'),
+      fakeLabelText(el),
+    ]
+      .filter(Boolean)
+      .join(' ')
+  );
+}
+
+// `autocomplete` est la seule déclaration de type écrite par l'auteur de la
+// page : quand elle est là, elle passe avant toute devinette sur les libellés.
+const FAKE_AUTOCOMPLETE_KINDS = {
+  'given-name': 'firstName',
+  'additional-name': 'firstName',
+  'family-name': 'lastName',
+  name: 'fullName',
+  'cc-name': 'fullName',
+  nickname: 'username',
+  username: 'username',
+  email: 'email',
+  tel: 'phone',
+  'tel-national': 'phone',
+  'tel-local': 'phone',
+  organization: 'company',
+  'organization-title': 'jobTitle',
+  'street-address': 'address',
+  'address-line1': 'address',
+  'address-line2': 'address',
+  'address-line3': 'address',
+  'address-level1': 'region',
+  'address-level2': 'city',
+  'postal-code': 'zip',
+  country: 'country',
+  'country-name': 'country',
+  bday: 'birthdate',
+  sex: 'gender',
+  url: 'url',
+  photo: 'avatar',
+  'cc-number': 'creditCard',
+  'cc-exp': 'cardExpiry',
+  'cc-csc': 'cardCvc',
+};
+
+function fakeAutocompleteKind(el) {
+  const raw = String((el && (el.autocomplete || fakeAttr(el, 'autocomplete'))) || '')
+    .toLowerCase()
+    .trim();
+  if (!raw || raw === 'on' || raw === 'off') return null;
+  // « shipping street-address », « section-a billing postal-code » : seul le
+  // dernier mot porte le type, mais on accepte n'importe quelle position.
+  for (const token of raw.split(/\s+/)) {
+    if (Object.prototype.hasOwnProperty.call(FAKE_AUTOCOMPLETE_KINDS, token)) {
+      return FAKE_AUTOCOMPLETE_KINDS[token];
+    }
+  }
+  return null;
+}
+
+// Règles de libellé, DANS L'ORDRE : la première qui correspond gagne. Les
+// pièges de « nom » et de « name » (nom d'utilisateur, nom de société, nom du
+// produit…) sont donc levés avant les règles larges.
+const FAKE_HINT_RULES = [
+  // Identifiant de connexion : « nom d'utilisateur » n'est pas un nom.
+  [/\b(nom (d |de |du )?(utilisateur|usager|compte|connexion)|user ?name|pseudo(nyme)?|login|identifiant|nickname|handle)\b/, 'username'],
+  // Nom complet avant nom/prénom séparés.
+  [/\b(nom complet|nom et prenom|prenom et nom|nom prenom|full ?name|complete name|your name|display name|nom affiche|titulaire|cardholder|name on card)\b/, 'fullName'],
+  // Société avant « nom » : « nom de l'entreprise » est une société.
+  [/\b(raison sociale|nom (de |d |de la |du )?(societe|entreprise|organisation|organisme|compagnie|boite|structure)|company|business name|societe|entreprise|organi[sz]ation|employeur|employer|siret|siren)\b/, 'company'],
+  [/\b(prenom|first ?name|given ?name|forename)\b/, 'firstName'],
+  [/\b(nom (de |d |de la )?(famille|naissance|jeune fille)|last ?name|surname|family ?name|patronyme)\b/, 'lastName'],
+  // E-mail et téléphone.
+  [/\b(e ?mail|mail|courriel)\b/, 'email'],
+  [/\b(tel|telephone|phone|mobile|portable|gsm|whatsapp|cellulaire)\b/, 'phone'],
+  // Images : l'avatar (une personne) avant les images décoratives.
+  [/\b(avatar|profile pic\w*|profile image|profile photo|photo de profil|image de profil|portrait|headshot|trombinoscope)\b/, 'avatar'],
+  [/\b(image|picture|photo|cover|banniere|banner|thumbnail|vignette|illustration|logo|affiche|visuel)\b/, 'image'],
+  // Identité.
+  [/\b(sexe|genre|gender|civilite)\b/, 'gender'],
+  [/\b(date de naissance|birth ?date|date of birth|dob|birthday|anniversaire|ne le)\b/, 'birthdate'],
+  [/\b(age)\b/, 'age'],
+  // Paiement et banque : données de test, jamais de vraies coordonnées.
+  [/\b(iban|rib)\b/, 'iban'],
+  [/\b(card number|cc number|numero de carte|card ?no|ccnum|numero de la carte)\b/, 'creditCard'],
+  [/\b(expir\w*|exp date|valid thru|date d expiration|mm yy|mm aa)\b/, 'cardExpiry'],
+  [/\b(cvc|cvv|cvn|security code|cryptogramme)\b/, 'cardCvc'],
+  // Adresse : le code postal et la ville avant « adresse », qui est large.
+  [/\b(code postal|zip( code)?|postal code|postcode|cp)\b/, 'zip'],
+  [/\b(ville|city|commune|localite|town)\b/, 'city'],
+  [/\b(pays|country|nationalite|nationality)\b/, 'country'],
+  [/\b(region|state|province|departement|county)\b/, 'region'],
+  // « Adresse du site » est une URL, pas une rue : testé avant l'adresse.
+  [/\b(site web|website|homepage|adresse (du |de la )?(site|page|web))\b/, 'url'],
+  [/\b(adresse|address|rue|street|voie|avenue|boulevard|domicile)\b/, 'address'],
+  // Métier, sujet, texte libre.
+  [/\b(fonction|poste|job ?title|position|profession|occupation|metier|role)\b/, 'jobTitle'],
+  [/\b(objet|subject|sujet|titre|title|motif)\b/, 'subject'],
+  [/\b(description|commentaire|comment|message|bio|biographie|about|a propos|notes?|remarques?|details?|contenu|content|texte|body)\b/, 'lorem'],
+  // « Nom du produit », « nom du fichier »… : un intitulé court, pas une
+  // personne. Sans cette règle, le « nom » qui suit les enverrait sur un
+  // patronyme.
+  [/\bnom (du |de la |de l |des |d )?(produit|article|fichier|dossier|domaine|projet|tache|evenement|groupe|equipe|champ|colonne|categorie|rubrique|marque|modele|boutique|magasin|serveur|hote|reseau|wifi|carte|liste|modele)\b/, 'subject'],
+  // Le nom tout court, en dernier : tout ce qui pouvait le désambiguïser a
+  // déjà été essayé. « Nom » seul en français est un nom de famille ;
+  // « name » seul en anglais est un nom complet.
+  [/\b(nom)\b/, 'lastName'],
+  [/\b(name)\b/, 'fullName'],
+  // Site web après tout le reste : « url » apparaît dans beaucoup de champs.
+  [/\b(site( web)?|website|homepage|url|lien|link|www)\b/, 'url'],
+  [/\b(quantite|quantity|nombre|number|montant|amount|prix|price|numero|num)\b/, 'number'],
+];
+
+function fakeHintKind(hint) {
+  if (!hint) return null;
+  for (const [pattern, kind] of FAKE_HINT_RULES) {
+    if (pattern.test(hint)) return kind;
+  }
+  return null;
+}
+
+// Types dont la valeur reste écrivable dans un <input type="number"> : les
+// autres (une adresse, un nom) n'ont rien à y faire.
+const FAKE_NUMERIC_KINDS = new Set(['age', 'zip', 'phone', 'creditCard', 'cardCvc', 'number']);
+
 // Champ de fichier pouvant recevoir une image (avatar, couverture, produit).
 // Un `<input type="file" accept=".pdf">` n'est JAMAIS touché : on ne remplit
 // que les champs qui attendent une image (ou qui ne précisent rien).
 function acceptsFakeImage(el) {
-  if (el?.tagName?.toLowerCase() !== 'input') return false;
-  if ((el.getAttribute('type') || '').toLowerCase() !== 'file') return false;
-  const accept = (el.getAttribute('accept') || '').toLowerCase().trim();
+  if (!el || !el.tagName || el.tagName.toLowerCase() !== 'input') return false;
+  if (String(fakeAttr(el, 'type') || '').toLowerCase() !== 'file') return false;
+  const accept = fakeAttr(el, 'accept').toLowerCase().trim();
   if (!accept) {
     // Aucun `accept` : on ne remplit que si le champ parle d'image. Sinon un
     // « déposez votre CV » recevrait un PNG.
-    const hint = [
-      el.name,
-      el.id,
-      el.placeholder,
-      el.getAttribute('aria-label'),
-      el.closest?.('label')?.textContent,
-    ]
-      .filter(Boolean)
-      .join(' ')
-      .toLowerCase();
-    return /avatar|photo|image|picture|portrait|logo|cover|banner|illustration|profil/.test(hint);
+    return /\b(avatar|photo|image|picture|portrait|logo|cover|banner|illustration|profil|visuel|vignette)\b/.test(
+      fakeFieldHint(el)
+    );
   }
   return accept
     .split(',')
     .map((part) => part.trim())
-    .some(
-      (part) =>
-        part.startsWith('image/') ||
-        /\.(png|jpe?g|gif|webp|avif|bmp|svg)$/.test(part)
-    );
+    .some((part) => part.startsWith('image/') || /\.(png|jpe?g|gif|webp|avif|bmp|svg)$/.test(part));
 }
 
 function detectFieldKind(el) {
-  const t = (el.getAttribute('type') || el.type || 'text').toLowerCase();
-  // Indices lus avant les types : un `<input type="url" name="avatarUrl">`
-  // attend une photo, pas un site web.
-  const hint = [el.autocomplete, el.name, el.id, el.placeholder, el.getAttribute && el.getAttribute('aria-label')]
-    .filter(Boolean)
-    .join(' ')
-    .toLowerCase();
-  if (t === 'password') return 'password';
-  if (t === 'email') return 'email';
-  if (t === 'tel') return 'phone';
-  if (t === 'url') {
-    if (/avatar|profile.?pic|profile.?image|profile.?photo|photo.?de.?profil|image.?de.?profil|portrait|headshot/.test(hint))
-      return 'avatar';
-    if (/image|picture|photo|cover.?image|cover.?photo|banner|thumbnail|illustration|logo|affiche/.test(hint))
-      return 'image';
-    return 'url';
+  if (!el || !el.tagName) return 'text';
+  const tag = el.tagName.toLowerCase();
+  const type = String(fakeAttr(el, 'type') || el.type || 'text').toLowerCase().trim();
+
+  if (type === 'password') return 'password';
+  if (type === 'file') return acceptsFakeImage(el) ? 'imageFile' : 'file';
+  if (type === 'checkbox') return 'boolean';
+  if (type === 'radio') return 'choice';
+  if (type === 'color') return 'color';
+
+  // L'auteur de la page a déclaré le type : on le croit.
+  const declared = fakeAutocompleteKind(el);
+  const hint = fakeFieldHint(el);
+  const guessed = fakeHintKind(hint);
+
+  if (type === 'email') return 'email';
+  if (type === 'tel') return 'phone';
+  if (type === 'url') {
+    // Un `<input type="url" name="avatarUrl">` attend une photo, pas un site.
+    if (guessed === 'avatar' || guessed === 'image') return guessed;
+    return declared === 'avatar' ? 'avatar' : 'url';
   }
-  if (t === 'number') return 'number';
-  if (t === 'file') return acceptsFakeImage(el) ? 'imageFile' : 'file';
-  if (['date', 'datetime-local', 'month', 'week', 'time'].includes(t)) return t;
-  if (t === 'range') return 'number';
-  if (t === 'color') return 'color';
-  if (t === 'checkbox') return 'boolean';
-  if (t === 'radio' || el.tagName?.toLowerCase() === 'select') return 'choice';
-  if (el.tagName?.toLowerCase() === 'textarea' || el.isContentEditable) return 'lorem';
-  if (/e-?mail|courriel/.test(hint)) return 'email';
-  if (/phone|t[eé]l|mobile|portable|whatsapp/.test(hint)) return 'phone';
-  // Images : l'avatar (une personne) avant les images décoratives.
-  if (/avatar|profile.?pic|profile.?image|profile.?photo|photo.?de.?profil|image.?de.?profil|portrait|headshot/.test(hint))
-    return 'avatar';
-  if (/image|picture|photo|cover.?image|cover.?photo|banner|thumbnail|illustration|logo|affiche/.test(hint))
-    return 'image';
-  // Identité
-  if (/sexe|gender|genre/.test(hint)) return 'gender';
-  if (/birth.?date|date.?of.?birth|\bdob\b|birthday|naissance/.test(hint)) return 'birthdate';
-  if (/(^|[^a-z])age([^a-z]|$)/.test(hint) && !/message|image|page|usage|language|stage/.test(hint))
-    return 'age';
-  // Paiement / banque (données de test uniquement)
-  if (/\biban\b/.test(hint)) return 'iban';
-  if (/card.?number|cc.?number|num[eé]ro.?de.?carte|cardno|ccnum/.test(hint)) return 'creditCard';
-  if (/expir|exp.?date|valid.?thru|date.?d.expiration|mm\s*\/?\s*yy/.test(hint)) return 'cardExpiry';
-  if (/\b(cvc|cvv|cvn|security.?code|cryptogramme)\b/.test(hint)) return 'cardCvc';
-  // Coordonnées et société (avant « name », qui est trop large)
-  if (/company|soci[eé]t[eé]|entreprise|organi[sz]ation/.test(hint)) return 'company';
-  if (/country|pays/.test(hint)) return 'country';
-  if (/state|province|r[eé]gion/.test(hint)) return 'region';
-  if (/job.?title|position|poste|profession|occupation/.test(hint)) return 'jobTitle';
-  if (/first.?name|pr[eé]nom|given/.test(hint)) return 'firstName';
-  if (/(last.?name|surname|family)|(^|[^a-z])nom([^a-z]|$)/.test(hint) && !/pr[eé]nom|user|soci|entreprise/.test(hint))
-    return 'lastName';
-  if (/full.?name|fullname|your.?name|name|nom complet/.test(hint)) return 'fullName';
-  if (/user.?name|pseudo|login|identifiant/.test(hint)) return 'username';
-  if (/city|ville/.test(hint)) return 'city';
-  if (/zip|postal|code.?postal|\bcp\b/.test(hint)) return 'zip';
-  if (/address|adresse|street|rue/.test(hint)) return 'address';
-  if (/subject|objet/.test(hint)) return 'subject';
-  if (/description|comment|message|bio|about|notes|detail|content|texte/.test(hint)) return 'lorem';
-  if (/url|site|website/.test(hint)) return 'url';
+  if (type === 'number' || type === 'range') {
+    const kind = declared || guessed;
+    return FAKE_NUMERIC_KINDS.has(kind) ? kind : 'number';
+  }
+  if (['date', 'datetime-local', 'month', 'week', 'time'].includes(type)) {
+    // Une date de naissance doit tomber dans le passé, pas n'importe quand.
+    return type === 'date' && (declared === 'birthdate' || guessed === 'birthdate')
+      ? 'birthdate'
+      : type;
+  }
+
+  if (declared) return declared;
+  if (guessed) return guessed;
+
+  if (tag === 'select') return 'choice';
+  if (tag === 'textarea' || el.isContentEditable) return 'lorem';
   return 'text';
 }
 
+// --- Images de test -------------------------------------------------------
+// Un seul service donnait toujours la même sorte d'image. On tire au hasard
+// parmi plusieurs familles, pour que le remplissage ressemble à ce qu'on
+// rencontre vraiment : des initiales, un avatar dessiné, un portrait de stock,
+// un visage généré qui n'appartient à personne, un robot… Seule l'ADRESSE est
+// insérée ; c'est la page qui décide de la charger.
+//
+// Quand les photos sont coupées dans les Réglages (`photos: off`), plus aucun
+// service externe n'est appelé : l'image est DESSINÉE SUR PLACE et renvoyée en
+// data: URI. Elle s'affiche donc même hors ligne — là où l'ancienne adresse
+// d'exemple (example.com/avatar.png) ne montrait jamais rien.
+const FAKE_AVATAR_DIRS = ['women', 'men'];
+const FAKE_DICEBEAR_STYLES = [
+  'lorelei', 'notionists', 'avataaars', 'personas', 'micah', 'open-peeps',
+  'adventurer', 'miniavs', 'bottts', 'big-ears', 'fun-emoji', 'thumbs',
+];
+const FAKE_ROBOHASH_SETS = ['set1', 'set2', 'set3', 'set4'];
+
+function fakePick(list) {
+  return list[Math.floor(Math.random() * list.length)];
+}
+
+// Grain aléatoire : il change à chaque appel, donc deux remplissages de suite
+// ne donnent pas la même image (et le cache du navigateur ne s'en mêle pas).
+function fakeSeed() {
+  return Math.random().toString(36).slice(2, 10);
+}
+
+function fakeInitials(first, last) {
+  const letters = `${first || ''} ${last || ''}`
+    .trim()
+    .split(/\s+/)
+    .map((word) => word[0])
+    .filter(Boolean);
+  return (letters.join('') || 'OT').slice(0, 2).toUpperCase();
+}
+
+function fakeLocalImageUrl(label, { square = false } = {}) {
+  const hue = Math.floor(Math.random() * 360);
+  const width = square ? 512 : 1200;
+  const height = square ? 512 : 800;
+  const text = String(label || '').replace(/[<>&"]/g, '');
+  const svg =
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" ` +
+    `viewBox="0 0 ${width} ${height}">` +
+    `<rect width="${width}" height="${height}" fill="hsl(${hue} 60% 46%)"/>` +
+    `<text x="50%" y="50%" dy=".35em" text-anchor="middle" fill="#ffffff" ` +
+    `font-family="system-ui, sans-serif" font-size="${square ? 220 : 110}">${text}</text></svg>`;
+  return `data:image/svg+xml,${encodeURIComponent(svg)}`;
+}
+
+// Photo de profil. Le nom déjà tiré pour le formulaire sert de graine : les
+// initiales et l'avatar dessiné correspondent à la personne remplie.
+function fakeAvatarUrl(first, last, external) {
+  if (!external) return fakeLocalImageUrl(fakeInitials(first, last), { square: true });
+  const name = encodeURIComponent(`${first || 'Orbit'} ${last || 'Test'}`.trim());
+  const seed = fakeSeed();
+  return fakePick([
+    // Initiales sur fond coloré (ui-avatars) : les « lettres ».
+    () => `https://ui-avatars.com/api/?name=${name}&size=512&background=random`,
+    // Avatar dessiné, déterministe pour une graine donnée (DiceBear).
+    () => `https://api.dicebear.com/10.x/${fakePick(FAKE_DICEBEAR_STYLES)}/svg?seed=${seed}`,
+    // Portraits de stock (Random User Generator).
+    () =>
+      `https://randomuser.me/api/portraits/${fakePick(FAKE_AVATAR_DIRS)}/${Math.floor(
+        Math.random() * 100
+      )}.jpg`,
+    () => `https://i.pravatar.cc/512?u=${seed}`,
+    // Visage généré : cette personne n'existe pas.
+    () => `https://thispersondoesnotexist.com/random-person.jpeg?${seed}`,
+    // Robot, alien ou chat (Robohash).
+    () => `https://robohash.org/${seed}?set=${fakePick(FAKE_ROBOHASH_SETS)}&size=512x512`,
+  ])();
+}
+
+// Image quelconque (couverture, illustration, photo de produit).
+function fakePictureUrl(external) {
+  if (!external) return fakeLocalImageUrl('1200 × 800');
+  const seed = fakeSeed();
+  return fakePick([
+    () => `https://picsum.photos/seed/${seed}/1200/800`,
+    () => `https://placehold.co/1200x800?text=${encodeURIComponent('Image de test')}`,
+    () => `https://dummyimage.com/1200x800/4f46e5/ffffff&text=${encodeURIComponent('Image de test')}`,
+    () => `https://placecats.com/1200/800?${seed}`,
+    () => `https://placedog.net/1200/800?random=${seed}`,
+    () => `https://placebear.com/1200/800?${seed}`,
+    () => `https://baconmockup.com/1200/800?${seed}`,
+  ])();
+}
+
+// --- Valeurs personnalisées (Réglages) ------------------------------------
+// Trois sources possibles pour un type de champ, dans cet ordre :
+//   1. une LISTE de valeurs (`lists.city = ['Lyon', 'Nantes']`) → tirage au
+//      hasard dedans, ce qui permet du contenu varié mais maîtrisé ;
+//   2. une valeur unique (`city = 'Lyon'`, l'ancien format, toujours lu) ;
+//   3. rien → les listes intégrées à Orbit décident.
+// `source: 'builtin'` coupe 1 et 2 sans rien effacer : l'utilisateur garde ses
+// listes enregistrées et revient aux valeurs intégrées en un clic.
+function fakeCustomValues(config, kind) {
+  if (!config || typeof config !== 'object' || !kind) return [];
+  if (config.source === 'builtin') return [];
+  const clean = (list) =>
+    list.map((value) => String(value == null ? '' : value).trim()).filter(Boolean);
+
+  const list = config.lists && config.lists[kind];
+  if (Array.isArray(list)) {
+    const values = clean(list);
+    if (values.length) return values;
+  } else if (typeof list === 'string') {
+    // Une liste saisie dans une zone de texte : une valeur par ligne.
+    const values = clean(list.split('\n'));
+    if (values.length) return values;
+  }
+
+  // Ancien format : une valeur unique par type. Elle n'est PAS découpée en
+  // lignes — le texte libre personnalisé est souvent un paragraphe.
+  const single = config[kind];
+  if (Array.isArray(single)) return clean(single);
+  if (typeof single === 'string' && single.trim()) return [single.trim()];
+  return [];
+}
+
+function fakeCustomValue(config, kind) {
+  const values = fakeCustomValues(config, kind);
+  if (!values.length) return null;
+  return values[Math.floor(Math.random() * values.length)];
+}
+// --- fin bloc fake data partagé ---
+
 async function fakeValueFor(kind) {
-  if (fakeCustom[kind]) return fakeCustom[kind];
-  const first = fakeCustom.firstName || frand(FAKE_FIRST);
-  const last = fakeCustom.lastName || frand(FAKE_LAST);
+  // Valeur (ou liste) personnalisée définie dans les Réglages : elle prime,
+  // sauf si l'utilisateur a choisi les valeurs intégrées (`source: builtin`).
+  const custom = fakeCustomValue(fakeCustom, kind);
+  if (custom !== null) return custom;
+  const first = fakeCustomValue(fakeCustom, 'firstName') || frand(FAKE_FIRST);
+  const last = fakeCustomValue(fakeCustom, 'lastName') || frand(FAKE_LAST);
   switch (kind) {
     case 'password': {
       const res = await ipcRenderer.invoke('credentials:generate', { length: 16, symbols: true });
       return (res && res.password) || 'Aa1!' + Math.random().toString(36).slice(2, 10);
     }
     case 'email':
-      return fakeCustom.email || `${fslug(first)}.${fslug(last)}@example.com`;
+      return `${fslug(first)}.${fslug(last)}@example.com`;
     case 'firstName':
       return first;
     case 'lastName':
@@ -1866,11 +2207,11 @@ async function fakeValueFor(kind) {
     case 'username':
       return `${fslug(first)}${frandInt(1000)}`;
     case 'phone':
-      return fakeCustom.phone || `06${String(frandInt(1e8)).padStart(8, '0')}`;
+      return `06${String(frandInt(1e8)).padStart(8, '0')}`;
     case 'avatar':
-      return fakeCustom.avatar || (fakePhotosEnabled() ? portraitUrl() : 'https://example.com/avatar.png');
+      return fakeAvatarUrl(first, last, fakePhotosEnabled());
     case 'image':
-      return fakeCustom.image || (fakePhotosEnabled() ? pictureUrl() : 'https://example.com/image.jpg');
+      return fakePictureUrl(fakePhotosEnabled());
     case 'gender':
       return frand(FAKE_GENDERS);
     case 'birthdate':
@@ -1882,17 +2223,17 @@ async function fakeValueFor(kind) {
     case 'creditCard':
       return fakeCardNumber();
     case 'cardExpiry':
-      return fakeCustom.cardExpiry || futureExpiry();
+      return futureExpiry();
     case 'cardCvc':
       return String(100 + frandInt(900));
     case 'city':
-      return fakeCustom.city || frand(FAKE_CITY);
+      return frand(FAKE_CITY);
     case 'zip':
-      return fakeCustom.zip || String(10000 + frandInt(89999));
+      return String(10000 + frandInt(89999));
     case 'address':
-      return fakeCustom.address || frand(FAKE_STREET);
+      return frand(FAKE_STREET);
     case 'company':
-      return fakeCustom.company || frand(FAKE_COMPANY);
+      return frand(FAKE_COMPANY);
     case 'country':
       return frand(FAKE_COUNTRY);
     case 'region':
@@ -1932,7 +2273,7 @@ async function fakeValueFor(kind) {
     case 'lorem':
     case 'text':
     default:
-      return fakeCustom.text || loremText(kind === 'lorem' ? 3 : 1, kind === 'lorem' ? 6 : 3);
+      return loremText(kind === 'lorem' ? 3 : 1, kind === 'lorem' ? 6 : 3);
   }
 }
 
