@@ -6627,7 +6627,16 @@ async function pollPhoneNotifications() {
   const keys = await phone.listNotificationKeys({ serial: phoneNotifSerial });
   const known = new Set(keys);
   const added = keys.filter((k) => !phoneNotifKnown.has(k));
-  if (!added.length && known.size === phoneNotifKnown.size) {
+  // Un appel ne change pas de clé quand on le décroche : seul son texte passe
+  // de « Appel entrant » à « Appel en cours ». Tant qu'un appel vit, on relit
+  // donc le détail à chaque tour — sinon le bandeau d'Orbit continuerait de
+  // proposer « Décrocher » pendant la conversation.
+  const liveCall = phoneNotifCache.items.some((item) => {
+    if (item.category !== 'call') return false;
+    const phase = phone.describeCallState(item);
+    return phase === 'ringing' || phase === 'ongoing' || phase === 'outgoing';
+  });
+  if (!added.length && known.size === phoneNotifKnown.size && !liveCall) {
     if (!phoneNotifPrimed && known.size === 0) phoneNotifPrimed = true;
     return;
   }

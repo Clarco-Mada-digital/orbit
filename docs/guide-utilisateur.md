@@ -547,7 +547,10 @@ sur Android.
 #### Appels
 
 - **Appel entrant** : un bandeau s’affiche au-dessus d’Orbit avec **Décrocher**
-  et **Refuser**. Il dit **qui** appelle — beaucoup de téléphones titrent
+  et **Refuser**. **Seul un appel qui sonne propose de décrocher** : une fois la
+  conversation établie (ou pour un appel sortant), le bandeau ne garde qu’un
+  bouton **Terminer l’appel** — il n’y a plus rien à accepter — et affiche la
+  durée. Un appel manqué n’ouvre aucun bandeau. Il dit **qui** appelle — beaucoup de téléphones titrent
   seulement « Appel entrant » et laissent l’identité ailleurs, alors Orbit lit
   les autres champs de la notification, interroge la radio au besoin, puis
   cherche le nom dans **vos contacts**. Si rien n’est transmis (numéro masqué,

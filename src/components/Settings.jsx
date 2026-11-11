@@ -225,26 +225,52 @@ export default function Settings({ onClose }) {
     }
   };
 
+  // Ordre du volet, par groupes : ce qu'on règle pour soi, ce qui change le
+  // comportement d'Orbit, ce qui protège les données, puis le système. Sans
+  // repères, dix-huit entrées se lisaient comme une liste — et « Profils » se
+  // retrouvait au milieu, alors qu'un profil se range en bas, avec le compte.
+  // « Affichage » a rejoint « Apparence » : c'était le même sujet (et la même
+  // icône) coupé en deux.
   const tabs = [
-    { id: 'general', name: t('st.tab.general'), icon: Zap },
-    { id: 'downloads', name: t('st.tab.downloads'), icon: Download },
-    { id: 'appearance', name: t('st.tab.appearance'), icon: Palette },
-    { id: 'display', name: t('st.tab.display'), icon: Palette },
-    { id: 'profiles', name: t('st.tab.profiles'), icon: User },
-    { id: 'shortcuts', name: t('st.tab.shortcuts'), icon: Keyboard },
-    { id: 'extensions', name: t('st.tab.extensions'), icon: Puzzle },
-    { id: 'passwords', name: t('st.tab.passwords'), icon: KeyRound },
-    { id: 'keepass', name: 'KeePassXC', icon: KeyRound },
-    { id: 'security', name: t('st.tab.security'), icon: ShieldCheck },
-    { id: 'privacy', name: t('st.tab.privacy'), icon: Ban },
-    { id: 'rules', name: t('st.tab.rules'), icon: Workflow },
-    { id: 'backup', name: t('st.tab.backup'), icon: Archive },
-    { id: 'notifications', name: t('st.tab.notifications'), icon: Bell },
-    { id: 'voice', name: t('st.tab.voice'), icon: Volume2 },
-    { id: 'assistant', name: t('st.tab.assistant'), icon: Bot },
-    { id: 'diagnostics', name: t('st.tab.diagnostics'), icon: Stethoscope },
-    { id: 'about', name: t('st.tab.about'), icon: Info },
+    {
+      label: t('st.group.personal'),
+      items: [
+        { id: 'general', name: t('st.tab.general'), icon: Zap },
+        { id: 'appearance', name: t('st.tab.appearance'), icon: Palette },
+        { id: 'downloads', name: t('st.tab.downloads'), icon: Download },
+      ],
+    },
+    {
+      label: t('st.group.features'),
+      items: [
+        { id: 'notifications', name: t('st.tab.notifications'), icon: Bell },
+        { id: 'voice', name: t('st.tab.voice'), icon: Volume2 },
+        { id: 'assistant', name: t('st.tab.assistant'), icon: Bot },
+        { id: 'extensions', name: t('st.tab.extensions'), icon: Puzzle },
+        { id: 'shortcuts', name: t('st.tab.shortcuts'), icon: Keyboard },
+        { id: 'rules', name: t('st.tab.rules'), icon: Workflow },
+      ],
+    },
+    {
+      label: t('st.group.security'),
+      items: [
+        { id: 'security', name: t('st.tab.security'), icon: ShieldCheck },
+        { id: 'passwords', name: t('st.tab.passwords'), icon: KeyRound },
+        { id: 'keepass', name: 'KeePassXC', icon: KeyRound },
+        { id: 'privacy', name: t('st.tab.privacy'), icon: Ban },
+        { id: 'backup', name: t('st.tab.backup'), icon: Archive },
+      ],
+    },
+    {
+      label: t('st.group.system'),
+      items: [
+        { id: 'diagnostics', name: t('st.tab.diagnostics'), icon: Stethoscope },
+        { id: 'profiles', name: t('st.tab.profiles'), icon: User },
+        { id: 'about', name: t('st.tab.about'), icon: Info },
+      ],
+    },
   ];
+  const allTabs = tabs.flatMap((group) => group.items);
 
   // Source unique des raccourcis (adaptés à la plateforme)
   const shortcuts = shortcutKeys(t, {
@@ -266,23 +292,30 @@ export default function Settings({ onClose }) {
               <h2 className="text-xl font-bold">{t('common.settings')}</h2>
             </div>
             <nav className="flex-1 p-3 overflow-y-auto">
-              {tabs.map((tab) => {
-                const Icon = tab.icon;
-                return (
-                  <button
-                    key={tab.id}
-                    onClick={() => setActiveTab(tab.id)}
-                    className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all mb-1 ${
-                      activeTab === tab.id
-                        ? 'bg-accent-primary text-white'
-                        : 'text-text-secondary hover:bg-bg-secondary'
-                    }`}
-                  >
-                    <Icon size={18} />
-                    <span className="font-medium">{tab.name}</span>
-                  </button>
-                );
-              })}
+              {tabs.map((group) => (
+                <div key={group.label} className="mb-3 last:mb-0">
+                  <div className="px-3 pb-1.5 text-[10px] font-semibold uppercase tracking-wider text-text-muted">
+                    {group.label}
+                  </div>
+                  {group.items.map((tab) => {
+                    const Icon = tab.icon;
+                    return (
+                      <button
+                        key={tab.id}
+                        onClick={() => setActiveTab(tab.id)}
+                        className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all mb-1 ${
+                          activeTab === tab.id
+                            ? 'bg-accent-primary text-white'
+                            : 'text-text-secondary hover:bg-bg-secondary'
+                        }`}
+                      >
+                        <Icon size={18} />
+                        <span className="font-medium">{tab.name}</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              ))}
             </nav>
           </div>
 
@@ -295,7 +328,7 @@ export default function Settings({ onClose }) {
           <div className="flex-1 flex flex-col min-w-0">
             <div className="h-16 border-b border-border flex items-center justify-between px-6">
               <h3 className="text-lg font-semibold">
-                {tabs.find((t) => t.id === activeTab)?.name}
+                {allTabs.find((tab) => tab.id === activeTab)?.name}
               </h3>
               <button onClick={onClose} className="btn-icon">
                 <X size={20} />
@@ -648,216 +681,6 @@ export default function Settings({ onClose }) {
                 </div>
               )}
 
-              {activeTab === 'display' && (
-                <div className="space-y-6">
-                  <div className="card">
-                    <h4 className="font-semibold mb-4">{t('st.fontSize')}</h4>
-                    <div className="space-y-3">
-                      <div className="flex gap-3">
-                        {[
-                          { value: 'small', label: t('st.small'), size: '12px' },
-                          { value: 'medium', label: t('st.medium'), size: '14px' },
-                          { value: 'large', label: t('st.large'), size: '16px' },
-                          { value: 'xlarge', label: t('st.xlarge'), size: '18px' },
-                        ].map((option) => (
-                          <button
-                            key={option.value}
-                            onClick={() => updateSettings({ fontSize: option.value })}
-                            className={`flex-1 py-3 px-4 rounded-lg border-2 transition-all ${
-                              settings.fontSize === option.value
-                                ? 'border-accent-primary bg-accent-primary/10'
-                                : 'border-border hover:border-accent-primary/50'
-                            }`}
-                          >
-                            <div style={{ fontSize: option.size }}>{option.label}</div>
-                          </button>
-                        ))}
-                      </div>
-                      {/* Taille libre : les quatre préréglages ne couvrent pas
-                          tous les écrans. On saisit la valeur en pixels, bornée
-                          à 10-24 px pour rester utilisable. */}
-                      <div
-                        className={`flex items-center gap-3 rounded-lg border-2 p-3 ${
-                          settings.fontSize === 'custom'
-                            ? 'border-accent-primary bg-accent-primary/10'
-                            : 'border-border'
-                        }`}
-                      >
-                        <button
-                          onClick={() => updateSettings({ fontSize: 'custom' })}
-                          className="text-sm font-medium flex-1 text-left"
-                        >
-                          {t('st.fontSizeCustom')}
-                        </button>
-                        <input
-                          type="number"
-                          min="10"
-                          max="24"
-                          step="1"
-                          value={settings.fontSizePx ?? 14}
-                          onChange={(e) => {
-                            const px = parseInt(e.target.value, 10);
-                            updateSettings({
-                              fontSize: 'custom',
-                              fontSizePx: Number.isFinite(px) ? px : 14,
-                            });
-                          }}
-                          className="input w-20 text-center"
-                          aria-label={t('st.fontSizePx')}
-                        />
-                        <span className="text-sm text-text-muted">px</span>
-                      </div>
-                      <p className="text-xs text-text-muted">{t('st.fontSizePxHint')}</p>
-                    </div>
-                  </div>
-
-                  <div className="card">
-                    <h4 className="font-semibold mb-4">{t('st.fontFamily')}</h4>
-                    <p className="text-sm text-text-muted mb-4">{t('st.fontFamilyDesc')}</p>
-                    <div className="space-y-5">
-                      {fontGroups.map((group) => (
-                        <div key={group.label}>
-                          <div className="text-xs font-semibold text-text-muted uppercase mb-2">
-                            {group.label}
-                          </div>
-                          <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
-                            {group.fonts.map((font) => {
-                              const selected = settings.fontFamily === font.value;
-                              return (
-                                <button
-                                  key={font.value}
-                                  onClick={() => updateSettings({ fontFamily: font.value })}
-                                  className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border-2 transition-all text-left ${
-                                    selected
-                                      ? 'border-accent-primary bg-accent-primary/10'
-                                      : 'border-border hover:border-accent-primary/50'
-                                  }`}
-                                  title={font.label}
-                                >
-                                  <span
-                                    className="text-lg leading-none"
-                                    style={{ fontFamily: `'${font.value}', sans-serif` }}
-                                  >
-                                    Aa
-                                  </span>
-                                  <span
-                                    className="text-sm flex-1 truncate"
-                                    style={{ fontFamily: `'${font.value}', sans-serif` }}
-                                  >
-                                    {font.label}
-                                  </span>
-                                  {selected && (
-                                    <Check
-                                      size={15}
-                                      className="text-accent-primary flex-shrink-0"
-                                    />
-                                  )}
-                                </button>
-                              );
-                            })}
-                          </div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-
-                  <div className="card">
-                    <h4 className="font-semibold mb-4">{t('st.uiZoom')}</h4>
-                    <div className="space-y-3">
-                      <div className="flex items-center gap-4">
-                        <span className="text-sm font-medium min-w-[60px]">
-                          {settings.uiScale ?? 100}%
-                        </span>
-                        <input
-                          type="range"
-                          min="80"
-                          max="120"
-                          step="1"
-                          value={settings.uiScale ?? 100}
-                          onChange={(e) => updateSettings({ uiScale: parseInt(e.target.value) })}
-                          className="flex-1"
-                        />
-                      </div>
-                      <div className="flex gap-2">
-                        <button
-                          onClick={() => updateSettings({ uiScale: 80 })}
-                          className="btn btn-secondary btn-sm"
-                        >
-                          80%
-                        </button>
-                        <button
-                          onClick={() => updateSettings({ uiScale: 100 })}
-                          className="btn btn-secondary btn-sm"
-                        >
-                          100%
-                        </button>
-                        <button
-                          onClick={() => updateSettings({ uiScale: 120 })}
-                          className="btn btn-secondary btn-sm"
-                        >
-                          120%
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="card">
-                    <h4 className="font-semibold mb-4">{t('st.displayOptions')}</h4>
-                    <div className="space-y-3">
-                      <label className="flex items-center justify-between">
-                        <div>
-                          <div className="font-medium">{t('st.compact')}</div>
-                          <div className="text-sm text-text-muted">{t('st.compactDesc')}</div>
-                        </div>
-                        <input
-                          type="checkbox"
-                          checked={settings.compactMode}
-                          onChange={(e) => updateSettings({ compactMode: e.target.checked })}
-                          className="w-12 h-6 bg-bg-hover rounded-full relative cursor-pointer appearance-none checked:bg-accent-primary transition-colors after:content-[''] after:absolute after:top-1 after:left-1 after:w-4 after:h-4 after:bg-white after:rounded-full after:transition-transform checked:after:translate-x-6"
-                        />
-                      </label>
-
-                      <div className="flex items-center justify-between gap-4">
-                        <div>
-                          <div className="font-medium">{t('st.animationStyle')}</div>
-                          <div className="text-sm text-text-muted">{t('st.animationStyleDesc')}</div>
-                        </div>
-                        {/* Un seul choix porte l'arrêt ET le style : « aucune »
-                            coupe aussi les transitions de l'interface. */}
-                        <select
-                          value={animationStyle}
-                          onChange={(e) =>
-                            updateSettings({
-                              animationStyle: e.target.value,
-                              animationsEnabled: e.target.value !== 'none',
-                            })
-                          }
-                          className="input w-40 flex-shrink-0"
-                        >
-                          <option value="none">{t('st.animationNone')}</option>
-                          <option value="fade">{t('st.animationFade')}</option>
-                          <option value="slide">{t('st.animationSlide')}</option>
-                          <option value="zoom">{t('st.animationZoom')}</option>
-                        </select>
-                      </div>
-
-                      <label className="flex items-center justify-between">
-                        <div>
-                          <div className="font-medium">{t('st.appIcons')}</div>
-                          <div className="text-sm text-text-muted">{t('st.appIconsDesc')}</div>
-                        </div>
-                        <input
-                          type="checkbox"
-                          checked={settings.showAppIcons}
-                          onChange={(e) => updateSettings({ showAppIcons: e.target.checked })}
-                          className="w-12 h-6 bg-bg-hover rounded-full relative cursor-pointer appearance-none checked:bg-accent-primary transition-colors after:content-[''] after:absolute after:top-1 after:left-1 after:w-4 after:h-4 after:bg-white after:rounded-full after:transition-transform checked:after:translate-x-6"
-                        />
-                      </label>
-                    </div>
-                  </div>
-                </div>
-              )}
-
               {activeTab === 'appearance' && (
                 <div className="space-y-6">
                   <div className="card">
@@ -1104,6 +927,214 @@ export default function Settings({ onClose }) {
                           <div className="text-xs text-text-muted mt-0.5">{desc}</div>
                         </button>
                       ))}
+                    </div>
+                  </div>
+
+                  {/* Typographie et échelle : le second volet de l'apparence,
+                      autrefois un onglet « Affichage » à part. */}
+                  <div className="card">
+                    <h4 className="font-semibold mb-4">{t('st.fontSize')}</h4>
+                    <div className="space-y-3">
+                      <div className="flex gap-3">
+                        {[
+                          { value: 'small', label: t('st.small'), size: '12px' },
+                          { value: 'medium', label: t('st.medium'), size: '14px' },
+                          { value: 'large', label: t('st.large'), size: '16px' },
+                          { value: 'xlarge', label: t('st.xlarge'), size: '18px' },
+                        ].map((option) => (
+                          <button
+                            key={option.value}
+                            onClick={() => updateSettings({ fontSize: option.value })}
+                            className={`flex-1 py-3 px-4 rounded-lg border-2 transition-all ${
+                              settings.fontSize === option.value
+                                ? 'border-accent-primary bg-accent-primary/10'
+                                : 'border-border hover:border-accent-primary/50'
+                            }`}
+                          >
+                            <div style={{ fontSize: option.size }}>{option.label}</div>
+                          </button>
+                        ))}
+                      </div>
+                      {/* Taille libre : les quatre préréglages ne couvrent pas
+                          tous les écrans. On saisit la valeur en pixels, bornée
+                          à 10-24 px pour rester utilisable. */}
+                      <div
+                        className={`flex items-center gap-3 rounded-lg border-2 p-3 ${
+                          settings.fontSize === 'custom'
+                            ? 'border-accent-primary bg-accent-primary/10'
+                            : 'border-border'
+                        }`}
+                      >
+                        <button
+                          onClick={() => updateSettings({ fontSize: 'custom' })}
+                          className="text-sm font-medium flex-1 text-left"
+                        >
+                          {t('st.fontSizeCustom')}
+                        </button>
+                        <input
+                          type="number"
+                          min="10"
+                          max="24"
+                          step="1"
+                          value={settings.fontSizePx ?? 14}
+                          onChange={(e) => {
+                            const px = parseInt(e.target.value, 10);
+                            updateSettings({
+                              fontSize: 'custom',
+                              fontSizePx: Number.isFinite(px) ? px : 14,
+                            });
+                          }}
+                          className="input w-20 text-center"
+                          aria-label={t('st.fontSizePx')}
+                        />
+                        <span className="text-sm text-text-muted">px</span>
+                      </div>
+                      <p className="text-xs text-text-muted">{t('st.fontSizePxHint')}</p>
+                    </div>
+                  </div>
+
+                  <div className="card">
+                    <h4 className="font-semibold mb-4">{t('st.fontFamily')}</h4>
+                    <p className="text-sm text-text-muted mb-4">{t('st.fontFamilyDesc')}</p>
+                    <div className="space-y-5">
+                      {fontGroups.map((group) => (
+                        <div key={group.label}>
+                          <div className="text-xs font-semibold text-text-muted uppercase mb-2">
+                            {group.label}
+                          </div>
+                          <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                            {group.fonts.map((font) => {
+                              const selected = settings.fontFamily === font.value;
+                              return (
+                                <button
+                                  key={font.value}
+                                  onClick={() => updateSettings({ fontFamily: font.value })}
+                                  className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border-2 transition-all text-left ${
+                                    selected
+                                      ? 'border-accent-primary bg-accent-primary/10'
+                                      : 'border-border hover:border-accent-primary/50'
+                                  }`}
+                                  title={font.label}
+                                >
+                                  <span
+                                    className="text-lg leading-none"
+                                    style={{ fontFamily: `'${font.value}', sans-serif` }}
+                                  >
+                                    Aa
+                                  </span>
+                                  <span
+                                    className="text-sm flex-1 truncate"
+                                    style={{ fontFamily: `'${font.value}', sans-serif` }}
+                                  >
+                                    {font.label}
+                                  </span>
+                                  {selected && (
+                                    <Check
+                                      size={15}
+                                      className="text-accent-primary flex-shrink-0"
+                                    />
+                                  )}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  <div className="card">
+                    <h4 className="font-semibold mb-4">{t('st.uiZoom')}</h4>
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-4">
+                        <span className="text-sm font-medium min-w-[60px]">
+                          {settings.uiScale ?? 100}%
+                        </span>
+                        <input
+                          type="range"
+                          min="80"
+                          max="120"
+                          step="1"
+                          value={settings.uiScale ?? 100}
+                          onChange={(e) => updateSettings({ uiScale: parseInt(e.target.value) })}
+                          className="flex-1"
+                        />
+                      </div>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => updateSettings({ uiScale: 80 })}
+                          className="btn btn-secondary btn-sm"
+                        >
+                          80%
+                        </button>
+                        <button
+                          onClick={() => updateSettings({ uiScale: 100 })}
+                          className="btn btn-secondary btn-sm"
+                        >
+                          100%
+                        </button>
+                        <button
+                          onClick={() => updateSettings({ uiScale: 120 })}
+                          className="btn btn-secondary btn-sm"
+                        >
+                          120%
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div className="card">
+                    <h4 className="font-semibold mb-4">{t('st.displayOptions')}</h4>
+                    <div className="space-y-3">
+                      <label className="flex items-center justify-between">
+                        <div>
+                          <div className="font-medium">{t('st.compact')}</div>
+                          <div className="text-sm text-text-muted">{t('st.compactDesc')}</div>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={settings.compactMode}
+                          onChange={(e) => updateSettings({ compactMode: e.target.checked })}
+                          className="w-12 h-6 bg-bg-hover rounded-full relative cursor-pointer appearance-none checked:bg-accent-primary transition-colors after:content-[''] after:absolute after:top-1 after:left-1 after:w-4 after:h-4 after:bg-white after:rounded-full after:transition-transform checked:after:translate-x-6"
+                        />
+                      </label>
+
+                      <div className="flex items-center justify-between gap-4">
+                        <div>
+                          <div className="font-medium">{t('st.animationStyle')}</div>
+                          <div className="text-sm text-text-muted">{t('st.animationStyleDesc')}</div>
+                        </div>
+                        {/* Un seul choix porte l'arrêt ET le style : « aucune »
+                            coupe aussi les transitions de l'interface. */}
+                        <select
+                          value={animationStyle}
+                          onChange={(e) =>
+                            updateSettings({
+                              animationStyle: e.target.value,
+                              animationsEnabled: e.target.value !== 'none',
+                            })
+                          }
+                          className="input w-40 flex-shrink-0"
+                        >
+                          <option value="none">{t('st.animationNone')}</option>
+                          <option value="fade">{t('st.animationFade')}</option>
+                          <option value="slide">{t('st.animationSlide')}</option>
+                          <option value="zoom">{t('st.animationZoom')}</option>
+                        </select>
+                      </div>
+
+                      <label className="flex items-center justify-between">
+                        <div>
+                          <div className="font-medium">{t('st.appIcons')}</div>
+                          <div className="text-sm text-text-muted">{t('st.appIconsDesc')}</div>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={settings.showAppIcons}
+                          onChange={(e) => updateSettings({ showAppIcons: e.target.checked })}
+                          className="w-12 h-6 bg-bg-hover rounded-full relative cursor-pointer appearance-none checked:bg-accent-primary transition-colors after:content-[''] after:absolute after:top-1 after:left-1 after:w-4 after:h-4 after:bg-white after:rounded-full after:transition-transform checked:after:translate-x-6"
+                        />
+                      </label>
                     </div>
                   </div>
                 </div>

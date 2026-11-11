@@ -89,6 +89,10 @@ export const fr = {
   'lock.wrong': 'Code incorrect',
 
   // Réglages — onglets
+  'st.group.personal': 'Personnalisation',
+  'st.group.features': 'Fonctionnalités',
+  'st.group.security': 'Sécurité et données',
+  'st.group.system': 'Système',
   'st.tab.general': 'Général',
   'st.tab.downloads': 'Téléchargements',
   'st.tab.appearance': 'Apparence',
@@ -576,6 +580,10 @@ export const en = {
   'lock.wrong': 'Wrong code',
 
   // Settings — tabs
+  'st.group.personal': 'Personalisation',
+  'st.group.features': 'Features',
+  'st.group.security': 'Security and data',
+  'st.group.system': 'System',
   'st.tab.general': 'General',
   'st.tab.downloads': 'Downloads',
   'st.tab.appearance': 'Appearance',

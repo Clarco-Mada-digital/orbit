@@ -39,6 +39,7 @@ import Welcome from './components/Welcome';
 import HomeDashboard from './components/HomeDashboard';
 import { useStore, appVisibleIn } from './stores/useStore';
 import { usePhoneStore } from './lib/phoneStore';
+import { describeCallState } from './lib/phone';
 import { useSecurityStore } from './lib/securityStore';
 import { useMediaStore } from './lib/mediaStore';
 import { mediaToggle, mediaPrev, mediaNext, mediaSeek, pickNowPlaying } from './lib/mediaControls';
@@ -742,27 +743,42 @@ const [editUrlFor, setEditUrlFor] = useState(null); // { id, url } — boîte «
   // unique, même si l'extension n'est pas installée (aucun événement alors).
   useEffect(() => {
     const api = window.electronAPI?.phone;
-    const off = api?.onNotifications?.((payload) => {
+    // Un appel se reconnaît à son ÉTAT, pas à sa seule catégorie : un appel
+    // décroché, un appel sortant et un appel manqué portent `category=call`
+    // comme un appel qui sonne. Seuls ceux qui vivent encore méritent un
+    // bandeau — et le bandeau lit l'état à chaque poussée, pour passer de
+    // « Décrocher » à « Terminer » quand la conversation s'établit.
+    const applyNotifications = (payload) => {
       const state = usePhoneStore.getState();
-      const knownKeys = new Set(state.notifications.map((item) => item.key));
-      const incomingCall = Array.isArray(payload?.items)
-        ? payload.items.find((item) => item.category === 'call' && !knownKeys.has(item.key))
-        : null;
+      const items = Array.isArray(payload?.items) ? payload.items : [];
+      const call = items.find((item) => {
+        if (item.category !== 'call') return false;
+        const phase = describeCallState(item);
+        return phase === 'ringing' || phase === 'ongoing' || phase === 'outgoing';
+      }) || null;
       state.setNotifications(payload);
-      if (incomingCall) {
-        state.setIncomingCall({ serial: payload.serial, notification: incomingCall });
-      } else if (
-        state.incomingCall &&
-        !payload?.items?.some((item) => item.key === state.incomingCall.notification.key)
-      ) {
-        state.setIncomingCall(null);
+      const previous = state.activeCall;
+      // Même appel, notification réécrite : on garde le décrochage local (sinon
+      // le bandeau redemanderait de décrocher une conversation en cours).
+      const answeredAt =
+        call && previous?.notification?.key === call.key ? previous.answeredAt : null;
+      // Reverrouiller un bandeau fermé à la main toutes les douze secondes
+      // serait une brimade : la clé de l'appel fermé est respectée.
+      if (call && call.key !== state.dismissedCallKey) {
+        state.setActiveCall({ serial: payload.serial, notification: call, answeredAt });
+      } else if (!call) {
+        if (previous) state.setActiveCall(null);
+        if (state.dismissedCallKey) state.clearDismissedCall();
       }
-    });
+    };
+    const off = api?.onNotifications?.(applyNotifications);
     const pending = api?.notifications?.();
     if (pending?.then) {
+      // Premier chargement : un appel déjà en cours au démarrage mérite son
+      // bandeau (au bon état), comme s'il venait d'arriver.
       pending
         .then((res) => {
-          if (res?.success) usePhoneStore.getState().setNotifications(res);
+          if (res?.success) applyNotifications(res);
         })
         .catch(() => {});
     }

@@ -24,6 +24,7 @@ import {
   looksLikePhoneNumber,
   telNumberOf,
   describeCallNotification,
+  describeCallState,
   contactLookupCommand,
   parseContactLookup,
   parseRingerMode,
@@ -436,6 +437,25 @@ test('describeCallNotification : aucune identité transmise', () => {
   assert.equal(describeCallNotification({}).who, 'Appelant inconnu');
 });
 
+test('describeCallState : sonne, en cours, sortant, terminé', () => {
+  const dialer = { package: 'com.google.android.dialer' };
+  // Ce qui sonne : le seul état où l'on peut décrocher.
+  assert.equal(describeCallState({ ...dialer, title: 'Maman', text: 'Appel entrant' }), 'ringing');
+  assert.equal(describeCallState({ ...dialer, title: 'Maman', text: 'Incoming call' }), 'ringing');
+  // Déjà décroché : un titre de contact et une durée qui court.
+  assert.equal(describeCallState({ ...dialer, title: 'Maman', text: 'Appel en cours' }), 'ongoing');
+  assert.equal(describeCallState({ ...dialer, title: 'Maman', text: '01:23' }), 'ongoing');
+  // Appel sortant : même catégorie, autre intention.
+  assert.equal(describeCallState({ ...dialer, title: 'Maman', text: 'Appel sortant' }), 'outgoing');
+  assert.equal(describeCallState({ ...dialer, title: 'Maman', text: 'Calling…' }), 'outgoing');
+  // Un appel manqué n'a plus rien à décrocher NI à terminer.
+  assert.equal(describeCallState({ ...dialer, title: 'Maman', text: 'Appel manqué' }), 'ended');
+  assert.equal(describeCallState({ ...dialer, title: 'Maman', text: 'Missed call' }), 'ended');
+  // Sans libellé exploitable, on ne prétend pas que ça sonne.
+  assert.equal(describeCallState({ ...dialer, title: 'Maman' }), 'unknown');
+  assert.equal(describeCallState({}), 'unknown');
+});
+
 test('contactLookupCommand : numéro assaini, URI phone_lookup', () => {
   assert.equal(
     contactLookupCommand('+33 6 12-34.56 78'),
@@ -580,6 +600,8 @@ test('phonePushTarget : destination dans les téléchargements du téléphone', 
 test('phoneCallKey : maps answering and rejecting to Android call key events', () => {
   assert.equal(phoneCallKey('answer'), 'call');
   assert.equal(phoneCallKey('reject'), 'end_call');
+  // « Terminer » une conversation établie, c'est la même touche que refuser.
+  assert.equal(phoneCallKey('end'), 'end_call');
   assert.equal(phoneCallKey('unknown'), null);
 });
 

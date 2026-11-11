@@ -32,7 +32,7 @@ import {
   X,
 } from 'lucide-react';
 import { usePhoneStore } from '../lib/phoneStore';
-import { describeCallNotification, phoneCallKey } from '../lib/phone';
+import { describeCallNotification, describeCallState, phoneCallKey } from '../lib/phone';
 
 const api = () => window.electronAPI?.phone;
 const DOCK_POSITION_KEY = 'orbit.phone.pinned-dock-position.v1';
@@ -82,8 +82,16 @@ function formatRinging(seconds) {
   return `${Math.floor(seconds / 60)} min ${String(seconds % 60).padStart(2, '0')}`;
 }
 
+// Durée d'une conversation, à la façon d'un dialer : « 01:23 ». La sonnerie,
+// elle, se compte en secondes (« 12 s ») — c'est le même écran, pas le même
+// moment.
+function formatTalking(seconds) {
+  const min = Math.floor(seconds / 60);
+  return `${String(min).padStart(2, '0')}:${String(seconds % 60).padStart(2, '0')}`;
+}
+
 export default function PhoneFloatingAccess() {
-  const incomingCall = usePhoneStore((state) => state.incomingCall);
+  const activeCall = usePhoneStore((state) => state.activeCall);
   const notifications = usePhoneStore((state) => state.notifications);
   const [serial, setSerial] = useState(null);
   const [device, setDevice] = useState(null);
@@ -95,7 +103,6 @@ export default function PhoneFloatingAccess() {
   // transfert de dossier se terminait sans que rien ne bouge à l'écran.
   const [report, setReport] = useState('');
   const [expanded, setExpanded] = useState(false);
-  const [ring, setRing] = useState({ key: null, seconds: 0 });
   const [dockPosition, setDockPosition] = useState(readDockPosition);
   const [viewport, setViewport] = useState(() => ({
     width: window.innerWidth,
@@ -122,28 +129,47 @@ export default function PhoneFloatingAccess() {
   // Qui appelle : le processus principal a déjà résolu le contact quand il a
   // pu ; l'inventaire local complète le nom de l'application qui sonne.
   const caller = useMemo(() => {
-    const notification = incomingCall?.notification;
+    const notification = activeCall?.notification;
     if (!notification) return null;
     const appName =
       notification.appName || apps.find((app) => app.package === notification.package)?.name || '';
     return describeCallNotification(notification, appName);
-  }, [incomingCall, apps]);
+  }, [activeCall, apps]);
 
-  // « Sonne depuis… » : un appel qui sonne depuis 40 s ne se décroche pas comme
-  // un appel qui vient d'arriver. La durée est datée de l'appel qui l'a
-  // produite : celle d'un appel précédent n'a pas à s'afficher une seconde sur
-  // le suivant.
+  // Où en est l'appel. La notification le dit (elle passe de « Appel entrant »
+  // à « Appel en cours ») ; un décrochage fait depuis Orbit le dit aussi, et
+  // plus vite qu'elle. Dans ce cas c'est lui qui fait foi : on est déjà dans la
+  // conversation, il n'y a plus rien à décrocher.
+  const callPhase = useMemo(() => {
+    if (!activeCall) return null;
+    if (activeCall.answeredAt) return 'ongoing';
+    return describeCallState(activeCall.notification);
+  }, [activeCall]);
+
+  // Une seule horloge pour les deux compteurs : « sonne depuis » tant que ça
+  // sonne, puis la durée de la conversation une fois décroché.
+  const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
-    const key = incomingCall?.notification?.key;
-    if (!key) return undefined;
-    const startedAt = Number(incomingCall.notification?.when) || Date.now();
-    const timer = window.setInterval(() => {
-      setRing({ key, seconds: Math.max(0, Math.round((Date.now() - startedAt) / 1000)) });
-    }, 1000);
-    return () => window.clearInterval(timer);
-  }, [incomingCall?.notification?.key]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (!activeCall) return undefined;
+    // Premier battement dans une tâche, pas dans le corps de l'effet : le
+    // compteur doit partir de l'instant, pas de la dernière fois où il a couru.
+    const first = window.setTimeout(() => setNow(Date.now()), 0);
+    const timer = window.setInterval(() => setNow(Date.now()), 1000);
+    return () => {
+      window.clearTimeout(first);
+      window.clearInterval(timer);
+    };
+  }, [activeCall?.notification?.key, activeCall?.answeredAt]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const ringing = ring.key && ring.key === incomingCall?.notification?.key ? ring.seconds : 0;
+  const ringStartedAt = Number(activeCall?.notification?.when) || 0;
+  const ringing =
+    callPhase === 'ringing' && ringStartedAt
+      ? Math.max(0, Math.round((now - ringStartedAt) / 1000))
+      : 0;
+  const answeredAt = Number(activeCall?.answeredAt) || 0;
+  const talking = answeredAt ? Math.max(0, Math.round((now - answeredAt) / 1000)) : 0;
+  const callLabel =
+    callPhase === 'ringing' ? 'Appel entrant' : callPhase === 'outgoing' ? 'Appel sortant' : 'Appel en cours';
 
   const maxLeft = Math.max(0, viewport.width - DOCK_SIZE);
   const maxTop = Math.max(0, viewport.height - DOCK_SIZE);
@@ -443,18 +469,22 @@ export default function PhoneFloatingAccess() {
         : 'text-white/65 hover:bg-white/10 hover:text-white'
     }`;
 
+  // Décrocher laisse le bandeau en place — il passe à « Terminer ». Refuser et
+  // terminer ferment l'appel : c'est la même touche Android, `end_call`.
   const actOnCall = async (action) => {
     const key = phoneCallKey(action);
-    if (!key || !incomingCall?.serial || busy) return;
+    if (!key || !activeCall?.serial || busy) return;
     setBusy('call');
     setError('');
     try {
-      const result = await api()?.key({ serial: incomingCall.serial, key });
+      const result = await api()?.key({ serial: activeCall.serial, key });
       if (!result?.success) {
         setError(result?.error || 'Le téléphone n’a pas accepté la commande d’appel.');
         return;
       }
-      usePhoneStore.getState().setIncomingCall(null);
+      const store = usePhoneStore.getState();
+      if (action === 'answer') store.markCallAnswered();
+      else store.setActiveCall(null);
     } catch (err) {
       console.error('[orbit] action sur l’appel du téléphone échouée:', err);
       setError(String(err.message || err));
@@ -465,7 +495,7 @@ export default function PhoneFloatingAccess() {
 
   return (
     <>
-      {incomingCall && (
+      {activeCall && (
         <section
           role="alert"
           aria-live="assertive"
@@ -474,18 +504,31 @@ export default function PhoneFloatingAccess() {
           <div className="flex items-start gap-3 p-4">
             <span
               aria-hidden="true"
-              className="grid h-11 w-11 shrink-0 place-items-center rounded-full bg-emerald-400/15 text-sm font-semibold text-emerald-200"
+              className={`grid h-11 w-11 shrink-0 place-items-center rounded-full text-sm font-semibold ${
+                callPhase === 'ringing'
+                  ? 'bg-emerald-400/15 text-emerald-200'
+                  : 'bg-white/10 text-white/75'
+              }`}
             >
               {caller?.unknown
                 ? <User size={19} />
                 : callerInitials(caller?.named ? caller.who : '') || <Phone size={19} />}
             </span>
             <div className="min-w-0 flex-1">
-              <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-emerald-200/80">
-                Appel entrant
+              <p
+                className={`flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide ${
+                  callPhase === 'ringing' ? 'text-emerald-200/80' : 'text-white/60'
+                }`}
+              >
+                {callLabel}
                 {ringing > 0 && ringing < 600 && (
                   <span className="font-normal normal-case tracking-normal text-white/40">
                     · sonne depuis {formatRinging(ringing)}
+                  </span>
+                )}
+                {talking > 0 && (
+                  <span className="font-normal normal-case tracking-normal tabular-nums text-white/40">
+                    · {formatTalking(talking)}
                   </span>
                 )}
               </p>
@@ -503,7 +546,7 @@ export default function PhoneFloatingAccess() {
             </div>
             <button
               type="button"
-              onClick={() => usePhoneStore.getState().setIncomingCall(null)}
+              onClick={() => usePhoneStore.getState().dismissCall()}
               className="rounded-lg p-1.5 text-white/55 hover:bg-white/10 hover:text-white"
               aria-label="Fermer l’alerte d’appel"
             >
@@ -511,29 +554,45 @@ export default function PhoneFloatingAccess() {
             </button>
           </div>
           {error && <p role="status" className="px-4 pb-2 text-xs text-rose-300">{error}</p>}
-          <div className="grid grid-cols-2 gap-2 border-t border-white/10 p-3">
-            <button
-              type="button"
-              onClick={() => actOnCall('reject')}
-              disabled={busy === 'call'}
-              className="flex items-center justify-center gap-2 rounded-xl bg-rose-500/15 px-3 py-2.5 text-sm font-medium text-rose-200 transition hover:bg-rose-500/25 disabled:opacity-50"
-            >
-              <PhoneOff size={16} /> Refuser
-            </button>
-            <button
-              type="button"
-              onClick={() => actOnCall('answer')}
-              disabled={busy === 'call'}
-              className="flex items-center justify-center gap-2 rounded-xl bg-emerald-500/20 px-3 py-2.5 text-sm font-medium text-emerald-100 transition hover:bg-emerald-500/30 disabled:opacity-50"
-            >
-              <Phone size={16} /> Décrocher
-            </button>
-          </div>
+          {/* Seul un appel qui SONNE se décroche ou se refuse. Une conversation
+              établie (ou un appel sortant) n'a qu'une action : la terminer —
+              proposer « Décrocher » sur un appel déjà pris n'aurait aucun sens. */}
+          {callPhase === 'ringing' ? (
+            <div className="grid grid-cols-2 gap-2 border-t border-white/10 p-3">
+              <button
+                type="button"
+                onClick={() => actOnCall('reject')}
+                disabled={busy === 'call'}
+                className="flex items-center justify-center gap-2 rounded-xl bg-rose-500/15 px-3 py-2.5 text-sm font-medium text-rose-200 transition hover:bg-rose-500/25 disabled:opacity-50"
+              >
+                <PhoneOff size={16} /> Refuser
+              </button>
+              <button
+                type="button"
+                onClick={() => actOnCall('answer')}
+                disabled={busy === 'call'}
+                className="flex items-center justify-center gap-2 rounded-xl bg-emerald-500/20 px-3 py-2.5 text-sm font-medium text-emerald-100 transition hover:bg-emerald-500/30 disabled:opacity-50"
+              >
+                <Phone size={16} /> Décrocher
+              </button>
+            </div>
+          ) : (
+            <div className="border-t border-white/10 p-3">
+              <button
+                type="button"
+                onClick={() => actOnCall('end')}
+                disabled={busy === 'call'}
+                className="flex w-full items-center justify-center gap-2 rounded-xl bg-rose-500/20 px-3 py-2.5 text-sm font-medium text-rose-100 transition hover:bg-rose-500/30 disabled:opacity-50"
+              >
+                <PhoneOff size={16} /> Terminer l’appel
+              </button>
+            </div>
+          )}
           {/* Dernier recours quand Orbit ne sait pas qui appelle (ou pour un
               appel vidéo) : l'écran du téléphone, qui l'affiche toujours. */}
           <button
             type="button"
-            onClick={() => usePhoneStore.getState().requestOpen(incomingCall.notification.package)}
+            onClick={() => usePhoneStore.getState().requestOpen(activeCall.notification.package)}
             className="flex w-full items-center justify-center gap-1.5 border-t border-white/10 px-3 py-2 text-[11px] font-medium text-white/55 transition hover:bg-white/5 hover:text-white"
           >
             <Monitor size={13} /> Voir l’écran du téléphone

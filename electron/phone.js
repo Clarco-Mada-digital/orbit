@@ -73,7 +73,7 @@ import {
 
 // Le processus principal n'importe pas `src/lib/phone.js` (le module natif est
 // chargé à la demande) : il passe par le runtime du téléphone.
-export { describeCallNotification } from '../src/lib/phone.js';
+export { describeCallNotification, describeCallState } from '../src/lib/phone.js';
 
 const require = createRequire(import.meta.url);
 const { IconStore } = require('./phone-icons.cjs');

@@ -543,6 +543,67 @@ export function describeCallNotification(notification = {}, appName = '') {
   return { who, number, detail, unknown, named: Boolean(named) };
 }
 
+// Où en est l'appel que décrit une notification de catégorie `call`.
+//
+// La catégorie ne dit RIEN de l'état : un appel sortant, un appel déjà décroché
+// et un appel manqué portent tous `category=call`. Seul le texte de la
+// notification le dit — d'où les trois familles de libellés ci-dessous. C'est
+// ce qui décide des actions proposées : offrir « Décrocher » sur une
+// conversation en cours n'a aucun sens (et « Refuser » encore moins).
+const CALL_ENDED_LABELS = [
+  /manqu/i,
+  /missed/i,
+  /refus/i,
+  /reject/i,
+  /d[ée]clin/i,
+  /annul/i,
+  /cancel/i,
+  /termin/i,
+  /ended/i,
+  /raccroch/i,
+  /messagerie/i,
+  /voicemail/i,
+  /bloqu/i,
+  /blocked/i,
+  /sans r[ée]ponse/i,
+  /unanswered/i,
+];
+
+const CALL_ONGOING_LABELS = [
+  /en cours/i,
+  /en communication/i,
+  /ongoing/i,
+  /in progress/i,
+  /in call/i,
+  /^current call/i,
+  /^active call/i,
+  /on hold/i,
+  // Un appel établi compte les secondes : « 01:23 ». Une notification qui
+  // sonne n'a pas encore de durée à afficher.
+  /^\d{1,2}:\d{2}/,
+];
+
+const CALL_OUTGOING_LABELS = [/sortant/i, /outgoing/i, /^calling/i, /^dialing/i, /^dialling/i];
+
+const CALL_RINGING_LABELS = [/entrant/i, /incoming/i, /vous appel/i, /calling you/i, /ringing/i];
+
+// États rendus : `ringing` (ça sonne, on peut décrocher), `ongoing` (déjà
+// décroché), `outgoing` (on appelle), `ended` (manqué/refusé/terminé) et
+// `unknown` quand la notification ne dit rien d'exploitable.
+export function describeCallState(notification = {}) {
+  const n = notification || {};
+  const texts = [n.title, n.text, n.bigText, n.subText, n.ticker]
+    .map((value) => String(value || '').replace(/\s+/g, ' ').trim())
+    .filter((value) => value && !isNullLiteral(value));
+  const matches = (patterns) => texts.some((text) => patterns.some((re) => re.test(text)));
+
+  if (matches(CALL_ENDED_LABELS)) return 'ended';
+  if (matches(CALL_ONGOING_LABELS)) return 'ongoing';
+  if (matches(CALL_OUTGOING_LABELS)) return 'outgoing';
+  if (matches(CALL_RINGING_LABELS)) return 'ringing';
+  return 'unknown';
+}
+
 // Recherche inverse dans les contacts du téléphone. `phone_lookup` est l'URI
 // faite pour ça : elle compare les numéros à la façon d'Android (indicatif,
 // espaces et séparateurs ignorés), là où un `LIKE` sur `data1` échouerait sur
@@ -818,7 +879,9 @@ export function dndCommand(enabled) {
 
 export function phoneCallKey(action) {
   if (action === 'answer') return 'call';
-  if (action === 'reject') return 'end_call';
+  // « Refuser » un appel qui sonne et « Terminer » une conversation établie
+  // sont la MÊME touche Android (`end_call`) : deux intentions, un seul geste.
+  if (action === 'reject' || action === 'end') return 'end_call';
   return null;
 }
 

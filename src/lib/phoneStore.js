@@ -13,7 +13,12 @@ export const usePhoneStore = create((set) => ({
   open: false,
   // Notifications Android affichées, poussées par le processus principal.
   notifications: [],
-  incomingCall: null,
+  // Appel en cours d'attention : entrant qui sonne, appel sortant en cours de
+  // composition, ou conversation déjà décrochée. Vide quand il n'y a rien à
+  // signaler (appel manqué, terminé).
+  activeCall: null,
+  // Clé du dernier appel dont le bandeau a été fermé à la main.
+  dismissedCallKey: null,
   // Appareil qui les a produites : indispensable pour agir dessus (ouvrir
   // l'app, écarter, déplier le volet) depuis le panneau d'Orbit.
   serial: null,
@@ -37,7 +42,25 @@ export const usePhoneStore = create((set) => ({
         serial: payload?.serial || null,
       };
     }),
-  setIncomingCall: (incomingCall) => set({ incomingCall }),
+  setActiveCall: (activeCall) => set({ activeCall }),
+  // Fermer le bandeau d'un appel qui sonne ne doit pas le voir revenir au
+  // prochain sondage (douze secondes plus tard) : la clé de l'appel fermé est
+  // retenue tant que c'est le même appel.
+  dismissCall: () =>
+    set((state) => ({
+      activeCall: null,
+      dismissedCallKey: state.activeCall?.notification?.key || null,
+    })),
+  // L'appel est fini : la prochaine notification, même à clé identique, est un
+  // nouvel appel et doit pouvoir ouvrir son bandeau.
+  clearDismissedCall: () => set({ dismissedCallKey: null }),
+  // Décrochage fait depuis Orbit : `answeredAt` garde le bandeau en place et le
+  // fait passer à « Terminer » sans attendre que le téléphone republie sa
+  // notification (beaucoup de dialers la mettent simplement à jour en place).
+  markCallAnswered: (at = Date.now()) =>
+    set((state) =>
+      state.activeCall ? { activeCall: { ...state.activeCall, answeredAt: at } } : {}
+    ),
   removeNotification: (key) =>
     set((state) => ({ notifications: state.notifications.filter((n) => n.key !== key) })),
   setError: (error) => set({ error: String(error || '') }),

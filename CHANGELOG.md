@@ -32,6 +32,19 @@ La plus récente en premier.
   nouveaux types.
 
 ### Corrigé
+- **Bandeau d'appel : le bon bouton, au bon moment.** Le bandeau se fiait à la
+  seule catégorie `call` de la notification Android — or un appel sortant, un
+  appel déjà décroché et un appel manqué la portent aussi. Il proposait donc
+  « Décrocher » sur un appel déjà en cours. Orbit lit maintenant l'état dans la
+  notification : **ça sonne** → *Refuser* / *Décrocher* ; **en cours ou
+  sortant** → *Terminer l'appel* seul, avec la durée ; **manqué** → aucun
+  bandeau. Pendant qu'un appel vit, le détail est relu à chaque tour, sinon un
+  appel décroché gardait son bouton vert.
+- **Réglages : un volet qui se lit dans l'ordre.** Les dix-huit entrées sont
+  regroupées (Personnalisation, Fonctionnalités, Sécurité et données, Système) ;
+  **Raccourcis** quitte le haut de liste et **Profils** descend en bas, à côté
+  d'**À propos**. **Affichage** fusionne dans **Apparence** : même sujet, même
+  icône.
 - **Fenêtre détachée : zoom, rechargement et clic droit.** Cette fenêtre n'avait
   ni barre d'outils ni raccourcis : une page trop petite ou bloquée n'offrait
   aucune issue. Elle reçoit maintenant le même preload que les pages
