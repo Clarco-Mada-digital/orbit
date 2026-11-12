@@ -55,7 +55,7 @@
 </head>
 <body>
   <h1>⚡ Text Snippets</h1>
-  <p class="sub">Tapez une abréviation (ex. <code>;email</code>) dans un champ — elle se transforme immédiatement en texte complet.</p>
+  <p class="sub">Tapez une abréviation (ex. <code>;email</code>) dans un champ, puis <kbd>Tab</kbd> (ou Entrée, espace, ponctuation) — elle se transforme en texte complet. Rien ne change pendant la frappe : deux abréviations proches (<code>;tel</code> et <code>;telpro</code>) ne se marchent plus dessus.</p>
 
   <div class="card">
     <div class="opt-row">
@@ -79,8 +79,11 @@
     </div>
     <p class="hint">
       Astuce : la valeur peut contenir des retours à la ligne (signature multi-lignes).
-      Les champs de mot de passe restent exclus par défaut. Vous pouvez les autoriser
-      ci-dessous, mais les snippets sont enregistrés localement sans chiffrement.
+      Les champs de mot de passe et de confirmation de mot de passe restent exclus
+      par défaut (les champs email / identifiant, eux, fonctionnent normalement).
+      Vous pouvez les autoriser ci-dessous, mais les snippets sont enregistrés
+      localement sans chiffrement.
+      Ces snippets survivent aux mises à jour d’Orbit et de l’extension.
     </p>
     <div class="opt-row">
       <label><input type="checkbox" id="allow-password-fields" /> Autoriser l'expansion dans les champs de mot de passe</label>

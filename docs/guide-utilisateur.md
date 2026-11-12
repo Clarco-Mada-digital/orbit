@@ -562,8 +562,14 @@ version plus récente est livrée avec une mise à jour d’Orbit, le bouton
 **Mettre à jour** apparaît en face de l’extension, avec la version installée.
 
 - **Text Snippets** : remplace les abréviations configurées (par défaut, par
-  exemple `;email`) par leur texte complet dans les champs compatibles. La
-  conversion se produit au fil de la saisie.
+  exemple `;email`) par leur texte complet dans les champs compatibles.
+  L’abréviation se termine par **Tab**, **Entrée**, une espace ou une
+  ponctuation ; rien ne se transforme pendant la frappe, si bien que deux
+  abréviations proches (`;tel` et `;telpro`) ne se marchent plus dessus.
+  Les champs de mot de passe et de confirmation de mot de passe sont ignorés
+  par défaut, alors que les champs email et identifiant fonctionnent
+  normalement. Les snippets enregistrés restent en place quand l’extension est
+  mise à jour depuis Extensions.
 - **Fake Data Filler (Orbit)** : 🎲 ou `Alt+F` remplit le champ focalisé ;
   `Alt+Maj+F` remplit les champs visibles du formulaire actif. Les champs de
   connexion sont ignorés. Les valeurs sont générées localement ; les champs
@@ -720,9 +726,11 @@ qu’une suppression de cookies vous déconnectera.
 
 Vérifiez qu’elle est installée et activée dans **Réglages → Extensions**. Après
 une modification d’extension, rechargez l’app web. Pour Text Snippets, vérifiez
-le déclencheur et l’abréviation dans ses options. Certaines pages, champs
-protégés et contenus fournis par des extensions tierces peuvent limiter
-l’injection.
+le déclencheur et l’abréviation dans ses options, et terminez l’abréviation par
+Tab (le texte n’est pas remplacé pendant la frappe). Ses réglages sont rangés
+par **profil** : une app ouverte dans un autre profil a ses propres snippets.
+Certaines pages, champs protégés et contenus fournis par des extensions
+tierces peuvent limiter l’injection.
 
 **L’assistant local ne démarre pas**
 

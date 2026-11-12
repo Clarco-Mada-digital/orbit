@@ -8,9 +8,11 @@ const contentScript = readFileSync(
   'utf8'
 );
 
-function createSnippetRuntime({ allowPasswordFields = false } = {}) {
+// Harnais : le content script tourne dans un faux document qui retient ses
+// écouteurs. On peut alors « presser » une touche sur un champ donné.
+function createSnippetRuntime({ allowPasswordFields = false, snippets = {}, trigger = ';' } = {}) {
   const listeners = new Map();
-  const stored = { allowPasswordFields };
+  const stored = { allowPasswordFields, snippets, trigger, enabled: true };
 
   class InputEventMock {
     constructor(type, options) {
@@ -20,10 +22,11 @@ function createSnippetRuntime({ allowPasswordFields = false } = {}) {
   }
 
   class InputElement {
-    constructor(value, type = 'text') {
+    constructor(value, { type = 'text', attrs = {} } = {}) {
       this.tagName = 'INPUT';
       this._value = value;
       this.type = type;
+      this.attrs = attrs;
       this.selectionStart = value.length;
       this.selectionEnd = value.length;
       this.readOnly = false;
@@ -41,7 +44,8 @@ function createSnippetRuntime({ allowPasswordFields = false } = {}) {
     }
 
     getAttribute(name) {
-      return name === 'type' ? this.type : null;
+      if (name === 'type') return this.type;
+      return this.attrs[name] ?? null;
     }
 
     focus() {}
@@ -87,70 +91,132 @@ function createSnippetRuntime({ allowPasswordFields = false } = {}) {
     Event: InputEventMock,
     Node: { ELEMENT_NODE: 1, TEXT_NODE: 3 },
     console: { log() {} },
-    setTimeout(callback) { callback(); },
+    setTimeout(callback) {
+      callback();
+    },
   });
 
-  function typeSeparator(target, composedPath = [target]) {
+  function press(target, key) {
+    assert.ok(listeners.has('keydown'), 'le content script doit écouter la frappe');
     const event = {
-      key: ' ',
-      keyCode: 32,
+      key,
+      keyCode: key.length === 1 ? key.charCodeAt(0) : 9,
       target,
       isComposing: false,
-      composedPath: () => composedPath,
-      preventDefault() { this.defaultPrevented = true; },
+      composedPath: () => [target],
+      defaultPrevented: false,
+      preventDefault() {
+        this.defaultPrevented = true;
+      },
       stopPropagation() {},
     };
     listeners.get('keydown')(event);
     return event;
   }
 
-  function typeInput(target, composedPath = [target]) {
+  // Un événement `input` : l'ancien déclenchement « dès la dernière lettre ».
+  function typeInput(target) {
     const event = {
       key: 'l',
       target,
       isComposing: false,
-      composedPath: () => composedPath,
+      composedPath: () => [target],
     };
-    listeners.get('input')(event);
+    listeners.get('input')?.(event);
   }
 
-  return { InputElement, typeSeparator, typeInput };
+  return { InputElement, press, typeInput };
 }
 
-test('Text Snippets expands immediately in a modal input without waiting for a separator', () => {
-  const { InputElement, typeInput } = createSnippetRuntime();
-  const input = new InputElement(';email', 'email');
-  const modalHost = { tagName: 'LOGIN-DIALOG', nodeType: 1 };
+test('Tab déclenche l’expansion et n’envoie pas la touche au site', () => {
+  const { InputElement, press } = createSnippetRuntime();
+  const input = new InputElement(';email', { type: 'email' });
 
-  typeInput(input, [input, modalHost]);
+  const event = press(input, 'Tab');
+
+  assert.equal(input.value, 'prenom.nom@example.com');
+  assert.equal(event.defaultPrevented, true, 'Tab ne doit pas valider le formulaire');
+});
+
+test('l’espace et la ponctuation déclenchent aussi, séparateur conservé', () => {
+  const { InputElement, press } = createSnippetRuntime();
+  const space = new InputElement(';addr');
+  press(space, ' ');
+  assert.equal(space.value, '12 rue des Lilas, 75011 Paris ');
+
+  const punct = new InputElement(';tel');
+  press(punct, '.');
+  assert.equal(punct.value, '+33 6 12 34 56 78.');
+});
+
+test('rien ne se déclenche pendant la frappe (pas d’expansion à la dernière lettre)', () => {
+  const { InputElement, press, typeInput } = createSnippetRuntime();
+  const input = new InputElement(';email', { type: 'email' });
+
+  typeInput(input);
+
+  assert.equal(input.value, ';email', 'la frappe seule ne doit rien remplacer');
+  assert.equal(press(input, 'l').defaultPrevented, false);
+  assert.equal(input.value, ';email');
+});
+
+test('« tel » et « telpro » ne se marchent plus dessus', () => {
+  const { InputElement, press } = createSnippetRuntime({
+    snippets: { telpro: 'Numéro professionnel' },
+  });
+
+  const pro = new InputElement(';telpro');
+  press(pro, 'Tab');
+  assert.equal(pro.value, 'Numéro professionnel');
+
+  const perso = new InputElement(';tel');
+  press(perso, 'Tab');
+  assert.equal(perso.value, '+33 6 12 34 56 78');
+});
+
+test('les champs de mot de passe et de confirmation restent exclus par défaut', () => {
+  const { InputElement, press } = createSnippetRuntime();
+
+  const password = new InputElement(';email', { type: 'password' });
+  press(password, 'Tab');
+  assert.equal(password.value, ';email');
+
+  // Champ tapé en « text » mais qui s'annonce comme un mot de passe.
+  const confirm = new InputElement(';email', {
+    type: 'text',
+    attrs: { name: 'confirme_mot_de_passe', autocomplete: 'new-password' },
+  });
+  press(confirm, 'Tab');
+  assert.equal(confirm.value, ';email');
+});
+
+test('un champ email / identifiant fonctionne, même nommé « confirm_email »', () => {
+  const { InputElement, press } = createSnippetRuntime();
+
+  const email = new InputElement(';email', { type: 'email', attrs: { name: 'confirm_email' } });
+  press(email, 'Tab');
+  assert.equal(email.value, 'prenom.nom@example.com');
+
+  const username = new InputElement(';email', { type: 'text', attrs: { name: 'username' } });
+  press(username, 'Tab');
+  assert.equal(username.value, 'prenom.nom@example.com');
+});
+
+test('les champs de mot de passe redeviennent utilisables après autorisation explicite', () => {
+  const { InputElement, press } = createSnippetRuntime({ allowPasswordFields: true });
+  const input = new InputElement(';email', { type: 'password' });
+
+  press(input, 'Tab');
 
   assert.equal(input.value, 'prenom.nom@example.com');
 });
 
-test('Text Snippets expands in a login input inside an open shadow-root modal', () => {
-  const { InputElement, typeSeparator } = createSnippetRuntime();
-  const input = new InputElement(';email', 'email');
-  const modalHost = { tagName: 'LOGIN-DIALOG', nodeType: 1 };
+test('une abréviation inconnue n’est pas touchée', () => {
+  const { InputElement, press } = createSnippetRuntime();
+  const input = new InputElement(';inconnu');
 
-  typeSeparator(modalHost, [input, modalHost]);
+  const event = press(input, 'Tab');
 
-  assert.equal(input.value, 'prenom.nom@example.com ');
-});
-
-test('Text Snippets keeps password fields disabled unless explicitly enabled', () => {
-  const { InputElement, typeSeparator } = createSnippetRuntime();
-  const input = new InputElement(';email', 'password');
-
-  typeSeparator(input);
-
-  assert.equal(input.value, ';email');
-});
-
-test('Text Snippets can expand a password field after explicit opt-in', () => {
-  const { InputElement, typeSeparator } = createSnippetRuntime({ allowPasswordFields: true });
-  const input = new InputElement(';email', 'password');
-
-  typeSeparator(input);
-
-  assert.equal(input.value, 'prenom.nom@example.com ');
+  assert.equal(input.value, ';inconnu');
+  assert.equal(event.defaultPrevented, false, 'Tab garde son rôle normal');
 });

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generatedAt": "2026-11-11T19:27:28.372Z",
+  "generatedAt": "2026-11-12T12:37:32.523Z",
   "extensions": [
     {
       "file": "color-picker.zip",
@@ -68,11 +68,11 @@
     {
       "file": "text-snippets.zip",
       "name": "Text Snippets",
-      "version": "1.2.0",
-      "description": "Abréviations extensibles : tapez ;email, ;addr, ;sig… dans un champ et elles se remplacent immédiatement. Configurable (⚙️).",
+      "version": "1.3.0",
+      "description": "Abréviations extensibles : tapez ;email, ;addr, ;sig… puis Tab dans un champ. Champs de mot de passe exclus, réglages conservés lors des mises à jour. Configurable (⚙️).",
       "nativeApp": null,
-      "size": 14715,
-      "sha256": "2f295a2cf69c4fb040b7f0d6872addb52281373785de4198e9e774afaf6d5255"
+      "size": 15448,
+      "sha256": "790ba550bee84b30dee38a74fb5c03b4c7c7b739cb340c23d182e4c6be88517c"
     },
     {
       "file": "web-clipper.zip",

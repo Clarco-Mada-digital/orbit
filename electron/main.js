@@ -8,6 +8,13 @@ import { extractOpenables } from './open-links.js';
 import * as defaultApp from './default-app.js';
 import { collectBackupFiles, stageRestore, applyPendingRestore } from './backup-files.js';
 import { unpackCrx } from './crx.js';
+import {
+  copyExtensionStorage,
+  discardDirectory,
+  extensionDirSlug,
+  pruneStaleInstallDirs,
+  replaceExtensionDir,
+} from './extension-files.js';
 import { init as initKeepass, setEnabled as keepassSetEnabled, getLogins as keepassGetLogins, associate as keepassAssociate, checkStatus as keepassCheckStatus, collectAllCredentials as keepassCollectAll } from './keepass.js';
 import * as security from './security.js';
 import {
@@ -6680,14 +6687,26 @@ async function installExtensionFromZip(zipPath) {
       return { success: false, error: 'Le ZIP ne contient pas de manifest.json' };
     }
 
-    // Lire le manifeste AVANT le chargement : l'ID des extensions non packagées
-    // étant dérivé du DOSSIER (qui contient un horodatage), une réinstallation
-    // du même ZIP obtient un nouvel ID — il faut décharger l'ancienne version
-    // (repérée par son nom) dans chaque session, sinon les DEUX versions du
-    // content script tournent en parallèle (ex : color picker qui remplace le
-    // menu contextuel alors que la nouvelle ne le touche plus).
+    // Lire le manifeste AVANT le chargement : une réinstallation du même ZIP
+    // doit décharger l'ancienne version (repérée par son nom) dans chaque
+    // session, sinon les DEUX versions du content script tournent en parallèle
+    // (ex : color picker qui remplace le menu contextuel alors que la nouvelle
+    // ne le touche plus).
     const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
     const extName = String(manifest.name || '');
+
+    // Dossier d'installation STABLE, dérivé du nom : l'ID d'une extension non
+    // packagée est calculé à partir de son CHEMIN. Installer chaque version
+    // dans `zip-temp-<horodatage>` donnait donc un nouvel ID à chaque mise à
+    // jour, et les réglages de l'extension (chrome.storage.local : snippets,
+    // notes, préférences…) restaient rangés sous l'ancien ID — d'où des
+    // réglages « effacés » après une mise à jour. Même dossier = même ID.
+    const extRoot = path.join(app.getPath('userData'), 'extensions');
+    pruneStaleInstallDirs(extRoot, { keep: [tempDir] });
+    const targetDir = path.join(extRoot, `zip-${extensionDirSlug(extName)}`);
+
+    // Ancien ID de l'extension dans chaque session, mémorisé avant déchargement.
+    const previousIds = new Map();
     for (const partition of knownPartitions) {
       try {
         const ses = getSessionForPartition(partition);
@@ -6697,6 +6716,7 @@ async function installExtensionFromZip(zipPath) {
             : ses.getAllExtensions();
         for (const loaded of getAll()) {
           if (loaded.name === extName) {
+            previousIds.set(partition, loaded.id);
             ses.removeExtension(loaded.id);
             loadedPerPartition.get(partition)?.delete(loaded.id);
           }
@@ -6704,9 +6724,48 @@ async function installExtensionFromZip(zipPath) {
       } catch { /* ignore */ }
     }
 
+    // Remplacement atomique (retour arrière si le renommage échoue).
+    const backupDir = replaceExtensionDir(tempDir, targetDir);
+
     // Charger l'extension
-    console.log('[orbit] chargement extension depuis:', tempDir);
-    const ext = await session.defaultSession.loadExtension(tempDir);
+    console.log('[orbit] chargement extension depuis:', targetDir);
+    let ext;
+    try {
+      ext = await session.defaultSession.loadExtension(targetDir);
+    } catch (loadError) {
+      // Version qui ne se charge pas (manifeste refusé… ) : on remet la
+      // précédente en place plutôt que de laisser l'utilisateur sans
+      // extension du tout.
+      if (backupDir) {
+        try {
+          fs.rmSync(targetDir, { recursive: true, force: true });
+          fs.renameSync(backupDir, targetDir);
+          await session.defaultSession.loadExtension(targetDir).catch(() => {});
+        } catch { /* l'ancienne version reste dans le dossier de sauvegarde */ }
+      }
+      throw loadError;
+    }
+
+    // Migration du stockage hérité : la première mise à jour après ce
+    // changement d'ID ne doit pas coûter ses snippets à l'utilisateur. On
+    // décharge juste après le premier chargement (le temps de connaître le
+    // nouvel ID), on recopie, puis on recharge.
+    const previousId = previousIds.values().next().value;
+    if (previousId && previousId !== ext.id) {
+      const storagePaths = [];
+      for (const partition of knownPartitions) {
+        try {
+          storagePaths.push(getSessionForPartition(partition).storagePath);
+        } catch { /* session indisponible */ }
+      }
+      session.defaultSession.removeExtension(ext.id);
+      const migrated = copyExtensionStorage({ storagePaths, fromId: previousId, toId: ext.id });
+      if (migrated > 0) console.log('[orbit] réglages de', extName, 'repris de l’ancienne installation');
+      ext = await session.defaultSession.loadExtension(targetDir);
+    }
+
+    // Le dossier de sauvegarde ne sert plus : la nouvelle version est chargée.
+    discardDirectory(backupDir);
     console.log('[orbit] extension chargée:', ext.name, 'id:', ext.id);
     return {
       success: true,
@@ -6714,7 +6773,7 @@ async function installExtensionFromZip(zipPath) {
         id: ext.id,
         name: ext.name,
         version: ext.version,
-        path: tempDir,
+        path: targetDir,
         managed: false,
         source: 'zip',
       },
@@ -6732,9 +6791,15 @@ ipcMain.handle('extensions:install', async (_event, { kind, path: extPath } = {}
     let dir = extPath;
     let managed = false;
     if (kind === 'crx') {
-      const name = path.basename(extPath, '.crx').replace(/[^a-zA-Z0-9._-]/g, '_');
-      dir = path.join(app.getPath('userData'), 'extensions', `${name}-${Date.now()}`);
-      await unpackCrx(extPath, dir);
+      // Dossier stable (pas d'horodatage) : une réinstallation garde le même
+      // chemin, et donc le même emplacement de stockage sur le disque.
+      const name = path.basename(extPath, '.crx');
+      const extRoot = path.join(app.getPath('userData'), 'extensions');
+      const staged = path.join(extRoot, `crx-temp-${Date.now()}`);
+      await unpackCrx(extPath, staged);
+      const target = path.join(extRoot, `crx-${extensionDirSlug(name, 'ext')}`);
+      dir = target;
+      discardDirectory(replaceExtensionDir(staged, target));
       managed = true;
     }
     // Chargement de validation sur la session par défaut
@@ -6780,12 +6845,17 @@ ipcMain.handle('extensions:installWebStore', async (_event, { idOrUrl } = {}) =>
       };
     }
 
-    const dir = path.join(extRoot, `${extId}-${Date.now()}`);
+    // Dossier stable, là aussi, pour ne pas laisser un dossier orphelin par
+    // mise à jour (l'ID d'un CRX vient de sa clé, mais le PATH de chargement
+    // reste ce qu'on enregistre dans la liste des extensions installées).
+    const staged = path.join(extRoot, `.cws-temp-${extId}`);
     try {
-      await unpackCrx(tmpCrx, dir);
+      await unpackCrx(tmpCrx, staged);
     } finally {
       try { fs.unlinkSync(tmpCrx); } catch { /* ignore */ }
     }
+    const dir = path.join(extRoot, extId);
+    discardDirectory(replaceExtensionDir(staged, dir));
 
     const ext = await session.defaultSession.loadExtension(dir);
     return {

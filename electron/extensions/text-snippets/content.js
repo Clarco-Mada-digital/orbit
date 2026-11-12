@@ -1,10 +1,24 @@
 // Text Snippets — extension Chrome pour Orbit
-// Tapez une abréviation précédée de « ; » (ex. ;email, ;addr, ;sig) dans un
-// champ de texte ; elle est remplacée par le texte complet dès sa dernière
-// lettre. Les séparateurs restent pris en charge pour les expansions classiques.
+//
+// Tapez une abréviation précédée de « ; » (ex. ;email, ;addr, ;sig) puis une
+// TOUCHE DE FIN : Tab, Entrée, espace ou ponctuation. L'abréviation est alors
+// remplacée par le texte complet. Rien ne se déclenche pendant la frappe.
+//
+// Pourquoi pas d'expansion immédiate : avec deux abréviations qui commencent
+// pareil (« tel » et « telpro »), celle qui est reconnue à la dernière lettre
+// gagnait toujours — « tel » remplaçait le texte avant qu'on ait pu finir de
+// taper « telpro ». En attendant Tab (ou un séparateur), c'est la chaîne
+// complète avant le caret qui est comparée : la plus longue gagne, jamais
+// l'ambiguîté.
+//
+// Champs protégés : un champ de mot de passe (ou qui s'annonce comme tel) est
+// ignoré par défaut — les snippets iraient s'y écrire en clair. Les champs
+// email / identifiant restent, eux, parfaitement utilisables.
 //
 // Les snippets sont définis dans la page d'options (⚙️ de l'extension) et
-// stockés dans chrome.storage.local — lus par ce content script.
+// stockés dans chrome.storage.local — lus par ce content script. Ils survivent
+// aux mises à jour de l'extension (Orbit la réinstalle dans un dossier stable,
+// donc avec le même ID).
 //
 // Par défaut : ;email, ;tel, ;addr, ;sig (signature mail). Totalement local,
 // aucune requête réseau.
@@ -61,15 +75,43 @@
 
   // ── Détection des champs éditables ─────────────────────────────────────────
 
+  // Un champ de mot de passe au sens large : type=password, mais aussi les
+  // champs tapés en « text » que les sites nomment password, pwd,
+  // mot_de_passe, confirme_mot_de_passe, new-password… Un champ dont le TYPE est
+  // email / tel / url / search n'est jamais traité comme un mot de passe, même
+  // si son nom contient « confirm » (ex. « confirm_email »).
+  const PASSWORD_HINTS = /(pass(word)?|pwd|mot.?de.?passe)/i;
+  const EXPLICIT_TYPES = ['email', 'tel', 'url', 'search', 'number', 'date'];
+
+  function isPasswordLike(el) {
+    try {
+      const tag = (el.tagName || '').toLowerCase();
+      if (tag !== 'input' && tag !== 'textarea') return false;
+      const type = (el.getAttribute('type') || 'text').toLowerCase();
+      if (type === 'password') return true;
+      if (EXPLICIT_TYPES.includes(type)) return false;
+      if (tag === 'textarea') return false;
+      const hints = ['name', 'id', 'autocomplete', 'aria-label', 'placeholder']
+        .map((attr) => el.getAttribute(attr) || '')
+        .join(' ');
+      return PASSWORD_HINTS.test(hints);
+    } catch {
+      return false;
+    }
+  }
+
   function isEditable(el) {
     if (!el || !el.tagName) return false;
     const tag = el.tagName.toLowerCase();
-    if (tag === 'textarea') return !(el.readOnly || el.disabled);
+    if (tag === 'textarea') {
+      if (isPasswordLike(el) && !allowPasswordFields) return false;
+      return !(el.readOnly || el.disabled);
+    }
     if (tag === 'input') {
       const t = (el.getAttribute('type') || 'text').toLowerCase();
-      if (t === 'password' && !allowPasswordFields) return false;
-      if (!['text', 'email', 'tel', 'url', 'search', 'number', 'date', ''].includes(t) &&
-          !(t === 'password' && allowPasswordFields)) return false;
+      const supported = ['text', 'email', 'tel', 'url', 'search', 'number', 'date', 'password', ''];
+      if (!supported.includes(t)) return false;
+      if (isPasswordLike(el) && !allowPasswordFields) return false;
       return !(el.readOnly || el.disabled);
     }
     if (el.isContentEditable) return true;
@@ -158,27 +200,10 @@
 
   // ── Écouteur de frappe ─────────────────────────────────────────────────────
 
-  // Les séparateurs terminent aussi une abréviation si l'expansion immédiate
-  // n'a pas déjà eu lieu (par exemple après un collage).
+  // Une abréviation se termine par une touche de fin : Tab, Entrée, espace ou
+  // ponctuation. C'est le seul déclencheur — d'où l'absence totale d'expansion
+  // pendant la frappe.
   const SEPARATORS = /^[ \t\n\r.,;:!?()[\]{}"'«»\-–—/]$/;
-  let expanding = false;
-
-  function typedTextBeforeCaret(el) {
-    if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
-      const start = el.selectionStart;
-      const end = el.selectionEnd;
-      if (start === null || start !== end) return null;
-      return el.value.slice(0, start);
-    }
-    if (el.isContentEditable) {
-      const sel = window.getSelection();
-      if (!sel || sel.rangeCount === 0 || !sel.isCollapsed) return null;
-      const node = sel.anchorNode;
-      if (!node || node.nodeType !== Node.TEXT_NODE) return null;
-      return node.textContent.slice(0, sel.anchorOffset);
-    }
-    return null;
-  }
 
   function matchingSnippet(before) {
     if (!before) return null;
@@ -189,25 +214,11 @@
     return Object.keys(snippets).find((key) => key.toLowerCase() === abbr.toLowerCase()) || null;
   }
 
-  // L'expansion à l'événement input couvre aussi les champs des modales et
-  // composants contrôlés qui ne transmettent pas les événements clavier
-  // habituels au document. Elle agit dès la dernière lettre de l'abréviation.
-  document.addEventListener('input', (e) => {
-    if (!enabled || expanding || e.isComposing) return;
-    const el = editableTarget(e);
-    if (!el) return;
-    const match = matchingSnippet(typedTextBeforeCaret(el));
-    if (!match) return;
-    expanding = true;
-    try {
-      if (expandAtCaret(el, match)) flash(el);
-    } finally {
-      expanding = false;
-    }
-  }, true);
-
+  // Aucune expansion pendant la frappe : c'est la touche de fin (Tab, Entrée,
+  // espace, ponctuation) qui déclenche, et seulement si la chaîne complète
+  // avant le caret correspond à une abréviation connue.
   document.addEventListener('keydown', (e) => {
-    if (!enabled || expanding || e.isComposing || e.keyCode === 229) return;
+    if (!enabled || e.isComposing || e.keyCode === 229) return;
     const el = editableTarget(e);
     if (!el) return;
 
@@ -238,10 +249,8 @@
     const match = matchingSnippet(before);
     if (!match) return;
 
-    // On laisse le séparateur se saisir puis on remplace la partie abréviation
-    // (le caret est déjà après le séparateur — on l'inclut dans le remplacement
-    // pour le réduire à rien, sauf Entrée/Tab qui servent aussi à valider des
-    // formulaires : dans ce cas on remplace avant que la touche n'agisse).
+    // Entrée et Tab servent aussi à valider des formulaires : on remplace
+    // AVANT que la touche n'agisse, et on empêche son action par défaut.
     if (e.key === 'Enter' || e.key === 'Tab') {
       // Empêcher l'action par défaut (soumission / navigation) : l'expansion
       // prime, comme dans les vrais expanders (TextExpander, espanso…).
@@ -258,14 +267,10 @@
     // (React re-renders) — on annule, on expand, puis on insère le séparateur.
     e.preventDefault();
     e.stopPropagation();
-    if (expandAtCaret(el, match)) {
-      flash(el);
-      // Réinsérer le séparateur après le texte
-      insertAfterCaret(el, e.key);
-    } else {
-      // Pas expandé : remettre le caractère tapé
-      insertAfterCaret(el, e.key);
-    }
+    if (expandAtCaret(el, match)) flash(el);
+    // Le séparateur est réinséré après le texte (ou après l'abréviation
+    // laissée telle quelle si le remplacement n'a pas pu se faire).
+    insertAfterCaret(el, e.key);
   }, true);
 
   function insertAfterCaret(el, ch) {
@@ -302,7 +307,7 @@
       setTimeout(() => {
         try {
           const b = document.createElement('div');
-          b.textContent = `⚡ Text Snippets : tapez ${trigger}email, ${trigger}tel, ${trigger}addr…`;
+          b.textContent = `⚡ Text Snippets : tapez ${trigger}email, ${trigger}tel, ${trigger}addr… puis Tab`;
           Object.assign(b.style, {
             position: 'fixed',
             zIndex: '2147483647',
@@ -327,5 +332,5 @@
     true
   );
 
-  console.log('[text-snippets] Text Snippets actif (tapez ' + trigger + 'email, ' + trigger + 'sig…)');
+  console.log('[text-snippets] Text Snippets actif (tapez ' + trigger + 'email puis Tab…)');
 })();

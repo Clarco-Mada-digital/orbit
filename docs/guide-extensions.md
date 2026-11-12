@@ -93,7 +93,14 @@ ne couvre pas tout Chrome.
 
 - **Scripts de contenu** (`content_scripts`) — le cœur de ce qui est utile ici :
   agir sur les pages affichées dans Orbit.
-- **`chrome.storage.local`** — pour les réglages de l'extension.
+- **`chrome.storage.local`** — pour les réglages de l'extension. Deux points à
+  connaître : ce stockage est **par profil** (partition), et il est rangé sous
+  l'ID de l'extension — pour une extension non packagée, cet ID dérive du
+  **chemin** du dossier. C'est pourquoi Orbit installe chaque archive dans un
+  dossier stable (`userData/extensions/zip-<nom>`) : une mise à jour garde le
+  même chemin, donc le même ID, donc les réglages déjà saisis. Si vous
+  distribuez vous-même votre extension, ne comptez pas sur un dossier
+  horodaté pour la réinstaller.
 - **Page d'options** (`options_ui`), ouverte par Orbit.
 - **Manifest V2 comme V3** pour tout ce qui est script de contenu.
 - CSS injecté, raccourcis clavier gérés par votre propre code dans le script

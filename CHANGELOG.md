@@ -52,6 +52,20 @@ La plus récente en premier.
   fermeture d'Orbit : le transfert reprend à l'octet près sans redemander ce qui
   est déjà écrit. Une coupure est réessayée automatiquement, avec attente
   croissante.
+- **Extensions : les réglages survivent aux mises à jour.** Une archive est
+  installée dans un dossier stable (`userData/extensions/zip-<nom>`) au lieu
+  d'un dossier horodaté : l'ID d'une extension non packagée dérivant de son
+  chemin, chaque mise à jour donnait un nouveau stockage et les snippets, notes
+  ou préférences semblaient effacés. Premier passage : le stockage de l'ancien
+  ID est recopié vers le nouveau, et l'ancienne version est remise en place si
+  la nouvelle refuse de se charger. Les dossiers d'extraction laissés par les
+  anciennes versions sont nettoyés.
+- **Text Snippets 1.3.0 : déclenchement explicite, champs protégés.**
+  L'abréviation n'est plus remplacée pendant la frappe : elle se termine par
+  **Tab** (ou Entrée, espace, ponctuation), donc `;tel` ne mange plus `;telpro`.
+  Les champs de mot de passe et de confirmation de mot de passe sont ignorés
+  (même déguisés en champ texte), tandis que les champs email et identifiant
+  restent remplis normalement.
 - **Téléchargements : dialogue « Nouveau téléchargement ».** Le bouton
   **Options…** ouvre un vrai formulaire où chaque choix ne vaut que pour le
   fichier en cours d'ajout : nom, catégorie et sous-dossier, dossier de
