@@ -514,6 +514,37 @@ export default function DownloadsPage({ onClose }) {
                 <span className="block text-xs text-text-muted">{t('dl.audioHint')}</span>
               </label>
             </div>
+
+            {/* Vidéos des sites : où proposer le téléchargement, et avec quels
+                droits. Deux réglages qui vont ensemble — l'un décide OÙ on
+                clique, l'autre si le clic a accès aux vidéos réservées. */}
+            <div className="grid gap-4 border-t border-border p-4 sm:grid-cols-2">
+              <label className="space-y-1.5 text-sm">
+                <span className="block font-medium">{t('dl.buttonSurface')}</span>
+                <select
+                  value={settings.mediaButtonSurface || 'both'}
+                  onChange={(event) => updateSettings({ mediaButtonSurface: event.target.value })}
+                  className="input w-full"
+                >
+                  {['both', 'overlay', 'topbar', 'none'].map((value) => (
+                    <option key={value} value={value}>{t(`dl.surface.${value}`)}</option>
+                  ))}
+                </select>
+                <span className="block text-xs text-text-muted">{t('dl.buttonSurfaceHint')}</span>
+              </label>
+              <label className="flex items-start justify-between gap-3 rounded-lg border border-border bg-bg-elevated/40 p-3 sm:mt-6">
+                <span>
+                  <span className="block font-medium">{t('dl.useCookies')}</span>
+                  <span className="text-xs text-text-muted">{t('dl.useCookiesHint')}</span>
+                </span>
+                <input
+                  type="checkbox"
+                  checked={settings.downloadUseCookies !== false}
+                  onChange={(event) => updateSettings({ downloadUseCookies: event.target.checked })}
+                  className="mt-0.5 h-5 w-5 shrink-0 accent-[var(--accent-primary)]"
+                />
+              </label>
+            </div>
           </details>
         </main>
       </section>

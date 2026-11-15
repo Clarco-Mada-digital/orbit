@@ -11,15 +11,40 @@ import { KIND, kindForUrl, kindForPath, basenameOf, isSupportedPath } from './fi
 //    dans l'app alors que la session est encore valide.
 
 // L'entrée ressemble-t-elle à une adresse web ? (« github.com », « https://… »)
-// Utilisée par la palette Alt+K pour proposer « ouvrir cette adresse ».
+// Utilisée par la palette Alt+K et le champ d'adresse (Alt+L) pour décider
+// entre « ouvrir cette adresse » et « chercher ces mots » (searchEngines.js).
+//
+// Rendre `null` n'est plus un refus : c'est une recherche. La fonction peut
+// donc rester stricte sans rien coûter à l'utilisateur — ce qu'elle refuse
+// part chez le moteur de recherche au lieu de ne rien faire.
+//
+// Hôtes SANS POINT acceptés quand même (« localhost:5173 », « nas:8080 ») :
+// un port explicite ou le nom « localhost » ne s'écrivent jamais par hasard,
+// et c'est le quotidien de qui développe. En http, pas en https : un serveur
+// local n'a presque jamais de certificat.
 export function detectUrl(input) {
   const s = String(input || '').trim();
   if (!s || /\s/.test(s)) return null;
   if (/^https?:\/\/\S+$/i.test(s)) return s;
+
+  // Hôte local nommé, avec ou sans port : localhost, localhost:5173/admin
+  if (/^localhost(:\d{1,5})?(\/\S*)?$/i.test(s)) return `http://${s}`;
+
+  // Adresse IPv4, avec ou sans port
+  if (/^\d{1,3}(\.\d{1,3}){3}(:\d{1,5})?(\/\S*)?$/.test(s)) {
+    const octets = s.split(/[:/]/)[0].split('.');
+    if (octets.every((o) => Number(o) <= 255)) return `http://${s}`;
+  }
+
+  // Nom d'hôte quelconque SUIVI D'UN PORT : « nas:8080 », « machine:3000 ».
+  // Le port est ce qui lève l'ambiguïté avec une recherche contenant « : ».
+  if (/^[a-z0-9][\w-]*(\.[\w-]+)*:\d{1,5}(\/\S*)?$/i.test(s)) return `http://${s}`;
+
   // domaine.tld[/chemin] — on exige un TLD alphabétique de 2 caractères ou plus
   if (/^[\w-]+(\.[\w-]+)+(\/\S*)?$/.test(s) && /\.[a-z]{2,}(\/|$)/i.test(s)) {
     return `https://${s}`;
   }
+
   return null;
 }
 

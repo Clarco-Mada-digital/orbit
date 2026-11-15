@@ -109,6 +109,8 @@
       "src/lib/downloadPath.js",
       "src/lib/downloadOptions.js",
       "src/lib/downloadCategories.js",
+      "src/lib/mediaTool.js",
+      "src/lib/mediaCookies.js",
       "src/lib/javaRuntime.js",
       "src/lib/phone.js",
       "src/lib/phoneDesktop.js",

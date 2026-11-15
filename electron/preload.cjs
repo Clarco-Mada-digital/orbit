@@ -172,7 +172,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // processus principal n'accepte que des adresses http(s).
   openOutside: (url) => ipcRenderer.invoke('document:openOutside', url),
   // Téléchargement vidéo/audio (yt-dlp) — mode: 'video' | 'audio'
-  downloadMedia: (url, mode) => ipcRenderer.invoke('media:download', { url, mode }),
+  // `partition` : la session de l'app qui affiche la vidéo. Indispensable
+  // depuis la barre d'Orbit, dont la session ne connaît aucun cookie du site
+  // (voir le handler media:download).
+  downloadMedia: (url, mode, partition) =>
+    ipcRenderer.invoke('media:download', { url, mode, partition }),
   startDownloadUrl: (url, options) => ipcRenderer.invoke('downloads:startUrl', url, options),
   downloadDefaultTarget: (name) => ipcRenderer.invoke('downloads:defaultTarget', name),
   updateDownloadOptions: (id, options) => ipcRenderer.invoke('downloads:updateOptions', id, options),

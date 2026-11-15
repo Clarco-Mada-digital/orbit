@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Search,
   X,
@@ -35,7 +35,8 @@ import { useStore } from '../stores/useStore';
 import AppIcon from './AppIcon';
 import { shortcutKeys } from '../lib/shortcuts';
 import { useT, resolveLang } from '../lib/i18n';
-import { useSmartResults, detectUrl } from '../lib/smartSearch';
+import { useSmartResults } from '../lib/smartSearch';
+import { resolveOmniInput } from '../lib/searchEngines';
 import { useHistoryStore } from '../lib/historyStore';
 import { searchHistory, searchOpenPages, hostLabel, countSince } from '../lib/historySearch';
 import { searchVaultEntries } from '../lib/vaultSearch';
@@ -69,6 +70,9 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
   const searchOpenPagesOn = searchSources?.openPages !== false;
   const searchVault = searchSources?.vault !== false;
   const searchVaultTotp = searchSources?.vaultTotp !== false;
+  // Recherche web en repli. Les raccourcis « @moteur » restent actifs même
+  // désactivée : taper « @g » est une demande explicite, pas un repli.
+  const webSearchOn = searchSources?.web !== false;
   const locale = lang === 'en' ? 'en-US' : 'fr-FR';
   const {
     apps,
@@ -388,7 +392,19 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
 
   // Résultats instantanés (calcul, conversions, couleurs, dates, devises)
   const smart = useSmartResults(isHelpQuery ? '' : query, locale);
-  const url = useMemo(() => (isHelpQuery ? null : detectUrl(query)), [query, isHelpQuery]);
+
+  // Nature de la saisie : adresse, recherche web, ou raccourci de moteur en
+  // cours de frappe (voir src/lib/searchEngines.js). Un seul juge pour la
+  // palette ET le champ d'adresse — les deux recevaient la même chose et en
+  // tiraient des conclusions différentes.
+  const omni = useMemo(
+    () => (isHelpQuery ? { kind: 'empty' } : resolveOmniInput(query, { search: searchSources || {}, lang })),
+    [query, isHelpQuery, searchSources, lang]
+  );
+  const url = omni.kind === 'url' ? omni.url : null;
+  // Moteur annoncé dans le champ : celui du raccourci tapé. Voir le bandeau
+  // au-dessus de la liste — savoir OÙ part la recherche avant de valider.
+  const activeEngine = omni.kind === 'engines' || omni.kind === 'search' ? omni.engine : null;
 
   // Copie une valeur dans le presse-papiers et confirme visuellement
   const copyValue = async (id, value) => {
@@ -415,11 +431,100 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
     }
   };
 
+  // Les quatre façons d'ouvrir une recherche — les mêmes que pour une adresse
+  // tapée, et dans le même ordre : ce qui se ressemble doit se manipuler
+  // pareil. Déclaré hors du useMemo des résultats, qui s'en sert deux fois
+  // (raccourci explicite en tête de liste, repli en fin de liste).
+  const searchRows = useCallback((res) => {
+    const label = `${res.engine.name} — « ${res.terms} »`;
+    const color = res.engine.color || '#0ea5e9';
+    return [
+      {
+        type: 'search',
+        id: 'search-orbit',
+        name: t('qs.search.run', { terms: res.terms, engine: res.engine.name }),
+        subtitle: `${res.engine.name} — ${t('qs.openUrlOrbitDesc')}`,
+        color,
+        engine: res.engine,
+        action: () => openFlyPage(res.url),
+      },
+      {
+        type: 'search',
+        id: 'search-private',
+        name: t('qs.openUrlPrivate'),
+        subtitle: label,
+        color: '#7c3aed',
+        engine: res.engine,
+        action: () => openFlyPage(res.url, { private: true }),
+      },
+      {
+        type: 'search',
+        id: 'search-detached',
+        name: t('qs.openUrlDetached'),
+        subtitle: label,
+        color: '#0d9488',
+        engine: res.engine,
+        action: () =>
+          window.electronAPI?.openDetached?.({
+            appId: `palette:${res.url}`,
+            url: res.url,
+            partition: 'priv:palette-detached',
+            title: `${res.engine.name} — ${res.terms}`,
+          }),
+      },
+      {
+        type: 'search',
+        id: 'search-browser',
+        name: t('qs.openUrl'),
+        subtitle: label,
+        color: '#64748b',
+        engine: res.engine,
+        action: () => window.open(res.url, '_blank'),
+      },
+    ];
+  }, [t, openFlyPage]);
+
   // Résultats combinés : instantanés + apps + profils + actions
   const results = useMemo(() => {
     const q = trimmed;
     if (isHelpQuery) return []; // le panneau d'aide remplace la liste
+
+    // « @… » : choix du moteur. La liste des moteurs REMPLACE les résultats —
+    // on est au milieu d'un geste précis, mélanger des apps dedans ne ferait
+    // que rendre la validation risquée.
+    if (omni.kind === 'engines') {
+      return omni.engines.slice(0, 10).map((engine) => {
+        const ready = Boolean(omni.terms);
+        return {
+          type: 'engine',
+          id: `engine-${engine.id || engine.keyword}`,
+          name: engine.name,
+          subtitle: ready
+            ? t('qs.search.runSub', { terms: omni.terms })
+            : t('qs.search.pickSub', { keyword: engine.keyword }),
+          color: engine.color || '#6366f1',
+          engine,
+          // Tab et Entrée font la même chose sur un moteur sans termes :
+          // retenir le moteur et rendre la main au clavier.
+          complete: `${omni.prefix}${engine.keyword} `,
+          keepOpen: !ready,
+          action: () => {
+            if (ready) {
+              openFlyPage(resolveOmniInput(`@${engine.keyword} ${omni.terms}`, { search: searchSources || {}, lang }).url);
+            } else {
+              setQuery(`${omni.prefix}${engine.keyword} `);
+              setSelected(0);
+            }
+          },
+        };
+      });
+    }
+
     const list = [];
+
+    // Raccourci explicite et termes saisis : l'utilisateur a DIT où chercher.
+    // Rien ne passe devant, pas même une app qui porterait le même nom.
+    if (omni.kind === 'search' && omni.bang) list.push(...searchRows(omni));
 
     // Les résultats instantanés passent devant : c'est la réponse cherchée
     smart.forEach((card) =>
@@ -601,11 +706,24 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
       })
     );
 
-    return list.slice(0, 12);
+    const limited = list.slice(0, 12);
+
+    // Repli : la saisie ne correspond à rien de connu et n'est pas une
+    // adresse. Avant, la palette répondait « Aucun résultat » — un cul-de-sac
+    // alors que la réponse est à une touche. La recherche web passe donc en
+    // DERNIER (elle ne doit jamais voler la place d'une app), et se déploie en
+    // entier quand il n'y a vraiment rien d'autre.
+    if (webSearchOn && omni.kind === 'search' && !omni.bang) {
+      const rows = searchRows(omni);
+      return limited.length ? [...limited.slice(0, 11), rows[0]] : rows;
+    }
+
+    return limited;
   }, [
     trimmed, isHelpQuery, smart, url, t, apps, profiles, actions,
     setActiveApp, setActiveProfile, openFlyPage, history, forgetPage, vaultEntries,
     searchHistoryOn, searchOpenPagesOn, searchVault, searchVaultTotp,
+    omni, webSearchOn, searchSources, lang, searchRows,
   ]);
 
   // Navigation clavier
@@ -617,6 +735,13 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
         setSelected((prev) => Math.max(prev - 1, 0));
+      } else if (e.key === 'Tab' && results[selected]?.complete) {
+        // Tab complète le raccourci de moteur sélectionné (« @g » → « @g  »)
+        // sans lancer la recherche : c'est la convention de toutes les barres
+        // d'adresse, et ça laisse le temps de voir QUEL moteur a été retenu.
+        e.preventDefault();
+        setQuery(results[selected].complete);
+        setSelected(0);
       } else if (e.key === 'Enter' && results[selected]) {
         e.preventDefault();
         const r = results[selected];
@@ -657,6 +782,23 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
             placeholder={t('qs.placeholder')}
             className="flex-1 bg-transparent text-lg outline-none"
           />
+          {/* Moteur retenu, affiché DANS le champ : « @g » ne dit rien à qui
+              ne connaît pas encore ses raccourcis. La pastille répond à la
+              seule question qui compte avant de valider — où ça part. */}
+          {activeEngine && (
+            <span
+              className="flex-shrink-0 flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-medium border"
+              style={{
+                color: activeEngine.color || 'var(--accent-primary)',
+                borderColor: `${activeEngine.color || '#6366f1'}66`,
+                backgroundColor: `${activeEngine.color || '#6366f1'}1a`,
+              }}
+              title={t('qs.search.engineChip', { engine: activeEngine.name })}
+            >
+              <Search size={12} />
+              {activeEngine.name}
+            </span>
+          )}
           <button onClick={onClose} className="btn-icon" title={t('common.close')}>
             <X size={20} />
           </button>
@@ -766,6 +908,8 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
                         )
                       ) : result.type === 'url' ? (
                         <Globe size={22} style={{ color: result.color }} />
+                      ) : result.type === 'search' || result.type === 'engine' ? (
+                        <Search size={22} style={{ color: result.color }} />
                       ) : result.type === 'openPage' ? (
                         <PanelsTopLeft size={22} style={{ color: result.color }} />
                       ) : result.type === 'history' ? (
@@ -827,6 +971,21 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
                         {copied === result.totpId ? t('qs.copied') : 'TOTP'}
                       </span>
                     )}
+                    {/* Raccourci du moteur, à droite de son nom : la liste des
+                        moteurs sert aussi à APPRENDRE les raccourcis, pas
+                        seulement à en choisir un à la souris. */}
+                    {result.type === 'engine' && (
+                      <span className="flex-shrink-0 flex items-center gap-1.5 text-xs text-text-muted">
+                        <kbd className="px-1.5 py-0.5 bg-bg-elevated border border-border rounded font-mono">
+                          @{result.engine.keyword}
+                        </kbd>
+                        {index === selected && result.keepOpen && (
+                          <kbd className="px-1.5 py-0.5 bg-bg-elevated border border-border rounded">
+                            ⇥
+                          </kbd>
+                        )}
+                      </span>
+                    )}
                     {result.type === 'vault' ? (
                       copied === result.copyId ? (
                         <span className="flex items-center gap-1 text-xs text-success flex-shrink-0">
@@ -869,6 +1028,10 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
           <span className="hidden sm:inline">
             <kbd className="px-2 py-1 bg-bg-elevated border border-border rounded">4*4</kbd>{' '}
             {t('qs.hintCalc')}
+          </span>
+          <span className="hidden sm:inline">
+            <kbd className="px-2 py-1 bg-bg-elevated border border-border rounded">@</kbd>{' '}
+            {t('qs.hintEngines')}
           </span>
           <span>
             <kbd className="px-2 py-1 bg-bg-elevated border border-border rounded">esc</kbd> {t('qs.hintClose')}

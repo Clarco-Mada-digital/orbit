@@ -173,7 +173,9 @@ export const fr = {
   'fly.privateBadge': 'Navigation privée',
   'fly.editUrlTitle': "Modifier l'adresse",
   'fly.editUrlGo': 'Ouvrir',
-  'fly.editUrlInvalid': "L'adresse doit commencer par http:// ou https://",
+  'fly.editUrlInvalid': "Rien à ouvrir : complétez l'adresse ou vos termes de recherche.",
+  'fly.editUrlPlaceholder': 'Adresse, ou mots à rechercher',
+  'fly.editUrlSearch': 'Rechercher « {terms} » avec {engine}',
 
   // Visionneuse de documents (pages volantes .md, .txt, .json, .csv, code…)
   'doc.loading': 'Lecture du document…',
@@ -316,6 +318,16 @@ export const fr = {
   'dl.audio.m4a': 'M4A (sans conversion)',
   'dl.audio.mp3': 'MP3 (ffmpeg requis)',
   'dl.audioHint': 'Sans ffmpeg, le format M4A est utilisé pour éviter une conversion qui échouerait.',
+  'dl.buttonSurface': 'Bouton sur les vidéos',
+  'dl.buttonSurfaceHint':
+    'Où proposer le téléchargement quand une vidéo est repérée. Le clic droit « Télécharger la vidéo » reste disponible dans tous les cas.',
+  'dl.surface.both': 'Sur la vidéo et dans la barre',
+  'dl.surface.overlay': 'Sur la vidéo seulement',
+  'dl.surface.topbar': 'Dans la barre seulement',
+  'dl.surface.none': 'Nulle part (clic droit uniquement)',
+  'dl.useCookies': 'Utiliser ma session',
+  'dl.useCookiesHint':
+    'Nécessaire pour Facebook et les vidéos réservées aux comptes connectés. Seuls les cookies du site visé sont transmis, dans un fichier temporaire supprimé aussitôt après.',
   'dl.error.empty': 'Collez une URL pour commencer.',
   'dl.error.invalid-url': 'Cette URL n’est pas valide.',
   'dl.error.unsupported-url': 'Seules les URL HTTP et HTTPS sans identifiants intégrés sont acceptées.',
@@ -786,7 +798,9 @@ export const en = {
   'fly.privateBadge': 'Private browsing',
   'fly.editUrlTitle': 'Edit address',
   'fly.editUrlGo': 'Open',
-  'fly.editUrlInvalid': 'The address must start with http:// or https://',
+  'fly.editUrlInvalid': 'Nothing to open: complete the address or your search terms.',
+  'fly.editUrlPlaceholder': 'Address, or words to search for',
+  'fly.editUrlSearch': 'Search “{terms}” with {engine}',
 
   // Document viewer (scratch pages: .md, .txt, .json, .csv, code…)
   'doc.loading': 'Reading document…',
@@ -894,6 +908,16 @@ export const en = {
   'dl.audio.m4a': 'M4A (no conversion)',
   'dl.audio.mp3': 'MP3 (requires ffmpeg)',
   'dl.audioHint': 'Without ffmpeg, M4A is used to avoid a conversion that would fail.',
+  'dl.buttonSurface': 'Button on videos',
+  'dl.buttonSurfaceHint':
+    'Where to offer the download when a video is spotted. The “Download video” right-click entry stays available either way.',
+  'dl.surface.both': 'On the video and in the bar',
+  'dl.surface.overlay': 'On the video only',
+  'dl.surface.topbar': 'In the bar only',
+  'dl.surface.none': 'Nowhere (right-click only)',
+  'dl.useCookies': 'Use my session',
+  'dl.useCookiesHint':
+    'Required for Facebook and videos restricted to signed-in accounts. Only the target site’s cookies are passed, in a temporary file deleted right after.',
   'dl.error.empty': 'Paste a URL to begin.',
   'dl.error.invalid-url': 'This URL is not valid.',
   'dl.error.unsupported-url': 'Only HTTP and HTTPS URLs without embedded credentials are accepted.',

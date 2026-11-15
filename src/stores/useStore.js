@@ -136,6 +136,17 @@ export const defaultSettings = {
   downloadFileSpeedLimit: 0,
   downloadRetries: 3,
   downloadCategorize: false,
+  // Cookies de la session confiés à yt-dlp pour le téléchargement vidéo.
+  // Activé : sans eux, Facebook et les vidéos réservées aux comptes connectés
+  // échouent, puisque yt-dlp se présente en inconnu alors qu'Orbit est entré.
+  // Seuls les cookies du DOMAINE VISÉ sont transmis (src/lib/mediaCookies.js).
+  downloadUseCookies: true,
+  // Où proposer le téléchargement d'un média repéré dans la page :
+  //   'both'    → bouton posé sur la vidéo ET pastille dans la barre (défaut)
+  //   'overlay' → seulement le bouton sur la vidéo
+  //   'topbar'  → seulement la pastille de la barre (rien n'entre dans la page)
+  //   'none'    → aucun des deux ; le clic droit reste toujours disponible
+  mediaButtonSurface: 'both',
   // Menu contextuel des apps : celui d'Orbit par défaut, celui du système en
   // repli pour qui le préfère (ou si le nôtre pose problème).
   nativeContextMenu: false,
@@ -174,7 +185,24 @@ export const defaultSettings = {
   //   vault     → entrées des trousseaux DÉVERROUILLÉS, pour copier un mot de
   //               passe sans ouvrir les réglages
   //   vaultTotp → bouton de copie du code à usage unique sur ces entrées
-  search: { history: true, openPages: true, vault: true, vaultTotp: true },
+  //
+  // Le même réglage porte la RECHERCHE WEB, qui est l'autre moitié du
+  // problème : une palette qui ne trouve rien doit proposer de chercher,
+  // comme la barre d'adresse de n'importe quel navigateur.
+  //   web           → proposer la recherche web quand rien ne correspond
+  //   engine        → moteur par défaut (voir src/lib/searchEngines.js)
+  //   customEngines → moteurs ajoutés par l'utilisateur ({q} dans l'URL)
+  //   hiddenEngines → ids des moteurs intégrés retirés de la liste
+  search: {
+    history: true,
+    openPages: true,
+    vault: true,
+    vaultTotp: true,
+    web: true,
+    engine: 'google',
+    customEngines: [],
+    hiddenEngines: [],
+  },
 
   // Composition de l'en-tête : quels modules, dans quelle zone, dans quel
   // ordre (voir src/lib/topbarLayout.js)

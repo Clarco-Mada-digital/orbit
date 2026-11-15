@@ -243,6 +243,24 @@ export const fr = {
   'st.search.vaultTotpDesc': 'Ajoute un bouton de copie du code sur les entrées qui en ont un.',
   'st.search.hint':
     'Un identifiant n’apparaît qu’à partir de deux caractères saisis, jamais à l’ouverture de la palette. Le mot de passe ne passe pas par l’interface : Orbit l’écrit lui-même dans le presse-papiers et le vide après 30 secondes.',
+  'st.search.webTitle': 'Recherche web',
+  'st.search.webDesc':
+    'Quand la saisie ne correspond à aucune app ni adresse, la palette propose de la chercher sur le web — et « @raccourci » choisit le moteur à la volée.',
+  'st.search.web': 'Proposer la recherche web',
+  'st.search.webToggleDesc':
+    'Ajoute « Rechercher … » en bas des résultats. Les raccourcis « @moteur » restent actifs même sans ça.',
+  'st.search.defaultEngine': 'Moteur par défaut',
+  'st.search.defaultEngineDesc':
+    'Utilisé par la palette (Alt+K) et le champ d’adresse (Alt+L) quand aucun raccourci n’est précisé.',
+  'st.search.shortcuts': 'Raccourcis — cliquez pour masquer un moteur',
+  'st.search.hideEngine': 'Masquer ce moteur',
+  'st.search.showEngine': 'Réafficher ce moteur',
+  'st.search.customTitle': 'Vos moteurs',
+  'st.search.customName': 'Nom (ex. Intranet)',
+  'st.search.customAdd': 'Ajouter',
+  'st.search.customHint':
+    'L’URL doit contenir {q} à l’emplacement des termes cherchés (%s est aussi accepté).',
+  'st.search.keywordTaken': 'Le raccourci @{keyword} est déjà pris.',
   'st.hist.title': 'Historique de navigation',
   'st.hist.desc':
     'Les pages visitées dans vos apps alimentent la recherche Alt+K (« cette page vue hier »). L’historique reste sur cette machine : il n’entre pas dans la synchronisation.',
@@ -743,6 +761,24 @@ export const en = {
   'st.search.vaultTotpDesc': 'Adds a copy button for the code on entries that have one.',
   'st.search.hint':
     'A credential only appears once two characters are typed, never when the palette opens. The password does not pass through the interface: Orbit writes it to the clipboard itself and clears it after 30 seconds.',
+  'st.search.webTitle': 'Web search',
+  'st.search.webDesc':
+    'When what you type matches no app and no address, the palette offers to search the web for it — and “@shortcut” picks the engine on the fly.',
+  'st.search.web': 'Offer web search',
+  'st.search.webToggleDesc':
+    'Adds “Search …” at the bottom of the results. “@engine” shortcuts stay available either way.',
+  'st.search.defaultEngine': 'Default engine',
+  'st.search.defaultEngineDesc':
+    'Used by the palette (Alt+K) and the address field (Alt+L) when no shortcut is given.',
+  'st.search.shortcuts': 'Shortcuts — click to hide an engine',
+  'st.search.hideEngine': 'Hide this engine',
+  'st.search.showEngine': 'Show this engine again',
+  'st.search.customTitle': 'Your engines',
+  'st.search.customName': 'Name (e.g. Intranet)',
+  'st.search.customAdd': 'Add',
+  'st.search.customHint':
+    'The URL must contain {q} where the search terms go (%s is accepted too).',
+  'st.search.keywordTaken': 'The @{keyword} shortcut is already taken.',
   'st.hist.title': 'Browsing history',
   'st.hist.desc':
     'Pages visited in your apps feed the Alt+K search (“that page I saw yesterday”). The history stays on this machine: it is not part of sync.',

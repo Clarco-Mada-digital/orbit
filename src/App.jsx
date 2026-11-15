@@ -388,6 +388,12 @@ const [editUrlFor, setEditUrlFor] = useState(null); // { id, url } — boîte «
       perFileRate: Math.max(0, Number(settings.downloadFileSpeedLimit) || 0) * 1024,
       retries: settings.downloadRetries ?? 3,
       categorize: settings.downloadCategorize === true,
+      // Cookies de session confiés à yt-dlp (Facebook, vidéos réservées).
+      // Strictement limités au domaine visé — voir src/lib/mediaCookies.js.
+      useCookies: settings.downloadUseCookies !== false,
+      // Où proposer le téléchargement d'un média repéré : bouton posé sur la
+      // vidéo, pastille dans la barre, les deux, ou aucun.
+      buttonSurface: settings.mediaButtonSurface || 'both',
     });
   }, [
     settings.downloadDir,
@@ -400,6 +406,8 @@ const [editUrlFor, setEditUrlFor] = useState(null); // { id, url } — boîte «
     settings.downloadFileSpeedLimit,
     settings.downloadRetries,
     settings.downloadCategorize,
+    settings.downloadUseCookies,
+    settings.mediaButtonSurface,
   ]);
 
   // Média : pour synchroniser le mini-lecteur flottant

@@ -50,6 +50,7 @@ import FocusTimer from './FocusTimer';
 import SystemWidget from './SystemWidget';
 import ProfileWidget from './ProfileWidget';
 import ShieldsPanel from './ShieldsPanel';
+import MediaDownloadButton, { topbarEnabled } from './MediaDownloadButton';
 
 function ShieldsButton({ appId, webContentsId, url, menuAlign, menuPos, t }) {
   const [show, setShow] = useState(false);
@@ -1163,6 +1164,20 @@ const app = apps.find((a) => a.id === activeApp)
             <Downloads placement={placement} align={menuAlign} />
           </Fragment>
         );
+      case 'media': {
+        // Surface coupée dans les réglages : aucun bouton, aucun espace
+        // réservé — comme le module Téléphone sans son extension.
+        if (!topbarEnabled(settings.mediaButtonSurface)) return null;
+        return (
+          <Fragment key={key}>
+            <MediaDownloadButton
+              app={app}
+              partition={activeAppPartition}
+              align={zone === 'left' ? 'left' : 'right'}
+            />
+          </Fragment>
+        );
+      }
       case 'phone': {
         // Sans extension : aucun bouton, aucun espace réservé.
         if (!Array.isArray(nativeApps) || !nativeApps.includes('phone')) return null;

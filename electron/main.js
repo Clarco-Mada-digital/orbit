@@ -46,6 +46,7 @@ import {
 import { savePlan } from '../src/lib/downloadPath.js';
 import { downloadCategory } from '../src/lib/downloadCategories.js';
 import { mediaFormatOptions, parseDownloadUrl } from '../src/lib/downloadOptions.js';
+import { selectCookiesForUrl } from '../src/lib/mediaCookies.js';
 import { getDomain } from 'tldts-experimental';
 import { fileURLToPath } from 'url';
 
@@ -837,12 +838,45 @@ ipcMain.handle('adblock:setForContents', (_event, { webContentsId, mode } = {}) 
   return { success: true };
 });
 
+// Surface d'affichage du bouton média : 'both' | 'overlay' | 'topbar' | 'none'.
+// Poussée par l'interface avec les autres réglages de téléchargement, lue par
+// le preload posé dans chaque page.
+let mediaButtonSurface = 'both';
+
+const mediaButtonSessions = new WeakSet();
+
+// Pose media-button-preload.cjs sur une session. Idempotent : main.js appelle
+// ceci pour chaque partition, et une session déjà équipée est ignorée.
+function attachMediaButton(ses) {
+  if (!ses || mediaButtonSessions.has(ses)) return;
+  const filePath = path.join(__dirname, 'media-button-preload.cjs');
+  try {
+    if (typeof ses.registerPreloadScript === 'function') {
+      ses.registerPreloadScript({ type: 'frame', filePath });
+    } else {
+      const existing = ses.getPreloads?.() || [];
+      if (!existing.includes(filePath)) ses.setPreloads([...existing, filePath]);
+    }
+    mediaButtonSessions.add(ses);
+  } catch (err) {
+    // Session privée, déjà détruite, API absente : le clic droit « Télécharger
+    // la vidéo » reste disponible, seul le bouton posé sur la vidéo manquerait.
+    console.error('[orbit] preload du bouton média non posé :', err.message);
+  }
+}
+
+// Le preload demande le réglage au démarrage de chaque page.
+ipcMain.handle('media:buttonSurface', () => mediaButtonSurface);
+
 function setupHeaderBypass(ses) {
   if (!ses || !ses.webRequest) return;
   // Preload cosmétique + scriptlets de l'adblock (une fois par session) : c'est
   // lui qui masque les emplacements construits par JavaScript et neutralise
   // les scripts d'anti-blocage, sur TOUTES les fenêtres de la session.
   adblock.attachSession(ses, adblockActiveFor);
+  // Bouton de téléchargement posé sur les vidéos (preload SUPPLÉMENTAIRE, il
+  // ne remplace pas celui des identifiants). Même session, même mécanisme.
+  attachMediaButton(ses);
   try {
     // Blocage réseau des pubs/traceurs (no-op si l'adblock est désactivé)
     ses.webRequest.onBeforeRequest((details, callback) => {
@@ -1237,6 +1271,14 @@ let downloadPrefs = {
   perFileRate: 0,
   retries: 3,
   categorize: false,
+  // Transmettre les cookies de la session à yt-dlp. C'est ce qui débloque
+  // Facebook et les vidéos réservées aux comptes connectés : sans eux, yt-dlp
+  // frappe à la porte en inconnu alors qu'Orbit est déjà entré.
+  //
+  // Les cookies transmis sont STRICTEMENT ceux du domaine visé (voir
+  // src/lib/mediaCookies.js) : télécharger une vidéo Facebook n'expose pas la
+  // session d'un autre site.
+  useCookies: true,
 };
 
 // Le dossier de l'utilisateur a pu être supprimé depuis le dernier lancement :
@@ -2545,8 +2587,8 @@ function buildGuestContextMenu(wc, params) {
   // Téléchargement média de la page (yt-dlp) : YouTube, Facebook, etc.
   if (!params.isEditable) {
     const pageUrl = params.pageURL || wc.getURL();
-    t.push({ label: 'Télécharger la vidéo', click: () => startMediaDownload(pageUrl, 'video') });
-    t.push({ label: 'Télécharger l’audio', click: () => startMediaDownload(pageUrl, 'audio') });
+    t.push({ label: 'Télécharger la vidéo', click: () => startMediaDownload(pageUrl, 'video', wc.session) });
+    t.push({ label: 'Télécharger l’audio', click: () => startMediaDownload(pageUrl, 'audio', wc.session) });
     t.push({ type: 'separator' });
     // Lecture vocale / traduction de la page entière (utile sans sélection)
     t.push({ label: 'Lire la page à voix haute', click: () => speakPage(wc) });
@@ -4530,10 +4572,10 @@ handleFromUi('ctx:action', async (_event, { wcId, action, value } = {}) => {
       }
       break;
     case 'downloadVideo':
-      startMediaDownload(pageUrl, 'video');
+      startMediaDownload(pageUrl, 'video', wc.session);
       break;
     case 'downloadAudio':
-      startMediaDownload(pageUrl, 'audio');
+      startMediaDownload(pageUrl, 'audio', wc.session);
       break;
     case 'screenshot':
       captureGuestPage(
@@ -5874,7 +5916,20 @@ ipcMain.handle('downloads:setPrefs', (_event, prefs = {}) => {
     perFileRate: number(prefs.perFileRate, 0, 10 * 1024 * 1024, downloadPrefs.perFileRate),
     retries: number(prefs.retries, 0, 10, downloadPrefs.retries),
     categorize: Boolean(prefs.categorize),
+    useCookies: prefs.useCookies !== false,
   };
+  // Surface du bouton média : appliquée AUX PAGES DÉJÀ OUVERTES, sans
+  // rechargement — un réglage qui n'agit qu'au prochain démarrage passe pour
+  // un réglage cassé.
+  const surface = ['both', 'overlay', 'topbar', 'none'].includes(prefs.buttonSurface)
+    ? prefs.buttonSurface
+    : 'both';
+  if (surface !== mediaButtonSurface) {
+    mediaButtonSurface = surface;
+    for (const wc of webContents.getAllWebContents()) {
+      if (!wc.isDestroyed()) wc.send('media:buttonSurfaceChanged', mediaButtonSurface);
+    }
+  }
   // Les limites s'appliquent À CHAUD, y compris aux transferts en cours.
   getDownloadEngine().setSettings(downloadPrefs);
   return { success: true, prefs: downloadPrefs };
@@ -5909,7 +5964,22 @@ ipcMain.handle('downloads:pickFolder', async () => {
 // panneau Téléchargements (broadcastDownload).
 let mediaSeq = 0;
 const mediaStarted = new Set();
-function startMediaDownload(url, mode) {
+// Cookies du domaine visé, lus dans la session de l'app qui affiche la page.
+// Rend null si le réglage est coupé, si la session est inconnue, ou si la
+// lecture échoue : l'absence de cookies n'empêche pas une vidéo publique.
+async function mediaCookiesFor(ses, url) {
+  if (!downloadPrefs.useCookies || !ses?.cookies) return null;
+  try {
+    const all = await ses.cookies.get({});
+    const kept = selectCookiesForUrl(all, url);
+    return kept.length ? kept : null;
+  } catch (error) {
+    console.warn('[orbit] cookies de session illisibles:', error.message);
+    return null;
+  }
+}
+
+function startMediaDownload(url, mode, ses = null) {
   const parsed = parseDownloadUrl(url);
   if (!parsed.success || parsed.type !== 'file') return { success: false, error: 'invalid-url' };
   if (!['video', 'audio'].includes(mode)) return { success: false, error: 'invalid-mode' };
@@ -5979,6 +6049,11 @@ function startMediaDownload(url, mode) {
       setTimeout(() => downloads.delete(id), 10 * 60 * 1000);
     }
   };
+  // Lus UNE fois pour ce téléchargement : le titre et le transfert s'en
+  // servent tous les deux, et relire le pot de cookies deux fois n'apporte
+  // rien. L'échec est déjà absorbé par mediaCookiesFor (null).
+  const cookiesReady = mediaCookiesFor(ses, parsed.url);
+
   const start = (outputTemplate, formatConfig) => {
     broadcastDownload({
       id,
@@ -5992,23 +6067,22 @@ function startMediaDownload(url, mode) {
       canPause: false,
       event: 'started',
     });
-    downloader.downloadMedia({
-      id,
-      url: parsed.url,
-      mode,
-      outputTemplate,
-      ...formatConfig,
-    }, progress);
+    cookiesReady.then((cookies) => {
+      downloader.downloadMedia({
+        id,
+        url: parsed.url,
+        mode,
+        outputTemplate,
+        cookies,
+        ...formatConfig,
+      }, progress);
+    });
   };
   const dir = ensureDownloadDir(downloadPrefs.dir || systemDownloadsDir());
-  const hasFfmpeg = (() => {
-    try {
-      execFileSync('ffmpeg', ['-version'], { stdio: 'ignore', timeout: 2500 });
-      return true;
-    } catch {
-      return false;
-    }
-  })();
+  // La localisation de ffmpeg vit dans downloader.js, qui la transmet aussi à
+  // yt-dlp (--ffmpeg-location). Deux détections séparées finiraient par ne
+  // plus dire la même chose.
+  const hasFfmpeg = downloader.hasFfmpeg();
   const formatConfig = mediaFormatOptions(mode, {
     videoQuality: downloadPrefs.videoQuality,
     audioFormat: downloadPrefs.audioFormat,
@@ -6028,7 +6102,8 @@ function startMediaDownload(url, mode) {
     const win = mainWindow && !mainWindow.isDestroyed() ? mainWindow : undefined;
     // Le titre de la vidéo est demandé avant la boîte de dialogue : le nom
     // proposé doit dire de quelle vidéo il s'agit, pas « video.mp4 ».
-    downloader.fetchMediaTitle(parsed.url)
+    cookiesReady
+      .then((cookies) => downloader.fetchMediaTitle(parsed.url, { cookies }))
       .catch(() => '')
       .then((title) => {
         const extension = mode === 'audio' ? (downloadPrefs.audioFormat || 'm4a') : 'mp4';
@@ -6070,7 +6145,25 @@ function startMediaDownload(url, mode) {
   }
   return { success: true, id };
 }
-ipcMain.handle('media:download', (_e, { url, mode } = {}) => startMediaDownload(url, mode));
+ipcMain.handle('media:download', (event, { url, mode, partition } = {}) => {
+  // De QUELLE session lire les cookies ? Pas forcément celle de l'expéditeur.
+  //
+  //   • Appel depuis la PAGE (bouton posé sur la vidéo, clic droit) :
+  //     l'expéditeur EST le webview de l'app, sa session est la bonne.
+  //   • Appel depuis la BARRE d'Orbit : l'expéditeur est la fenêtre d'Orbit,
+  //     dont la session ne connaît aucun cookie du site. Sans la partition de
+  //     l'app, le téléchargement repartait en inconnu — donc en échec sur
+  //     Facebook, alors que le bouton de la page, lui, fonctionnait.
+  let ses = event.sender?.session;
+  if (typeof partition === 'string' && partition) {
+    try {
+      ses = session.fromPartition(partition);
+    } catch (error) {
+      console.warn('[orbit] partition de téléchargement média inconnue:', error.message);
+    }
+  }
+  return startMediaDownload(url, mode, ses);
+});
 
 // Options facultatives du dialogue « Nouveau téléchargement » : nom, dossier,
 // description, connexions, plafond propre et priorité. Absentes = réglages
