@@ -43,6 +43,7 @@ import SitePermissions from './SitePermissions';
 import ShieldSettings from './ShieldSettings';
 import HistorySettings from './HistorySettings';
 import SearchSettings from './SearchSettings';
+import ThemePicker from './ThemePicker';
 import { getBuiltinSound, resolveSoundUrl, playSound } from '../lib/sounds';
 import SoundPicker from './SoundPicker';
 import { normalizeHome, HOME_BACKGROUNDS, ACCENT_BACKGROUND } from '../lib/home';
@@ -818,26 +819,11 @@ export default function Settings({ onClose }) {
 
               {activeTab === 'appearance' && (
                 <div className="space-y-6">
-                  <div className="card">
-                    <h4 className="font-semibold mb-4">{t('st.theme')}</h4>
-                    <div className="flex gap-3">
-                      {['dark', 'light', 'auto'].map((theme) => (
-                        <button
-                          key={theme}
-                          onClick={() => updateSettings({ theme })}
-                          className={`flex-1 py-3 px-4 rounded-lg border-2 transition-all ${
-                            settings.theme === theme
-                              ? 'border-accent-primary bg-accent-primary/10'
-                              : 'border-border hover:border-accent-primary/50'
-                          }`}
-                        >
-                          {theme === 'dark' && t('st.themeDark')}
-                          {theme === 'light' && t('st.themeLight')}
-                          {theme === 'auto' && t('st.themeAuto')}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
+                  {/* Thème et ambiance, thèmes importés compris : voir
+                      src/components/ThemePicker.jsx. L'ancien bloc ne
+                      proposait que clair/sombre/auto, c'est-à-dire l'ambiance
+                      seule — l'identité visuelle n'existait pas comme réglage. */}
+                  <ThemePicker />
 
                   <div className="card">
                     <h4 className="font-semibold mb-4">{t('st.accentColor')}</h4>

@@ -6,6 +6,8 @@ import { useT, resolveLang } from '../lib/i18n';
 import { isMac } from '../lib/shortcuts';
 import { normalizeHome, resolveBackground, backgroundStyle, greetingKey } from '../lib/home';
 import { describeWeather, readWeatherCache, fetchWeather } from '../lib/weather';
+import { migrateThemeSetting, resolveTheme } from '../lib/themes';
+import { orbitLayout, overflowApps, wantsOrbit } from '../lib/orbitLayout';
 
 // ---------------------------------------------------------------------------
 // Page d'accueil d'un profil : ce qui remplace l'écran noir quand aucune app
@@ -240,8 +242,21 @@ function HomeWeather({ onConfigure }) {
 }
 
 // --- Accès rapide aux apps du profil (+ boutique) -------------------------
+//
+// Deux dispositions, selon le thème. La rangée discrète est celle d'origine ;
+// l'ORBITE est la signature du thème Tech — le seul endroit où un thème change
+// la mise en page et non l'habillage (voir src/lib/orbitLayout.js).
 function HomeApps({ apps, onSelectApp, onOpenStore }) {
   const t = useT();
+  const settings = useStore((s) => s.settings);
+  const custom = settings.customThemes || [];
+  const { skin, mode } = migrateThemeSetting(settings, custom);
+  const theme = resolveTheme(skin, mode, false, custom);
+
+  if (wantsOrbit(theme) && apps.length > 0) {
+    return <OrbitApps apps={apps} onSelectApp={onSelectApp} onOpenStore={onOpenStore} />;
+  }
+
   // Six apps suffisent : au-delà, la page se remplit et le fond disparaît.
   const shown = apps.slice(0, 6);
 
@@ -288,6 +303,92 @@ function HomeApps({ apps, onSelectApp, onOpenStore }) {
           >
             <Plus size={16} />
           </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// --- Les apps en orbite (thème Tech) --------------------------------------
+//
+// Les apps tournent autour d'un centre, et le nom de l'application prend son
+// sens. Trois décisions qui ne vont pas de soi :
+//
+//   • le conteneur est CARRÉ (aspect-square) : sur un rectangle, un cercle
+//     calculé en pourcentages devient une ellipse ;
+//   • chaque pastille est décalée de la moitié de sa taille, sinon c'est son
+//     COIN qui suit le cercle et non son centre — l'orbite paraît alors
+//     déformée sans qu'on sache pourquoi ;
+//   • les apps au-delà de l'orbite ne sont pas jetées : elles reviennent en
+//     rangée sous le cercle.
+function OrbitApps({ apps, onSelectApp, onOpenStore }) {
+  const t = useT();
+  const placed = orbitLayout(apps);
+  const rest = overflowApps(apps);
+  const animated = useStore((s) => s.settings.animationStyle !== 'none');
+
+  return (
+    <div className="w-full flex flex-col items-center">
+      <div className="relative w-full max-w-[22rem] aspect-square">
+        {/* Les orbites, dessinées : sans elles, les apps paraissent posées au
+            hasard plutôt que tenues sur une trajectoire. */}
+        <span
+          aria-hidden="true"
+          className="absolute rounded-full border border-white/15"
+          style={{ inset: '17%' }}
+        />
+        {placed.some((p) => p.ring === 1) && (
+          <span
+            aria-hidden="true"
+            className="absolute rounded-full border border-dashed border-white/10"
+            style={{ inset: '4%' }}
+          />
+        )}
+
+        {/* Le centre : l'accès à la boutique. C'est le seul geste qui n'est pas
+            une app, et il a donc la place qui n'est pas sur une orbite. */}
+        <button
+          onClick={onOpenStore}
+          title={t('sb.store')}
+          aria-label={t('sb.store')}
+          className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 w-14 h-14 rounded-full bg-white/10 hover:bg-white/20 border border-white/20 backdrop-blur-md flex items-center justify-center transition-colors"
+        >
+          <Plus size={20} />
+        </button>
+
+        {placed.map(({ app, left, top, delay }) => (
+          <button
+            key={app.id}
+            onClick={() => onSelectApp(app.id)}
+            title={app.name}
+            aria-label={app.name}
+            className="absolute w-11 h-11 rounded-xl bg-white/10 hover:bg-white/25 border border-white/15 backdrop-blur-md flex items-center justify-center transition-all hover:scale-110"
+            style={{
+              left: `${left}%`,
+              top: `${top}%`,
+              // Le décalage qui centre la pastille SUR le cercle
+              transform: 'translate(-50%, -50%)',
+              animation: animated ? `fadeIn 0.35s ease-out ${delay}ms both` : undefined,
+            }}
+          >
+            <AppIcon app={app} className="w-5 h-5 rounded" fallbackClassName="text-lg" />
+          </button>
+        ))}
+      </div>
+
+      {/* Débordement : au-delà de ce qu'un cercle peut porter lisiblement. */}
+      {rest.length > 0 && (
+        <div className="flex items-center justify-center gap-1.5 flex-wrap mt-1">
+          {rest.map((app) => (
+            <button
+              key={app.id}
+              onClick={() => onSelectApp(app.id)}
+              title={app.name}
+              className="w-9 h-9 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 flex items-center justify-center transition-colors"
+            >
+              <AppIcon app={app} className="w-4 h-4 rounded" fallbackClassName="text-base" />
+            </button>
+          ))}
         </div>
       )}
     </div>

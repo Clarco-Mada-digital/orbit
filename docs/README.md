@@ -7,6 +7,8 @@ des profils et des outils de productivité dans un espace configurable.
 
 - [Guide utilisateur complet](./guide-utilisateur.md)
 - [Guide développeur et architecture](./guide-developpeur.md)
+- [Créer une extension](./guide-extensions.md)
+- [Créer un thème](./guide-themes.md)
 - [Guide utilisateur en PDF](./guide-utilisateur.pdf)
 - [Page de présentation](./index.html)
 

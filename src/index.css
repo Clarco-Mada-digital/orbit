@@ -134,6 +134,22 @@
   /* ===== Thème sombre (défaut) — valeurs en triplets RGB pour Tailwind ===== */
   :root {
     color-scheme: dark;
+
+    /* ===== Caractère du thème =============================================
+       Ces jetons sont ce qui distingue un thème d'un simple changement de
+       teinte : l'arrondi, le liseré, l'ombre, le halo, l'interlettrage.
+       Les valeurs ici sont celles du thème « orbit » — elles servent de repli
+       au PREMIER RENDU, avant que React n'ait posé les variables du thème
+       choisi (voir themeVars dans src/lib/themes.js). Sans ce repli, la
+       première image affichée serait sans angles ni bordures. */
+    --radius-card: 0.75rem;
+    --radius-control: 0.5rem;
+    --radius-pill: 9999px;
+    --border-width: 1px;
+    --shadow-card: 0 10px 15px -3px rgb(0 0 0 / 0.25);
+    --glow: 0;
+    --tracking: 0em;
+
     --bg-primary: 10 10 15;
     --bg-secondary: 19 19 26;
     --bg-elevated: 28 28 36;
@@ -186,9 +202,14 @@
     -webkit-app-region: no-drag;
   }
 
-  /* Les apps embarquées */
+  /* Les apps embarquées.
+     Le blanc fixe faisait un FLASH à chaque chargement de page sur un thème
+     sombre : le cadre est peint avant le contenu du site. On reprend le fond
+     du thème, qui est la couleur la moins surprenante pendant ce court
+     instant. Les sites qui déclarent leur propre fond l'emportent ensuite,
+     comme avant. */
   webview {
-    background: #ffffff;
+    background: rgb(var(--bg-primary));
   }
 
   /* Mode compact : `--spacing` ne faisait rien en v3 (Tailwind v3 n'utilise
@@ -221,15 +242,22 @@
 
 @layer components {
   .btn {
-    @apply inline-flex items-center justify-center gap-2 px-4 py-2 rounded-lg font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center justify-center gap-2 px-4 py-2 font-medium transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed;
+    border-radius: var(--radius-control);
+    letter-spacing: var(--tracking);
   }
 
   .btn-primary {
     @apply bg-accent-primary text-white hover:bg-accent-hover active:scale-95;
+    /* Halo d'accent : nul sur les thèmes mats (--glow: 0), franc sur Tech.
+       Multiplier l'opacité par --glow évite une règle par thème. */
+    box-shadow: 0 0 calc(18px * var(--glow)) rgb(var(--accent-primary) / calc(0.55 * var(--glow)));
   }
 
   .btn-secondary {
-    @apply bg-bg-elevated text-text-primary hover:bg-bg-hover border border-border;
+    @apply bg-bg-elevated text-text-primary hover:bg-bg-hover border-border;
+    border-width: var(--border-width);
+    border-style: solid;
   }
 
   .btn-ghost {
@@ -237,7 +265,8 @@
   }
 
   .btn-icon {
-    @apply w-10 h-10 flex items-center justify-center rounded-lg transition-all duration-200 hover:bg-bg-hover active:scale-95;
+    @apply w-10 h-10 flex items-center justify-center transition-all duration-200 hover:bg-bg-hover active:scale-95;
+    border-radius: var(--radius-control);
   }
 
   .btn-sm {
@@ -245,15 +274,24 @@
   }
 
   .input {
-    @apply w-full px-3 py-2 bg-bg-secondary border border-border rounded-lg text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-accent-primary/50 focus:border-accent-primary transition-all;
+    @apply w-full px-3 py-2 bg-bg-secondary border-border text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-accent-primary/50 focus:border-accent-primary transition-all;
+    border-radius: var(--radius-control);
+    border-width: var(--border-width);
+    border-style: solid;
+    letter-spacing: var(--tracking);
   }
 
   .card {
-    @apply bg-bg-elevated border border-border rounded-xl p-4 shadow-lg;
+    @apply bg-bg-elevated border-border p-4;
+    border-radius: var(--radius-card);
+    border-width: var(--border-width);
+    border-style: solid;
+    box-shadow: var(--shadow-card);
   }
 
   .badge {
-    @apply inline-flex items-center justify-center min-w-5 h-5 px-1.5 text-xs font-semibold rounded-full bg-accent-primary text-white;
+    @apply inline-flex items-center justify-center min-w-5 h-5 px-1.5 text-xs font-semibold bg-accent-primary text-white;
+    border-radius: var(--radius-pill);
   }
 }
 
@@ -298,3 +336,74 @@
     transform: translateX(320%);
   }
 }
+
+/* ===== Signatures de thème =================================================
+   Ce qui ne peut pas tenir dans une simple variable : une texture de fond,
+   des libellés en capitales, un liseré lumineux. Posé par `data-skin` sur
+   <html> (voir App.jsx).
+
+   Règle tenue ici : une signature ne doit JAMAIS toucher à la lisibilité du
+   texte — seulement aux surfaces et aux bords. Le contraste des couleurs est
+   garanti par test/themes.test.js, et une texture trop présente le ruinerait
+   sans que ce test ne le voie.
+   ========================================================================= */
+
+/* --- Tech : grille technique + liseré lumineux --------------------------- */
+[data-skin='tech'] body {
+  background-image:
+    linear-gradient(rgb(var(--accent-primary) / 0.045) 1px, transparent 1px),
+    linear-gradient(90deg, rgb(var(--accent-primary) / 0.045) 1px, transparent 1px);
+  background-size: 44px 44px;
+  background-attachment: fixed;
+}
+
+/* Les surfaces reçoivent un filet d'accent sur leur bord supérieur : c'est ce
+   détail, plus que la couleur, qui donne l'impression d'un instrument. */
+[data-skin='tech'] .card {
+  position: relative;
+  box-shadow: inset 0 1px 0 0 rgb(var(--accent-primary) / 0.22);
+}
+
+/* Libellés de section en capitales espacées. Appliqué aux seuls titres de
+   section (uppercase + tracking déjà voulus par le composant), pas au texte
+   courant : mettre des paragraphes en capitales les rend illisibles. */
+[data-skin='tech'] .card > .text-xs.uppercase,
+[data-skin='tech'] h4,
+[data-skin='tech'] .badge {
+  letter-spacing: 0.08em;
+}
+
+/* Champs et boutons : le focus devient un halo net plutôt qu'un anneau doux */
+[data-skin='tech'] .input:focus {
+  box-shadow: 0 0 0 1px rgb(var(--accent-primary)), 0 0 14px rgb(var(--accent-primary) / 0.35);
+}
+
+/* --- Nuit chaude : lueur d'ambiance ------------------------------------- */
+[data-skin='amber'] body {
+  background-image: radial-gradient(
+    120% 90% at 50% -10%,
+    rgb(var(--accent-primary) / 0.1) 0%,
+    transparent 60%
+  );
+  background-attachment: fixed;
+}
+
+/* --- Papier : tout plat, y compris ce que Tailwind ombre par défaut ------ */
+[data-skin='paper'] .shadow-lg,
+[data-skin='paper'] .shadow-2xl,
+[data-skin='paper'] .shadow-xl {
+  box-shadow: none;
+}
+
+/* La séparation se fait alors par le liseré, sinon les panneaux flottants se
+   confondraient avec le fond. */
+[data-skin='paper'] .shadow-2xl,
+[data-skin='paper'] .shadow-xl {
+  border: 1px solid rgb(var(--border));
+}
+
+/* ===== Mode « sans animations » ============================================
+   Le halo et les textures restent : ce réglage visait les MOUVEMENTS, pas la
+   décoration fixe. Les couper aussi aurait fait disparaître l'identité du
+   thème pour qui désactive les animations (souvent par confort visuel, pas
+   par rejet du style). */

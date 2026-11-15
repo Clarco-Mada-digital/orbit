@@ -16,8 +16,6 @@ import {
   Video,
   WrapText,
 } from 'lucide-react';
-import katex from 'katex';
-import 'katex/dist/katex.min.css';
 import { appPartition } from '../lib/session';
 import { KIND, languageLabel } from '../lib/fileTypes';
 import { parseMarkdown, parseInline, footnoteLabels } from '../lib/markdown';
@@ -123,8 +121,59 @@ function DocumentLink({ href, children }) {
 // En cas d'échec, on retombe sur le TeX en texte brut, échappé par React.
 // NE PAS renommer en `Math` : ce nom masquerait l'objet global `Math` dans
 // tout le module, et `Math.min` plus bas deviendrait un appel de composant.
+// KaTeX À LA DEMANDE.
+//
+// Il était importé en haut de ce fichier, donc chargé dès l'ouverture de
+// N'IMPORTE QUEL document : un .txt, un .json, un .csv, un fichier de code,
+// un markdown sans la moindre formule. Cela représente 268 ko de JavaScript
+// et 28 ko de CSS (lequel déclare 59 fichiers de polices) à télécharger,
+// analyser et appliquer avant le premier affichage — pour une fonctionnalité
+// que la plupart des documents n'utilisent jamais.
+//
+// Désormais on ne le charge que si une formule est réellement rencontrée. La
+// promesse est mémorisée au niveau du module : les formules suivantes du même
+// document ne rechargent rien, et le rendu reste synchrone une fois l'outil
+// arrivé.
+let katexModule = null;
+let katexLoading = null;
+
+function loadKatex() {
+  if (katexModule) return Promise.resolve(katexModule);
+  if (!katexLoading) {
+    katexLoading = Promise.all([import('katex'), import('katex/dist/katex.min.css')])
+      .then(([mod]) => {
+        katexModule = mod.default || mod;
+        return katexModule;
+      })
+      .catch(() => {
+        // Échec de chargement : on laisse `katexModule` à null, la formule
+        // reste affichée en TeX brut. Un document ne doit pas devenir
+        // illisible parce qu'une mise en forme n'a pas pu être chargée.
+        katexLoading = null;
+        return null;
+      });
+  }
+  return katexLoading;
+}
+
 function MathFormula({ tex, display }) {
+  // Déjà chargé (autre formule, autre document) : rendu immédiat, sans
+  // clignotement du TeX brut.
+  const [katex, setKatex] = useState(katexModule);
+
+  useEffect(() => {
+    if (katex) return undefined;
+    let alive = true;
+    loadKatex().then((mod) => {
+      if (alive && mod) setKatex(mod);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [katex]);
+
   const html = useMemo(() => {
+    if (!katex) return null;
     try {
       return katex.renderToString(String(tex || ''), {
         displayMode: Boolean(display),
@@ -136,7 +185,7 @@ function MathFormula({ tex, display }) {
     } catch {
       return null;
     }
-  }, [tex, display]);
+  }, [katex, tex, display]);
 
   if (!html) {
     return (

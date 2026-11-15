@@ -55,7 +55,25 @@ export const defaultSettings = {
   assistantAgentId: 'writer',
   assistantAgentFavorites: [],
   proofreaderEngine: 'local',
-  theme: 'dark', // dark | light | auto
+  // Apparence sur DEUX AXES (voir src/lib/themes.js) :
+  //   themeSkin → l'identité visuelle : orbit | tech | paper | amber
+  //   themeMode → l'ambiance          : dark | light | auto
+  //
+  // Ces deux clés sont VOLONTAIREMENT ABSENTES d'ici, et c'est le point
+  // délicat. Les réglages persistés sont fusionnés PAR-DESSUS ces valeurs par
+  // défaut (voir `migrate` plus bas) : donner un défaut à `themeSkin`
+  // suffirait à le rendre toujours présent, et `migrateThemeSetting` — qui
+  // donne la priorité au réglage à deux axes — ignorerait alors l'ancien
+  // `theme`. Résultat : toute installation réglée en CLAIR basculerait en
+  // sombre à la mise à jour.
+  //
+  // Leur absence signifie donc « l'utilisateur n'a pas encore choisi de
+  // thème », et c'est `theme` qui parle. Dès qu'il choisit, les deux clés
+  // sont écrites et prennent la main.
+  theme: 'dark', // hérité, et toujours lu en repli — dark | light | auto
+  // Thèmes importés par l'utilisateur (voir src/lib/customTheme.js et
+  // docs/guide-themes.md). Un thème n'est que des valeurs, jamais du code.
+  customThemes: [],
   language: 'auto', // auto | fr | en
   accentColor: '#6366f1',
   sidebarPosition: 'left',

@@ -32,6 +32,7 @@ import GuestContextMenu from './components/GuestContextMenu';
 import ScreenshotPreview from './components/ScreenshotPreview';
 import WebDialogHost from './components/WebDialogHost';
 import EditUrlDialog from './components/EditUrlDialog';
+import { migrateThemeSetting, resolveTheme, themeVars } from './lib/themes';
 import LockScreen from './components/LockScreen';
 import FindBar from './components/FindBar';
 import UpdateBanner from './components/UpdateBanner';
@@ -152,18 +153,14 @@ function buildMiniPlayerState() {
 
 const FONT_SIZES = { small: 12, medium: 14, large: 16, xlarge: 18 };
 
-// '#6366f1' → '99 102 241' (triplet pour les variables CSS)
-function hexToRgbTriplet(hex) {
-  const m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex || '');
-  if (!m) return '99 102 241';
-  return `${parseInt(m[1], 16)} ${parseInt(m[2], 16)} ${parseInt(m[3], 16)}`;
-}
+// Accent d'origine d'Orbit. Présent dans les réglages par défaut, il ne peut
+// pas être distingué d'un choix de l'utilisateur — on le traite donc comme
+// « rien choisi », pour que chaque thème puisse montrer sa couleur.
+const LEGACY_ACCENT = '#6366f1';
 
-function mixWithWhite(rgb, amount) {
-  const [r, g, b] = rgb.split(' ').map(Number);
-  const mix = (c) => Math.round(c + (255 - c) * amount);
-  return `${mix(r)} ${mix(g)} ${mix(b)}`;
-}
+// La conversion hex → triplet et le mélange vers le blanc vivent désormais
+// dans src/lib/themes.js (hexToTriplet / mixWhite), avec les thèmes qui s'en
+// servent — et sous test.
 
 export default function App() {
   const [showQuickSwitcher, setShowQuickSwitcher] = useState(false);
@@ -963,29 +960,49 @@ const [editUrlFor, setEditUrlFor] = useState(null); // { id, url } — boîte «
   useEffect(() => {
     const root = document.documentElement;
 
-    // Thème (sombre / clair / auto)
-    const applyTheme = () => {
-      const theme =
-        settings.theme === 'auto'
-          ? window.matchMedia('(prefers-color-scheme: light)').matches
-            ? 'light'
-            : 'dark'
-          : settings.theme;
-      root.dataset.theme = theme;
-    };
-    applyTheme();
+    // Thème : DEUX AXES — l'identité (`themeSkin`) et l'ambiance
+    // (`themeMode`). `migrateThemeSetting` lit aussi l'ancien réglage
+    // `theme`, pour que les installations existantes ne changent pas
+    // d'apparence à la mise à jour (voir src/lib/themes.js).
+    const customThemes = settings.customThemes || [];
+    const { skin, mode } = migrateThemeSetting(settings, customThemes);
 
-    // Couleur d'accent → variables CSS (accent-primary, hover, light).
-    // Option « accent par profil » : suit la couleur du profil actif.
+    // Accent : le thème PROPOSE sa couleur signature, l'utilisateur DISPOSE.
+    //
+    // Sans cette distinction, la couleur d'un thème serait toujours écrasée :
+    // l'accent est posé en style inline sur :root, ce qui bat n'importe quelle
+    // règle CSS. On ne transmet donc un accent que s'il a été VOULU — un
+    // réglage absent vaut « laisse le thème décider », et non « indigo ».
     const activeProfileObj = profiles.find((p) => p.id === activeProfile);
-    const accentHex =
+    // `accentColor` vaut '#6366f1' dans les réglages par défaut : on ne peut
+    // donc pas distinguer « l'utilisateur a choisi l'indigo » de « il n'a rien
+    // choisi ». Sans cette nuance, la couleur signature d'un thème n'apparaît
+    // JAMAIS — le thème Tech s'affichait en indigo au lieu de cyan, ce qui ne
+    // se voit qu'en lançant l'application.
+    //
+    // Même arbitrage que pour la police : la valeur historique par défaut
+    // laisse parler le thème, toute autre valeur est un choix qui l'emporte.
+    const explicitAccent =
+      settings.accentColor && settings.accentColor !== LEGACY_ACCENT ? settings.accentColor : null;
+    const chosenAccent =
       settings.accentPerProfile && activeProfileObj
-        ? activeProfileObj.accent || activeProfileObj.color || settings.accentColor || '#6366f1'
-        : settings.accentColor || '#6366f1';
-    const accent = hexToRgbTriplet(accentHex);
-    root.style.setProperty('--accent-primary', accent);
-    root.style.setProperty('--accent-hover', mixWithWhite(accent, 0.15));
-    root.style.setProperty('--accent-light', mixWithWhite(accent, 0.4));
+        ? activeProfileObj.accent || activeProfileObj.color || explicitAccent
+        : explicitAccent;
+
+    const applyTheme = () => {
+      const prefersLight = window.matchMedia('(prefers-color-scheme: light)').matches;
+      const theme = resolveTheme(skin, mode, prefersLight, customThemes);
+      // `data-theme` reste posé pour la compatibilité (color-scheme, et les
+      // quelques règles qui s'y accrochent encore) ; `data-skin` porte
+      // l'identité, dont dépendent les signatures (texture, liseré…).
+      root.dataset.theme = theme.mode;
+      root.dataset.skin = theme.skin;
+      for (const [key, value] of Object.entries(themeVars(theme, chosenAccent))) {
+        root.style.setProperty(key, value);
+      }
+      return theme;
+    };
+    const appliedTheme = applyTheme();
 
     // Taille de police + échelle UI : la base rem est multipliée,
     // tout le UI (textes ET espacements Tailwind) suit, sans clipping.
@@ -1001,14 +1018,24 @@ const [editUrlFor, setEditUrlFor] = useState(null); // { id, url } — boîte «
     root.style.fontSize = `${Math.round(base * scale)}px`;
     // La police doit être appliquée sur <body> : la règle CSS de body
     // (font-family: Inter, …) surchargerait une valeur posée sur <html>.
-    document.body.style.fontFamily = settings.fontFamily || 'Inter';
+    // Police : même règle que l'accent. Le thème propose la sienne (Tech
+    // demande une police technique), un choix explicite de l'utilisateur
+    // l'emporte. 'Inter' étant l'ancien défaut, on ne peut pas le distinguer
+    // d'un choix — on considère donc que seule une valeur AUTRE qu'Inter est
+    // un choix délibéré, et Inter laisse parler le thème.
+    const chosenFont = settings.fontFamily && settings.fontFamily !== 'Inter'
+      ? settings.fontFamily
+      : appliedTheme.traits.font;
+    document.body.style.fontFamily = chosenFont;
+    document.body.style.letterSpacing = appliedTheme.traits.tracking || '';
 
     root.classList.toggle('compact-mode', !!settings.compactMode);
     const animStyle =
       settings.animationStyle ?? (settings.animationsEnabled === false ? 'none' : 'fade');
     root.classList.toggle('no-animations', animStyle === 'none' || settings.animationsEnabled === false);
 
-    if (settings.theme === 'auto') {
+    // Mode « auto » : on suit le système tant que la fenêtre est ouverte.
+    if (mode === 'auto') {
       const mq = window.matchMedia('(prefers-color-scheme: light)');
       const onChange = () => applyTheme();
       mq.addEventListener('change', onChange);

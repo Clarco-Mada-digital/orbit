@@ -136,3 +136,68 @@ test('guide : le HTML publié n\'est pas en retard sur le Markdown', () => {
     'docs/guide-utilisateur.md a changé depuis la dernière génération : lancez `npm run docs`.'
   );
 });
+
+// ---------------------------------------------------------------------------
+// GUIDE DE CRÉATION DE THÈME (docs/guide-themes.md)
+//
+// Même démarche que ci-dessus, appliquée à un public différent : ici le
+// lecteur n'est pas un utilisateur mais un AUTEUR, qui va écrire un fichier
+// d'après ce guide. Une clé oubliée dans la doc, c'est un thème qu'il écrit
+// incomplet et qu'Orbit refuse, sans qu'il comprenne pourquoi.
+//
+// On confronte donc le guide aux listes dont la validation se sert vraiment
+// (src/lib/themes.js), plus les exemples qu'il contient à l'analyseur
+// lui-même : un exemple faux dans une documentation est pire qu'une
+// documentation absente.
+// ---------------------------------------------------------------------------
+const THEMES_GUIDE = fs.readFileSync(path.join(ROOT, 'docs', 'guide-themes.md'), 'utf8');
+
+test('guide des thèmes : chaque couleur du format est documentée', async () => {
+  const { PALETTE_KEYS } = await import('../src/lib/themes.js');
+  const missing = PALETTE_KEYS.filter((key) => !THEMES_GUIDE.includes(key));
+  assert.deepEqual(missing, [], `couleurs absentes du guide : ${missing.join(', ')}`);
+});
+
+test('guide des thèmes : chaque réglage de forme est documenté', async () => {
+  const { TRAIT_KEYS, TEXTURES } = await import('../src/lib/themes.js');
+  const missing = TRAIT_KEYS.filter((key) => !THEMES_GUIDE.includes(key));
+  assert.deepEqual(missing, [], `réglages absents du guide : ${missing.join(', ')}`);
+  // Les textures sont une liste fermée : l'auteur doit pouvoir lire laquelle
+  // choisir, sinon il invente un nom et son import est refusé.
+  const texturesMissing = TEXTURES.filter((name) => !THEMES_GUIDE.includes(name));
+  assert.deepEqual(texturesMissing, [], `textures absentes : ${texturesMissing.join(', ')}`);
+});
+
+test('guide des thèmes : les thèmes livrés y sont nommés', async () => {
+  const { SKINS } = await import('../src/lib/themes.js');
+  const missing = SKINS.filter((skin) => !THEMES_GUIDE.includes(skin));
+  assert.deepEqual(missing, [], `thèmes absents du guide : ${missing.join(', ')}`);
+});
+
+test('guide des thèmes : la version du format annoncée est la bonne', async () => {
+  const { THEME_FORMAT } = await import('../src/lib/customTheme.js');
+  // Le guide affirme « Vaut 1 aujourd'hui » et ses exemples écrivent
+  // "orbitTheme": 1. Changer la version du format sans toucher au guide
+  // laisserait des exemples que l'application refuse.
+  assert.match(
+    THEMES_GUIDE,
+    new RegExp(`"orbitTheme":\\s*${THEME_FORMAT}\\b`),
+    `le guide doit montrer la version ${THEME_FORMAT} du format`
+  );
+});
+
+test('guide des thèmes : l’exemple « minimal » est réellement accepté', async () => {
+  const { parseTheme } = await import('../src/lib/customTheme.js');
+  // On extrait le PREMIER bloc JSON complet du guide (l'exemple minimal) et on
+  // le passe à l'analyseur. Un exemple qui ne marche pas est le plus sûr moyen
+  // de faire abandonner un auteur dès sa première tentative.
+  const block = /```json\n([\s\S]*?)\n```/.exec(THEMES_GUIDE);
+  assert.ok(block, 'aucun exemple JSON trouvé dans le guide');
+  const res = parseTheme(block[1]);
+  assert.equal(res.ok, true, `l’exemple minimal du guide est refusé : ${res.errors.join(' / ')}`);
+  assert.deepEqual(
+    res.warnings.filter((w) => w.includes('Lisibilité')),
+    [],
+    'l’exemple du guide doit être lisible : c’est le modèle que tout le monde copiera'
+  );
+});
