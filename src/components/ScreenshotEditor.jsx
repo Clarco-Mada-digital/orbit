@@ -618,7 +618,7 @@ const ScreenshotEditor = forwardRef(function ScreenshotEditor({ dataUrl, alt, se
         </div>
       )}
 
-      <div className="relative max-h-[62vh] overflow-auto bg-black/30 p-3">
+      <div className="relative max-h-[70vh] overflow-auto bg-black/30 p-3">
         <div className="relative mx-auto w-fit">
           <canvas
             ref={canvasRef}
@@ -630,7 +630,7 @@ const ScreenshotEditor = forwardRef(function ScreenshotEditor({ dataUrl, alt, se
             onPointerCancel={onPointerUp}
             aria-label={alt}
             role="img"
-            className="block h-auto max-h-[58vh] max-w-full touch-none rounded-lg object-contain shadow-xl"
+            className="block h-auto max-h-[66vh] max-w-full touch-none rounded-lg object-contain shadow-xl"
             style={{ cursor: tool === 'text' ? 'text' : 'crosshair' }}
           />
           {textInput && textStyle && (

@@ -237,7 +237,7 @@ intégrée ou ajoutez une URL web.</p>
 <p><img src="images/orbit-bienvenue.png" alt="L’écran de bienvenue au premier démarrage d’Orbit" /></p>
 <h2 id="3-organiser-son-espace">3. Organiser son espace</h2>
 <h3 id="applications">Applications</h3>
-<ul><li>Utilisez <strong>+</strong> ou la boutique pour ajouter une app.</li><li>Ajoutez une URL personnelle si le service n’est pas dans le catalogue.</li><li>Réorganisez la liste par glisser-déposer ; créez des dossiers pour regrouper les apps.</li><li>Le clic droit sur une app donne accès aux actions telles que favori, veille, fenêtre détachée, déplacement de profil ou gestion de session.</li><li>La <strong>fenêtre détachée</strong> garde les gestes d’un navigateur : <code>Ctrl + molette</code> pour le zoom (aussi <code>Ctrl +</code>, <code>Ctrl -</code> et <code>Ctrl 0</code>), <code>Ctrl + R</code> ou <code>F5</code> pour recharger, <code>Alt + ←/→</code> pour l’historique. Le clic droit y propose copier, coller, précédent, suivant, recharger et le zoom.</li><li>Le zoom y reste appliqué pendant toute la durée de la fenêtre (il survit aux changements de page) et un badge affiche brièvement le pourcentage atteint.</li><li><strong>Relecture et assistant y fonctionnent aussi.</strong> Une sélection corrigée depuis une fenêtre détachée (<code>Alt/⌘ + Maj + E</code>, <code>Alt/⌘ + Maj + I</code> ou clic droit) ouvre son propre panneau dans une fenêtre sœur, collée à la fenêtre détachée : la correction s’applique dans le champ d’origine, sans quitter la page. Le panneau de relecture se referme une fois les corrections posées.</li></ul>
+<ul><li>Utilisez <strong>+</strong> ou la boutique pour ajouter une app.</li><li>Ajoutez une URL personnelle si le service n’est pas dans le catalogue.</li><li>Réorganisez la liste par glisser-déposer ; créez des dossiers pour regrouper les apps.</li><li>Le clic droit sur une app donne accès aux actions telles que favori, veille, fenêtre détachée, déplacement de profil ou gestion de session.</li><li>La <strong>fenêtre détachée</strong> garde les gestes d’un navigateur : <code>Ctrl + molette</code> pour le zoom (aussi <code>Ctrl +</code>, <code>Ctrl -</code> et <code>Ctrl 0</code>), <code>Ctrl + R</code> ou <code>F5</code> pour recharger, <code>Alt + ←/→</code> pour l’historique. Le clic droit y ouvre <strong>le même genre de menu que dans Orbit</strong> — carte sombre arrondie, sous-menus dépliables, navigation au clavier — avec copier, coller, liens, images, capture d’écran, précédent, suivant, recharger et le zoom. Il est dessiné dans la page : le focus y reste, donc « Coller » et « Relire » fonctionnent comme avant.</li><li>Le zoom y reste appliqué pendant toute la durée de la fenêtre (il survit aux changements de page) et un badge affiche brièvement le pourcentage atteint.</li><li><strong>Relecture et assistant y fonctionnent aussi.</strong> Une sélection corrigée depuis une fenêtre détachée (<code>Alt/⌘ + Maj + E</code>, <code>Alt/⌘ + Maj + I</code> ou clic droit) ouvre son propre panneau dans une fenêtre sœur, collée à la fenêtre détachée : la correction s’applique dans le champ d’origine, sans quitter la page. Le panneau de relecture se referme une fois les corrections posées.</li></ul>
 <h3 id="profils-et-sessions">Profils et sessions</h3>
 <p>Créez des profils séparés, par exemple Travail et Personnel. Par défaut, les
 sessions sont cloisonnées pour réduire les mélanges de comptes. L’option de
@@ -351,11 +351,18 @@ toujours d’avance si une image suffira :</p>
 <table><thead><tr><th>Touche</th><th>Voie</th></tr></thead><tbody><tr><td><code>1</code></td><td>Zone visible de la page</td></tr><tr><td><code>2</code></td><td>Page entière, défilement compris</td></tr><tr><td><code>3</code></td><td>Choisir une zone à la souris</td></tr><tr><td><code>4</code></td><td>Enregistrer une vidéo (studio)</td></tr></tbody></table>
 <p>Un <strong>délai</strong> réglable (0 à 10 s) laisse le temps de préparer l’écran ; <code>Échap</code>
 annule le compte à rebours.</p>
+<p>Le champ <strong>Fenêtre à capturer</strong> choisit la cible : la page de l’app active, une
+fenêtre <strong>détachée</strong> (celle d’où vient le raccourci est présélectionnée), une
+pop-up ou l’interface d’Orbit elle-même. Une fenêtre réduite est restaurée avant
+la capture, et l’interface revient au premier plan pour afficher l’aperçu. Chaque
+fenêtre reste aussi capturable directement par clic droit → <strong>Capture d’écran</strong>.</p>
 <h3 id="annoter-la-capture-avant-de-l-enregistrer">Annoter la capture avant de l’enregistrer</h3>
 <p>L’aperçu qui suit la capture n’est pas qu’un aperçu : c’est un éditeur. Tout est
 dessiné <strong>dans l’image</strong>, donc « Enregistrer » et « Copier » rendent exactement
 ce qui est affiché. Une capture à laquelle on n’a pas touché part telle quelle,
-sans ré-encodage.</p>
+sans ré-encodage. L’éditeur prend la largeur disponible (jusqu’à 1400 px) et
+l’image jusqu’à 66 % de la hauteur de l’écran : on annote à taille lisible,
+pas sur une vignette.</p>
 <table><thead><tr><th>Outil</th><th>À quoi il sert</th></tr></thead><tbody><tr><td><strong>Flèche</strong></td><td>Désigner un élément précis</td></tr><tr><td><strong>Rectangle</strong>, <strong>Ellipse</strong></td><td>Entourer une zone</td></tr><tr><td><strong>Dessin libre</strong> (stylo)</td><td>Tracer à main levée</td></tr><tr><td><strong>Surligneur</strong></td><td>Attirer l’œil sans masquer ce qui est dessous</td></tr><tr><td><strong>Texte</strong></td><td>Écrire sur l’image (<code>Entrée</code> valide, <code>Maj+Entrée</code> passe à la ligne)</td></tr><tr><td><strong>Étape numérotée</strong></td><td>Poser des pastilles <strong>1</strong>, <strong>2</strong>, <strong>3</strong>…</td></tr><tr><td><strong>Masquer (pixelliser)</strong></td><td>Rendre une zone illisible</td></tr><tr><td><strong>Recadrer</strong></td><td>Ne garder qu’une partie de la capture</td></tr></tbody></table>
 <p><img src="images/orbit-editeur-annotation.png" alt="L’éditeur d’annotation : trois étapes numérotées (1, 2, 3), une flèche ambrée et une zone masquée par pixellisation, en bas à droite" /></p>
 <p>Quelques précisions utiles :</p>
@@ -572,7 +579,7 @@ joignez pas de mots de passe, cookies ou données privées.</p>
 <ul><li><a href="https://github.com/Clarco-Mada-digital/orbit/releases/latest">Télécharger Orbit</a></li><li><a href="https://github.com/Clarco-Mada-digital/orbit">Code source</a></li><li><a href="./guide-utilisateur.pdf">Guide PDF</a></li><li><a href="./guide-developpeur.md">Guide développeur</a></li><li><a href="./index.html">Page de présentation</a></li></ul>
 <hr />
 <p><strong>Orbit</strong> · Développé par <strong>Clarco RAHERINANDRASANA</strong> · Licence MIT.</p>
-<p class="built">Orbit 1.20.0 · Clarco RAHERINANDRASANA · document généré le 2026-11-12 à partir de
+<p class="built">Orbit 1.20.0 · Clarco RAHERINANDRASANA · document généré le 2026-11-16 à partir de
 <code>docs/guide-utilisateur.md</code> (<code>npm run docs</code>).</p>
 </main>
 </body>

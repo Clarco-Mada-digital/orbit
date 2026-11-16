@@ -90,6 +90,22 @@ La plus récente en premier.
   (`Alt/⌘ + Maj + I`) s'ouvrent dans une fenêtre sœur collée à la page, au lieu
   de la fenêtre principale restée derrière. La sélection est mémorisée pour le
   menu natif aussi : elle ne l'était que pour le menu HTML de l'interface.
+- **Aperçu de capture : enfin à la taille de l’écran.** La fenêtre d’édition
+  s’étend jusqu’à 1400 px de large (896 auparavant) et l’image jusqu’à 66 % de
+  la hauteur : on travaille sur une capture lisible, pas sur une vignette.
+- **Menu contextuel des fenêtres détachées, aux couleurs d’Orbit.** Le clic
+  droit dans une fenêtre détachée, une pop-up ou une capture épinglée dessine
+  le menu **dans la page** — mêmes entrées que le menu natif (couper/copier/
+  coller, liens, images, capture d’écran, zoom, navigation), mais en carte
+  sombre arrondie, avec sous-menus dépliables et navigation au clavier. Le
+  focus reste dans la page, donc « Coller », « Relire » et le remplacement d’un
+  mot souligné continuent de fonctionner ; le menu système reste le repli.
+- **Captures : choisir la fenêtre à capturer.** Le menu de capture gagne un
+  champ **Fenêtre à capturer** : page de l'app active, fenêtre détachée,
+  pop-up ou interface d'Orbit. Une fenêtre détachée est présélectionnée quand
+  le raccourci vient d'elle, une fenêtre réduite est restaurée avant la
+  capture, et toute fenêtre d'Orbit (y compris une pop-up modale, qui n'était
+  reconnue nulle part) est acceptée comme cible.
 
 ### Corrigé
 - **Bandeau d'appel : le bon bouton, au bon moment.** Le bandeau se fiait à la

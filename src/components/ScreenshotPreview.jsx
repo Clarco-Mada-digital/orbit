@@ -11,7 +11,10 @@ export default function ScreenshotPreview() {
   const [capture, setCapture] = useState(null);
   const [chooseMode, setChooseMode] = useState(false);
   const [sourceWcId, setSourceWcId] = useState(null);
-  const [captureSource, setCaptureSource] = useState('page');
+  // Cible choisie : 'page' (onglet de l'app active), 'orbit' (interface) ou
+  // 'win:<wcId>' (fenêtre détachée, pop-up modale, capture épinglée…).
+  const [target, setTarget] = useState('page');
+  const [windows, setWindows] = useState([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [countdown, setCountdown] = useState(null);
@@ -22,8 +25,12 @@ export default function ScreenshotPreview() {
   // l'originale du processus principal (pas de ré-encodage).
   const editorRef = useRef(null);
 
+  const pageWcId = sourceWcId || getWebContentsIdFor(activeApp);
+
   const chooseCaptureMode = useCallback(async (mode, copyDirect) => {
-    const wcId = captureSource === 'orbit' ? null : sourceWcId || getWebContentsIdFor(activeApp);
+    const captureSource = target === 'orbit' ? 'orbit' : 'page';
+    const windowId = target.startsWith('win:') ? Number(target.slice(4)) : null;
+    const wcId = captureSource === 'orbit' ? null : windowId || pageWcId;
     if (captureSource !== 'orbit' && !wcId) {
       setError(t('cm.screenshotNoActivePage'));
       return;
@@ -57,7 +64,7 @@ export default function ScreenshotPreview() {
       setBusy(false);
       setCountdown(null);
     }
-  }, [activeApp, captureSource, delaySeconds, sourceWcId, t]);
+  }, [delaySeconds, pageWcId, t, target]);
 
   useEffect(() => {
     const off = window.electronAPI?.screenshots?.onPreview?.((payload) => {
@@ -66,9 +73,26 @@ export default function ScreenshotPreview() {
       setBusy(false);
       setError('');
     });
-    const open = (event) => {
-      setSourceWcId(Number(event.detail?.wcId) || null);
-      setCaptureSource(event.detail?.source === 'orbit' ? 'orbit' : 'page');
+    const open = async (event) => {
+      const detail = event.detail || {};
+      const wcId = Number(detail.wcId) || null;
+      setSourceWcId(wcId);
+      // La liste est relue à chaque ouverture : une fenêtre a pu être ouverte
+      // ou fermée depuis la dernière capture.
+      let list = [];
+      try {
+        const result = await window.electronAPI?.screenshots?.targets?.();
+        if (Array.isArray(result?.targets)) list = result.targets;
+      } catch (err) {
+        console.error('[orbit] liste des fenêtres capturables indisponible:', err);
+      }
+      setWindows(list);
+      // Pré-sélection : la fenêtre d'où vient le raccourci (une fenêtre
+      // détachée, donc absente des onglets), sinon l'interface, sinon la page.
+      const shortcutWindow = wcId ? list.find((w) => w.wcId === wcId) : null;
+      if (detail.source === 'orbit') setTarget('orbit');
+      else if (shortcutWindow) setTarget(`win:${wcId}`);
+      else setTarget('page');
       setChooseMode(true);
       setError('');
     };
@@ -236,6 +260,23 @@ export default function ScreenshotPreview() {
               ))}
             </select>
           </label>
+          {windows.length > 0 && (
+            <label className="mb-4 flex items-center justify-between gap-3 rounded-xl border border-white/10 bg-white/[0.05] px-4 py-3 text-sm">
+              <span className="text-white/80">{t('cm.screenshotTarget')}</span>
+              <select
+                value={target}
+                onChange={(event) => setTarget(event.target.value)}
+                className="max-w-[60%] rounded-lg border border-white/15 bg-slate-900/80 px-3 py-2 text-white outline-none focus:border-indigo-300"
+              >
+                {pageWcId && <option value="page">{t('cm.screenshotTargetPage')}</option>}
+                {windows.map((win) => (
+                  <option key={win.wcId} value={`win:${win.wcId}`}>
+                    {win.kind === 'orbit' ? t('cm.screenshotTargetOrbit') : win.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             {[
               { mode: 'visible', label: t('cm.screenshotCurrent'), icon: Camera },
@@ -295,7 +336,7 @@ export default function ScreenshotPreview() {
         role="dialog"
         aria-modal="true"
         aria-labelledby="orbit-screenshot-title"
-        className="w-full max-w-4xl overflow-hidden rounded-2xl border border-border bg-bg-elevated shadow-2xl"
+        className="w-full max-w-[1400px] overflow-hidden rounded-2xl border border-border bg-bg-elevated shadow-2xl"
       >
         <header className="flex items-center justify-between gap-3 border-b border-border px-5 py-3">
           <div className="min-w-0">

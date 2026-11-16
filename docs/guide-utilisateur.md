@@ -83,8 +83,11 @@ intégrée ou ajoutez une URL web.
   fenêtre détachée, déplacement de profil ou gestion de session.
 - La **fenêtre détachée** garde les gestes d’un navigateur : `Ctrl + molette`
   pour le zoom (aussi `Ctrl +`, `Ctrl -` et `Ctrl 0`), `Ctrl + R` ou `F5` pour
-  recharger, `Alt + ←/→` pour l’historique. Le clic droit y propose copier,
-  coller, précédent, suivant, recharger et le zoom.
+  recharger, `Alt + ←/→` pour l’historique. Le clic droit y ouvre **le même
+  genre de menu que dans Orbit** — carte sombre arrondie, sous-menus dépliables,
+  navigation au clavier — avec copier, coller, liens, images, capture d’écran,
+  précédent, suivant, recharger et le zoom. Il est dessiné dans la page : le
+  focus y reste, donc « Coller » et « Relire » fonctionnent comme avant.
 - Le zoom y reste appliqué pendant toute la durée de la fenêtre (il survit aux
   changements de page) et un badge affiche brièvement le pourcentage atteint.
 - **Relecture et assistant y fonctionnent aussi.** Une sélection corrigée depuis
@@ -298,12 +301,20 @@ toujours d’avance si une image suffira :
 Un **délai** réglable (0 à 10 s) laisse le temps de préparer l’écran ; `Échap`
 annule le compte à rebours.
 
+Le champ **Fenêtre à capturer** choisit la cible : la page de l’app active, une
+fenêtre **détachée** (celle d’où vient le raccourci est présélectionnée), une
+pop-up ou l’interface d’Orbit elle-même. Une fenêtre réduite est restaurée avant
+la capture, et l’interface revient au premier plan pour afficher l’aperçu. Chaque
+fenêtre reste aussi capturable directement par clic droit → **Capture d’écran**.
+
 ### Annoter la capture avant de l’enregistrer
 
 L’aperçu qui suit la capture n’est pas qu’un aperçu : c’est un éditeur. Tout est
 dessiné **dans l’image**, donc « Enregistrer » et « Copier » rendent exactement
 ce qui est affiché. Une capture à laquelle on n’a pas touché part telle quelle,
-sans ré-encodage.
+sans ré-encodage. L’éditeur prend la largeur disponible (jusqu’à 1400 px) et
+l’image jusqu’à 66 % de la hauteur de l’écran : on annote à taille lisible,
+pas sur une vignette.
 
 | Outil | À quoi il sert |
 | --- | --- |

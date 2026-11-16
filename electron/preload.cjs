@@ -291,6 +291,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   screenshots: {
     capture: (wcId, mode, copyDirect, source) =>
       ipcRenderer.invoke('screenshot:capture', { wcId, mode, copyDirect, source }),
+    // Fenêtres capturables (interface, fenêtres détachées, pop-up, captures épinglées)
+    targets: () => ipcRenderer.invoke('screenshot:targets'),
     // `dataUrl` : la capture annotée dans l'aperçu. Absent = image d'origine.
     save: (id, dataUrl) => ipcRenderer.invoke('screenshot:save', { id, dataUrl }),
     copy: (id, dataUrl) => ipcRenderer.invoke('screenshot:copy', { id, dataUrl }),

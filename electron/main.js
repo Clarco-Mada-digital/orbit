@@ -38,6 +38,7 @@ import { matchShortcutInput } from '../src/lib/shortcuts.js';
 import { matchLinkRule } from '../src/lib/rules.js';
 import { hasBinaryContent } from '../src/lib/documents.js';
 import { parsePngDataUrl, pinnedWindowBounds } from '../src/lib/annotate.js';
+import { pageMenuScript, serializeMenuTemplate } from './page-menu.js';
 import {
   SENSITIVE_PATTERNS,
   scaleSensitiveRects,
@@ -2092,29 +2093,57 @@ handleFromUi('screenshot:copy', (_event, { id, dataUrl } = {}) => {
   return { success: true };
 });
 
+// Fenêtres proposées dans le sélecteur de capture. Les onglets embarqués ne
+// sont pas des fenêtres : l'interface les propose à part (« page de l'app
+// active »). Tout le reste est listé ici, y compris la fenêtre détachée, les
+// pop-up/modales et les captures épinglées.
+handleFromUi('screenshot:targets', () => {
+  const targets = [];
+  const mainWcId = mainWindow && !mainWindow.isDestroyed() ? mainWindow.webContents.id : null;
+  if (mainWcId !== null) {
+    targets.push({ wcId: mainWcId, title: 'Orbit', kind: 'orbit' });
+  }
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win || win.isDestroyed() || win.webContents.isDestroyed()) continue;
+    if (win.webContents.id === mainWcId) continue;
+    const wc = win.webContents;
+    // Seules les fenêtres qui montrent une page : les surfaces internes
+    // (couche d'annotation, studio, mini-lecteur) n'ont rien à capturer et
+    // donneraient une image vide ou transparente.
+    const url = wc.getURL();
+    if (!/^https?:/i.test(url) && url !== 'about:blank') continue;
+    targets.push({
+      wcId: wc.id,
+      title: win.getTitle() || wc.getURL() || 'Orbit',
+      kind: detachedAppIdForWc(wc.id) ? 'detached' : 'window',
+    });
+  }
+  return { success: true, targets };
+});
+
 handleFromUi('screenshot:capture', async (_event, { wcId, mode, copyDirect, source } = {}) => {
   const captureOrbitUi = source === 'orbit';
   const wc = captureOrbitUi
     ? mainWindow?.webContents
     : webContents.fromId(Number(wcId));
   const isEmbeddedPage = wc && !wc.isDestroyed() && wc.getType() === 'webview' && orbitUiFor(wc);
-  const detachedWindow = wc && !wc.isDestroyed() && [...detachedWindows.values()]
-    .find((win) => !win.isDestroyed() && win.webContents.id === wc.id);
-  const isDetachedPage = Boolean(detachedWindow);
+  // Toute fenêtre d'Orbit est capturable : fenêtre détachée, pop-up modale,
+  // capture épinglée… (une page embarquée, elle, reste un <webview>).
+  const targetWindow = orbitWindowFor(wc);
   const isOrbitUiPage = captureOrbitUi && mainWindow && !mainWindow.isDestroyed()
     && wc === mainWindow.webContents;
-  if (!isEmbeddedPage && !isDetachedPage && !isOrbitUiPage) {
+  if (!isEmbeddedPage && !targetWindow && !isOrbitUiPage) {
     return { success: false, error: 'invalid-page' };
   }
   if (!['visible', 'full', 'selection'].includes(mode)) {
     return { success: false, error: 'invalid-capture-mode' };
   }
-  if (detachedWindow) {
-    detachedWindow.show();
-    detachedWindow.focus();
-  } else if (isOrbitUiPage) {
-    mainWindow.show();
-    mainWindow.focus();
+  if (targetWindow) {
+    // Une fenêtre réduite ne peint rien : capturePage() rendrait une image
+    // vide. On la restaure, on la met devant, puis on capture.
+    if (targetWindow.isMinimized()) targetWindow.restore();
+    targetWindow.show();
+    targetWindow.focus();
   } else {
     mainWindow?.show();
     mainWindow?.focus();
@@ -2422,6 +2451,8 @@ const isWebUrl = (u) => typeof u === 'string' && /^https?:\/\//i.test(u);
 const isDownloadableUrl = (u) =>
   typeof u === 'string' && /^(https?|blob|data):/i.test(u);
 
+// Description du menu contextuel d'une page (voir aussi page-menu.js, qui la
+// rend en HTML dans les fenêtres sans interface Orbit).
 function buildGuestContextMenu(wc, params) {
   const t = [];
   const can = (flag) => Boolean(params.editFlags && params.editFlags[flag]);
@@ -2636,7 +2667,57 @@ function buildGuestContextMenu(wc, params) {
     t.push({ label: 'Inspecter', click: () => wc.inspectElement(params.x, params.y) });
   }
 
-  return Menu.buildFromTemplate(t);
+  return t;
+}
+
+// Menu natif : la seule voie dans une fenêtre sans interface Orbit si l'on a
+// désactivé le menu maison, ou si la page refuse l'injection.
+function popupNativeGuestContextMenu(wc, params, ownerWindow) {
+  try {
+    Menu.buildFromTemplate(buildGuestContextMenu(wc, params)).popup({ window: ownerWindow });
+    return true;
+  } catch (err) {
+    console.error('[orbit] menu contextuel natif échoué:', err);
+    return false;
+  }
+}
+
+// Menu HTML injecté dans la page (fenêtre détachée, pop-up). Renvoie true si le
+// menu a bien été affiché — le choix de l'utilisateur, lui, déclenche l'action
+// de la même entrée que le menu natif.
+async function showPageContextMenu(guestContents, params, template) {
+  if (!guestContents || guestContents.isDestroyed()) return false;
+  const { model, byId } = serializeMenuTemplate(template);
+  if (!model.length) return false;
+  let zoom = 1;
+  try {
+    zoom = guestContents.getZoomFactor() || 1;
+  } catch {
+    zoom = 1;
+  }
+  // `params.x/y` sont en pixels indépendants du périphérique (donc déjà
+  // multipliés par le zoom) ; la superposition, elle, vit en pixels CSS.
+  const point = { x: params.x / zoom, y: params.y / zoom };
+  let chosen = null;
+  try {
+    chosen = await guestContents.executeJavaScript(pageMenuScript(model, point), true);
+  } catch (err) {
+    console.error('[orbit] menu contextuel dans la page échoué:', err);
+    return false;
+  }
+  // La page n'a pas pu afficher le menu : à l'appelant de reprendre la main
+  // avec le menu natif.
+  if (chosen === '__orbit-menu-error__') return false;
+  if (!chosen) return true;
+  const item = byId.get(String(chosen));
+  if (item && typeof item.click === 'function') {
+    try {
+      await item.click();
+    } catch (err) {
+      console.error('[orbit] action du menu contextuel échouée:', err);
+    }
+  }
+  return true;
 }
 
 // ---------------------------------------------------------------------------
@@ -4029,6 +4110,20 @@ function clampPageZoom(factor) {
   return Math.min(3, Math.max(0.5, Math.round(value * 100) / 100));
 }
 
+// Fenêtre (BrowserWindow) qui héberge ce webContents (null sinon).
+//
+// C'est la seule façon fiable de reconnaître une fenêtre détachée, une pop-up
+// modale ou une capture épinglée : elles ne sont pas des <webview>, et une
+// pop-up n'était enregistrée nulle part — la capture la refusait donc comme
+// « page inconnue » alors que c'est bien une fenêtre d'Orbit.
+function orbitWindowFor(wc) {
+  if (!wc || wc.isDestroyed?.()) return null;
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed() && win.webContents === wc) return win;
+  }
+  return null;
+}
+
 // App de la fenêtre détachée qui héberge ce webContents (null sinon).
 function detachedAppIdForWc(wcId) {
   for (const [appId, win] of detachedWindows) {
@@ -4185,6 +4280,14 @@ function attachPageShortcuts(contents) {
     }
 
     if (mainWindow && !mainWindow.isDestroyed()) {
+      // La capture se choisit DANS la fenêtre principale : sans la ramener
+      // devant, un raccourci pressé depuis une fenêtre détachée ouvrait le
+      // sélecteur derrière elle — donc « rien ne se passait ».
+      if (action === 'screenshot') {
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.show();
+        mainWindow.focus();
+      }
       mainWindow.webContents.send('orbit:shortcut', action, { wcId: contents.id });
     }
   });
@@ -4227,8 +4330,8 @@ function cleanupPageCtx(wc) {
   ).catch(() => {});
 }
 
-// Affiche le menu : interface si possible, natif sinon. Renvoie true si
-// l'interface a été sollicitée.
+// Affiche le menu : interface si possible, HTML dans la page sinon, natif en
+// dernier recours. Renvoie true si un menu maison a été affiché.
 async function showGuestContextMenu(guestContents, params, ownerWindow) {
   // Le menu HTML vole le contexte de focus dont Chromium a besoin pour
   // remplacer le mot. Le menu natif conserve la frame et applique la suggestion.
@@ -4238,6 +4341,15 @@ async function showGuestContextMenu(guestContents, params, ownerWindow) {
     ownerWindow === mainWindow &&
     mainWindow &&
     !mainWindow.isDestroyed();
+  // Une fenêtre détachée, une pop-up ou une capture épinglée n'a pas
+  // d'interface Orbit : le menu est alors dessiné DANS sa page (même apparence
+  // que dans la fenêtre principale), au lieu du menu natif gris.
+  const inPage =
+    useCustomContextMenu &&
+    !custom &&
+    ownerWindow &&
+    !ownerWindow.isDestroyed?.() &&
+    ownerWindow !== mainWindow;
   // La sélection est mémorisée pour TOUT menu qui propose « Relire » — y
   // compris le menu NATIF d'une fenêtre détachée. Elle ne l'était que pour le
   // menu HTML de la fenêtre principale : ailleurs, la correction ne savait plus
@@ -4262,12 +4374,15 @@ async function showGuestContextMenu(guestContents, params, ownerWindow) {
       console.error('[orbit] menu contextuel (interface) échoué:', err);
     }
   }
-  try {
-    buildGuestContextMenu(guestContents, params).popup({ window: ownerWindow });
-  } catch (err) {
-    console.error('[orbit] menu contextuel natif échoué:', err);
+  if (inPage) {
+    try {
+      const template = buildGuestContextMenu(guestContents, params);
+      if (await showPageContextMenu(guestContents, params, template)) return true;
+    } catch (err) {
+      console.error('[orbit] menu contextuel dans la page échoué:', err);
+    }
   }
-  return false;
+  return popupNativeGuestContextMenu(guestContents, params, ownerWindow);
 }
 
 function requestProofread(wc, params) {
