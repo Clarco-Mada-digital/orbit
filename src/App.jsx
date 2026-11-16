@@ -38,6 +38,7 @@ import FindBar from './components/FindBar';
 import UpdateBanner from './components/UpdateBanner';
 import Welcome from './components/Welcome';
 import HomeDashboard from './components/HomeDashboard';
+import ThemeDecor from './components/ThemeDecor';
 import { useStore, appVisibleIn } from './stores/useStore';
 import { usePhoneStore } from './lib/phoneStore';
 import { describeCallState } from './lib/phone';
@@ -1282,8 +1283,23 @@ const openEditUrl = useCallback((id) => {
   return (
     <div
       className="flex flex-col h-screen bg-bg-primary text-text-primary overflow-hidden"
-      style={{ borderRadius: isFullscreen ? 0 : '12px' }}
+      data-decor={showHome ? 'full' : 'chrome'}
+      style={{
+        borderRadius: isFullscreen ? 0 : '12px',
+        // Zone réservée au contenu : le décor s'y découpe pour laisser la page
+        // nette quand une app est ouverte (et pour laisser la sidebar gérer
+        // son propre décor).
+        '--decor-left': typeof sidebarOffset === 'number' ? `${sidebarOffset}px` : sidebarOffset,
+        '--decor-top': sidebarTop === 0 ? '0px' : sidebarTop,
+        '--decor-bottom': bottombarHeight === 0 ? '0px' : bottombarHeight,
+      }}
     >
+      {/* Décors des thèmes à signature : neige de Noël, étoiles et planètes
+          d'Aurore. `position: fixed` et `pointer-events: none` : ils couvrent
+          toute la fenêtre (accueil compris) sans jamais intercepter un clic.
+          Masqués tant que leur thème n'est pas actif (index.css). */}
+      <ThemeDecor />
+
       {/* Barre unifiée : logo, navigation, URL, notifications + contrôles fenêtre.
           En plein écran elle disparaît ; elle réapparaît en surimpression quand
           la souris touche le bord supérieur. */}

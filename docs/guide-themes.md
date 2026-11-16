@@ -32,15 +32,20 @@ Orbit sépare deux choses que la plupart des applications confondent.
 
 | Axe | Ce qu'il porte | Valeurs |
 | --- | --- | --- |
-| **Thème** (`skin`) | L'identité : couleurs et formes | `orbit`, `tech`, `paper`, `amber`, `noel`, ou le vôtre |
+| **Thème** (`skin`) | L'identité : couleurs et formes | `orbit`, `tech`, `paper`, `amber`, `noel`, `aurore`, ou le vôtre |
 | **Ambiance** (`mode`) | Clair ou sombre | `dark`, `light`, `auto` |
 
 Les thèmes livrés, pour situer les caractères : **Orbit** (l'apparence
-d'origine), **Tech** (angles vifs, halo, police à chasse fixe), **Papier**
-(plat et reposant), **Nuit chaude** (ambre et brun) et **Noël** (vert sapin,
-or et neige, avec un accent rouge baie de houx en clair ; la neige tombe
-dans la barre latérale et une guirlande court sous son en-tête, coupées avec
-les animations de l'application).
+d'origine), **Tech** (angles vifs, halo, police à chasse fixe, et derrière
+l'interface un réseau de points reliés qui dérive et se resserre autour du
+curseur), **Papier**
+(plat et reposant), **Nuit chaude** (ambre et brun), **Noël** (vert sapin,
+or et neige, avec un accent rouge baie de houx en clair ; la neige tombe sur
+toute la fenêtre et deux guirlandes courent en haut et en bas, coupées avec
+les animations de l'application) et **Aurore** (ciel d'espace : nuit polaire,
+étoiles qui scintillent et tournent avec la voûte céleste, étoiles filantes,
+planètes qui flottent et voiles vert menthe et violet ; accent vert d'aurore
+en sombre et violet profond en clair).
 
 Conséquence pour vous : **un thème décrit normalement DEUX palettes**, une par
 ambiance. La silhouette (les angles, le halo, la police) ne change pas entre

@@ -378,6 +378,30 @@
   box-shadow: 0 0 0 1px rgb(var(--accent-primary)), 0 0 14px rgb(var(--accent-primary) / 0.35);
 }
 
+/* --- Aurore : le ciel polaire derrière l'interface ----------------------
+   Deux voiles — vert d'aurore en haut à gauche, violet en haut à droite — et
+   une lueur froide en bas. Fixés : la lumière ne défile pas avec le contenu,
+   c'est un ciel, pas un fond de page. */
+[data-skin='aurore'] body {
+  background-image:
+    radial-gradient(80% 60% at 12% -10%, rgb(110 231 204 / 0.13) 0%, transparent 62%),
+    radial-gradient(70% 55% at 88% -5%, rgb(139 92 246 / 0.15) 0%, transparent 60%),
+    radial-gradient(90% 70% at 50% 115%, rgb(56 189 248 / 0.09) 0%, transparent 60%);
+  background-attachment: fixed;
+}
+
+[data-skin='aurore'][data-theme='light'] body {
+  background-image:
+    radial-gradient(80% 60% at 12% -10%, rgb(16 185 129 / 0.1) 0%, transparent 62%),
+    radial-gradient(70% 55% at 88% -5%, rgb(124 58 237 / 0.1) 0%, transparent 60%),
+    radial-gradient(90% 70% at 50% 115%, rgb(14 165 233 / 0.07) 0%, transparent 60%);
+  background-attachment: fixed;
+}
+
+[data-skin='aurore'] .card {
+  box-shadow: var(--shadow-card), inset 0 1px 0 0 rgb(110 231 204 / 0.22);
+}
+
 /* --- Nuit chaude : lueur d'ambiance ------------------------------------- */
 [data-skin='amber'] body {
   background-image: radial-gradient(
@@ -388,31 +412,81 @@
   background-attachment: fixed;
 }
 
-/* --- Noël : neige et guirlande dans la barre latérale -------------------
-   Le décor est enfant de la barre (`z-index: -1`) : au-dessus du fond de la
-   barre, SOUS l'interface. Les noms d'apps et les icônes restent donc nets,
-   et le décor ne capte aucun clic. Une seule règle décide de tout : sans le
-   thème `noel`, `display: none` et rien n'est peint. */
-.orbit-snow {
+/* --- Décors de thème : neige de Noël, ciel d'Aurore ----------------------
+   Deux couches `position: fixed` au-dessus de l'interface (mais sous les
+   menus et les modales) : `pointer-events: none`, elles ne captent jamais un
+   clic. Une seule règle décide de tout : sans leur thème, `display: none` et
+   rien n'est peint.
+
+   Découpe : sur l'accueil le décor couvre toute la fenêtre SAUF la barre
+   latérale (elle a son propre décor, peint avec elle) ; dès qu'une app occupe
+   la page, il ne reste que les bandes de l'en-tête et du pied — la page reste
+   parfaitement nette. */
+.orbit-snow,
+.orbit-cosmos,
+.orbit-network,
+.orbit-snow-side,
+.orbit-cosmos-side,
+.orbit-network-side {
   display: none;
 }
 
-[data-skin='noel'] .orbit-snow {
+[data-skin='noel'] .orbit-snow,
+[data-skin='aurore'] .orbit-cosmos,
+[data-skin='tech'] .orbit-network {
   display: block;
-  position: absolute;
+  position: fixed;
   inset: 0;
   overflow: hidden;
   pointer-events: none;
-  z-index: -1;
-  border-radius: inherit;
+  z-index: 45;
+}
+
+/* Le canvas de Tech remplit sa couche ; c'est elle qui reçoit le masque. */
+.orbit-network__canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Découpe en bandes (masque additif de rectangles). */
+[data-decor='full'] .orbit-snow,
+[data-decor='full'] .orbit-cosmos,
+[data-decor='full'] .orbit-network,
+[data-decor='chrome'] .orbit-snow,
+[data-decor='chrome'] .orbit-cosmos,
+[data-decor='chrome'] .orbit-network {
+  -webkit-mask-repeat: no-repeat;
+  -webkit-mask-image: linear-gradient(#000, #000), linear-gradient(#000, #000);
+  /* `max(…, 8px)` : même sans barre du bas, la guirlande garde sa place au
+     bord de la fenêtre. */
+  -webkit-mask-size: 100% max(var(--decor-top, 3rem), 8px), 100% max(var(--decor-bottom, 2.5rem), 8px);
+  -webkit-mask-position: 0 0, 0 100%;
+  mask-repeat: no-repeat;
+  mask-image: linear-gradient(#000, #000), linear-gradient(#000, #000);
+  mask-size: 100% max(var(--decor-top, 3rem), 8px), 100% max(var(--decor-bottom, 2.5rem), 8px);
+  mask-position: 0 0, 0 100%;
+}
+
+/* Accueil : on ajoute la zone de contenu (à droite de la sidebar). */
+[data-decor='full'] .orbit-snow,
+[data-decor='full'] .orbit-cosmos,
+[data-decor='full'] .orbit-network {
+  -webkit-mask-image: linear-gradient(#000, #000), linear-gradient(#000, #000), linear-gradient(#000, #000);
+  -webkit-mask-size: 100% max(var(--decor-top, 3rem), 8px), calc(100% - var(--decor-left, 17.5rem)) 100%, 100% max(var(--decor-bottom, 2.5rem), 8px);
+  -webkit-mask-position: 0 0, var(--decor-left, 17.5rem) 0, 0 100%;
+  mask-image: linear-gradient(#000, #000), linear-gradient(#000, #000), linear-gradient(#000, #000);
+  mask-size: 100% max(var(--decor-top, 3rem), 8px), calc(100% - var(--decor-left, 17.5rem)) 100%, 100% max(var(--decor-bottom, 2.5rem), 8px);
+  mask-position: 0 0, var(--decor-left, 17.5rem) 0, 0 100%;
 }
 
 /* Guirlande : or, rouge, vert — trois ampoules qui se suivent sur toute la
-   largeur. Le motif fait 36 px : trois ampoules espacées de 12 px. */
-[data-skin='noel'] .orbit-snow::before {
+   largeur. Le motif fait 36 px : trois ampoules espacées de 12 px. En haut ET
+   en bas, pour que la fête tienne la fenêtre des deux côtés. */
+[data-skin='noel'] .orbit-snow::before,
+[data-skin='noel'] .orbit-snow::after {
   content: '';
   position: absolute;
-  top: 0;
   left: 0;
   right: 0;
   height: 7px;
@@ -427,9 +501,18 @@
   animation: orbit-noel-lights 3.6s ease-in-out infinite alternate;
 }
 
-[data-skin='noel'] .orbit-snow span {
-  position: absolute;
+[data-skin='noel'] .orbit-snow::before {
   top: 0;
+}
+
+[data-skin='noel'] .orbit-snow::after {
+  bottom: 0;
+}
+
+[data-skin='noel'] .orbit-snow span,
+[data-skin='noel'] .orbit-snow-side span {
+  position: absolute;
+  top: -10px;
   border-radius: 999px;
   background: #fff;
   box-shadow: 0 0 6px rgb(255 255 255 / 0.7);
@@ -438,12 +521,232 @@
   animation-iteration-count: infinite;
 }
 
+/* Décor local à la barre latérale : absolu DANS la barre, donc il la suit
+   même quand elle passe en surimpression (mode épuré). */
+[data-skin='noel'] .orbit-snow-side {
+  display: block;
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 1;
+}
+
+[data-skin='aurore'] .orbit-cosmos-side {
+  display: block;
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* Le réseau de Tech vit AUSSI dans la barre : même décor que sur la page,
+   mais avec ses propres points (peu nombreux) et calé sur la taille de la
+   barre. `z-index: 1` : il passe sous le contenu de la barre, comme les
+   autres décors latéraux. */
+[data-skin='tech'] .orbit-network-side {
+  display: block;
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: 1;
+}
+
 /* Ambiance claire : du blanc sur blanc serait invisible. Les flocons prennent
    le vert-gris du texte secondaire — la neige d'un jour gris, pas une pluie de
    confettis. */
-[data-skin='noel'][data-theme='light'] .orbit-snow span {
+[data-skin='noel'][data-theme='light'] .orbit-snow span,
+[data-skin='noel'][data-theme='light'] .orbit-snow-side span {
   background: rgb(var(--text-muted));
   box-shadow: 0 0 6px rgb(var(--text-muted) / 0.45);
+}
+
+/* --- Aurore : étoiles, planètes et voiles d'aurore ----------------------
+   Le ciel tient lieu de neige : des étoiles qui scintillent, trois planètes
+   qui flottent, et deux voiles colorés qui dérivent lentement. Aucun flou
+   plein écran (coûteux) : les dégradés sont déjà doux, et l'animation ne
+   touche que `transform` et `opacity` (composité). */
+/* Voile d'aurore collé à l'en-tête et au pied : c'est ce qui reste du ciel
+   quand une app occupe la page. Il épouse exactement les bandes visibles. */
+.orbit-cosmos::before,
+.orbit-cosmos::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: var(--decor-top, 3rem);
+  background: linear-gradient(
+    90deg,
+    rgb(110 231 204 / 0.12) 0%,
+    rgb(139 92 246 / 0.14) 55%,
+    transparent 95%
+  );
+}
+
+.orbit-cosmos::after {
+  top: auto;
+  bottom: 0;
+  height: var(--decor-bottom, 2.5rem);
+  background: linear-gradient(90deg, transparent 5%, rgb(56 189 248 / 0.08) 55%, rgb(139 92 246 / 0.12) 100%);
+}
+
+.orbit-cosmos__ribbon {
+  position: absolute;
+  left: -20%;
+  top: -16%;
+  width: 150%;
+  height: 52vh;
+  background: linear-gradient(
+    102deg,
+    transparent 6%,
+    rgb(110 231 204 / 0.16) 34%,
+    rgb(139 92 246 / 0.18) 60%,
+    transparent 90%
+  );
+  transform: rotate(-7deg);
+  -webkit-mask-image: linear-gradient(to bottom, transparent, #000 24%, #000 76%, transparent);
+  mask-image: linear-gradient(to bottom, transparent, #000 24%, #000 76%, transparent);
+  animation: orbit-aurora-drift 26s ease-in-out infinite alternate;
+}
+
+.orbit-cosmos__ribbon--2 {
+  top: auto;
+  bottom: -22%;
+  height: 46vh;
+  background: linear-gradient(
+    102deg,
+    transparent 8%,
+    rgb(56 189 248 / 0.1) 34%,
+    rgb(139 92 246 / 0.16) 62%,
+    transparent 92%
+  );
+  transform: rotate(9deg);
+  animation-duration: 34s;
+  animation-delay: -11s;
+}
+
+/* La voûte céleste tourne sur elle-même, très lentement : 220 s pour un tour
+   complet. C'est le mouvement de fond, celui qu'on ne fixe pas mais qui se
+   remarque quand on revient à l'écran. */
+.orbit-cosmos__stars {
+  position: absolute;
+  inset: 0;
+  transform-origin: 50% 50%;
+  animation: orbit-sky-turn 220s linear infinite;
+}
+
+/* Étoiles filantes : deux traînées qui traversent le ciel à intervalle
+   irrégulier. C'est le signal « ça bouge » le plus lisible, sans agitation. */
+.orbit-cosmos__comet {
+  position: absolute;
+  top: 6%;
+  left: 22%;
+  width: 210px;
+  height: 2px;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, transparent, rgb(234 247 255 / 0.95));
+  box-shadow: 0 0 8px rgb(110 231 204 / 0.8);
+  opacity: 0;
+  animation: orbit-comet 14s linear infinite;
+  animation-delay: 2.5s;
+}
+
+.orbit-cosmos__comet--2 {
+  top: 30%;
+  left: 34%;
+  width: 140px;
+  height: 1.5px;
+  background: linear-gradient(90deg, transparent, rgb(196 181 253 / 0.9));
+  box-shadow: 0 0 8px rgb(139 92 246 / 0.75);
+  animation-duration: 21s;
+  animation-delay: -9s;
+}
+
+.orbit-cosmos__star {
+  position: absolute;
+  border-radius: 9999px;
+  background: #eaf7ff;
+  box-shadow: 0 0 6px rgb(200 245 255 / 0.75);
+  animation-name: orbit-star-twinkle;
+  animation-timing-function: ease-in-out;
+  animation-iteration-count: infinite;
+  animation-direction: alternate;
+}
+
+.orbit-cosmos__planet {
+  position: absolute;
+  border-radius: 50%;
+  opacity: 0.85;
+  box-shadow:
+    inset -8px -10px 22px rgb(0 0 0 / 0.5),
+    0 0 30px rgb(110 231 204 / 0.25);
+  animation: orbit-planet-float 18s ease-in-out infinite alternate;
+}
+
+.orbit-cosmos__planet--1 {
+  width: 76px;
+  height: 76px;
+  right: 6%;
+  top: 20%;
+  background: radial-gradient(circle at 32% 28%, #a7f3e4, #2f9d94 40%, #123049 78%);
+}
+
+.orbit-cosmos__planet--2 {
+  width: 38px;
+  height: 38px;
+  left: 7%;
+  bottom: 22%;
+  background: radial-gradient(circle at 35% 30%, #c4b5fd, #6d28d9 45%, #1a1740 80%);
+  box-shadow:
+    inset -5px -6px 14px rgb(0 0 0 / 0.5),
+    0 0 22px rgb(139 92 246 / 0.35);
+  animation-duration: 24s;
+  animation-delay: -6s;
+}
+
+/* Planète à anneau : l'ellipse est un simple trait, pas une image. */
+.orbit-cosmos__planet--3 {
+  width: 54px;
+  height: 54px;
+  right: 15%;
+  bottom: 16%;
+  background: radial-gradient(circle at 30% 30%, #bae6fd, #2b6f9e 45%, #0d2137 80%);
+  animation-duration: 21s;
+  animation-delay: -11s;
+}
+
+.orbit-cosmos__planet--3::after {
+  content: '';
+  position: absolute;
+  left: -32%;
+  top: 34%;
+  width: 164%;
+  height: 34%;
+  border: 1px solid rgb(186 230 253 / 0.4);
+  border-radius: 50%;
+  transform: rotate(-18deg);
+}
+
+/* Ambiance claire : des étoiles violettes sur le ciel d'aube, et des planètes
+   plus douces pour ne pas faire de taches sombres sur le contenu. */
+[data-skin='aurore'][data-theme='light'] .orbit-cosmos__star {
+  background: rgb(109 40 217 / 0.55);
+  box-shadow: 0 0 5px rgb(109 40 217 / 0.3);
+}
+
+[data-skin='aurore'][data-theme='light'] .orbit-cosmos__ribbon {
+  opacity: 0.75;
+}
+
+[data-skin='aurore'][data-theme='light'] .orbit-cosmos__planet {
+  opacity: 0.55;
+}
+
+[data-skin='aurore'][data-theme='light'] .orbit-cosmos__comet {
+  background: linear-gradient(90deg, transparent, rgb(109 40 217 / 0.85));
+  box-shadow: 0 0 7px rgb(109 40 217 / 0.35);
 }
 
 /* La chute se fait en `transform` (composité, pas de repaint par image) ; la
@@ -464,6 +767,71 @@
   }
   to {
     opacity: 1;
+  }
+}
+
+/* Étoiles : un scintillement lent, décalé d'une étoile à l'autre ; quelques
+  -unes dérivent de quelques pixels, comme un ciel qui tourne très lentement. */
+@keyframes orbit-star-twinkle {
+  from {
+    opacity: 0.12;
+    transform: translate3d(0, 0, 0) scale(0.72);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(var(--star-drift, 0px), -2px, 0) scale(1.18);
+  }
+}
+
+@keyframes orbit-sky-turn {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* Une traversée rapide (≈ 2,5 s) puis une longue pause : deux étoiles
+   filantes ne doivent pas devenir un métronome. */
+@keyframes orbit-comet {
+  0% {
+    opacity: 0;
+    transform: translate3d(0, 0, 0) rotate(22deg);
+  }
+  2% {
+    opacity: 0.95;
+  }
+  12% {
+    opacity: 0.95;
+  }
+  18% {
+    opacity: 0;
+    transform: translate3d(55vw, 24vh, 0) rotate(22deg);
+  }
+  100% {
+    opacity: 0;
+    transform: translate3d(55vw, 24vh, 0) rotate(22deg);
+  }
+}
+
+/* Voiles d'aurore : une dérive très lente, à peine perceptible, qui donne
+   l'impression que le ciel respire. */
+@keyframes orbit-aurora-drift {
+  from {
+    transform: translate3d(-5%, -1%, 0) rotate(-9deg);
+  }
+  to {
+    transform: translate3d(5%, 3%, 0) rotate(-2deg);
+  }
+}
+
+@keyframes orbit-planet-float {
+  from {
+    transform: translate3d(-8px, -14px, 0) rotate(-3deg);
+  }
+  to {
+    transform: translate3d(10px, 16px, 0) rotate(4deg);
   }
 }
 
@@ -505,16 +873,45 @@
    animations (ou quand le système le demande). La guirlande reste, figée —
    elle fait partie de l'identité du thème, pas d'une animation. */
 
-.no-animations .orbit-snow span {
+.no-animations .orbit-snow span,
+.no-animations .orbit-snow-side span {
+  display: none;
+}
+
+/* Le ciel d'Aurore n'est pas une chute : on le fige au lieu de l'effacer. */
+.no-animations .orbit-cosmos__star,
+.no-animations .orbit-cosmos__stars,
+.no-animations .orbit-cosmos__comet,
+.no-animations .orbit-cosmos__ribbon,
+.no-animations .orbit-cosmos__planet {
+  animation: none;
+}
+
+/* L'étoile filante est un mouvement pur : figée, ce ne serait qu'un trait
+   blanc en travers du ciel. On la retire. */
+.no-animations .orbit-cosmos__comet {
   display: none;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .orbit-snow span {
+  .orbit-snow span,
+  .orbit-snow-side span {
     display: none;
   }
 
-  .orbit-snow::before {
+  .orbit-snow::before,
+  .orbit-snow::after {
     animation: none;
+  }
+
+  .orbit-cosmos__star,
+  .orbit-cosmos__stars,
+  .orbit-cosmos__ribbon,
+  .orbit-cosmos__planet {
+    animation: none;
+  }
+
+  .orbit-cosmos__comet {
+    display: none;
   }
 }

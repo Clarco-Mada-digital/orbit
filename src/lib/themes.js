@@ -22,7 +22,7 @@
 // illisible ne doit pas pouvoir être livré.
 // ---------------------------------------------------------------------------
 
-export const SKINS = ['orbit', 'tech', 'paper', 'amber', 'noel'];
+export const SKINS = ['orbit', 'tech', 'paper', 'amber', 'noel', 'aurore'];
 export const MODES = ['auto', 'dark', 'light'];
 
 export const DEFAULT_SKIN = 'orbit';
@@ -93,6 +93,21 @@ const TRAITS = {
     glow: 0.35,
     font: 'Inter',
     tracking: '0em',
+    uppercase: false,
+    texture: 'glow',
+  },
+  // Aurore : un ciel polaire. Vert menthe et violet, arrondis amples et halo
+  // large — la lumière diffuse d'une aurore, pas un néon. C'est le thème
+  // "calme lumineux" : ni froid technique, ni chaud de réveillon.
+  aurore: {
+    radiusCard: '1.25rem',
+    radiusControl: '0.75rem',
+    radiusPill: '9999px',
+    borderWidth: '1px',
+    shadowCard: '0 12px 30px -12px rgb(4 12 30 / 0.55)',
+    glow: 0.75,
+    font: 'Inter',
+    tracking: '0.015em',
     uppercase: false,
     texture: 'glow',
   },
@@ -233,6 +248,38 @@ const PALETTES = {
       accent: '178 34 52',
     },
   },
+  aurore: {
+    dark: {
+      // Nuit polaire : un bleu-noir, pas un noir neutre — l'aurore colore
+      // même l'obscurité.
+      bgPrimary: '7 12 26',
+      bgSecondary: '12 20 38',
+      bgElevated: '18 29 50',
+      bgHover: '26 40 66',
+      textPrimary: '235 242 250',
+      textSecondary: '176 196 219',
+      textMuted: '134 159 186',
+      border: '28 45 72',
+      borderLight: '40 62 96',
+      // Vert d'aurore : la couleur signature, celle des voiles au-dessus de
+      // la neige. Assez claire pour rester lisible sur le fond de nuit.
+      accent: '110 231 204',
+    },
+    light: {
+      // Aube : un lavande très pâle, plus doux qu'un blanc froid.
+      bgPrimary: '246 245 252',
+      bgSecondary: '255 255 255',
+      bgElevated: '239 238 249',
+      bgHover: '231 230 244',
+      textPrimary: '26 24 45',
+      textSecondary: '72 68 105',
+      textMuted: '107 102 138',
+      border: '219 216 236',
+      borderLight: '204 200 226',
+      // Violet profond : sur fond clair, le vert menthe disparaîtrait.
+      accent: '109 40 217',
+    },
+  },
   amber: {
     dark: {
       bgPrimary: '18 13 9',
@@ -270,6 +317,7 @@ export const SKIN_META = [
   { id: 'paper', name: 'Papier', descKey: 'st.skin.paper' },
   { id: 'amber', name: 'Nuit chaude', descKey: 'st.skin.amber' },
   { id: 'noel', name: 'Noël', descKey: 'st.skin.noel' },
+  { id: 'aurore', name: 'Aurore', descKey: 'st.skin.aurore' },
 ];
 
 // Tables des thèmes LIVRÉS. Exportées pour deux usages : l'export d'un thème

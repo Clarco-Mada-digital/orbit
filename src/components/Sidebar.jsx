@@ -11,6 +11,7 @@ import { useMediaStore } from '../lib/mediaStore';
 import { getWebview, getRegisteredWebviews } from '../lib/webviewRegistry';
 import { useT } from '../lib/i18n';
 import { useZoneHold, REVEALED_BAR_Z } from '../lib/autoHide';
+import { ThemeSideDecor } from './ThemeDecor';
 import { useDismiss } from '../lib/useDismiss';
 import { flyPageLabel } from '../lib/flyPages';
 import {
@@ -28,39 +29,6 @@ import {
 // ne fasse pas re-rendre la liste à chaque rendu (un `[]` littéral en
 // déclencherait un nouveau à chaque fois).
 const EMPTY_SELECTION = [];
-
-// Décor du thème Noël : la neige de la barre latérale. Purement décoratif et
-// rendu par le CSS (`[data-skin='noel']`) — pas de minuteur, pas d'état, rien
-// qui puisse faire re-rendre la liste. `left`, `delay` et `duration` sont
-// dispersés à la main plutôt que tirés au hasard : deux lancements doivent
-// donner exactement la même neige, et les flocons ne doivent pas tomber par
-// vagues (des délais négatifs les répartissent dès l'affichage).
-const NOEL_FLAKES = [
-  { left: 4, delay: -0.4, duration: 12, size: 4, drift: 10, opacity: 0.9 },
-  { left: 10, delay: -6.1, duration: 9, size: 3, drift: -8, opacity: 0.7 },
-  { left: 16, delay: -2.7, duration: 14, size: 5, drift: 14, opacity: 0.85 },
-  { left: 22, delay: -9.3, duration: 10, size: 3, drift: 6, opacity: 0.65 },
-  { left: 28, delay: -4.8, duration: 13, size: 4, drift: -12, opacity: 0.9 },
-  { left: 34, delay: -11.5, duration: 8, size: 3, drift: 9, opacity: 0.6 },
-  { left: 40, delay: -1.6, duration: 15, size: 5, drift: -10, opacity: 0.8 },
-  { left: 46, delay: -7.9, duration: 11, size: 4, drift: 12, opacity: 0.95 },
-  { left: 52, delay: -3.3, duration: 9.5, size: 3, drift: -6, opacity: 0.65 },
-  { left: 58, delay: -12.4, duration: 13, size: 4, drift: 8, opacity: 0.85 },
-  { left: 64, delay: -5.5, duration: 10.5, size: 3, drift: -14, opacity: 0.7 },
-  { left: 70, delay: -8.8, duration: 16, size: 5, drift: 10, opacity: 0.75 },
-  { left: 76, delay: -2.1, duration: 11.5, size: 4, drift: -9, opacity: 0.9 },
-  { left: 82, delay: -13.6, duration: 17, size: 3, drift: 13, opacity: 0.55 },
-  { left: 88, delay: -15.2, duration: 12.5, size: 4, drift: -7, opacity: 0.6 },
-  { left: 94, delay: -14.1, duration: 18, size: 3, drift: 11, opacity: 0.5 },
-  { left: 7, delay: -16.8, duration: 14.5, size: 3, drift: -11, opacity: 0.55 },
-  { left: 19, delay: -15.9, duration: 19, size: 5, drift: 7, opacity: 0.5 },
-  { left: 31, delay: -17.4, duration: 16.5, size: 4, drift: -13, opacity: 0.45 },
-  { left: 43, delay: -18.7, duration: 20, size: 3, drift: 9, opacity: 0.4 },
-  { left: 55, delay: -19.3, duration: 17.5, size: 5, drift: -8, opacity: 0.45 },
-  { left: 67, delay: -18.1, duration: 21, size: 3, drift: 12, opacity: 0.4 },
-  { left: 79, delay: -20.4, duration: 18.5, size: 4, drift: -6, opacity: 0.35 },
-  { left: 91, delay: -19.8, duration: 22, size: 3, drift: 8, opacity: 0.35 },
-];
 
 export default function Sidebar({
   collapsed,
@@ -751,24 +719,11 @@ export default function Sidebar({
       }}
       {...revealHandlers}
     >
-      {/* Noël : la neige et la guirlande. Masqué tant que le thème `noel`
-          n'est pas actif (voir la règle [data-skin='noel'] dans index.css). */}
-      <div className="orbit-snow" aria-hidden="true">
-        {NOEL_FLAKES.map((flake, index) => (
-          <span
-            key={index}
-            style={{
-              left: `${flake.left}%`,
-              width: `${flake.size}px`,
-              height: `${flake.size}px`,
-              opacity: flake.opacity,
-              animationDelay: `${flake.delay}s`,
-              animationDuration: `${flake.duration}s`,
-              '--flake-drift': `${flake.drift}px`,
-            }}
-          />
-        ))}
-      </div>
+      {/* Décor du thème (neige de Noël, étoiles d'Aurore) : peint AVEC la
+          barre, donc il reste visible même quand elle passe en surimpression
+          en mode épuré (z-index élevé). */}
+      <ThemeSideDecor />
+
       {/* Header : profil actif + dépliage de la liste.
           UNE SEULE LIGNE tant que la liste est repliée : avec plusieurs
           profils, la liste complète occupait une dizaine de lignes en
