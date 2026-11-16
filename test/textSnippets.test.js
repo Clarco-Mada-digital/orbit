@@ -21,14 +21,20 @@ function createSnippetRuntime({ allowPasswordFields = false, snippets = {}, trig
     }
   }
 
+  // Chrome n'expose l'API de sélection que sur certains types : sur un
+  // `input[type=email]` (ou number, date…), `selectionStart` vaut null et
+  // `setSelectionRange` ne fait rien. Le faux champ reproduit exactement ça,
+  // sinon le test validerait un comportement que le navigateur n'a pas.
+  const SELECTION_TYPES = ['text', 'search', 'url', 'tel', 'password', ''];
+
   class InputElement {
     constructor(value, { type = 'text', attrs = {} } = {}) {
       this.tagName = 'INPUT';
       this._value = value;
       this.type = type;
       this.attrs = attrs;
-      this.selectionStart = value.length;
-      this.selectionEnd = value.length;
+      this._start = value.length;
+      this._end = value.length;
       this.readOnly = false;
       this.disabled = false;
       this.style = {};
@@ -43,6 +49,26 @@ function createSnippetRuntime({ allowPasswordFields = false, snippets = {}, trig
       this._value = value;
     }
 
+    get supportsSelection() {
+      return SELECTION_TYPES.includes(this.type);
+    }
+
+    get selectionStart() {
+      return this.supportsSelection ? this._start : null;
+    }
+
+    set selectionStart(value) {
+      if (this.supportsSelection) this._start = value;
+    }
+
+    get selectionEnd() {
+      return this.supportsSelection ? this._end : null;
+    }
+
+    set selectionEnd(value) {
+      if (this.supportsSelection) this._end = value;
+    }
+
     getAttribute(name) {
       if (name === 'type') return this.type;
       return this.attrs[name] ?? null;
@@ -51,8 +77,9 @@ function createSnippetRuntime({ allowPasswordFields = false, snippets = {}, trig
     focus() {}
 
     setSelectionRange(start, end) {
-      this.selectionStart = start;
-      this.selectionEnd = end;
+      if (!this.supportsSelection) return;
+      this._start = start;
+      this._end = end;
     }
 
     dispatchEvent(event) {
@@ -172,6 +199,21 @@ test('« tel » et « telpro » ne se marchent plus dessus', () => {
   const perso = new InputElement(';tel');
   press(perso, 'Tab');
   assert.equal(perso.value, '+33 6 12 34 56 78');
+});
+
+test('un champ email — sans API de sélection — s’étend quand même', () => {
+  const { InputElement, press } = createSnippetRuntime();
+
+  // `selectionStart` vaut null sur type=email : l'ancien code renonçait, et
+  // « ;email » restait tel quel dans un champ d'inscription.
+  const tab = new InputElement(';email', { type: 'email' });
+  assert.equal(tab.selectionStart, null, 'le faux champ doit se comporter comme Chrome');
+  press(tab, 'Tab');
+  assert.equal(tab.value, 'prenom.nom@example.com');
+
+  const space = new InputElement(';addr', { type: 'email' });
+  press(space, ' ');
+  assert.equal(space.value, '12 rue des Lilas, 75011 Paris ');
 });
 
 test('les champs de mot de passe et de confirmation restent exclus par défaut', () => {

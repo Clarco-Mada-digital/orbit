@@ -84,10 +84,17 @@ intégrée ou ajoutez une URL web.
 - La **fenêtre détachée** garde les gestes d’un navigateur : `Ctrl + molette`
   pour le zoom (aussi `Ctrl +`, `Ctrl -` et `Ctrl 0`), `Ctrl + R` ou `F5` pour
   recharger, `Alt + ←/→` pour l’historique. Le clic droit y ouvre **le même
-  genre de menu que dans Orbit** — carte sombre arrondie, sous-menus dépliables,
-  navigation au clavier — avec copier, coller, liens, images, capture d’écran,
-  précédent, suivant, recharger et le zoom. Il est dessiné dans la page : le
-  focus y reste, donc « Coller » et « Relire » fonctionnent comme avant.
+  genre de menu que dans Orbit** — carte sombre arrondie, une icône par entrée,
+  sous-menus volants qui s’ouvrent au survol, navigation au clavier — avec
+  copier, coller, liens, images, capture d’écran et le zoom. Il est dessiné
+  dans la page : le focus y reste, donc « Coller » et « Relire » fonctionnent
+  comme avant.
+- Une **rangée d’icônes** en tête du menu donne les gestes sans les lire :
+  précédent, suivant, recharger, **ouvrir dans Orbit** (le lien ou la page
+  devient une page volante de la fenêtre principale), **ouvrir dans le
+  navigateur**, copier l’adresse de la page et capturer la zone visible. Quand
+  le clic droit tombe sur un lien, son adresse s’affiche en petit au-dessus du
+  menu : on voit où mène le clic avant de le faire.
 - Le zoom y reste appliqué pendant toute la durée de la fenêtre (il survit aux
   changements de page) et un badge affiche brièvement le pourcentage atteint.
 - **Relecture et assistant y fonctionnent aussi.** Une sélection corrigée depuis

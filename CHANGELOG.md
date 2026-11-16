@@ -93,13 +93,40 @@ La plus récente en premier.
 - **Aperçu de capture : enfin à la taille de l’écran.** La fenêtre d’édition
   s’étend jusqu’à 1400 px de large (896 auparavant) et l’image jusqu’à 66 % de
   la hauteur : on travaille sur une capture lisible, pas sur une vignette.
+- **Éditeur de capture : annuler et rétablir, vraiment.** L’historique ne
+  connaissait que les formes et ne savait aller que vers l’arrière. Chaque pas
+  garde maintenant l’état complet (formes, recadrage, luminosité/contraste/
+  saturation, masques sensibles) : `Ctrl+Z` recule, `Ctrl+Maj+Z` ou `Ctrl+Y`
+  avance, et un bouton **Rétablir** accompagne le bouton Annuler. « Tout
+  effacer » et le masquage assisté s’annulent aussi ; un glissement de curseur
+  ne fabrique qu’une seule étape.
+- **Thème « Noël ».** Un cinquième thème livré : vert sapin et blanc de neige
+  en sombre avec un accent or, neige et texte sapin en clair avec un accent
+  rouge baie de houx, arrondis doux et lueur chaude de guirlande. La barre
+  latérale reçoit **des flocons qui tombent** (vingt-quatre, tailles et vitesses
+  différentes) sous **une guirlande or/rouge/vert**, et les cartes un filet d'or.
+  Le décor ne capte aucun clic, reste sous l'interface, disparaît quand les
+  animations sont coupées (les flocons seulement : la guirlande reste, figée) et
+  change de teinte en ambiance claire — du blanc sur blanc ne se verrait pas. Il
+  apparaît dans Réglages → Apparence, se décline dans les deux ambiances et
+  respecte les seuils de contraste comme les quatre autres.
 - **Menu contextuel des fenêtres détachées, aux couleurs d’Orbit.** Le clic
   droit dans une fenêtre détachée, une pop-up ou une capture épinglée dessine
   le menu **dans la page** — mêmes entrées que le menu natif (couper/copier/
   coller, liens, images, capture d’écran, zoom, navigation), mais en carte
-  sombre arrondie, avec sous-menus dépliables et navigation au clavier. Le
-  focus reste dans la page, donc « Coller », « Relire » et le remplacement d’un
-  mot souligné continuent de fonctionner ; le menu système reste le repli.
+  sombre arrondie, avec une **icône par entrée**, des **sous-menus volants qui
+  s’ouvrent au survol** et la navigation au clavier (flèches, Entrée, Échap).
+  Une **rangée d’icônes** en tête donne les gestes sans lire : précédent,
+  suivant, recharger, **ouvrir dans Orbit** (le lien ou la page devient une page
+  volante de la fenêtre principale), **ouvrir dans le navigateur**, copier
+  l’adresse et capturer la zone visible. L’adresse du lien survolé s’affiche en
+  petit au-dessus : on sait où mène le clic avant de le faire. Le focus reste
+  dans la page, donc « Coller », « Relire » et le remplacement d’un mot souligné
+  continuent de fonctionner ; le menu système reste le repli.
+- **Fenêtres détachées : le menu répond enfin au clic.** Cliquer une entrée à
+  sous-menu refermait le menu au lieu de l’ouvrir : le `mousedown` remontait au
+  fond de la superposition, qui le prenait pour un clic à côté. Les gestes dans
+  le menu ne ferment plus rien et ne volent plus le focus de la page.
 - **Captures : choisir la fenêtre à capturer.** Le menu de capture gagne un
   champ **Fenêtre à capturer** : page de l'app active, fenêtre détachée,
   pop-up ou interface d'Orbit. Une fenêtre détachée est présélectionnée quand
@@ -108,6 +135,19 @@ La plus récente en premier.
   reconnue nulle part) est acceptée comme cible.
 
 ### Corrigé
+- **Text Snippets 1.3.1 : les champs email s’étendent enfin.** Sur un
+  `input[type=email]` (comme sur number ou date), le navigateur n'expose pas
+  l'API de sélection : `selectionStart` vaut `null`. Le script renonçait donc
+  silencieusement, et `;email` restait tel quel dans tous les champs d'adresse
+  — y compris ceux des Réglages et des formulaires d'inscription. Quand la
+  position du caret est indisponible, l'abréviation est maintenant cherchée en
+  fin de valeur. L'extension est réexportée en 1.3.1.
+- **Éditeur de capture : l’outil Texte écrit enfin.** Choisir « Texte » puis
+  cliquer sur l’image faisait apparaître le champ de saisie… et le refermait
+  aussitôt : l’action par défaut du `mousedown` retirait le focus de la zone à
+  peine montée, ce qui passait pour une sortie de champ et validait un texte
+  vide. Le clic ne vole plus le focus, et le champ est focalisé dès qu’il
+  s’ouvre. Entrée valide, Maj+Entrée passe à la ligne, Échap abandonne.
 - **Bandeau d'appel : le bon bouton, au bon moment.** Le bandeau se fiait à la
   seule catégorie `call` de la notification Android — or un appel sortant, un
   appel déjà décroché et un appel manqué la portent aussi. Il proposait donc

@@ -2453,12 +2453,27 @@ const isDownloadableUrl = (u) =>
 
 // Description du menu contextuel d'une page (voir aussi page-menu.js, qui la
 // rend en HTML dans les fenêtres sans interface Orbit).
+// « Intégrer dans Orbit » : le lien s'ouvre en PAGE VOLANTE dans la fenêtre
+// principale, au lieu de partir dans le navigateur système. Même chemin que
+// l'ouverture d'un lien venu de l'extérieur (voir deliverOpenLinks).
+function openUrlInOrbitWindow(url) {
+  if (!url || !mainWindow || mainWindow.isDestroyed()) return;
+  if (mainWindow.isMinimized()) mainWindow.restore();
+  mainWindow.show();
+  mainWindow.focus();
+  deliverOpenLinks([{ kind: 'url', url }]);
+}
+
 function buildGuestContextMenu(wc, params) {
   const t = [];
   const can = (flag) => Boolean(params.editFlags && params.editFlags[flag]);
 
   if (params.linkURL) {
     if (isWebUrl(params.linkURL)) {
+      t.push({
+        label: 'Ouvrir le lien dans Orbit',
+        click: () => openUrlInOrbitWindow(params.linkURL),
+      });
       t.push({
         label: 'Ouvrir le lien dans le navigateur',
         click: () => shell.openExternal(params.linkURL),
@@ -2662,6 +2677,14 @@ function buildGuestContextMenu(wc, params) {
     ],
   });
   t.push({ label: "Copier l'adresse de la page", click: () => clipboard.writeText(wc.getURL()) });
+  const pageUrl = params.pageURL || wc.getURL();
+  if (isWebUrl(pageUrl)) {
+    t.push({ label: 'Ouvrir la page dans Orbit', click: () => openUrlInOrbitWindow(pageUrl) });
+    t.push({
+      label: 'Ouvrir la page dans le navigateur',
+      click: () => shell.openExternal(pageUrl),
+    });
+  }
   if (isDev) {
     t.push({ type: 'separator' });
     t.push({ label: 'Inspecter', click: () => wc.inspectElement(params.x, params.y) });
@@ -2687,7 +2710,7 @@ function popupNativeGuestContextMenu(wc, params, ownerWindow) {
 // de la même entrée que le menu natif.
 async function showPageContextMenu(guestContents, params, template) {
   if (!guestContents || guestContents.isDestroyed()) return false;
-  const { model, byId } = serializeMenuTemplate(template);
+  const { model, byId, bar } = serializeMenuTemplate(template);
   if (!model.length) return false;
   let zoom = 1;
   try {
@@ -2698,9 +2721,12 @@ async function showPageContextMenu(guestContents, params, template) {
   // `params.x/y` sont en pixels indépendants du périphérique (donc déjà
   // multipliés par le zoom) ; la superposition, elle, vit en pixels CSS.
   const point = { x: params.x / zoom, y: params.y / zoom };
+  // L'adresse du lien survolé, affichée discrètement en tête du menu : on voit
+  // où mène le clic avant de le faire.
+  const hint = params.linkURL && isWebUrl(params.linkURL) ? params.linkURL : '';
   let chosen = null;
   try {
-    chosen = await guestContents.executeJavaScript(pageMenuScript(model, point), true);
+    chosen = await guestContents.executeJavaScript(pageMenuScript({ model, bar, hint }, point), true);
   } catch (err) {
     console.error('[orbit] menu contextuel dans la page échoué:', err);
     return false;

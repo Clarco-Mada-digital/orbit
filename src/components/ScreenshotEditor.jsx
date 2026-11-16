@@ -4,6 +4,7 @@ import {
   useEffect,
   useImperativeHandle,
   useMemo,
+  useReducer,
   useRef,
   useState,
 } from 'react';
@@ -17,6 +18,7 @@ import {
   Highlighter,
   ListOrdered,
   Pencil,
+  Redo2,
   RotateCcw,
   ShieldAlert,
   Square,
@@ -193,6 +195,13 @@ const ScreenshotEditor = forwardRef(function ScreenshotEditor({ dataUrl, alt, se
   // `setState` la dupliquerait (React rejoue les updaters en StrictMode).
   const draftRef = useRef(null);
   const textRef = useRef(null);
+  const textFieldRef = useRef(null);
+  // Historique : des instantanés complets (formes, recadrage, réglages,
+  // masques). Un `setState` dans une ref évite de rejouer les fermetures au
+  // moment du rendu ; le compteur ne sert qu'à rafraîchir les boutons.
+  const historyRef = useRef({ past: [], future: [] });
+  const lastRememberRef = useRef(null);
+  const [, refreshHistory] = useReducer((count) => count + 1, 0);
   const [imageSize, setImageSize] = useState(null);
   const [tool, setTool] = useState('arrow');
   const [color, setColor] = useState(ANNOTATION_COLORS[0]);
@@ -247,6 +256,9 @@ const ScreenshotEditor = forwardRef(function ScreenshotEditor({ dataUrl, alt, se
     setCrop(null);
     setMaskedSensitive(false);
     setAdjustments(DEFAULT_ADJUSTMENTS);
+    historyRef.current = { past: [], future: [] };
+    lastRememberRef.current = null;
+    refreshHistory();
   }, [dataUrl]);
 
   const redraw = useCallback(() => {
@@ -325,6 +337,102 @@ const ScreenshotEditor = forwardRef(function ScreenshotEditor({ dataUrl, alt, se
     setTextInput(value);
   }, []);
 
+  // -------------------------------------------------------------------
+  // Historique annuler / rétablir.
+  // -------------------------------------------------------------------
+  const currentSnapshot = useCallback(
+    () => ({ shapes, crop, adjustments, maskedSensitive }),
+    [adjustments, crop, maskedSensitive, shapes]
+  );
+
+  const HOLD_MS = 700;
+  /** Mémorise l'état actuel avant une modification. `tag` regroupe les
+   *  changements d'un même geste (un glissement de curseur, par exemple) en
+   *  une seule étape. */
+  const remember = useCallback(
+    (tag = '') => {
+      const now = Date.now();
+      const last = lastRememberRef.current;
+      const history = historyRef.current;
+      if (tag && last && last.tag === tag && now - last.at < HOLD_MS) {
+        last.at = now;
+        if (history.future.length) {
+          historyRef.current = { past: history.past, future: [] };
+          refreshHistory();
+        }
+        return;
+      }
+      lastRememberRef.current = { tag, at: now };
+      historyRef.current = {
+        past: [...history.past, currentSnapshot()].slice(-60),
+        future: [],
+      };
+      refreshHistory();
+    },
+    [currentSnapshot]
+  );
+
+  const applySnapshot = useCallback(
+    (snapshot) => {
+      textRef.current = null;
+      setTextInput(null);
+      setShapes(snapshot.shapes);
+      setCrop(snapshot.crop);
+      setAdjustments(snapshot.adjustments);
+      setMaskedSensitive(snapshot.maskedSensitive);
+      lastRememberRef.current = null;
+    },
+    []
+  );
+
+  const undo = useCallback(() => {
+    const { past, future } = historyRef.current;
+    if (!past.length) return;
+    const previous = past[past.length - 1];
+    historyRef.current = {
+      past: past.slice(0, -1),
+      future: [currentSnapshot(), ...future],
+    };
+    applySnapshot(previous);
+    refreshHistory();
+  }, [applySnapshot, currentSnapshot]);
+
+  const redo = useCallback(() => {
+    const { past, future } = historyRef.current;
+    if (!future.length) return;
+    const [next, ...rest] = future;
+    historyRef.current = {
+      past: [...past, currentSnapshot()].slice(-60),
+      future: rest,
+    };
+    applySnapshot(next);
+    refreshHistory();
+  }, [applySnapshot, currentSnapshot]);
+
+  // Ctrl+Z / Ctrl+Maj+Z / Ctrl+Y, sauf pendant une saisie au clavier.
+  useEffect(() => {
+    const onKeyDown = (event) => {
+      if (!(event.ctrlKey || event.metaKey) || event.altKey) return;
+      const target = event.target;
+      if (
+        target instanceof HTMLElement &&
+        (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)
+      ) {
+        return;
+      }
+      const key = event.key.toLowerCase();
+      if (key === 'z' && !event.shiftKey) {
+        event.preventDefault();
+        undo();
+      } else if ((key === 'z' && event.shiftKey) || key === 'y') {
+        event.preventDefault();
+        redo();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [redo, undo]);
+
   const commitText = useCallback(() => {
     const current = textRef.current;
     setText(null);
@@ -336,8 +444,11 @@ const ScreenshotEditor = forwardRef(function ScreenshotEditor({ dataUrl, alt, se
       color: current.color,
       width: current.width,
     };
-    if (shapeIsMeaningful(shape)) setShapes((list) => [...list, shape]);
-  }, [setText]);
+    if (shapeIsMeaningful(shape)) {
+      remember();
+      setShapes((list) => [...list, shape]);
+    }
+  }, [remember, setText]);
 
   const onPointerDown = (event) => {
     if (event.button !== 0 || !imageSize) return;
@@ -347,11 +458,15 @@ const ScreenshotEditor = forwardRef(function ScreenshotEditor({ dataUrl, alt, se
     }
     const at = pointOf(event);
     if (tool === 'text') {
+      // Sans cela, l'action par défaut du `mousedown` qui suit retire le focus
+      // du champ à peine monté : il se referme avant la première frappe.
+      event.preventDefault();
       setText({ at, value: '', color, width });
       return;
     }
     if (tool === 'step') {
       // Une étape se pose d'un clic, et se numérote toute seule.
+      remember();
       setShapes((list) => [...list, { tool: 'step', at, color, width, index: nextStepNumber(list) }]);
       return;
     }
@@ -397,16 +512,20 @@ const ScreenshotEditor = forwardRef(function ScreenshotEditor({ dataUrl, alt, se
     if (current.tool === 'crop') {
       const next = normalizeCrop(current.rect, imageSize);
       if (next) {
+        remember();
         setCrop(next);
         setTool('arrow');
       }
       return;
     }
-    if (shapeIsMeaningful(current)) setShapes((list) => [...list, current]);
+    if (shapeIsMeaningful(current)) {
+      remember();
+      setShapes((list) => [...list, current]);
+    }
   };
 
-  const undo = () => setShapes((list) => list.slice(0, -1));
   const clearAll = () => {
+    remember();
     setShapes([]);
     setText(null);
     setCrop(null);
@@ -419,6 +538,7 @@ const ScreenshotEditor = forwardRef(function ScreenshotEditor({ dataUrl, alt, se
   // dans l'historique comme le reste. Orbit propose, l'utilisateur décide.
   const maskSensitive = () => {
     if (!sensitiveRegions.length || !imageSize) return;
+    remember();
     const blockSize = pixelateBlockSize(imageSize);
     setShapes((list) => [
       ...list,
@@ -452,6 +572,17 @@ const ScreenshotEditor = forwardRef(function ScreenshotEditor({ dataUrl, alt, se
       fontSize: `${Math.max(11, textFontSize(textInput.width) * scale)}px`,
     };
   }, [origin, textInput, viewSize]);
+
+  // Le champ de saisie prend le focus dès son ouverture — l'effet attend la
+  // fin de l'événement en cours, là où `autoFocus` se faisait voler le focus.
+  const textOpen = Boolean(textInput);
+  useEffect(() => {
+    if (!textOpen) return undefined;
+    const frame = requestAnimationFrame(() => {
+      textFieldRef.current?.focus({ preventScroll: true });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [textOpen]);
 
   const edited = shapes.length > 0 || Boolean(crop) || !adjustmentsAreNeutral(adjustments);
 
@@ -553,7 +684,10 @@ const ScreenshotEditor = forwardRef(function ScreenshotEditor({ dataUrl, alt, se
         {crop && (
           <button
             type="button"
-            onClick={() => setCrop(null)}
+            onClick={() => {
+              remember();
+              setCrop(null);
+            }}
             title={t('annotate.cropResetHint')}
             className="flex items-center gap-1.5 rounded-lg px-2.5 py-2 text-xs text-text-muted transition hover:bg-bg-subtle hover:text-text-primary"
           >
@@ -566,12 +700,22 @@ const ScreenshotEditor = forwardRef(function ScreenshotEditor({ dataUrl, alt, se
           <button
             type="button"
             onClick={undo}
-            disabled={!shapes.length}
+            disabled={!historyRef.current.past.length}
             title={t('annotate.undo')}
             aria-label={t('annotate.undo')}
             className="rounded-lg p-2 text-text-muted transition hover:bg-bg-subtle hover:text-text-primary disabled:opacity-40"
           >
             <Undo2 size={16} />
+          </button>
+          <button
+            type="button"
+            onClick={redo}
+            disabled={!historyRef.current.future.length}
+            title={t('annotate.redo')}
+            aria-label={t('annotate.redo')}
+            className="rounded-lg p-2 text-text-muted transition hover:bg-bg-subtle hover:text-text-primary disabled:opacity-40"
+          >
+            <Redo2 size={16} />
           </button>
           <button
             type="button"
@@ -597,11 +741,12 @@ const ScreenshotEditor = forwardRef(function ScreenshotEditor({ dataUrl, alt, se
                 min={min}
                 max={max}
                 value={adjustments[key]}
-                onChange={(event) =>
+                onChange={(event) => {
+                  remember(`adjust:${key}`);
                   setAdjustments((current) =>
                     clampAdjustments({ ...current, [key]: Number(event.target.value) })
-                  )
-                }
+                  );
+                }}
                 className="min-w-0 flex-1 accent-accent"
               />
               <span className="w-10 shrink-0 text-right tabular-nums">{adjustments[key]}%</span>
@@ -609,7 +754,10 @@ const ScreenshotEditor = forwardRef(function ScreenshotEditor({ dataUrl, alt, se
           ))}
           <button
             type="button"
-            onClick={() => setAdjustments(DEFAULT_ADJUSTMENTS)}
+            onClick={() => {
+              remember();
+              setAdjustments(DEFAULT_ADJUSTMENTS);
+            }}
             disabled={adjustmentsAreNeutral(adjustments)}
             className="flex items-center gap-1.5 self-start text-xs text-text-muted transition hover:text-text-primary disabled:opacity-40 sm:col-span-3"
           >
@@ -635,7 +783,7 @@ const ScreenshotEditor = forwardRef(function ScreenshotEditor({ dataUrl, alt, se
           />
           {textInput && textStyle && (
             <textarea
-              autoFocus
+              ref={textFieldRef}
               value={textInput.value}
               onChange={(event) => setText({ ...textInput, value: event.target.value })}
               onBlur={commitText}

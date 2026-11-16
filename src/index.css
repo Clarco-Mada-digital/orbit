@@ -388,6 +388,99 @@
   background-attachment: fixed;
 }
 
+/* --- Noël : neige et guirlande dans la barre latérale -------------------
+   Le décor est enfant de la barre (`z-index: -1`) : au-dessus du fond de la
+   barre, SOUS l'interface. Les noms d'apps et les icônes restent donc nets,
+   et le décor ne capte aucun clic. Une seule règle décide de tout : sans le
+   thème `noel`, `display: none` et rien n'est peint. */
+.orbit-snow {
+  display: none;
+}
+
+[data-skin='noel'] .orbit-snow {
+  display: block;
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  z-index: -1;
+  border-radius: inherit;
+}
+
+/* Guirlande : or, rouge, vert — trois ampoules qui se suivent sur toute la
+   largeur. Le motif fait 36 px : trois ampoules espacées de 12 px. */
+[data-skin='noel'] .orbit-snow::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 7px;
+  background-image:
+    radial-gradient(circle at 4px 3.5px, rgb(245 214 138) 0 2.1px, transparent 2.9px),
+    radial-gradient(circle at 4px 3.5px, rgb(205 45 62) 0 2.1px, transparent 2.9px),
+    radial-gradient(circle at 4px 3.5px, rgb(104 178 128) 0 1.9px, transparent 2.7px);
+  background-size: 36px 7px, 36px 7px, 36px 7px;
+  background-position: 0 0, 12px 0, 24px 0;
+  background-repeat: repeat-x;
+  filter: drop-shadow(0 0 6px rgb(230 190 105 / 0.55));
+  animation: orbit-noel-lights 3.6s ease-in-out infinite alternate;
+}
+
+[data-skin='noel'] .orbit-snow span {
+  position: absolute;
+  top: 0;
+  border-radius: 999px;
+  background: #fff;
+  box-shadow: 0 0 6px rgb(255 255 255 / 0.7);
+  animation-name: orbit-noel-fall;
+  animation-timing-function: linear;
+  animation-iteration-count: infinite;
+}
+
+/* Ambiance claire : du blanc sur blanc serait invisible. Les flocons prennent
+   le vert-gris du texte secondaire — la neige d'un jour gris, pas une pluie de
+   confettis. */
+[data-skin='noel'][data-theme='light'] .orbit-snow span {
+  background: rgb(var(--text-muted));
+  box-shadow: 0 0 6px rgb(var(--text-muted) / 0.45);
+}
+
+/* La chute se fait en `transform` (composité, pas de repaint par image) ; la
+   dérive horizontale donne le flottement. 105vh : le flocon sort par le bas
+   même quand la barre ne fait pas toute la hauteur. */
+@keyframes orbit-noel-fall {
+  from {
+    transform: translate3d(0, -8px, 0);
+  }
+  to {
+    transform: translate3d(var(--flake-drift, 8px), 105vh, 0);
+  }
+}
+
+@keyframes orbit-noel-lights {
+  from {
+    opacity: 0.55;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* L'or du réveillon sur les surfaces, et un fond légèrement éclairé en haut. */
+[data-skin='noel'] body {
+  background-image: radial-gradient(
+    120% 80% at 50% -10%,
+    rgb(var(--accent-primary) / 0.09) 0%,
+    transparent 60%
+  );
+  background-attachment: fixed;
+}
+
+[data-skin='noel'] .card {
+  box-shadow: var(--shadow-card), inset 0 1px 0 0 rgb(var(--accent-primary) / 0.28);
+}
+
 /* --- Papier : tout plat, y compris ce que Tailwind ombre par défaut ------ */
 [data-skin='paper'] .shadow-lg,
 [data-skin='paper'] .shadow-2xl,
@@ -406,4 +499,22 @@
    Le halo et les textures restent : ce réglage visait les MOUVEMENTS, pas la
    décoration fixe. Les couper aussi aurait fait disparaître l'identité du
    thème pour qui désactive les animations (souvent par confort visuel, pas
-   par rejet du style). */
+   par rejet du style).
+
+   La neige, elle, EST un mouvement : elle disparaît quand on coupe les
+   animations (ou quand le système le demande). La guirlande reste, figée —
+   elle fait partie de l'identité du thème, pas d'une animation. */
+
+.no-animations .orbit-snow span {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .orbit-snow span {
+    display: none;
+  }
+
+  .orbit-snow::before {
+    animation: none;
+  }
+}

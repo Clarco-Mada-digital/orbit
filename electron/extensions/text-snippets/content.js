@@ -155,15 +155,29 @@
     }
   }
 
+  // Position du caret. Les champs email, url, number… n'implémentent PAS l'API
+  // de sélection : `selectionStart` y vaut null (et `setSelectionRange` ne fait
+  // rien). On suppose alors le caret en fin de valeur — c'est le cas quand on
+  // vient de taper l'abréviation, et le remplacement ne se déclenche que si le
+  // champ se termine vraiment par elle.
+  function caretRange(el) {
+    const start = el.selectionStart;
+    const end = el.selectionEnd;
+    if (start === null) {
+      const length = el.value.length;
+      return { start: length, end: length };
+    }
+    return { start, end };
+  }
+
   // Remplace la plus longue chaîne qui se termine au caret par la valeur du
   // snippet. Renvoie true si un remplacement a eu lieu.
   function expandAtCaret(el, abbr) {
     try {
       const needle = trigger + abbr;
       if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
-        const start = el.selectionStart;
-        const end = el.selectionEnd;
-        if (start === null || start !== end) return false; // sélection active : on n'expand pas
+        const { start, end } = caretRange(el);
+        if (start !== end) return false; // sélection active : on n'expand pas
         const before = el.value.slice(0, start);
         if (!before.toLowerCase().endsWith(needle.toLowerCase())) return false;
         const newPos = start - needle.length + snippets[abbr].length;
@@ -233,9 +247,8 @@
     // Récupérer le texte juste avant le caret
     let before = null;
     if (el instanceof HTMLInputElement || el instanceof HTMLTextAreaElement) {
-      const start = el.selectionStart;
-      const end = el.selectionEnd;
-      if (start === null || start !== end) return;
+      const { start, end } = caretRange(el);
+      if (start !== end) return;
       before = el.value.slice(0, start);
     } else if (el.isContentEditable) {
       const sel = window.getSelection();

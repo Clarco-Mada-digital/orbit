@@ -22,7 +22,7 @@
 // illisible ne doit pas pouvoir être livré.
 // ---------------------------------------------------------------------------
 
-export const SKINS = ['orbit', 'tech', 'paper', 'amber'];
+export const SKINS = ['orbit', 'tech', 'paper', 'amber', 'noel'];
 export const MODES = ['auto', 'dark', 'light'];
 
 export const DEFAULT_SKIN = 'orbit';
@@ -93,6 +93,20 @@ const TRAITS = {
     glow: 0.35,
     font: 'Inter',
     tracking: '0em',
+    uppercase: false,
+    texture: 'glow',
+  },
+  // Noël : sapin, or et neige. Arrondis doux, lueur chaude comme une guirlande
+  // — assez marquée pour se voir, assez discrète pour travailler dessus.
+  noel: {
+    radiusCard: '0.875rem',
+    radiusControl: '0.625rem',
+    radiusPill: '9999px',
+    borderWidth: '1px',
+    shadowCard: '0 8px 24px -10px rgb(0 0 0 / 0.5)',
+    glow: 0.55,
+    font: 'Inter',
+    tracking: '0.01em',
     uppercase: false,
     texture: 'glow',
   },
@@ -187,6 +201,38 @@ const PALETTES = {
       accent: '196 160 118',
     },
   },
+  noel: {
+    dark: {
+      // Vert sapin très profond : le fond d'un soir de réveillon.
+      bgPrimary: '9 20 16',
+      bgSecondary: '14 28 22',
+      bgElevated: '20 37 30',
+      bgHover: '28 49 40',
+      // Blanc de neige, un peu chaud pour ne pas bleuir sur le vert.
+      textPrimary: '244 241 233',
+      textSecondary: '201 215 205',
+      textMuted: '140 166 152',
+      border: '30 52 42',
+      borderLight: '40 66 54',
+      // Or des boules et des étoiles : c'est la signature du thème.
+      accent: '230 190 105',
+    },
+    light: {
+      // Neige : blancs légèrement verts, jamais du blanc pur.
+      bgPrimary: '246 249 246',
+      bgSecondary: '255 255 255',
+      bgElevated: '236 243 238',
+      bgHover: '226 236 230',
+      textPrimary: '15 35 26',
+      textSecondary: '51 82 66',
+      textMuted: '92 116 103',
+      border: '210 224 214',
+      borderLight: '196 213 202',
+      // Baie de houx : le rouge de Noël tient le rôle d'accent sur fond clair,
+      // là où l'or deviendrait illisible.
+      accent: '178 34 52',
+    },
+  },
   amber: {
     dark: {
       bgPrimary: '18 13 9',
@@ -223,6 +269,7 @@ export const SKIN_META = [
   { id: 'tech', name: 'Tech', descKey: 'st.skin.tech' },
   { id: 'paper', name: 'Papier', descKey: 'st.skin.paper' },
   { id: 'amber', name: 'Nuit chaude', descKey: 'st.skin.amber' },
+  { id: 'noel', name: 'Noël', descKey: 'st.skin.noel' },
 ];
 
 // Tables des thèmes LIVRÉS. Exportées pour deux usages : l'export d'un thème

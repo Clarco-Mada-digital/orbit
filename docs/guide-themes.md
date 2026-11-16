@@ -32,8 +32,15 @@ Orbit sépare deux choses que la plupart des applications confondent.
 
 | Axe | Ce qu'il porte | Valeurs |
 | --- | --- | --- |
-| **Thème** (`skin`) | L'identité : couleurs et formes | `orbit`, `tech`, `paper`, `amber`, ou le vôtre |
+| **Thème** (`skin`) | L'identité : couleurs et formes | `orbit`, `tech`, `paper`, `amber`, `noel`, ou le vôtre |
 | **Ambiance** (`mode`) | Clair ou sombre | `dark`, `light`, `auto` |
+
+Les thèmes livrés, pour situer les caractères : **Orbit** (l'apparence
+d'origine), **Tech** (angles vifs, halo, police à chasse fixe), **Papier**
+(plat et reposant), **Nuit chaude** (ambre et brun) et **Noël** (vert sapin,
+or et neige, avec un accent rouge baie de houx en clair ; la neige tombe
+dans la barre latérale et une guirlande court sous son en-tête, coupées avec
+les animations de l'application).
 
 Conséquence pour vous : **un thème décrit normalement DEUX palettes**, une par
 ambiance. La silhouette (les angles, le halo, la police) ne change pas entre
