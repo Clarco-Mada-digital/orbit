@@ -213,6 +213,7 @@ const [editUrlFor, setEditUrlFor] = useState(null); // { id, url } — boîte «
     rules,
     profiles,
     extensions,
+    updateExtensions,
     settings,
     updateApp,
     setActiveApp,
@@ -824,9 +825,21 @@ const [editUrlFor, setEditUrlFor] = useState(null); // { id, url } — boîte «
         // Les apps natives (`orbit.nativeApp`) suivent l'état RÉEL des
         // extensions : installées → l'app apparaît, sinon elle disparaît.
         if (res?.nativeApps) useStore.getState().syncNativeApps(res.nativeApps);
+        // Dossier disparu (nettoyage d'un ancien dossier temporaire,
+        // suppression à la main…) : la ligne « installée » serait un mensonge,
+        // et son bouton d'installation resterait désactivé pour toujours. On
+        // la retire, ce qui rend l'extension réinstallable depuis le catalogue.
+        if (res?.missing?.length) {
+          const gone = new Set(res.missing.map((item) => item.id));
+          console.warn(
+            '[orbit] extensions retirées (dossier introuvable) :',
+            res.missing.map((item) => item.name).join(', '),
+          );
+          updateExtensions(extensions.filter((ext) => !gone.has(ext.id)));
+        }
       })
       .catch(() => {});
-  }, [extensions]);
+  }, [extensions, updateExtensions]);
 
   // Ouverture du studio depuis la palette de commandes.
   useEffect(() => {

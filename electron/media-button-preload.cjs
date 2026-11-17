@@ -87,10 +87,22 @@ if (window.top === window.self) {
   const overlayAllowed = () => surface === 'both' || surface === 'overlay';
 
   // --- Interface ----------------------------------------------------------
+  // Une seule pastille posée SUR la vidéo, qui déplie deux choix au clic.
+  // Avant : une colonne de deux boutons fixes en haut à droite de la PAGE,
+  // toujours affichée et cliquable — elle recouvrait le contenu et interceptait
+  // les clics destinés à la page. Ici la pastille tient dans un coin de l'image,
+  // reste discrète au repos, et la couche qui la porte laisse passer les clics
+  // (`pointer-events: none`) sauf sur ses propres commandes.
   const HOST_ID = '__orbit_media_button__';
+  const PILL_SIZE = 30;
   let host = null;
   let shadow = null;
+  let wrap = null;
+  let pill = null;
+  let menu = null;
+  let note = null;
   let busy = false;
+  let opened = false;
 
   function build() {
     if (host) return;
@@ -103,50 +115,100 @@ if (window.top === window.self) {
       :host { all: initial; }
       * { box-sizing: border-box; }
       .wrap {
-        position: fixed; right: 18px; top: 84px; z-index: 2147483646;
-        display: flex; flex-direction: column; gap: 6px;
+        position: fixed; z-index: 2147483646;
+        pointer-events: none;
         font: 600 12px/1 system-ui, -apple-system, sans-serif;
-        opacity: .35; transition: opacity .18s ease;
       }
-      /* Discret au repos, franc au survol : un bouton posé sur une vidéo ne
-         doit pas disputer l'attention au contenu qu'on est venu regarder. */
-      .wrap:hover, .wrap:focus-within { opacity: 1; }
-      button {
-        display: flex; align-items: center; gap: 7px;
-        min-height: 34px; padding: 8px 12px;
+      /* La pastille : 30 px, à demi effacée au repos. Un décor sur une vidéo
+         ne doit pas disputer l'attention au contenu qu'on est venu regarder. */
+      .pill {
+        pointer-events: auto;
+        display: grid; place-items: center;
+        width: ${PILL_SIZE}px; height: ${PILL_SIZE}px;
+        padding: 0; border-radius: 50%;
+        border: 1px solid #52525bcc;
+        background: #18181bcc; color: #f4f4f5;
+        box-shadow: 0 2px 10px #0006;
+        font: inherit; cursor: pointer; opacity: .5;
+        -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px);
+        transition: opacity .15s ease, transform .15s ease, border-color .15s ease;
+      }
+      .pill:hover, .pill:focus-visible, .pill[aria-expanded="true"] {
+        opacity: 1; transform: scale(1.06); border-color: #818cf8;
+      }
+      .pill:focus-visible { outline: 2px solid #818cf8; outline-offset: 2px; }
+      .pill svg { width: 15px; height: 15px; }
+      .menu {
+        position: absolute; top: calc(100% + 6px); right: 0;
+        display: none; min-width: 176px; padding: 4px;
         border: 1px solid #3f3f46; border-radius: 10px;
-        background: #18181bee; color: #f4f4f5;
-        box-shadow: 0 6px 20px #0007; font: inherit; cursor: pointer;
-        -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+        background: #18181bf2; color: #f4f4f5;
+        box-shadow: 0 10px 28px #0008;
+        -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px);
       }
-      button:hover { border-color: #818cf8; background: #27272aee; }
-      button:disabled { cursor: progress; opacity: .6; }
-      .audio { font-weight: 500; opacity: .9; }
+      .menu[data-open="true"] { display: block; }
+      .menu button {
+        pointer-events: auto;
+        display: flex; align-items: center; gap: 8px; width: 100%;
+        min-height: 30px; padding: 7px 9px;
+        border: 0; border-radius: 7px; background: transparent;
+        color: inherit; font: inherit; text-align: left; cursor: pointer;
+      }
+      .menu button:hover, .menu button:focus-visible { background: #ffffff14; }
+      .menu button:focus-visible { outline: 2px solid #818cf8; outline-offset: -2px; }
+      .menu button:disabled { cursor: progress; opacity: .55; }
+      .menu .hint { opacity: .55; font-weight: 500; }
       .note {
-        max-width: 230px; padding: 7px 10px;
-        border: 1px solid #3f3f46; border-radius: 9px;
-        background: #18181bee; color: #a1a1aa;
+        pointer-events: none;
+        position: absolute; top: calc(100% + 6px); right: 0;
+        max-width: 230px; margin: 0; padding: 6px 9px;
+        border: 1px solid #3f3f46; border-radius: 8px;
+        background: #18181bf2; color: #a1a1aa;
         font-weight: 500; line-height: 1.35;
       }
       .note[data-kind="error"] { color: #fca5a5; border-color: #7f1d1d; }
       .note[data-kind="ok"] { color: #86efac; border-color: #14532d; }
     `;
 
-    const wrap = document.createElement('div');
+    wrap = document.createElement('div');
     wrap.className = 'wrap';
+
+    pill = document.createElement('button');
+    pill.type = 'button';
+    pill.className = 'pill';
+    pill.setAttribute('aria-label', 'Télécharger le média');
+    pill.setAttribute('aria-haspopup', 'menu');
+    pill.setAttribute('aria-expanded', 'false');
+    pill.innerHTML =
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" ' +
+      'stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">' +
+      '<path d="M12 4v10" /><path d="m7.5 9.5 4.5 4.5 4.5-4.5" /><path d="M5 19h14" /></svg>';
+
+    menu = document.createElement('div');
+    menu.className = 'menu';
+    menu.setAttribute('role', 'menu');
+    menu.dataset.open = 'false';
 
     const video = document.createElement('button');
     video.type = 'button';
-    video.innerHTML = '<span aria-hidden="true">⬇</span><span>Télécharger la vidéo</span>';
+    video.setAttribute('role', 'menuitem');
+    video.innerHTML = '<span aria-hidden="true">⬇</span><span>Vidéo</span>';
     const audio = document.createElement('button');
     audio.type = 'button';
-    audio.className = 'audio';
-    audio.innerHTML = '<span aria-hidden="true">♪</span><span>Audio seulement</span>';
+    audio.setAttribute('role', 'menuitem');
+    audio.innerHTML = '<span aria-hidden="true">♪</span><span>Audio seulement</span><span class="hint">mp3</span>';
 
-    const note = document.createElement('p');
+    note = document.createElement('p');
     note.setAttribute('role', 'status');
     note.className = 'note';
     note.hidden = true;
+
+    const setOpen = (value) => {
+      opened = value;
+      menu.dataset.open = value ? 'true' : 'false';
+      pill.setAttribute('aria-expanded', value ? 'true' : 'false');
+      if (value) note.hidden = true;
+    };
 
     const say = (message, kind = '') => {
       note.textContent = message;
@@ -156,6 +218,7 @@ if (window.top === window.self) {
 
     const ask = async (mode) => {
       if (busy) return;
+      setOpen(false);
       busy = true;
       video.disabled = true;
       audio.disabled = true;
@@ -185,9 +248,72 @@ if (window.top === window.self) {
     video.addEventListener('click', () => ask('video'));
     audio.addEventListener('click', () => ask('audio'));
 
-    wrap.append(video, audio, note);
+    pill.addEventListener('click', (event) => {
+      event.stopPropagation();
+      setOpen(!opened);
+      if (opened) video.focus();
+    });
+    // Un clic ailleurs referme le menu : la page garde son comportement
+    // habituel, on ne prend jamais le clic pour nous.
+    document.addEventListener(
+      'pointerdown',
+      (event) => {
+        if (!opened) return;
+        if (event.composedPath().includes(host)) return;
+        setOpen(false);
+      },
+      true,
+    );
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && opened) {
+        setOpen(false);
+        pill.focus();
+      }
+    });
+
+    menu.append(video, audio);
+    wrap.append(pill, menu, note);
     shadow.append(style, wrap);
   }
+
+  // La pastille se pose dans le coin SUPÉRIEUR DROIT de la vidéo : en bas, elle
+  // couvrirait les barres de contrôle du lecteur (pleine largeur) ; en haut à
+  // droite de l'image, elle ne dispute sa place à aucun bouton de lecture.
+  // Sans vidéo repérable, elle se range dans le coin de la fenêtre.
+  const place = () => {
+    if (!wrap) return;
+    const video = realVideos().find((candidate) => {
+      const rect = candidate.getBoundingClientRect();
+      return rect.width >= 200 && rect.height >= 120;
+    });
+    if (!video) {
+      wrap.style.left = 'auto';
+      wrap.style.top = '84px';
+      wrap.style.right = '18px';
+      return;
+    }
+    const rect = video.getBoundingClientRect();
+    const inset = 10;
+    wrap.style.right = 'auto';
+    wrap.style.left = `${Math.round(
+      Math.min(window.innerWidth - PILL_SIZE - 4, Math.max(4, rect.right - PILL_SIZE - inset)),
+    )}px`;
+    wrap.style.top = `${Math.round(Math.min(window.innerHeight - PILL_SIZE - 4, Math.max(4, rect.top + inset)))}px`;
+  };
+
+  // Le déplacement de la vidéo (défilement, redimensionnement) doit suivre sans
+  // faire tourner une boucle d'animation : on ne recalcule qu'à ces moments-là.
+  let placing = false;
+  const requestPlace = () => {
+    if (placing) return;
+    placing = true;
+    requestAnimationFrame(() => {
+      placing = false;
+      place();
+    });
+  };
+  window.addEventListener('scroll', requestPlace, { passive: true, capture: true });
+  window.addEventListener('resize', requestPlace, { passive: true });
 
   function show() {
     build();
@@ -200,8 +326,12 @@ if (window.top === window.self) {
   }
 
   function refresh() {
-    if (overlayAllowed() && shouldOffer()) show();
-    else hide();
+    if (overlayAllowed() && shouldOffer()) {
+      show();
+      place();
+    } else {
+      hide();
+    }
   }
 
   // Les pages de vidéo sont presque toutes des applications d'une seule page :
@@ -224,6 +354,9 @@ if (window.top === window.self) {
         seen = location.href;
         later();
       }
+      // La mise en page bouge aussi sans défilement (bandeau qui apparaît,
+      // lecteur redimensionné) : un recalage régulier suffit, il ne coûte rien.
+      if (host && host.parentNode) place();
     }, 1000);
     window.addEventListener('popstate', later);
     // Une vidéo ajoutée après coup (lecteur chargé en différé)

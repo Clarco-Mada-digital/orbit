@@ -69,9 +69,17 @@ export function discardDirectory(dir) {
 
 // Nettoyage des extractions temporaires laissées par les anciennes versions
 // (`zip-temp-<horodatage>`), qui ne servent plus à rien.
+//
+// ATTENTION : avant le dossier stable `zip-<nom>`, les extensions s'installaient
+// PRÉCISÉMENT dans ces dossiers `zip-temp-*`. Elles pouvaient donc y être encore
+// chargées — et un nettoyage à l'aveugle les effaçait, faisant disparaître
+// l'extension (et son app native, comme le Téléphone) sans rien dire à
+// l'utilisateur. `keep` doit donc contenir TOUS les dossiers encore utilisés ;
+// on ne retire que ce que personne ne référence.
 export function pruneStaleInstallDirs(root, { prefixes = ['zip-temp-'], keep = [] } = {}) {
   let removed = 0;
   let entries = [];
+  const protectedDirs = new Set((keep || []).filter(Boolean).map((dir) => path.resolve(dir)));
   try {
     entries = fs.readdirSync(root, { withFileTypes: true });
   } catch {
@@ -81,7 +89,7 @@ export function pruneStaleInstallDirs(root, { prefixes = ['zip-temp-'], keep = [
     if (!entry.isDirectory()) continue;
     if (!prefixes.some((prefix) => entry.name.startsWith(prefix))) continue;
     const full = path.join(root, entry.name);
-    if (keep.includes(full)) continue;
+    if (protectedDirs.has(path.resolve(full))) continue;
     try {
       fs.rmSync(full, { recursive: true, force: true });
       removed += 1;
@@ -90,6 +98,17 @@ export function pruneStaleInstallDirs(root, { prefixes = ['zip-temp-'], keep = [
     }
   }
   return removed;
+}
+
+// Extensions dont le dossier d'installation a disparu (nettoyage d'un ancien
+// dossier temporaire, suppression à la main, profil restauré partiellement…).
+// Les garder dans la liste ne sert à rien — Chromium ne peut pas les charger —
+// et, côté interface, elles restent affichées « installée » : le bouton
+// d'installation est alors désactivé et l'extension devient irréparable. On les
+// signale au renderer, qui les retire de sa liste pour rendre le catalogue
+// utilisable à nouveau.
+export function findMissingExtensions(list, exists = (dir) => fs.existsSync(dir)) {
+  return (list || []).filter((ext) => ext && ext.path && !exists(ext.path));
 }
 
 // `Local Extension Settings/<id>` est l'emplacement où Chromium range

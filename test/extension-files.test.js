@@ -10,6 +10,7 @@ import {
   discardDirectory,
   extensionDirSlug,
   extensionStoragePath,
+  findMissingExtensions,
   pruneStaleInstallDirs,
   replaceExtensionDir,
 } from '../electron/extension-files.js';
@@ -134,4 +135,51 @@ test('les extractions temporaires des anciennes versions sont nettoyées', async
   } finally {
     await fsp.rm(root, { recursive: true, force: true });
   }
+});
+
+// Le nettoyage a déjà emporté l'extension Téléphone d'un profil : installée
+// dans `zip-temp-<horodatage>` par une ancienne version, elle y était encore
+// CHARGÉE quand une installation d'extension a lancé le nettoyage.
+test('une extension encore installée dans un ancien dossier temporaire survit au nettoyage', async () => {
+  const root = await tempDir();
+  try {
+    const installed = path.join(root, 'zip-temp-1700000000000'); // dossier de l'extension active
+    const orphan = path.join(root, 'zip-temp-1600000000000'); // reste d'une installation interrompue
+    for (const dir of [installed, orphan]) {
+      await fsp.mkdir(dir, { recursive: true });
+      await fsp.writeFile(path.join(dir, 'manifest.json'), '{}');
+    }
+
+    // `keep` vient des chemins déclarés par les extensions actives : ici, un
+    // chemin non normalisé (avec un `./`) ne doit pas faire rater la protection.
+    const removed = pruneStaleInstallDirs(root, { keep: [path.join(root, '.', 'zip-temp-1700000000000')] });
+
+    assert.equal(removed, 1);
+    assert.equal(fs.existsSync(installed), true, 'l’extension installée reste en place');
+    assert.equal(fs.existsSync(orphan), false, 'le dossier orphelin est bien nettoyé');
+  } finally {
+    await fsp.rm(root, { recursive: true, force: true });
+  }
+});
+
+test('une extension dont le dossier a disparu est signalée, pas silencieusement gardée', () => {
+  const present = '/profil/extensions/zip-text-snippets';
+  const gone = '/profil/extensions/zip-temp-1700000000000';
+  const exists = (dir) => dir === present;
+  const list = [
+    { id: 'a', name: 'Text Snippets', path: present },
+    { id: 'b', name: 'Téléphone Orbit', path: gone },
+    { id: 'c', name: 'Sans chemin', path: '' },
+  ];
+
+  assert.deepEqual(
+    findMissingExtensions(list, exists).map((ext) => ext.id),
+    ['b'],
+    'seules les extensions dont le dossier manque sont signalées',
+  );
+  assert.deepEqual(findMissingExtensions(null, exists), []);
+  assert.deepEqual(
+    findMissingExtensions([{ id: 'x', name: 'Pris', path: present }], () => false).map((ext) => ext.id),
+    ['x'],
+  );
 });

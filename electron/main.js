@@ -12,6 +12,7 @@ import {
   copyExtensionStorage,
   discardDirectory,
   extensionDirSlug,
+  findMissingExtensions,
   pruneStaleInstallDirs,
   replaceExtensionDir,
 } from './extension-files.js';
@@ -3087,7 +3088,23 @@ async function ensureExtensionsForPartition(partition) {
 
 // Réconcilie l'état du store React avec les sessions (charger / décharger)
 async function syncExtensions(list) {
-  enabledExtensions = (list || []).filter((e) => e.enabled);
+  // Une extension dont le dossier a disparu ne peut pas être chargée. On la
+  // sort de la liste active ET on la signale au renderer : sans cela elle
+  // restait affichée « installée » dans le catalogue, bouton d'installation
+  // désactivé — impossible de la remettre en place.
+  //
+  // Seuls les dossiers que NOUS gérons sont jugés : une extension chargée
+  // depuis ailleurs (dossier embarqué, chemin fourni par la ligne de commande)
+  // ne doit jamais être retirée parce qu'un de ses chemins nous est étranger.
+  const extensionsRoot = path.join(app.getPath('userData'), 'extensions');
+  const managed = (dir) =>
+    path.resolve(dir).startsWith(`${path.resolve(extensionsRoot)}${path.sep}`);
+  const missing = findMissingExtensions(list, (dir) => !managed(dir) || fs.existsSync(dir));
+  const missingIds = new Set(missing.map((e) => e.id));
+  if (missing.length) {
+    console.warn('[orbit] extensions introuvables :', missing.map((e) => `${e.name} (${e.path})`).join(', '));
+  }
+  enabledExtensions = (list || []).filter((e) => e.enabled && !missingIds.has(e.id));
   extensionSyncStarted = true;
   markExtensionSyncReady();
   for (const partition of knownPartitions) {
@@ -3119,7 +3136,11 @@ async function syncExtensions(list) {
     } else if (!previous.has('phone') && nativeAppKinds.has('phone')) {
       startPhoneNotifications();
     }
-  return { success: true, nativeApps: [...nativeAppKinds] };
+  return {
+    success: true,
+    nativeApps: [...nativeAppKinds],
+    missing: missing.map((e) => ({ id: e.id, name: e.name, path: e.path })),
+  };
 }
 
 function removeExtensionFromAll(id, managedPath) {
@@ -6935,8 +6956,24 @@ async function installExtensionFromZip(zipPath) {
     // jour, et les réglages de l'extension (chrome.storage.local : snippets,
     // notes, préférences…) restaient rangés sous l'ancien ID — d'où des
     // réglages « effacés » après une mise à jour. Même dossier = même ID.
+    // Le nettoyage ne doit JAMAIS emporter une extraction encore utilisée :
+    // les extensions installées avant le dossier stable `zip-<nom>` vivent
+    // encore dans des `zip-temp-*`, et c'est de là qu'elles sont chargées.
     const extRoot = path.join(app.getPath('userData'), 'extensions');
-    pruneStaleInstallDirs(extRoot, { keep: [tempDir] });
+    const keepDirs = [tempDir, ...enabledExtensions.map((e) => e.path).filter(Boolean)];
+    for (const partition of knownPartitions) {
+      try {
+        const ses = getSessionForPartition(partition);
+        const getAll = () =>
+          typeof ses.extensions?.getAllExtensions === 'function'
+            ? ses.extensions.getAllExtensions()
+            : ses.getAllExtensions();
+        for (const loadedExt of getAll()) {
+          if (loadedExt.path) keepDirs.push(loadedExt.path);
+        }
+      } catch { /* session indisponible */ }
+    }
+    pruneStaleInstallDirs(extRoot, { keep: keepDirs });
     const targetDir = path.join(extRoot, `zip-${extensionDirSlug(extName)}`);
 
     // Ancien ID de l'extension dans chaque session, mémorisé avant déchargement.

@@ -135,6 +135,26 @@ La plus récente en premier.
   reconnue nulle part) est acceptée comme cible.
 
 ### Corrigé
+- **Une extension installée ne peut plus disparaître toute seule.** Le nettoyage
+  des anciens dossiers d'extraction (`zip-temp-<horodatage>`) effaçait aussi
+  ceux depuis lesquels une extension était encore **chargée** : installée par
+  une version antérieure d'Orbit, elle vivait précisément là. Une mise à jour
+  d'une autre extension suffisait donc à la faire disparaître — c'est ce qui
+  est arrivé à l'app **Téléphone**, dont il ne restait plus rien sur le disque.
+  Le nettoyage ne touche désormais que les dossiers que personne n'utilise, ni
+  une extension active, ni une session chargée. Et lorsqu'un dossier manque
+  malgré tout, l'extension n'est plus affichée « installée » avec un bouton
+  d'installation désactivé (impasse) : elle est signalée et retirée de la
+  liste, donc réinstallable depuis le catalogue en un clic. Ses réglages, eux,
+  sont conservés.
+- **Le bouton de téléchargement ne recouvre plus la page.** Sur une page à
+  vidéo, deux boutons fixes occupaient le coin supérieur droit — par-dessus le
+  contenu, et cliquables : les commandes de la page situées dessous devenaient
+  inaccessibles. Ils sont remplacés par **une seule pastille de 30 px posée sur
+  la vidéo**, à demi effacée au repos, qui déplie « Vidéo » et « Audio
+  seulement » au clic. La couche qui la porte laisse passer les clics
+  (`pointer-events: none`), le menu se referme au clic ailleurs ou sur Échap, et
+  la pastille suit la vidéo au défilement et au redimensionnement.
 - **Text Snippets 1.3.1 : les champs email s’étendent enfin.** Sur un
   `input[type=email]` (comme sur number ou date), le navigateur n'expose pas
   l'API de sélection : `selectionStart` vaut `null`. Le script renonçait donc

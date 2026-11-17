@@ -511,6 +511,18 @@ export default function Extensions() {
       // Apps natives (`orbit.nativeApp`) : présentes seulement si l'extension
       // qui les déclare est active — installation ET désinstallation passent ici.
       if (res?.nativeApps) useStore.getState().syncNativeApps(res.nativeApps);
+      // Dossier d'installation disparu : la garder « installée » bloquerait le
+      // bouton du catalogue. On la retire pour pouvoir la réinstaller.
+      if (res?.missing?.length) {
+        const gone = new Set(res.missing.map((item) => item.id));
+        nextList = nextList.filter((ext) => !gone.has(ext.id));
+        updateExtensions(nextList);
+        setError(
+          `Extension introuvable sur le disque, retirée de la liste : ${res.missing
+            .map((item) => item.name)
+            .join(', ')}. Réinstallez-la depuis le catalogue.`,
+        );
+      }
     } catch {
       /* ignore */
     }
