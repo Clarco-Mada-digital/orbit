@@ -102,6 +102,7 @@
       "src/lib/extensionCatalog.js",
       "src/lib/shortcuts.js",
       "src/lib/rules.js",
+      "src/lib/automations.js",
       "src/lib/fileTypes.js",
       "src/lib/documents.js",
       "src/lib/markdown.js",
