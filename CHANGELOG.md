@@ -8,9 +8,66 @@ Format : une section `## [X.Y.Z] — AAAA-MM-JJ` par version, puis des
 sous-sections `### Ajouté` / `### Modifié` / `### Corrigé` / `### Sécurité`.
 La plus récente en premier.
 
-## [1.20.0] — 2026-11-10
+## [1.20.0] — 2026-11-20
 
 ### Ajouté
+- **Automatisations « Quand… / Si… / Alors… ».** Les règles ne savaient que
+  rediriger un lien ou changer de profil à heure fixe. Une automatisation
+  combine désormais **un déclencheur** — à une heure précise, toutes les
+  N minutes, au démarrage, à l'ouverture d'une app, au changement de profil, à
+  l'arrivée d'un message, à la perte ou au retour de la connexion —, des
+  **conditions** facultatives (jours, plage horaire même à cheval sur minuit,
+  profil actif) et **une suite d'actions** exécutées dans l'ordre : changer de
+  profil, ouvrir une app ou une adresse (privée au besoin), recharger, mettre
+  en veille ou réveiller une app, endormir toutes les apps inactives (jamais
+  celle qu'on regarde, ni l'écran partagé, ni la musique), couper les
+  notifications d'une app, régler son zoom, écran partagé, espace de travail,
+  tout marquer comme lu, ambiance claire/sombre, ne pas déranger, notification,
+  attente. **Douze recettes** prêtes à l'emploi (début et fin de journée,
+  concentration, mode sombre le soir, économiseur de mémoire, connexion
+  retrouvée…), un bouton **Tester**, la modification et la duplication des
+  règles, un **journal** des dernières exécutions et l'**import / export** en
+  JSON. Une automatisation lancée par un événement ne peut pas en déclencher
+  d'autres en cascade, et les anciennes règles horaires restent valides.
+- **Aperçu de lien.** Un lien ouvert « à côté » depuis une app (Ctrl+clic, clic
+  molette, `target=_blank`) ne crée plus directement une fenêtre détachée : la
+  page s'affiche d'abord **par-dessus l'app**, connectée avec la même session,
+  et une barre d'actions propose de l'**ouvrir dans Orbit**, **à côté** (écran
+  partagé), dans une **fenêtre détachée** ou dans le **navigateur**. Les
+  fenêtres de connexion (Google, paiement…) gardent leur comportement, et un
+  lien venu d'une page privée reste privé. Désactivable dans Réglages →
+  Apparence → Fenêtres secondaires.
+- **Écran partagé par glisser-déposer.** On attrape une app ou un lien libre
+  dans la barre latérale et on le lâche près d'un bord de la page : un aperçu
+  montre la moitié qu'il occupera, et il se range à gauche, à droite, en haut
+  ou en bas. Au centre, il remplace l'app affichée. Un lien glissé depuis un
+  autre navigateur fonctionne aussi.
+- **Plus de 10 000 raccourcis de recherche.** En plus des moteurs d'Orbit
+  (`@g`, `@w`, `@yt`…), la palette et le champ d'adresse connaissent le
+  catalogue Helium/Kagi : `@amz casque`, `@mdn grid`, `@imdb dune`… Vos moteurs
+  et ceux d'Orbit passent toujours en premier. Réglages → Recherche permet de
+  couper le catalogue, d'y chercher un site et de **personnaliser** n'importe
+  quelle entrée (copiée dans vos moteurs, où l'on change nom, raccourci et
+  URL) ; les moteurs personnalisés se **modifient** désormais. Le catalogue
+  n'est chargé qu'à la première saisie de `@` ou `!`.
+- **Nouveaux raccourcis clavier** (`Alt`, ou `⌘` sur macOS) : `Alt+T` nouvelle
+  page, `Alt+W` fermer l'aperçu ou la page volante, `Alt+Maj+X` partager
+  l'écran avec l'app précédente / quitter, `Alt+Maj+C` côte à côte ↔ haut/bas,
+  `Alt+Maj+G` panneau suivant, `Alt+Maj+N` détacher l'app, `Alt+Maj+T`
+  téléchargements, `Alt+Maj+V` coffre-fort, `F1` liste des raccourcis. Sur un
+  clavier AZERTY, `Alt+1…9` vise la touche physique. Aucun ne prend ⌘X/⌘Z sur
+  macOS ni les combinaisons des extensions livrées.
+- **Réglages → Raccourcis : recherche et groupes.** La liste est rangée par
+  thème (Général, Apps et profils, Pages, Écran partagé, Affichage, Outils) et
+  se filtre à la frappe, par description, groupe ou touches (« partagé »,
+  « zoom », « maj x »), sans tenir compte des accents.
+- **Thèmes « Tech » et « Aurore ».** *Tech* : angles vifs, police à chasse
+  fixe, et un réseau de points reliés qui dérive derrière l'interface et se
+  resserre autour du curseur. *Aurore* : ciel d'espace avec étoiles qui
+  scintillent et tournent, étoiles filantes, planètes et voiles d'aurore.
+- **Taux de change hors ligne.** La conversion de devises de la palette
+  fonctionne dès la première ouverture, sans réseau : Orbit embarque un relevé
+  récent des taux, dont la date est affichée.
 - **Fake data : les images de test.** Un champ d’avatar ou d’URL de photo reçoit
   l’adresse d’un portrait de stock (Random User Generator) ou d’une photo
   aléatoire (Lorem Picsum). Un champ de fichier qui attend une image reçoit un
@@ -133,6 +190,38 @@ La plus récente en premier.
   le raccourci vient d'elle, une fenêtre réduite est restaurée avant la
   capture, et toute fenêtre d'Orbit (y compris une pop-up modale, qui n'était
   reconnue nulle part) est acceptée comme cible.
+
+### Modifié
+- **Thèmes animés nettement plus légers.** Quand une app est ouverte, le décor
+  plein écran (neige, ciel, réseau) n'est plus visible que dans deux bandes
+  étroites ; il continuait pourtant de forcer, à chaque image, la recomposition
+  d'une couche de la taille de la fenêtre par-dessus la page. Il se fige
+  désormais dès qu'une app occupe la page (la barre latérale garde son décor
+  vivant). Seul le décor du thème actif est créé, et le réseau de *Tech* est
+  limité à 30 images/s avec des tracés regroupés (une dizaine d'appels de
+  dessin par image au lieu de plusieurs milliers).
+- **Moins de rendus inutiles.** L'interface principale, la barre latérale, la
+  barre du haut et une vingtaine de panneaux se redessinaient à chaque
+  changement du magasin d'état — une progression de téléchargement suffisait.
+  Chacun ne réagit plus qu'aux données qu'il affiche.
+- **`Ctrl + molette` : la page d'abord.** Les apps qui ont leur propre zoom
+  (Figma, Miro, Google Maps, Excalidraw…) reçoivent à nouveau le geste — et le
+  pincement du pavé tactile — pour zoomer **leur canevas**. Orbit n'agrandit la
+  page que si l'app ne l'a pas réclamé. L'écoute de la molette ne retarde plus
+  non plus le défilement des pages.
+
+### Sécurité
+- **Identifiants : la frame, pas l'onglet.** Le remplissage des identifiants
+  tourne aussi dans les iframes, mais le site concerné était lu sur l'onglet :
+  une iframe tierce (publicité, widget) posée sur `banque.fr` pouvait se voir
+  proposer les identifiants de `banque.fr`. C'est maintenant l'adresse de la
+  frame qui décide, et l'adresse déclarée par la page n'est plus jamais crue.
+- **Pages embarquées cantonnées à leurs canaux.** Une page web affichée dans
+  Orbit ne peut plus atteindre que la poignée de canaux internes dont elle a
+  besoin (identifiants, zoom, boîtes de dialogue, bloqueur) au lieu des quelque
+  180 de l'interface : une seconde barrière derrière l'isolation du preload.
+- Catalogue de raccourcis : seules les adresses `https` sont retenues, et les
+  fichiers d'automatisations importés sont vérifiés règle par règle.
 
 ### Corrigé
 - **Une extension installée ne peut plus disparaître toute seule.** Le nettoyage

@@ -125,65 +125,85 @@ export function matchShortcutInput(input, assistantChatShortcutKey = 'a') {
   );
 }
 
-// Liste d'affichage (panneau « help ») — adaptée à la plateforme.
+// Groupes d'affichage, dans l'ordre où ils apparaissent.
+export const SHORTCUT_GROUPS = ['general', 'apps', 'pages', 'split', 'view', 'tools'];
+
+// Liste d'affichage (panneau « help », Réglages → Raccourcis) — adaptée à la
+// plateforme. Chaque entrée porte son `group` (voir SHORTCUT_GROUPS).
 // Accepte une fonction de traduction `t` (i18n) ; sans elle, retombe sur le FR.
 export function shortcutKeys(t, assistantOptions = {}) {
   const d = (key, fr) => (typeof t === 'function' ? t(key) : fr);
   const mac = isMac();
   const M = mac ? '⌘' : 'Alt';
+  const g = (group, keys, desc) => ({ group, keys, desc });
   const shortcuts = [
-    { keys: [M, '⇧', 'E'], desc: d('sc.proofreadEditor', 'Relire le texte du champ actif (sans IA)') },
-    { keys: [M, '⇧', 'I'], desc: d('sc.assistantEditor', 'Relire le texte du champ actif avec l’IA') },
-    { keys: [M, 'K'], desc: d('sc.search', 'Rechercher partout (ce panneau)') },
-    {
-      keys: [mac ? '⌘' : 'Ctrl', 'R'],
-      desc: d('sc.reload', "Recharger la page de l'app active (⇧ : ignorer le cache)"),
-    },
-    { keys: [M, ','], desc: d('sc.settings', 'Paramètres') },
-    { keys: [M, '⇧', 'O'], desc: d('sc.store', "Boutique d'applications") },
-    { keys: [M, '⇧', 'P'], desc: d('sc.profiles', 'Gérer les profils') },
-    { keys: [M, 'S'], desc: d('sc.sleep', "Mettre en veille / réveiller l'app active") },
-    { keys: [M, 'B'], desc: d('sc.sidebar', 'Réduire / agrandir la barre latérale') },
-    { keys: [M, '⇧', 'M'], desc: d('sc.markAll', 'Tout marquer comme lu') },
-    {
-      keys: [M, '⇧', 'H'],
-      desc: d('sc.bars', 'Afficher / masquer les barres cachées (mode épuré)'),
-    },
-    { keys: mac ? [M, '`'] : [M, 'Page ↓'], desc: d('sc.nextApp', "Passer à l'app suivante") },
-    { keys: mac ? [M, '⇧', '`'] : [M, 'Page ↑'], desc: d('sc.prevApp', "Passer à l'app précédente") },
-    {
-      keys: [M, '⇧', 'Page ↓'],
-      desc: d('sc.nextProfile', 'Passer au profil suivant'),
-    },
-    {
-      keys: [M, '⇧', 'Page ↑'],
-      desc: d('sc.prevProfile', 'Passer au profil précédent'),
-    },
-    { keys: [M, '1…9'], desc: d('sc.gotoApp', 'Aller directement à l’app n° 1 à 9') },
-    { keys: [M, '+'], desc: d('sc.zoomIn', 'Zoom avant (app active)') },
-    { keys: [M, '−'], desc: d('sc.zoomOut', 'Zoom arrière (app active)') },
-    { keys: [M, '0'], desc: d('sc.zoomReset', 'Réinitialiser le zoom') },
-    { keys: [M, 'T'], desc: d('sc.newPage', 'Ouvrir une adresse dans une page volante') },
-    { keys: [M, 'W'], desc: d('sc.closePage', 'Fermer l’aperçu de lien ou la page volante active') },
-    { keys: [M, '⇧', 'X'], desc: d('sc.splitToggle', 'Écran partagé : partager avec l’app précédente / quitter') },
-    { keys: [M, '⇧', 'C'], desc: d('sc.splitDirection', 'Écran partagé : côte à côte ↔ haut / bas') },
-    { keys: [M, '⇧', 'G'], desc: d('sc.splitFocus', 'Écran partagé : passer au panneau suivant') },
-    { keys: [M, '⇧', 'N'], desc: d('sc.detach', 'Détacher l’app active dans sa propre fenêtre') },
-    { keys: [M, '⇧', 'T'], desc: d('sc.downloads', 'Téléchargements') },
-    { keys: [M, '⇧', 'V'], desc: d('sc.vault', 'Coffre-fort de mots de passe') },
-    { keys: ['F1'], desc: d('sc.help', 'Afficher cette liste de raccourcis') },
-    { keys: [d('sc.escKey', 'Échap')], desc: d('sc.escape', 'Fermer / annuler') },
+    // Général
+    g('general', [M, 'K'], d('sc.search', 'Rechercher partout (ce panneau)')),
+    g('general', ['F1'], d('sc.help', 'Afficher cette liste de raccourcis')),
+    g('general', [M, ','], d('sc.settings', 'Paramètres')),
+    g('general', [M, '⇧', 'O'], d('sc.store', "Boutique d'applications")),
+    g('general', [M, '⇧', 'P'], d('sc.profiles', 'Gérer les profils')),
+    g('general', [M, '⇧', 'M'], d('sc.markAll', 'Tout marquer comme lu')),
+    g('general', [d('sc.escKey', 'Échap')], d('sc.escape', 'Fermer / annuler')),
+    // Apps et profils
+    g('apps', [M, 'Page ↓'], d('sc.nextApp', "Passer à l'app suivante")),
+    g('apps', [M, 'Page ↑'], d('sc.prevApp', "Passer à l'app précédente")),
+    g('apps', [M, '1…9'], d('sc.gotoApp', 'Aller directement à l’app n° 1 à 9')),
+    g('apps', [M, '⇧', 'Page ↓'], d('sc.nextProfile', 'Passer au profil suivant')),
+    g('apps', [M, '⇧', 'Page ↑'], d('sc.prevProfile', 'Passer au profil précédent')),
+    g('apps', [M, 'S'], d('sc.sleep', "Mettre en veille / réveiller l'app active")),
+    g('apps', [M, '⇧', 'N'], d('sc.detach', 'Détacher l’app active dans sa propre fenêtre')),
+    // Pages
+    g('pages', [M, 'T'], d('sc.newPage', 'Ouvrir une adresse dans une page volante')),
+    g('pages', [M, 'L'], d('sc.editUrl', 'Modifier l’adresse de la page active')),
+    g('pages', [M, 'W'], d('sc.closePage', 'Fermer l’aperçu de lien ou la page volante active')),
+    g('pages', [mac ? '⌘' : 'Ctrl', 'R'], d('sc.reload', "Recharger la page de l'app active (⇧ : ignorer le cache)")),
+    g('pages', [mac ? '⌘' : 'Ctrl', 'F'], d('sc.find', 'Rechercher dans la page')),
+    // Écran partagé
+    g('split', [M, '⇧', 'X'], d('sc.splitToggle', 'Écran partagé : partager avec l’app précédente / quitter')),
+    g('split', [M, '⇧', 'C'], d('sc.splitDirection', 'Écran partagé : côte à côte ↔ haut / bas')),
+    g('split', [M, '⇧', 'G'], d('sc.splitFocus', 'Écran partagé : passer au panneau suivant')),
+    // Affichage
+    g('view', [M, '+'], d('sc.zoomIn', 'Zoom avant (app active)')),
+    g('view', [M, '−'], d('sc.zoomOut', 'Zoom arrière (app active)')),
+    g('view', [M, '0'], d('sc.zoomReset', 'Réinitialiser le zoom')),
+    g('view', [M, 'B'], d('sc.sidebar', 'Réduire / agrandir la barre latérale')),
+    g('view', [M, '⇧', 'H'], d('sc.bars', 'Afficher / masquer les barres cachées (mode épuré)')),
+    g('view', ['F11'], d('sc.fullscreen', 'Plein écran')),
+    // Outils
+    g('tools', [M, '⇧', 'S'], d('sc.screenshot', 'Capturer l’écran de l’app active')),
+    g('tools', [M, '⇧', 'E'], d('sc.proofreadEditor', 'Relire le texte du champ actif (sans IA)')),
+    g('tools', [M, '⇧', 'I'], d('sc.assistantEditor', 'Relire le texte du champ actif avec l’IA')),
+    g('tools', [M, '⇧', 'T'], d('sc.downloads', 'Téléchargements')),
+    g('tools', [M, '⇧', 'V'], d('sc.vault', 'Coffre-fort de mots de passe')),
   ];
   if (assistantOptions.assistantChatEnabled !== false && assistantOptions.assistantChatShortcutEnabled !== false) {
     const key = (normalizeAssistantChatShortcutKey(assistantOptions.assistantChatShortcutKey) || 'a').toUpperCase();
-    shortcuts.splice(2, 0, {
-      keys: [M, '⇧', key],
-      desc: d('sc.assistantChat', 'Ouvrir la discussion avec l’assistant IA Orbit'),
-    });
+    const at = shortcuts.findIndex((s) => s.group === 'tools') + 1;
+    shortcuts.splice(at, 0, g('tools', [M, '⇧', key], d('sc.assistantChat', 'Ouvrir la discussion avec l’assistant IA Orbit')));
   }
-  shortcuts.splice(2, 0, {
-    keys: [M, '⇧', 'S'],
-    desc: d('sc.screenshot', 'Capturer l’écran de l’app active'),
-  });
   return shortcuts;
+}
+
+// Minuscules, sans accents : « ecran » trouve « Écran partagé ».
+const fold = (text) =>
+  String(text || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+
+// Filtre la liste pour la recherche des réglages. Chaque mot doit apparaître
+// dans la description, le nom du groupe ou les touches : « split alt » ou
+// « zoom » ou « ⇧ x » fonctionnent. `groupLabel(id)` donne le nom affiché
+// d'un groupe (pour que « partagé » trouve tout le groupe).
+export function filterShortcuts(list, query, groupLabel = (id) => id) {
+  const words = fold(query).split(/\s+/).filter(Boolean);
+  if (!words.length) return list;
+  return list.filter((s) => {
+    const hay = fold(`${s.desc} ${groupLabel(s.group)} ${s.keys.join(' ')}`);
+    // « shift » / « maj » trouvent ⇧ ; « cmd » trouve ⌘.
+    const keysAlias = s.keys.includes('⇧') ? ' shift maj' : '';
+    const cmdAlias = s.keys.includes('⌘') ? ' cmd command' : '';
+    return words.every((w) => (hay + keysAlias + cmdAlias).includes(w));
+  });
 }

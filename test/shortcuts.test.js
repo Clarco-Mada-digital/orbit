@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { matchShortcutInput, shortcutKeys, matchCombo } from '../src/lib/shortcuts.js';
+import { matchShortcutInput, shortcutKeys, matchCombo, filterShortcuts, SHORTCUT_GROUPS } from '../src/lib/shortcuts.js';
 
 // Sur Linux (et le CI ubuntu), le modificateur d'Orbit est Alt.
 const alt = (key, extra = {}) => matchShortcutInput({ type: 'keyDown', alt: true, key, ...extra });
@@ -84,4 +84,29 @@ test('Ctrl+F reste la recherche ; ⇧D / ⇧F laissés aux extensions', () => {
   // ⇧D et ⇧F restent aux extensions (Mouse Scroll, Fake Data)
   assert.equal(matchCombo(altK('D', { shift: true }), false), null);
   assert.equal(matchCombo(altK('F', { shift: true }), false), null);
+});
+
+// --- Recherche dans la liste (Réglages → Raccourcis) -----------------------
+
+test('liste groupée : chaque entrée a un groupe connu', () => {
+  const list = shortcutKeys();
+  assert.ok(list.length > 25);
+  assert.ok(list.every((s) => SHORTCUT_GROUPS.includes(s.group)));
+});
+
+test('recherche : sans accents, par groupe, par touches', () => {
+  const list = shortcutKeys();
+  const labels = { split: 'Écran partagé', view: 'Affichage' };
+  const label = (id) => labels[id] || id;
+  // « ecran » trouve tout le groupe « Écran partagé »
+  const split = filterShortcuts(list, 'ecran', label);
+  assert.ok(split.length >= 3);
+  assert.ok(split.every((s) => s.group === 'split' || /écran/i.test(s.desc)));
+  // par touches
+  assert.ok(filterShortcuts(list, '⇧ x', label).some((s) => s.group === 'split'));
+  assert.ok(filterShortcuts(list, 'maj x', label).some((s) => s.group === 'split'));
+  // plusieurs mots : tous doivent correspondre
+  assert.deepEqual(filterShortcuts(list, 'zoom avant', label).map((s) => s.group), ['view']);
+  assert.equal(filterShortcuts(list, '', label).length, list.length);
+  assert.equal(filterShortcuts(list, 'introuvable-xyz', label).length, 0);
 });

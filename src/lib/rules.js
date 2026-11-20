@@ -16,7 +16,21 @@
 //     contexte manuel matin et soir est le geste le plus répété.
 // ---------------------------------------------------------------------------
 
-export const TRIGGERS = ['link', 'time'];
+import {
+  EVENT_TRIGGERS,
+  parseTimeOfDay,
+  dueTimeRules,
+  validateAutomation,
+  describeTrigger,
+} from './automations.js';
+
+// Les déclencheurs « événement » (heure, intervalle, ouverture d'app…) et
+// leur moteur vivent dans automations.js ; ce module garde les règles de
+// liens, que le processus principal évalue au clic. Les fonctions horaires
+// sont ré-exportées ici pour les appelants historiques.
+export { parseTimeOfDay, dueTimeRules };
+
+export const TRIGGERS = ['link', ...EVENT_TRIGGERS];
 export const LINK_ACTIONS = ['openInApp', 'flyPage', 'external', 'block'];
 
 // --- Correspondance d'URL --------------------------------------------------
@@ -84,42 +98,6 @@ export function matchLinkRule(rules, url, { fromAppId } = {}) {
   return null;
 }
 
-// « 09:00 » → 540 minutes. Renvoie null si l'heure est mal formée.
-export function parseTimeOfDay(str) {
-  const m = /^(\d{1,2}):(\d{2})$/.exec(String(str || '').trim());
-  if (!m) return null;
-  const h = Number(m[1]);
-  const min = Number(m[2]);
-  if (h > 23 || min > 59) return null;
-  return h * 60 + min;
-}
-
-// Jours actifs d'une règle : 0 = dimanche, comme Date.getDay().
-// Liste absente = tous les jours.
-function dayAllowed(rule, date) {
-  if (!Array.isArray(rule.days) || rule.days.length === 0) return true;
-  return rule.days.includes(date.getDay());
-}
-
-// Règles horaires à déclencher MAINTENANT.
-//
-// `lastRun` (id → horodatage du dernier déclenchement) évite de rejouer une
-// règle à chaque tick : sans lui, une règle de 9 h se redéclencherait toutes
-// les minutes jusqu'à 9 h 01, et empêcherait tout changement manuel de profil.
-export function dueTimeRules(rules, { now = new Date(), lastRun = {}, windowMs = 90 * 1000 } = {}) {
-  const minutes = now.getHours() * 60 + now.getMinutes();
-  const ts = now.getTime();
-  return (rules || []).filter((rule) => {
-    if (!enabled(rule) || rule.trigger !== 'time') return false;
-    if (!dayAllowed(rule, now)) return false;
-    const at = parseTimeOfDay(rule.at);
-    if (at === null || at !== minutes) return false;
-    // Déjà déclenchée dans la fenêtre courante ?
-    const previous = lastRun[rule.id];
-    return !previous || ts - previous > windowMs;
-  });
-}
-
 // --- Validation ------------------------------------------------------------
 
 // Une règle incomplète ne doit jamais atteindre le moteur : elle produirait
@@ -136,9 +114,14 @@ export function validateRule(rule) {
     if (rule.action === 'openInApp' && !rule.targetAppId) errors.push('rules.err.targetApp');
   }
 
-  if (rule.trigger === 'time') {
-    if (parseTimeOfDay(rule.at) === null) errors.push('rules.err.time');
-    if (!rule.targetProfileId) errors.push('rules.err.targetProfile');
+  if (rule.trigger !== 'link' && TRIGGERS.includes(rule.trigger)) {
+    // Ancienne règle horaire sans action : le message historique, plus clair.
+    if (rule.trigger === 'time' && !Array.isArray(rule.actions) && !rule.targetProfileId) {
+      if (parseTimeOfDay(rule.at) === null) errors.push('rules.err.time');
+      errors.push('rules.err.targetProfile');
+      return errors;
+    }
+    errors.push(...validateAutomation(rule));
   }
 
   return errors;
@@ -148,9 +131,12 @@ export const isValidRule = (rule) => validateRule(rule).length === 0;
 
 // Description lisible d'une règle, pour la liste des réglages. Renvoie des
 // clés + variables, que l'appelant traduit.
-export function describeRule(rule) {
+export function describeRule(rule, names) {
   if (rule.trigger === 'link') {
     return { key: `rules.desc.${rule.action}`, vars: { pattern: rule.pattern } };
   }
-  return { key: 'rules.desc.time', vars: { at: rule.at } };
+  if (rule.trigger === 'time' && !Array.isArray(rule.actions)) {
+    return { key: 'rules.desc.time', vars: { at: rule.at } };
+  }
+  return describeTrigger(rule, names);
 }

@@ -38,7 +38,7 @@ import ReleaseNotes from './ReleaseNotes';
 import VoiceSettings from './VoiceSettings';
 import AssistantSettings from './AssistantSettings';
 import TopbarSettings from './TopbarSettings';
-import { shortcutKeys } from '../lib/shortcuts';
+import ShortcutsSettings from './ShortcutsSettings';
 import { useT } from '../lib/i18n';
 import SitePermissions from './SitePermissions';
 import ShieldSettings from './ShieldSettings';
@@ -307,16 +307,6 @@ export default function Settings({ onClose }) {
     },
   ];
   const allTabs = tabs.flatMap((group) => group.items);
-
-  // Source unique des raccourcis (adaptés à la plateforme)
-  const shortcuts = shortcutKeys(t, {
-    assistantChatEnabled: settings.assistantChatEnabled !== false,
-    assistantChatShortcutEnabled: settings.assistantChatShortcutEnabled !== false,
-    assistantChatShortcutKey: settings.assistantChatShortcutKey,
-  }).map((s) => ({
-    name: s.desc,
-    keys: s.keys.join(' + '),
-  }));
 
   return (
     <>
@@ -1296,23 +1286,7 @@ export default function Settings({ onClose }) {
                 </div>
               )}
 
-              {activeTab === 'shortcuts' && (
-                <div className="space-y-6">
-                  <div className="card">
-                    <h4 className="font-semibold mb-4">{t('qs.shortcutsLabel')}</h4>
-                    <div className="space-y-3">
-                      {shortcuts.map((shortcut) => (
-                        <div key={shortcut.name} className="flex items-center justify-between py-2">
-                          <span className="text-sm">{shortcut.name}</span>
-                          <kbd className="px-3 py-1.5 bg-bg-elevated border border-border rounded font-mono text-xs">
-                            {shortcut.keys}
-                          </kbd>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              )}
+              {activeTab === 'shortcuts' && <ShortcutsSettings />}
 
               {activeTab === 'extensions' && <Extensions />}
 

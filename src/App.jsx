@@ -42,6 +42,9 @@ import ThemeDecor from './components/ThemeDecor';
 import LinkPeek from './components/LinkPeek';
 import SplitDropOverlay from './components/SplitDropOverlay';
 import { splitForDrop } from './lib/splitDrop';
+
+// Aperçu ouvert depuis une page privée (partition en mémoire, voir lib/session.js).
+const isPrivatePeek = (peek) => String(peek?.partition || '').startsWith('priv:');
 import { useStore, appVisibleIn } from './stores/useStore';
 import { useShallow } from 'zustand/react/shallow';
 import { usePhoneStore } from './lib/phoneStore';
@@ -51,7 +54,8 @@ import { useMediaStore } from './lib/mediaStore';
 import { mediaToggle, mediaPrev, mediaNext, mediaSeek, pickNowPlaying } from './lib/mediaControls';
 import { appViewKey, appPartition, resolveProxy } from './lib/session';
 import { matchShortcut, normalizeAssistantChatShortcutKey } from './lib/shortcuts';
-import { dueTimeRules } from './lib/rules';
+import { createAutomationRunner } from './lib/automationRunner';
+import { useAutomationLog, setActiveRunner } from './lib/automationLog';
 import { layoutFor, areaLetter, parseTracks } from './lib/splitLayouts';
 import {
   reloadApp,
@@ -357,24 +361,87 @@ const [editUrlFor, setEditUrlFor] = useState(null); // { id, url } — boîte «
     };
   }, []);
 
-  // Déclencheur horaire : on regarde chaque minute si une règle tombe.
-  // `lastRunRef` empêche de rejouer la même règle en boucle — sans lui, une
-  // règle de 9 h reverrouillerait le profil à chaque tick pendant une minute.
-  const lastRunRef = useRef({});
+  // --- Automatisations « Quand… / Si… / Alors… » ---------------------------
+  // Le moteur (lib/automations.js) dit quand partir, l'exécuteur
+  // (lib/automationRunner.js) fait le travail ; ici on se contente de lui
+  // brancher l'horloge et les événements d'Orbit.
   useEffect(() => {
-    const tick = () => {
-      const st = useStore.getState();
-      const due = dueTimeRules(st.rules, { now: new Date(), lastRun: lastRunRef.current });
-      for (const rule of due) {
-        lastRunRef.current[rule.id] = Date.now();
-        if (rule.targetProfileId && st.profiles.some((p) => p.id === rule.targetProfileId)) {
-          st.setActiveProfile(rule.targetProfileId);
+    const runner = createAutomationRunner(
+      {
+        getState: useStore.getState,
+        reloadApp: (id, url) => reloadApp(id, url, false),
+        notify: (title, body) => {
+          try {
+            new Notification(title, { body });
+          } catch {
+            /* notifications indisponibles */
+          }
+        },
+        setThemeMode: (mode) => {
+          const st = useStore.getState();
+          const { skin } = migrateThemeSetting(st.settings, st.settings.customThemes || []);
+          st.updateSettings({ themeSkin: skin, themeMode: mode });
+        },
+        isPlaying: (id) => Boolean(useMediaStore.getState().media?.[id]?.playing),
+      },
+      {
+        onLog: (entry) => {
+          useAutomationLog.getState().push(entry);
+          if (!entry.ok) {
+            logDiagnostic(
+              null,
+              'Orbit',
+              'automation',
+              `Automatisation « ${entry.name || entry.ruleId} » : ${entry.errors.length} action(s) en échec`,
+              entry.errors.map((e) => `${e.type}: ${e.error}`).join(', '),
+            );
+          }
+        },
+      },
+    );
+    setActiveRunner(runner);
+
+    // Heures et intervalles : un passage toutes les 30 s suffit (la fenêtre
+    // de déclenchement d'une heure est de 90 s).
+    const tick = () => runner.tick();
+    const clock = setInterval(tick, 30 * 1000);
+    tick();
+
+    // Démarrage : une fois, quand l'interface est en place.
+    const boot = setTimeout(() => runner.dispatch({ type: 'startup' }), 2500);
+
+    // App ouverte, profil changé, nouveaux messages.
+    const unsubscribe = useStore.subscribe((state, prev) => {
+      if (state.activeApp && state.activeApp !== prev.activeApp) {
+        runner.dispatch({ type: 'appOpen', appId: state.activeApp });
+      }
+      if (state.activeProfile && state.activeProfile !== prev.activeProfile) {
+        runner.dispatch({ type: 'profileSwitch', profileId: state.activeProfile });
+      }
+      if (state.apps !== prev.apps) {
+        const before = new Map((prev.apps || []).map((a) => [a.id, a.unread || 0]));
+        for (const app of state.apps || []) {
+          if ((app.unread || 0) > (before.get(app.id) || 0)) {
+            runner.dispatch({ type: 'unread', appId: app.id });
+          }
         }
       }
+    });
+
+    // Réseau perdu / retrouvé.
+    const onOnline = () => runner.dispatch({ type: 'online' });
+    const onOffline = () => runner.dispatch({ type: 'offline' });
+    window.addEventListener('online', onOnline);
+    window.addEventListener('offline', onOffline);
+
+    return () => {
+      clearInterval(clock);
+      clearTimeout(boot);
+      unsubscribe();
+      window.removeEventListener('online', onOnline);
+      window.removeEventListener('offline', onOffline);
+      setActiveRunner(null);
     };
-    const id = setInterval(tick, 30 * 1000);
-    tick();
-    return () => clearInterval(id);
   }, []);
 
   // Données de test (« Fake data ») : le remplissage 🎲 vit dans le preload des
@@ -907,10 +974,10 @@ const [editUrlFor, setEditUrlFor] = useState(null); // { id, url } — boîte «
   }, []);
 
   // Ouvre `url` en page volante et la range à côté de l'app affichée.
-  const openBesideActive = useCallback((url) => {
+  const openBesideActive = useCallback((url, options = {}) => {
     const st = useStore.getState();
     const anchor = st.activeApp;
-    const id = st.openFlyPage(url);
+    const id = st.openFlyPage(url, options);
     if (!id || !anchor || anchor === id) return;
     const result = splitForDrop(useStore.getState().splitView, anchor, id, 'right');
     if (result?.splitView) st.setSplitView(result.splitView);
@@ -1973,15 +2040,17 @@ const openEditUrl = useCallback((id) => {
           key={linkPeek.key}
           peek={linkPeek}
           onClose={() => setLinkPeek(null)}
+          // Un lien venu d'une page PRIVÉE reste privé : jamais d'historique,
+          // jamais la session d'une page normale.
           onOpenInOrbit={(url) => {
             setLinkPeek(null);
             usePhoneStore.getState().setOpen(false);
-            useStore.getState().openFlyPage(url);
+            useStore.getState().openFlyPage(url, { private: isPrivatePeek(linkPeek) });
           }}
           onOpenSplit={(url) => {
             setLinkPeek(null);
             usePhoneStore.getState().setOpen(false);
-            openBesideActive(url);
+            openBesideActive(url, { private: isPrivatePeek(linkPeek) });
           }}
         />
       )}

@@ -11,6 +11,7 @@ import * as vault from './i18n/vault.js';
 import * as palette from './i18n/palette.js';
 import * as topbar from './i18n/topbar.js';
 import * as apps from './i18n/apps.js';
+import * as automations from './i18n/automations.js';
 
 // Assemblage des morceaux (voir src/lib/i18n/). L'API ne change pas : le reste
 // de l'application importe toujours `fr` et `en` depuis ce fichier.
@@ -18,7 +19,7 @@ import * as apps from './i18n/apps.js';
 // Un étalement d'objets fait gagner la DERNIÈRE occurrence en cas de doublon
 // entre deux modules — ce serait silencieux. `test/i18n.test.js` refuse donc
 // qu'une même clé apparaisse dans deux modules.
-export const MODULES = { assistant, settings, vault, palette, topbar, apps };
+export const MODULES = { assistant, settings, vault, palette, topbar, apps, automations };
 
 export const fr = {
   ...assistant.fr,
@@ -27,6 +28,7 @@ export const fr = {
   ...palette.fr,
   ...topbar.fr,
   ...apps.fr,
+  ...automations.fr,
 };
 
 export const en = {
@@ -36,4 +38,5 @@ export const en = {
   ...palette.en,
   ...topbar.en,
   ...apps.en,
+  ...automations.en,
 };
