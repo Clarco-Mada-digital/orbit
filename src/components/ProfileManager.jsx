@@ -1,10 +1,13 @@
 import { useState } from 'react';
 import { X, Plus, Edit2, Trash2 } from 'lucide-react';
 import { useStore } from '../stores/useStore';
+import { useShallow } from 'zustand/react/shallow';
 import { useT } from '../lib/i18n';
 
 export default function ProfileManager({ onClose }) {
-  const { profiles, activeProfile, setActiveProfile, addProfile, updateProfile, deleteProfile } = useStore();
+  const { profiles, activeProfile, setActiveProfile, addProfile, updateProfile, deleteProfile } = useStore(
+    useShallow((s) => ({ profiles: s.profiles, activeProfile: s.activeProfile, setActiveProfile: s.setActiveProfile, addProfile: s.addProfile, updateProfile: s.updateProfile, deleteProfile: s.deleteProfile })),
+  );
   const t = useT();
   const [editing, setEditing] = useState(null);
   const [creating, setCreating] = useState(false);

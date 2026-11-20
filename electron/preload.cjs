@@ -325,6 +325,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     installModel: (modelKey) => ipcRenderer.invoke('assistant:installModel', { modelKey }),
     removeModel: (modelKey) => ipcRenderer.invoke('assistant:removeModel', { modelKey }),
     modelBaseUrl: (modelKey) => ipcRenderer.invoke('assistant:modelBaseUrl', { modelKey }),
+    ortAssets: () => ipcRenderer.invoke('assistant:ortAssets'),
     getDocument: (wcId) => ipcRenderer.invoke('assistant:getDocument', { wcId }),
     copyText: (text) => ipcRenderer.invoke('assistant:copyText', text),
     onSelection: (callback) => {
@@ -486,6 +487,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Automatisations : le main garde une copie des règles de liens pour pouvoir
   // décider au clic (son gestionnaire de fenêtre est synchrone).
   setRules: (rules) => ipcRenderer.invoke('rules:set', rules),
+  // Aperçu de lien (Ctrl+clic, target=_blank) : le main l'annonce, l'interface
+  // l'affiche ; « fenêtre détachée » repasse par le main avec la session.
+  onLinkPeek: (cb) => {
+    const handler = (_e, payload) => cb(payload);
+    ipcRenderer.on('link:peek', handler);
+    return () => ipcRenderer.removeListener('link:peek', handler);
+  },
+  peekDetach: (payload) => ipcRenderer.invoke('peek:detach', payload),
   onLinkRouted: (cb) => {
     const handler = (_e, payload) => cb(payload);
     ipcRenderer.on('rules:linkRouted', handler);

@@ -30,6 +30,7 @@ import {
   ShieldOff,
 } from 'lucide-react';
 import { useStore, appVisibleIn } from '../../stores/useStore';
+import { useShallow } from 'zustand/react/shallow';
 import { layoutsFor, layoutFor, areaLetter } from '../../lib/splitLayouts';
 import { loadExtensionInfo } from '../../lib/extensionInfo';
 import { usePhoneStore } from '../../lib/phoneStore';
@@ -265,7 +266,9 @@ export function useTopbarModules({ onOpenQuickSwitcher, onOpenVault, placement =
     applyWorkspace,
     updateWorkspace,
     deleteWorkspace,
-  } = useStore();
+  } = useStore(
+    useShallow((s) => ({ activeApp: s.activeApp, activeProfile: s.activeProfile, apps: s.apps, flyPages: s.flyPages, extensions: s.extensions, nativeApps: s.nativeApps, updateExtensions: s.updateExtensions, updateApp: s.updateApp, setActiveApp: s.setActiveApp, setActiveProfile: s.setActiveProfile, markAllRead: s.markAllRead, settings: s.settings, updateSettings: s.updateSettings, adjustAppZoom: s.adjustAppZoom, resetAppZoom: s.resetAppZoom, splitView: s.splitView, setSplitView: s.setSplitView, clearSplitView: s.clearSplitView, toggleSplitDirection: s.toggleSplitDirection, workspaces: s.workspaces, saveWorkspace: s.saveWorkspace, applyWorkspace: s.applyWorkspace, updateWorkspace: s.updateWorkspace, deleteWorkspace: s.deleteWorkspace })),
+  );
   const t = useT();
   const [showNotifPanel, setShowNotifPanel] = useState(false);
   // Le bouton Téléphone n'existe que si son extension est installée, et son

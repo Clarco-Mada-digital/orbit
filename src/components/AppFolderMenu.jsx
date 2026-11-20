@@ -10,6 +10,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { useStore } from '../stores/useStore';
+import { useShallow } from 'zustand/react/shallow';
 import { useT } from '../lib/i18n';
 import { useGuestDismiss } from '../lib/useDismiss';
 import { FOLDER_COLORS, FOLDER_EMOJIS } from '../lib/appGroups';
@@ -23,8 +24,9 @@ import { FOLDER_COLORS, FOLDER_EMOJIS } from '../lib/appGroups';
 // rappelant leur nombre.
 // ---------------------------------------------------------------------------
 export default function AppFolderMenu({ folderId, x, y, onClose, onSelectApps }) {
-  const { folders, apps, renameFolder, updateFolder, toggleFolderCollapsed, deleteFolder, deleteApps } =
-    useStore();
+  const { folders, apps, renameFolder, updateFolder, toggleFolderCollapsed, deleteFolder, deleteApps } = useStore(
+    useShallow((s) => ({ folders: s.folders, apps: s.apps, renameFolder: s.renameFolder, updateFolder: s.updateFolder, toggleFolderCollapsed: s.toggleFolderCollapsed, deleteFolder: s.deleteFolder, deleteApps: s.deleteApps })),
+  );
   const t = useT();
   const menuRef = useRef(null);
   const [renaming, setRenaming] = useState(false);

@@ -1,5 +1,6 @@
 import { Play, Pause, PictureInPicture2, Music, SkipBack, SkipForward, ExternalLink } from 'lucide-react';
 import { useStore } from '../stores/useStore';
+import { useShallow } from 'zustand/react/shallow';
 import { useMediaStore } from '../lib/mediaStore';
 import { mediaToggle, mediaPip, mediaPrev, mediaNext, pickNowPlaying } from '../lib/mediaControls';
 import { useT } from '../lib/i18n';
@@ -9,7 +10,9 @@ import { useT } from '../lib/i18n';
 // de détacher un mini-lecteur flottant toujours au-dessus.
 export default function NowPlaying() {
   const t = useT();
-  const { apps, activeApp, setActiveApp, setActiveProfile } = useStore();
+  const { apps, activeApp, setActiveApp, setActiveProfile } = useStore(
+    useShallow((s) => ({ apps: s.apps, activeApp: s.activeApp, setActiveApp: s.setActiveApp, setActiveProfile: s.setActiveProfile })),
+  );
   const media = useMediaStore((s) => s.media);
 
   const pick = pickNowPlaying(media, activeApp);

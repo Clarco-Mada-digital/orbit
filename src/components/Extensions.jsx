@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Puzzle, FolderOpen, Trash2, Loader2, Info, Globe, Download, Settings2, AlertTriangle, RotateCw, Dice6, Check, X, Upload, Smartphone, CloudOff, WifiOff, Search, FileJson } from 'lucide-react';
 import { useStore } from '../stores/useStore';
+import { useShallow } from 'zustand/react/shallow';
 import { getRegisteredWebviews } from '../lib/webviewRegistry';
 import { appPartition } from '../lib/session';
 import { reloadUrlFor } from '../lib/urls';
@@ -215,7 +216,9 @@ function normalizeFakeLists(parsed) {
 // dans la même liste avec les mêmes contrôles.
 export default function Extensions() {
   const t = useT();
-  const { extensions, updateExtensions, updateSettings, settings, activeApp, apps, profiles } = useStore();
+  const { extensions, updateExtensions, updateSettings, settings, activeApp, apps, profiles } = useStore(
+    useShallow((s) => ({ extensions: s.extensions, updateExtensions: s.updateExtensions, updateSettings: s.updateSettings, settings: s.settings, activeApp: s.activeApp, apps: s.apps, profiles: s.profiles })),
+  );
   const [busy, setBusy] = useState(null); // 'webstore' | 'folder' | 'zip' | null
   const [storeUrl, setStoreUrl] = useState('');
   const [error, setError] = useState(null);

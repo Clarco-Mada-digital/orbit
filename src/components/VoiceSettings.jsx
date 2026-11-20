@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Volume2, Download, Trash2, Play, Square, AudioLines, HardDrive } from 'lucide-react';
 import { useStore } from '../stores/useStore';
+import { useShallow } from 'zustand/react/shallow';
 import { useT } from '../lib/i18n';
 
 // ---------------------------------------------------------------------------
@@ -18,7 +19,9 @@ const api = () => window.electronAPI?.tts;
 
 export default function VoiceSettings() {
   const t = useT();
-  const { settings, updateSettings } = useStore();
+  const { settings, updateSettings } = useStore(
+    useShallow((s) => ({ settings: s.settings, updateSettings: s.updateSettings })),
+  );
   const [state, setState] = useState(null);
   const [busy, setBusy] = useState('');
   const [progress, setProgress] = useState(null);

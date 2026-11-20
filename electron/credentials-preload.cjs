@@ -172,23 +172,47 @@ function notifyZoom(factor) {
   }, 120 - elapsed);
 }
 
+// LA PAGE D'ABORD, comme dans Chrome. Les apps qui ont leur propre zoom
+// (Figma, Miro, Google Maps, Excalidraw, tableurs…) écoutent Ctrl + molette —
+// et le pincement du trackpad, que Chromium leur livre sous la même forme — et
+// appellent `preventDefault()` pour dire « ce geste est à moi ». Avant, Orbit
+// l'interceptait sans les consulter : c'est toute l'interface de l'app qui
+// grossissait au lieu de son canevas.
+//
+// On n'agit donc qu'APRÈS la fin de la distribution de l'événement (une tâche
+// plus tard : tous les écouteurs de la page sont passés, y compris ceux posés
+// sur `window` après le nôtre), et seulement si personne ne l'a réclamé. Une
+// page qui arrête la propagation ne nous l'envoie même pas : même effet.
+//
+// Le zoom d'Orbit reste toujours accessible au clavier (Alt + / Alt − / Alt 0,
+// ⌘ sur macOS) et par les boutons de la barre, y compris dans ces apps.
+function applyWheelZoom(deltaY) {
+  const current = webFrame.getZoomFactor();
+  const next = Math.min(
+    3,
+    Math.max(0.5, Math.round((current - Math.sign(deltaY) * 0.1) * 100) / 100)
+  );
+  if (next === current) return;
+  webFrame.setZoomFactor(next);
+  notifyZoom(next);
+}
+
 try {
   window.addEventListener(
     'wheel',
     (event) => {
       if (!event.ctrlKey || event.altKey || event.metaKey) return;
-      if (!event.deltaY) return;
-      event.preventDefault();
-      const current = webFrame.getZoomFactor();
-      const next = Math.min(
-        3,
-        Math.max(0.5, Math.round((current - Math.sign(event.deltaY) * 0.1) * 100) / 100)
-      );
-      if (next === current) return;
-      webFrame.setZoomFactor(next);
-      notifyZoom(next);
+      if (!event.deltaY || event.defaultPrevented) return;
+      const { deltaY } = event;
+      setTimeout(() => {
+        if (event.defaultPrevented) return; // la page a pris le geste
+        applyWheelZoom(deltaY);
+      }, 0);
     },
-    { passive: false }
+    // Passif : on n'annule plus rien nous-mêmes. Un écouteur de molette NON
+    // passif sur window obligeait Chromium à attendre le JavaScript à chaque
+    // cran avant de défiler — sur toutes les pages, Ctrl ou pas.
+    { passive: true }
   );
 } catch {
   /* pas de webFrame dans ce contexte : on laisse le geste au système */

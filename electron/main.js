@@ -51,6 +51,11 @@ import { mediaFormatOptions, parseDownloadUrl } from '../src/lib/downloadOptions
 import { selectCookiesForUrl } from '../src/lib/mediaCookies.js';
 import { getDomain } from 'tldts-experimental';
 import { fileURLToPath } from 'url';
+import { installWebviewIpcGuard } from './ipc-guard.js';
+
+// Avant tout `ipcMain.handle/on` : les pages embarquées n'atteignent que
+// leurs propres canaux (voir ipc-guard.js).
+installWebviewIpcGuard(ipcMain);
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -3258,6 +3263,11 @@ function rememberGuestPartition(guestContents) {
 //   'native'   → fenêtre décorée par le système
 //   'external' → navigateur par défaut
 let popupStyle = 'orbit';
+// Aperçu de lien : un lien ouvert « dans un nouvel onglet » (Ctrl+clic,
+// clic molette, target=_blank) s'affiche d'abord PAR-DESSUS l'app, dans la
+// fenêtre principale, avec le choix de ce qu'on en fait (page volante, écran
+// partagé, fenêtre détachée, navigateur). Réglage poussé par l'interface.
+let linkPeekEnabled = true;
 // Thème/accent poussés par l'interface pour habiller les pop-ups à l'identique
 let popupTheme = { theme: 'dark', accent: '#6366f1' };
 const orbitPopups = new Set();
@@ -3265,6 +3275,7 @@ const orbitPopupRestoredBounds = new WeakMap();
 
 ipcMain.handle('popup:setStyle', (_e, payload) => {
   if (payload && typeof payload.style === 'string') popupStyle = payload.style;
+  if (payload && typeof payload.peek === 'boolean') linkPeekEnabled = payload.peek;
   if (payload && payload.theme) popupTheme.theme = payload.theme;
   if (payload && payload.accent) popupTheme.accent = payload.accent;
   return { success: true };
@@ -3408,7 +3419,50 @@ ipcMain.handle('rules:set', (_e, rules) => {
   return { success: true, count: linkRules.length };
 });
 
-function openInAppPopup(guestContents, url) {
+// Un lien qu'on ouvre « à côté » (onglet), par opposition à une fenêtre que
+// la page demande (`window.open(url, nom, 'width=…')` : connexion OAuth,
+// paiement…), qui a besoin de son `window.opener` et garde donc son chemin.
+const LINK_DISPOSITIONS = new Set(['foreground-tab', 'background-tab']);
+
+// L'aperçu s'affiche dans la fenêtre principale : seulement pour un lien
+// cliqué DANS une app de cette fenêtre (une fenêtre détachée garde ses
+// pop-ups à elle).
+function peekLink(guestContents, url, disposition) {
+  if (!linkPeekEnabled || !LINK_DISPOSITIONS.has(disposition)) return false;
+  if (!mainWindow || mainWindow.isDestroyed()) return false;
+  let host = null;
+  try {
+    host = guestContents.hostWebContents;
+  } catch {
+    /* guest détruit */
+  }
+  if (!host || host.id !== mainWindow.webContents.id) return false;
+  const partition = guestPartitions.get(guestContents.id) || 'persist:default';
+  permLog(`lien ${hostOf(url)} → aperçu (depuis ${hostOf(guestContents.getURL())})`);
+  mainWindow.webContents.send('link:peek', { url, partition });
+  return true;
+}
+
+// Boutons de l'aperçu : « fenêtre détachée » rouvre le lien dans une pop-up
+// Orbit, avec la session (partition) de l'app d'origine. La partition doit
+// être l'une de celles qu'Orbit a lui-même attribuées à un <webview> : l'UI
+// ne choisit pas une session arbitraire.
+function isKnownPartition(partition) {
+  if (typeof partition !== 'string' || !partition) return false;
+  if (knownPartitions.has(partition)) return true;
+  for (const p of guestPartitions.values()) if (p === partition) return true;
+  return false;
+}
+
+ipcMain.handle('peek:detach', (event, { url, partition } = {}) => {
+  if (!mainWindow || event.sender.id !== mainWindow.webContents.id) return { success: false };
+  const target = String(url || '');
+  if (!/^https?:\/\//i.test(target)) return { success: false, reason: 'bad-url' };
+  createOrbitPopup(target, isKnownPartition(partition) ? partition : undefined);
+  return { success: true };
+});
+
+function openInAppPopup(guestContents, url, disposition = 'default') {
   const from = hostOf(guestContents.getURL());
   const blank = !url || url === 'about:blank' || url === 'about:blank#blocked';
 
@@ -3478,6 +3532,9 @@ function openInAppPopup(guestContents, url) {
       return { action: 'deny' };
     }
   }
+
+  // Lien ouvert « dans un nouvel onglet » : aperçu dans Orbit d'abord.
+  if (peekLink(guestContents, url, disposition)) return { action: 'deny' };
 
   if (popupStyle === 'external') {
     permLog(`fenêtre ${hostOf(url)} demandée par ${from} — navigateur externe`);
@@ -4850,6 +4907,9 @@ handleFromUi('assistant:removeModel', async (_event, { modelKey } = {}) =>
 handleFromUi('assistant:modelBaseUrl', async (_event, { modelKey } = {}) =>
   (await loadAssistant()).getAssistantModelBaseUrl(modelKey)
 );
+// Runtime WASM d'ONNX servi en HTTP de boucle locale : en `file://`, la page
+// n'a le droit ni de le récupérer ni de l'importer (voir assistant-ort.js).
+handleFromUi('assistant:ortAssets', async () => (await loadAssistant()).getAssistantOrtAssets());
 handleFromUi('assistant:copyText', (_event, text) => {
   if (typeof text !== 'string' || text.length > 12000) {
     return { success: false, error: 'invalid-text' };
@@ -7906,14 +7966,28 @@ handleFromUi('vault:unignore', (_e, { domain } = {}) => vault.unignoreDomain(dom
 // L'URL est prise sur le webContents ÉMETTEUR, pas dans le message. Une page
 // ne doit jamais pouvoir demander « les identifiants de banque.fr » : elle
 // n'obtient que ceux du site qu'elle affiche réellement.
-function senderUrl(event, fallback) {
+//
+// Et c'est la FRAME émettrice qui compte, pas l'onglet : le preload tourne
+// aussi dans les iframes (nodeIntegrationInSubFrames). Avec l'URL de l'onglet,
+// une iframe tierce (pub, widget) posée sur banque.fr recevrait — et remplirait
+// dans SON formulaire — les identifiants de banque.fr.
+// L'URL déclarée par la page (`_claimed`) n'est jamais crue.
+const isHttpUrl = (u) => /^https?:\/\//i.test(String(u || ''));
+function senderUrl(event, _claimed) {
   try {
+    const frame = event.senderFrame;
+    if (frame) {
+      if (isHttpUrl(frame.url)) return frame.url;
+      // about:blank / srcdoc héritent de l'origine de leur parent.
+      if (isHttpUrl(frame.origin)) return frame.origin;
+      return '';
+    }
     const real = event.sender.getURL();
-    if (/^https?:\/\//i.test(real)) return real;
+    if (isHttpUrl(real)) return real;
   } catch {
-    /* webContents parti */
+    /* webContents ou frame partis */
   }
-  return /^https?:\/\//i.test(String(fallback || '')) ? fallback : '';
+  return '';
 }
 
 // Quelles sources d'identifiants Orbit interroge dans les pages. Réglé depuis
@@ -8526,9 +8600,9 @@ app.whenReady().then(() => {
 // des apps embarquées (OAuth, connexion…) s'ouvrent DANS Orbit avec la même
 // session, pour que la connexion aboutisse dans l'application.
 app.on('web-contents-created', (_event, contents) => {
-  contents.setWindowOpenHandler(({ url }) => {
+  contents.setWindowOpenHandler(({ url, disposition }) => {
     if (contents.getType() === 'webview') {
-      return openInAppPopup(contents, url);
+      return openInAppPopup(contents, url, disposition);
     }
     return openExternalHandler({ url });
   });

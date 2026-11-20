@@ -39,7 +39,11 @@ import UpdateBanner from './components/UpdateBanner';
 import Welcome from './components/Welcome';
 import HomeDashboard from './components/HomeDashboard';
 import ThemeDecor from './components/ThemeDecor';
+import LinkPeek from './components/LinkPeek';
+import SplitDropOverlay from './components/SplitDropOverlay';
+import { splitForDrop } from './lib/splitDrop';
 import { useStore, appVisibleIn } from './stores/useStore';
+import { useShallow } from 'zustand/react/shallow';
 import { usePhoneStore } from './lib/phoneStore';
 import { describeCallState } from './lib/phone';
 import { useSecurityStore } from './lib/securityStore';
@@ -165,6 +169,14 @@ const LEGACY_ACCENT = '#6366f1';
 
 export default function App() {
   const [showQuickSwitcher, setShowQuickSwitcher] = useState(false);
+  // Requête de départ de la palette (« ? » = liste des raccourcis, via F1).
+  const [quickSwitcherQuery, setQuickSwitcherQuery] = useState('');
+  // Aperçu d'un lien ouvert « à côté » depuis une app : { url, partition, key }
+  const [linkPeek, setLinkPeek] = useState(null);
+  const linkPeekRef = useRef(null);
+  useEffect(() => {
+    linkPeekRef.current = linkPeek;
+  }, [linkPeek]);
   // Studio d'enregistrement (écran + caméra). Monté seulement à l'ouverture :
   // il tient des flux média, il n'a rien à faire en mémoire le reste du temps.
   const [showStudio, setShowStudio] = useState(false);
@@ -226,7 +238,9 @@ const [editUrlFor, setEditUrlFor] = useState(null); // { id, url } — boîte «
     toggleSplitDirection,
     onboarded,
     setOnboarded,
-  } = useStore();
+  } = useStore(
+    useShallow((s) => ({ activeProfile: s.activeProfile, activeApp: s.activeApp, apps: s.apps, flyPages: s.flyPages, closeFlyPage: s.closeFlyPage, rules: s.rules, profiles: s.profiles, extensions: s.extensions, updateExtensions: s.updateExtensions, settings: s.settings, updateApp: s.updateApp, setActiveApp: s.setActiveApp, toggleAppSleep: s.toggleAppSleep, sidebarCollapsed: s.sidebarCollapsed, setSidebarCollapsed: s.setSidebarCollapsed, splitView: s.splitView, setSplitView: s.setSplitView, clearSplitView: s.clearSplitView, toggleSplitDirection: s.toggleSplitDirection, onboarded: s.onboarded, setOnboarded: s.setOnboarded })),
+  );
 
   // Animation de passage : un voile bref par-dessus la zone de contenu à
   // chaque changement d'app ou de profil. Un <webview> est une surface native :
@@ -874,10 +888,56 @@ const [editUrlFor, setEditUrlFor] = useState(null); // { id, url } — boîte «
         : settings.theme;
     window.electronAPI?.setPopupStyle?.({
       style: settings.popupStyle || 'orbit',
+      peek: settings.linkPeek !== false,
       theme,
       accent: settings.accentColor,
     });
-  }, [settings.popupStyle, settings.theme, settings.accentColor]);
+  }, [settings.popupStyle, settings.linkPeek, settings.theme, settings.accentColor]);
+
+  // Aperçu de lien : le main l'annonce (Ctrl+clic, target=_blank dans une
+  // app), on l'affiche par-dessus. Un nouveau lien remplace l'aperçu ouvert.
+  useEffect(() => {
+    const off = window.electronAPI?.onLinkPeek?.(({ url, partition } = {}) => {
+      if (!url || !/^https?:\/\//i.test(url)) return;
+      setLinkPeek({ url, partition, key: Date.now() });
+    });
+    return () => {
+      if (typeof off === 'function') off();
+    };
+  }, []);
+
+  // Ouvre `url` en page volante et la range à côté de l'app affichée.
+  const openBesideActive = useCallback((url) => {
+    const st = useStore.getState();
+    const anchor = st.activeApp;
+    const id = st.openFlyPage(url);
+    if (!id || !anchor || anchor === id) return;
+    const result = splitForDrop(useStore.getState().splitView, anchor, id, 'right');
+    if (result?.splitView) st.setSplitView(result.splitView);
+    if (result?.activeApp) st.setActiveApp(result.activeApp);
+  }, []);
+
+  // Dépôt sur la zone de contenu (voir SplitDropOverlay / lib/splitDrop.js).
+  const handleSplitDrop = useCallback(({ appId, url, zone }) => {
+    const st = useStore.getState();
+    const anchor = st.activeApp;
+    const dropped = appId || (url ? st.openFlyPage(url) : null);
+    if (!dropped) return;
+    usePhoneStore.getState().setOpen(false);
+    const split = useStore.getState().splitView;
+    // Centre, en écran partagé : l'app déposée prend la place du panneau actif.
+    if (zone === 'center' && split?.appIds?.includes(anchor) && anchor !== dropped) {
+      if (!split.appIds.includes(dropped)) {
+        st.setSplitView({ ...split, appIds: split.appIds.map((id) => (id === anchor ? dropped : id)) });
+      }
+      st.setActiveApp(dropped);
+      return;
+    }
+    const result = splitForDrop(split, anchor, dropped, zone);
+    if (!result) return;
+    if (result.splitView !== undefined) st.setSplitView(result.splitView);
+    st.setActiveApp(result.activeApp);
+  }, []);
 
   // Synchroniser le bloqueur de pub natif avec le réglage (activé par défaut)
   useEffect(() => {
@@ -1091,7 +1151,68 @@ const openEditUrl = useCallback((id) => {
       }
       return;
     }
-    if (action === 'search') return setShowQuickSwitcher((v) => !v);
+    if (action === 'search') {
+      setQuickSwitcherQuery('');
+      return setShowQuickSwitcher((v) => !v);
+    }
+    if (action === 'help') {
+      setQuickSwitcherQuery('?');
+      return setShowQuickSwitcher(true);
+    }
+    if (action === 'downloads') return setShowDownloads((v) => !v);
+    if (action === 'vault') return setShowVault((v) => !v);
+    // Nouvelle page volante : la boîte d'adresse, vide, sans page à modifier.
+    if (action === 'new-page') return setEditUrlFor({ id: null, url: '' });
+    // Fermer : l'aperçu de lien s'il est ouvert, sinon la page volante active.
+    // Une app installée ne se ferme pas au clavier (elle se met en veille :
+    // Alt+S) — un geste réflexe ne doit pas perdre une session.
+    if (action === 'close-page') {
+      if (linkPeekRef.current) {
+        setLinkPeek(null);
+        return;
+      }
+      const st = useStore.getState();
+      if (st.flyPages.some((p) => p.id === st.activeApp)) st.closeFlyPage(st.activeApp);
+      return;
+    }
+    if (action === 'detach') {
+      const st = useStore.getState();
+      const app = st.apps.find((x) => x.id === st.activeApp);
+      if (!app || app.native) return;
+      const sharedSession = !!st.profiles.find((p) => p.id === app.profileId)?.sharedSession;
+      window.electronAPI?.openDetached?.({
+        appId: app.id,
+        url: app.url,
+        partition: appPartition(app, sharedSession),
+        title: app.name,
+        zoom: app.zoom,
+      });
+      return;
+    }
+    // --- Écran partagé ----------------------------------------------------
+    if (action === 'split-toggle' || action === 'split-direction' || action === 'split-focus') {
+      const st = useStore.getState();
+      const split = st.splitView;
+      const inSplit = split?.appIds?.includes(st.activeApp);
+      if (action === 'split-toggle') {
+        if (inSplit) return st.clearSplitView();
+        // Partager avec l'app précédente dans la liste (ou la suivante).
+        const list = [...st.apps, ...st.flyPages]
+          .filter((a) => appVisibleIn(a, st.activeProfile) && !a.sleeping)
+          .sort((a, b) => (a.order ?? 0) - (b.order ?? 0));
+        const i = list.findIndex((a) => a.id === st.activeApp);
+        if (i < 0 || list.length < 2) return;
+        const partner = list[i > 0 ? i - 1 : 1];
+        return st.setSplitView({ appIds: [partner.id, st.activeApp], direction: 'row', sizes: [0.5, 0.5] });
+      }
+      if (!inSplit) return;
+      if (action === 'split-direction') {
+        if (split.appIds.length === 2) st.toggleSplitDirection();
+        return;
+      }
+      const ids = split.appIds;
+      return st.setActiveApp(ids[(ids.indexOf(st.activeApp) + 1) % ids.length]);
+    }
     if (action === 'settings') return setShowSettings((v) => !v);
     // Modifier l'adresse de la page courante : indispensable sur une page
     // volante, qui n'a pas de champ d'URL et se corrigait jusqu'ici en
@@ -1406,6 +1527,14 @@ const openEditUrl = useCallback((id) => {
           className="relative flex-1 flex flex-col min-w-0 transition-[margin-left] duration-300"
           style={{ marginLeft: sidebarOffset }}
         >
+          {/* Glisser une app ou un lien libre de la barre latérale vers un
+              bord : écran partagé (voir SplitDropOverlay). */}
+          <SplitDropOverlay
+            enabled={!appLocked && !overlayOpen}
+            splitActive={Boolean(activeSplit)}
+            onDrop={handleSplitDrop}
+          />
+
           {/* Voile d'animation (changement d'app / de profil). Il reste
               AU-DESSUS des webviews mais ne capte aucun clic. */}
           {viewAnim > 0 && animStyle !== 'none' && (
@@ -1679,7 +1808,11 @@ const openEditUrl = useCallback((id) => {
       {/* Overlays — au-dessus des webviews car ils sont dans le DOM */}
       {showQuickSwitcher && (
         <QuickSwitcher
-          onClose={() => setShowQuickSwitcher(false)}
+          initialQuery={quickSwitcherQuery}
+          onClose={() => {
+            setShowQuickSwitcher(false);
+            setQuickSwitcherQuery('');
+          }}
           onOpenSettings={() => {
             setShowQuickSwitcher(false);
             setShowSettings(true);
@@ -1835,12 +1968,32 @@ const openEditUrl = useCallback((id) => {
       )}
 
       {/* Coffre-fort de mots de passe en overlay (bouton « trousseau » de la barre) */}
+      {linkPeek && (
+        <LinkPeek
+          key={linkPeek.key}
+          peek={linkPeek}
+          onClose={() => setLinkPeek(null)}
+          onOpenInOrbit={(url) => {
+            setLinkPeek(null);
+            usePhoneStore.getState().setOpen(false);
+            useStore.getState().openFlyPage(url);
+          }}
+          onOpenSplit={(url) => {
+            setLinkPeek(null);
+            usePhoneStore.getState().setOpen(false);
+            openBesideActive(url);
+          }}
+        />
+      )}
+
       {editUrlFor && (
         <EditUrlDialog
           initialUrl={editUrlFor.url}
           onClose={() => setEditUrlFor(null)}
           onSubmit={(url) => {
-            navigateToUrl(editUrlFor.id, url);
+            // Sans page cible (Alt+T) : nouvelle page volante.
+            if (editUrlFor.id) navigateToUrl(editUrlFor.id, url);
+            else useStore.getState().openFlyPage(url);
             setEditUrlFor(null);
           }}
         />

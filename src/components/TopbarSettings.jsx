@@ -12,6 +12,7 @@ import {
   Timer,
 } from 'lucide-react';
 import { useStore } from '../stores/useStore';
+import { useShallow } from 'zustand/react/shallow';
 import { useT } from '../lib/i18n';
 import {
   DEFAULT_TOPBAR,
@@ -172,7 +173,9 @@ function LayoutEditor({ layout, onApply }) {
 // plus horloge / météo / minuteur de concentration.
 export default function TopbarSettings() {
   const t = useT();
-  const { settings, updateSettings } = useStore();
+  const { settings, updateSettings } = useStore(
+    useShallow((s) => ({ settings: s.settings, updateSettings: s.updateSettings })),
+  );
   const topbarLayout = normalizeTopbar(settings?.topbar);
   const bottombarLayout = normalizeTopbar(settings?.bottombar, DEFAULT_BOTTOMBAR);
 

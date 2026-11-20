@@ -440,6 +440,9 @@
   overflow: hidden;
   pointer-events: none;
   z-index: 45;
+  /* Couche isolée : ses images ne déclenchent ni mise en page ni repeinte du
+     reste de l'interface. */
+  contain: strict;
 }
 
 /* Le canvas de Tech remplit sa couche ; c'est elle qui reçoit le masque. */
@@ -861,6 +864,29 @@
 [data-skin='paper'] .shadow-2xl,
 [data-skin='paper'] .shadow-xl {
   border: 1px solid rgb(var(--border));
+}
+
+/* ===== App ouverte : le décor plein écran se fige =========================
+   Dès qu'une app occupe la page, la couche plein écran n'est plus visible que
+   dans deux bandes étroites (en-tête, pied). La laisser bouger obligerait
+   pourtant le compositeur à refaire, à chaque image, une surface masquée de
+   la taille de la fenêtre PAR-DESSUS la page embarquée — c'est ce qui rendait
+   la navigation lente avec Noël ou Aurore. On fige donc tout ce qui bouge ;
+   la guirlande et les voiles d'aurore restent, immobiles, et le décor de la
+   barre latérale (petit, hors masque) continue de vivre. Le réseau de Tech
+   suit la même règle, côté JavaScript (ThemeDecor.jsx). */
+[data-decor='chrome'] .orbit-snow span,
+[data-decor='chrome'] .orbit-cosmos__comet {
+  display: none;
+}
+
+[data-decor='chrome'] .orbit-snow::before,
+[data-decor='chrome'] .orbit-snow::after,
+[data-decor='chrome'] .orbit-cosmos__ribbon,
+[data-decor='chrome'] .orbit-cosmos__stars,
+[data-decor='chrome'] .orbit-cosmos__star,
+[data-decor='chrome'] .orbit-cosmos__planet {
+  animation-play-state: paused;
 }
 
 /* ===== Mode « sans animations » ============================================

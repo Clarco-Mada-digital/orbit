@@ -14,6 +14,7 @@
 // sans node_modules) : pas de React, pas de store, pas d'Electron.
 // ---------------------------------------------------------------------------
 import { detectUrl } from './urls.js';
+import { lookupBang, matchBangs } from './bangs.js';
 
 // Moteurs fournis d'origine. Le `keyword` est ce qu'on tape après « @ » :
 // « @g chat » → Google. Les raccourcis courts sont ceux qu'on a dans les
@@ -293,17 +294,28 @@ export function parseBang(input) {
 //   2. une adresse reconnaissable s'ouvre (c'est le cas le plus coûteux à
 //      rater : chercher « mon-intranet.local » sur Google ne sert à rien) ;
 //   3. le reste est une recherche.
-export function resolveOmniInput(input, { search = {}, lang = 'fr' } = {}) {
+//
+// `bangs` : index du catalogue de raccourcis (bangs.js), s'il est chargé. Il
+// ne passe qu'APRÈS les moteurs de l'utilisateur et ceux d'Orbit, et se coupe
+// dans les réglages (`search.bangCatalog === false`).
+export function resolveOmniInput(input, { search = {}, lang = 'fr', bangs = null } = {}) {
   const raw = String(input || '');
   const trimmed = raw.trim();
   if (!trimmed) return { kind: 'empty' };
 
   const engines = allEngines(search);
   const bang = parseBang(trimmed);
+  const catalog = search.bangCatalog === false ? null : bangs;
 
   if (bang) {
-    const engine = engineByKeyword(engines, bang.keyword);
-    const candidates = matchEngines(engines, bang.keyword);
+    const engine = engineByKeyword(engines, bang.keyword) || lookupBang(catalog, bang.keyword);
+    const own = matchEngines(engines, bang.keyword);
+    // Complétion : nos moteurs d'abord, puis le catalogue (sans doublon de
+    // raccourci : celui de l'utilisateur ou d'Orbit l'emporte).
+    const taken = new Set(own.flatMap((e) => [normalizeKeyword(e.keyword), ...(e.aliases || [])]));
+    const fromCatalog = matchBangs(catalog, bang.keyword, 8).filter((e) => !taken.has(e.keyword));
+    const candidates = [...own, ...fromCatalog];
+    if (engine?.catalog && !candidates.some((e) => e.id === engine.id)) candidates.unshift(engine);
     // Raccourci encore en cours de frappe, ou inconnu mais qui ressemble à
     // quelque chose : on propose la liste plutôt que de chercher « @gg ».
     //

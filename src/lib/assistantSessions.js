@@ -1,11 +1,13 @@
 // ---------------------------------------------------------------------------
 // Historique des conversations de l'assistant — LOGIQUE PURE.
 //
-// Une « session » garde une utilisation de l'assistant : la discussion libre
-// (plusieurs allers-retours) ou une action rapide (corriger, reformuler,
-// résumer) lancée depuis la fenêtre de relecture. Chaque session est rangée
-// dans une catégorie (discussion, essentiels, rédaction, analyse, orbit) pour
-// que l'historique se parcoure par thème.
+// Une « session » garde une DISCUSSION : plusieurs allers-retours qu'on veut
+// retrouver. Les actions rapides (corriger, reformuler, résumer) n'en créent
+// plus : ce sont des gestes dont on prend le résultat, pas des conversations, et
+// les voir s'empiler dans l'historique de l'assistant le rendait illisible.
+//
+// Les catégories (discussion, essentiels, rédaction, analyse, orbit) restent
+// lues pour les sessions déjà enregistrées par une version antérieure.
 //
 // Les sessions restent LOCALES : elles ne partent pas dans la synchronisation
 // entre machines (voir lib/syncMerge.js), et leur taille est plafonnée pour ne

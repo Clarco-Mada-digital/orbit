@@ -1,6 +1,7 @@
 import { useCallback, useRef, useState } from 'react';
 import { Check, ChevronDown } from 'lucide-react';
 import { useStore } from '../../stores/useStore';
+import { useShallow } from 'zustand/react/shallow';
 import { useT } from '../../lib/i18n';
 import { useZoneHold } from '../../lib/autoHide';
 import { useDismiss } from '../../lib/useDismiss';
@@ -9,7 +10,9 @@ import { useDismiss } from '../../lib/useDismiss';
 // en « Travail » ou « Perso », et on bascule sans passer par la barre latérale.
 export default function ProfileWidget({ placement = 'top', align = 'right-0' }) {
   const t = useT();
-  const { profiles, activeProfile, setActiveProfile } = useStore();
+  const { profiles, activeProfile, setActiveProfile } = useStore(
+    useShallow((s) => ({ profiles: s.profiles, activeProfile: s.activeProfile, setActiveProfile: s.setActiveProfile })),
+  );
   const [open, setOpen] = useState(false);
   // Mode épuré : garde la barre ouverte tant que ce panneau l'est.
   useZoneHold(placement, 'panel', open);

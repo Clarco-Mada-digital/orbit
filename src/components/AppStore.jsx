@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { X, Search, Grid, Plus, Trash2, Globe, Wand2, ImageIcon, Upload, RotateCcw } from 'lucide-react';
 import { useStore } from '../stores/useStore';
+import { useShallow } from 'zustand/react/shallow';
 import { recipes, categories } from '../lib/recipes';
 import { homeUrlFor } from '../lib/urls';
 import { EMOJI_CHOICES, COLOR_CHOICES, getHostname, faviconServiceUrl } from '../lib/appIcons';
@@ -67,8 +68,9 @@ export default function AppStore({ onClose, prefill = null }) {
     reader.readAsDataURL(file);
     e.target.value = '';
   };
-  const { apps, activeProfile, activeApp, addApp, deleteApp, trash, restoreApp, purgeTrashApp, emptyTrash, closeFlyPage } =
-    useStore();
+  const { apps, activeProfile, activeApp, addApp, deleteApp, trash, restoreApp, purgeTrashApp, emptyTrash, closeFlyPage } = useStore(
+    useShallow((s) => ({ apps: s.apps, activeProfile: s.activeProfile, activeApp: s.activeApp, addApp: s.addApp, deleteApp: s.deleteApp, trash: s.trash, restoreApp: s.restoreApp, purgeTrashApp: s.purgeTrashApp, emptyTrash: s.emptyTrash, closeFlyPage: s.closeFlyPage })),
+  );
 
   // Apps installées dans le profil actif (recette OU personnalisée)
   const installedApps = apps.filter((a) => a.profileId === activeProfile);

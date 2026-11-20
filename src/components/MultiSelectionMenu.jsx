@@ -14,6 +14,7 @@ import {
   Trash2,
 } from 'lucide-react';
 import { useStore } from '../stores/useStore';
+import { useShallow } from 'zustand/react/shallow';
 import { useT } from '../lib/i18n';
 import { useGuestDismiss } from '../lib/useDismiss';
 import { foldersFor } from '../lib/appGroups';
@@ -42,7 +43,9 @@ export default function MultiSelectionMenu({ ids, x, y, onClose }) {
     bulkUpdateApps,
     deleteApps,
     moveAppsToProfile,
-  } = useStore();
+  } = useStore(
+    useShallow((s) => ({ apps: s.apps, profiles: s.profiles, folders: s.folders, activeProfile: s.activeProfile, createFolderWithApps: s.createFolderWithApps, assignAppsToFolder: s.assignAppsToFolder, bulkUpdateApps: s.bulkUpdateApps, deleteApps: s.deleteApps, moveAppsToProfile: s.moveAppsToProfile })),
+  );
   const t = useT();
   const menuRef = useRef(null);
   const [naming, setNaming] = useState(false);

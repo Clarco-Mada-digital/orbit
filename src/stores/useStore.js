@@ -251,6 +251,8 @@ export const defaultSettings = {
   // Style des fenêtres secondaires (pop-ups d'apps : connexion Google, liens
   // ouverts dans une nouvelle fenêtre…)
   popupStyle: 'orbit', // orbit (habillage Orbit, coins arrondis) | native | external
+  // Lien ouvert « à côté » (Ctrl+clic, target=_blank) : aperçu par-dessus l'app
+  linkPeek: true,
 
   // Page d'accueil : ce qu'on voit dans un profil quand aucune app n'est
   // ouverte (fond personnalisable, champ de recherche Alt+K, petits widgets).

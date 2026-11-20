@@ -460,21 +460,11 @@ export default function OrbitAssistant({ onReady }) {
     setActiveSessionId(saved.id);
   };
 
-  // Une action rapide (corriger, reformuler, résumer) entre aussi dans
-  // l’historique : toutes les utilisations y figurent, classées par thème.
-  const storeQuickAction = (submittedText, submittedMode, assistantText) => {
-    const now = Date.now();
-    const session = createAssistantSession({ mode: submittedMode, text: submittedText, now });
-    const saved = appendSessionMessages(
-      session,
-      [
-        { role: 'user', content: submittedText },
-        { role: 'assistant', content: assistantText },
-      ],
-      { now }
-    );
-    if (saved) saveAssistantSession(saved);
-  };
+  // Une action rapide (corriger, reformuler, résumer) ne laisse AUCUNE trace
+  // dans l’historique : c’est un geste qu’on lance et dont on prend le résultat,
+  // pas une discussion. Le texte corrigé vit dans `resultText` le temps de la
+  // fenêtre ; seuls les échanges de la discussion sont conservés, pour qu’on
+  // puisse reprendre le fil.
 
   const startNewConversation = () => {
     if (working) return;
@@ -718,8 +708,6 @@ export default function OrbitAssistant({ onReady }) {
         if (submittedMode === 'chat') {
           storeChatTurn(submittedText, chatCommandId, assistantText);
           setPendingAction(actionProposal);
-        } else {
-          storeQuickAction(submittedText, submittedMode, assistantText);
         }
         return assistantText;
       }
@@ -741,10 +729,16 @@ export default function OrbitAssistant({ onReady }) {
         env.allowLocalModels = true;
         env.useBrowserCache = false;
         if (env.backends.onnx?.wasm) {
-          env.backends.onnx.wasm.wasmPaths = {
-            wasm: wasmUrl,
-            mjs: wasmFactoryUrl,
-          };
+          // Empaquetée, la page vient de `file://` : Chromium refuse alors
+          // `fetch()` et l'import de module sur ce schéma, et ONNX Runtime
+          // échoue avec « no available backend found. ERR: [wasm] [object
+          // Event] ». Le processus principal sert donc ces deux fichiers par
+          // son serveur de boucle locale. En développement, il répond
+          // `not-packaged` et on garde les URL fournies par Vite (http://).
+          const ort = await api()?.ortAssets?.();
+          env.backends.onnx.wasm.wasmPaths = ort?.success
+            ? { wasm: ort.wasm, mjs: ort.mjs }
+            : { wasm: wasmUrl, mjs: wasmFactoryUrl };
         }
         // Transformers.js also checks file metadata through its remote-model
         // path; this URL is Orbit's loopback-only model server, not Hugging Face.
@@ -810,8 +804,6 @@ export default function OrbitAssistant({ onReady }) {
       if (submittedMode === 'chat') {
         storeChatTurn(submittedText, chatCommandId, assistantText);
         setPendingAction(actionProposal);
-      } else {
-        storeQuickAction(submittedText, submittedMode, assistantText);
       }
       return assistantText;
     } catch (err) {

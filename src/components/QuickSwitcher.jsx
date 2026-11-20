@@ -18,6 +18,7 @@ import {
   Calculator,
   Ruler,
   Coins,
+  RefreshCw,
   Binary,
   Palette,
   CalendarClock,
@@ -32,11 +33,13 @@ import {
   Clapperboard,
 } from 'lucide-react';
 import { useStore } from '../stores/useStore';
+import { useShallow } from 'zustand/react/shallow';
 import AppIcon from './AppIcon';
 import { shortcutKeys } from '../lib/shortcuts';
 import { useT, resolveLang } from '../lib/i18n';
 import { useSmartResults } from '../lib/smartSearch';
-import { resolveOmniInput } from '../lib/searchEngines';
+import { resolveOmniInput, engineUrl } from '../lib/searchEngines';
+import { useBangCatalog, wantsBangs } from '../lib/useBangs';
 import { useHistoryStore } from '../lib/historyStore';
 import { searchHistory, searchOpenPages, hostLabel, countSince } from '../lib/historySearch';
 import { searchVaultEntries } from '../lib/vaultSearch';
@@ -47,14 +50,15 @@ const SMART_STYLE = {
   calc: { icon: Calculator, color: '#6366f1' },
   unit: { icon: Ruler, color: '#0ea5e9' },
   currency: { icon: Coins, color: '#f59e0b' },
+  fxRefresh: { icon: RefreshCw, color: '#f59e0b' },
   base: { icon: Binary, color: '#8b5cf6' },
   color: { icon: Palette, color: '#ec4899' },
   time: { icon: CalendarClock, color: '#10b981' },
 };
 
 // Recherche « partout » : apps, profils ET actions (paramètres, boutique…)
-export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, onOpenProfileManager }) {
-  const [query, setQuery] = useState('');
+export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, onOpenProfileManager, initialQuery = '' }) {
+  const [query, setQuery] = useState(initialQuery);
   const [selected, setSelected] = useState(0);
   const [copied, setCopied] = useState(null);
   const inputRef = useRef(null);
@@ -91,7 +95,9 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
     workspaces,
     applyWorkspace,
     openFlyPage,
-  } = useStore();
+  } = useStore(
+    useShallow((s) => ({ apps: s.apps, profiles: s.profiles, activeApp: s.activeApp, setActiveApp: s.setActiveApp, setActiveProfile: s.setActiveProfile, sidebarCollapsed: s.sidebarCollapsed, setSidebarCollapsed: s.setSidebarCollapsed, toggleAppSleep: s.toggleAppSleep, splitView: s.splitView, clearSplitView: s.clearSplitView, markAllRead: s.markAllRead, adjustAppZoom: s.adjustAppZoom, resetAppZoom: s.resetAppZoom, workspaces: s.workspaces, applyWorkspace: s.applyWorkspace, openFlyPage: s.openFlyPage })),
+  );
 
   // Historique de navigation (recherche transverse). Local à la machine : il
   // n'entre pas dans la synchronisation.
@@ -397,9 +403,13 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
   // cours de frappe (voir src/lib/searchEngines.js). Un seul juge pour la
   // palette ET le champ d'adresse — les deux recevaient la même chose et en
   // tiraient des conclusions différentes.
+  // Catalogue de raccourcis (« @amz », « @mdn »…) : chargé à la première
+  // saisie de « @ » / « ! », jamais avant.
+  const bangCatalog = useBangCatalog(wantsBangs(query) && searchSources?.bangCatalog !== false);
+  const bangs = bangCatalog?.index || null;
   const omni = useMemo(
-    () => (isHelpQuery ? { kind: 'empty' } : resolveOmniInput(query, { search: searchSources || {}, lang })),
-    [query, isHelpQuery, searchSources, lang]
+    () => (isHelpQuery ? { kind: 'empty' } : resolveOmniInput(query, { search: searchSources || {}, lang, bangs })),
+    [query, isHelpQuery, searchSources, lang, bangs]
   );
   const url = omni.kind === 'url' ? omni.url : null;
   // Moteur annoncé dans le champ : celui du raccourci tapé. Voir le bandeau
@@ -510,7 +520,7 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
           keepOpen: !ready,
           action: () => {
             if (ready) {
-              openFlyPage(resolveOmniInput(`@${engine.keyword} ${omni.terms}`, { search: searchSources || {}, lang }).url);
+              openFlyPage(engineUrl(engine, omni.terms, lang));
             } else {
               setQuery(`${omni.prefix}${engine.keyword} `);
               setSelected(0);
@@ -527,7 +537,7 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
     if (omni.kind === 'search' && omni.bang) list.push(...searchRows(omni));
 
     // Les résultats instantanés passent devant : c'est la réponse cherchée
-    smart.forEach((card) =>
+    smart.cards.forEach((card) =>
       list.push({
         type: 'smart',
         card,
@@ -537,7 +547,10 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
         color: (SMART_STYLE[card.kind] || {}).color || '#6366f1',
         keepOpen: true,
         action: () => {
-          if (!card.disabled && card.copy) copyValue(card.id, card.copy);
+          // Une carte peut porter un geste (actualiser les taux) au lieu d'une
+          // valeur à copier.
+          if (card.run) card.run();
+          else if (!card.disabled && card.copy) copyValue(card.id, card.copy);
         },
       })
     );
@@ -720,10 +733,10 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
 
     return limited;
   }, [
-    trimmed, isHelpQuery, smart, url, t, apps, profiles, actions,
+    trimmed, isHelpQuery, smart.cards, url, t, apps, profiles, actions,
     setActiveApp, setActiveProfile, openFlyPage, history, forgetPage, vaultEntries,
     searchHistoryOn, searchOpenPagesOn, searchVault, searchVaultTotp,
-    omni, webSearchOn, searchSources, lang, searchRows,
+    omni, webSearchOn, lang, searchRows,
   ]);
 
   // Navigation clavier
@@ -927,7 +940,7 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
                           chiffre lisible, l'expression saisie en dessous. */}
                       <div
                         className={
-                          result.type === 'smart'
+                          result.type === 'smart' && result.card.copy
                             ? 'text-xl font-semibold truncate tabular-nums'
                             : 'font-medium truncate'
                         }
@@ -996,6 +1009,8 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
                           <Copy size={16} /> {t('qs.vault.copy')}
                         </span>
                       )
+                    ) : result.type === 'smart' && result.card.run ? (
+                      <RefreshCw size={18} className="text-text-muted flex-shrink-0" />
                     ) : result.type === 'smart' && !result.card.disabled ? (
                       copied === result.card.id ? (
                         <span className="flex items-center gap-1 text-xs text-success flex-shrink-0">

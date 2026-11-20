@@ -25,6 +25,7 @@ import {
   Bot,
 } from 'lucide-react';
 import { useStore } from '../stores/useStore';
+import { useShallow } from 'zustand/react/shallow';
 import ProfileManager from './ProfileManager';
 import Extensions from './Extensions';
 import KeepassSettings from './KeepassSettings';
@@ -129,7 +130,9 @@ export default function Settings({ onClose }) {
       setUpdateMsg(t('st.upd.upToDate'));
     }
   };
-  const { settings, updateSettings, apps, profiles, activeProfile, updateProfile } = useStore();
+  const { settings, updateSettings, apps, profiles, activeProfile, updateProfile } = useStore(
+    useShallow((s) => ({ settings: s.settings, updateSettings: s.updateSettings, apps: s.apps, profiles: s.profiles, activeProfile: s.activeProfile, updateProfile: s.updateProfile })),
+  );
   const t = useT();
 
   const currentProfile = profiles.find((profile) => profile.id === activeProfile);
@@ -1029,6 +1032,18 @@ export default function Settings({ onClose }) {
                   <div className="card">
                     <h4 className="font-semibold mb-1">{t('st.popupTitle')}</h4>
                     <p className="text-sm text-text-muted mb-4">{t('st.popupDesc')}</p>
+                    <label className="flex items-center justify-between gap-3 mb-4 pb-4 border-b border-border">
+                      <span className="min-w-0">
+                        <span className="block font-medium text-sm">{t('st.linkPeek')}</span>
+                        <span className="block text-xs text-text-muted mt-0.5">{t('st.linkPeekDesc')}</span>
+                      </span>
+                      <input
+                        type="checkbox"
+                        checked={settings.linkPeek !== false}
+                        onChange={(e) => updateSettings({ linkPeek: e.target.checked })}
+                        className="flex-shrink-0 w-12 h-6 bg-bg-hover rounded-full relative cursor-pointer appearance-none checked:bg-accent-primary transition-colors after:content-[''] after:absolute after:top-1 after:left-1 after:w-4 after:h-4 after:bg-white after:rounded-full after:transition-transform checked:after:translate-x-6"
+                      />
+                    </label>
                     <div className="space-y-2">
                       {[
                         ['orbit', t('st.popupOrbit'), t('st.popupOrbitDesc')],

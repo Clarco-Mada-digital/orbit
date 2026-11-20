@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Bot, Cpu, Download, HardDrive, KeyRound, Keyboard, MessageSquareText, Plus, RefreshCw, Search, ShieldCheck, Trash2 } from 'lucide-react';
 import { useStore } from '../stores/useStore';
+import { useShallow } from 'zustand/react/shallow';
 import { resolveLang, translate, useT } from '../lib/i18n';
 import { assessAssistantModel, getBestAssistantModel } from '../lib/assistantRecommendations';
 import { AI_PROVIDERS, getAiProvider } from '../lib/aiProviders';
@@ -31,7 +32,9 @@ async function supportsWebGPU() {
 
 export default function AssistantSettings() {
   const t = useT();
-  const { settings, updateSettings } = useStore();
+  const { settings, updateSettings } = useStore(
+    useShallow((s) => ({ settings: s.settings, updateSettings: s.updateSettings })),
+  );
   const language = resolveLang(settings.language);
   const [state, setState] = useState(null);
   const [busy, setBusy] = useState('');

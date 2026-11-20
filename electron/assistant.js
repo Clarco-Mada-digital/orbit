@@ -4,7 +4,9 @@ import fs from 'node:fs';
 import { createServer } from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { assistantModelCorsHeaders } from './assistant-cors.js';
+import { findOrtAssets, ortAssetDirectory, serveOrtAsset as streamOrtAsset } from './assistant-ort.js';
 import {
   assistantModelIntegrityMatches,
   hasValidAssistantModelIntegrityMetadata,
@@ -13,6 +15,10 @@ import {
   discoverCompatibleAssistantModels,
   isValidDiscoveredAssistantModel,
 } from './assistant-catalog.js';
+
+// Le dépôt est en `"type": "module"` : `__dirname` n'existe pas dans un module
+// ES, et c'est pourtant de lui que part le chemin de `dist/assets`.
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const MODEL_FILES = [
   'added_tokens.json',
@@ -233,6 +239,13 @@ function serveModelFile(request, response) {
     response.writeHead(400, headers).end();
     return;
   }
+  // Runtime WASM d'ONNX Runtime : servi ici pour la même raison que les poids
+  // — la page en `file://` ne peut ni récupérer ni importer un fichier local.
+  if (segments[0] === 'ort') {
+    streamOrtAsset(segments[1], ortAssetDirectory(__dirname), request, response, headers);
+    return;
+  }
+
   const [modelKey, ...requested] = segments;
   const model = getModel(modelKey);
   if (!model) {
@@ -354,6 +367,27 @@ export async function getAssistantModelBaseUrl(modelKey) {
     return { success: true, url: `${baseUrl}${encodeURIComponent(modelKey)}/` };
   } catch (error) {
     console.error('[orbit] serveur local du modèle assistant indisponible:', error);
+    return { success: false, error: 'model-server-unavailable' };
+  }
+}
+
+// URL des deux fichiers du runtime, sur le serveur de boucle locale. Échoue
+// proprement quand l'application n'est pas empaquetée (en développement, la
+// page vient de Vite en http:// et les URL du bundler conviennent) ou quand le
+// dossier produit ne les contient pas.
+export async function getAssistantOrtAssets() {
+  if (!app.isPackaged) return { success: false, error: 'not-packaged' };
+  const assets = findOrtAssets(ortAssetDirectory(__dirname));
+  if (!assets) return { success: false, error: 'ort-assets-missing' };
+  try {
+    const baseUrl = await ensureModelServer();
+    return {
+      success: true,
+      wasm: `${baseUrl}ort/${assets.wasm}`,
+      mjs: `${baseUrl}ort/${assets.mjs}`,
+    };
+  } catch (error) {
+    console.error('[orbit] serveur local du runtime ONNX indisponible:', error);
     return { success: false, error: 'model-server-unavailable' };
   }
 }

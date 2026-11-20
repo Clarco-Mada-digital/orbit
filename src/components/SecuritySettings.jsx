@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Lock, LockKeyhole, ShieldCheck, ShieldOff } from 'lucide-react';
 import { useStore } from '../stores/useStore';
+import { useShallow } from 'zustand/react/shallow';
 import { useSecurityStore } from '../lib/securityStore';
 import LockScreen from './LockScreen';
 import { useT } from '../lib/i18n';
@@ -9,7 +10,9 @@ import { useT } from '../lib/i18n';
 // Les codes ne transitent que vers le process principal (electron/security.js),
 // qui garde une empreinte scrypt chiffrée via le trousseau de l'OS.
 export default function SecuritySettings() {
-  const { profiles, settings, updateSettings } = useStore();
+  const { profiles, settings, updateSettings } = useStore(
+    useShallow((s) => ({ profiles: s.profiles, settings: s.settings, updateSettings: s.updateSettings })),
+  );
   const t = useT();
   const security = useSecurityStore();
   const [action, setAction] = useState(null); // { fn, title, subtitle, confirm }

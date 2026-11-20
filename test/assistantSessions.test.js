@@ -1,5 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   MAX_ASSISTANT_SESSIONS,
   MAX_SESSION_CHARS,
@@ -128,6 +131,29 @@ test('les sessions sont triées, plafonnées et supprimables', () => {
 
   assert.equal(removeAssistantSession(upserted, 's-99').length, MAX_ASSISTANT_SESSIONS - 1);
   assert.deepEqual(sortSessions(null), []);
+});
+
+// L'historique ne garde QUE des discussions. Corriger, reformuler ou résumer
+// est un geste dont on prend le résultat : l'enregistrer remplissait la liste
+// de conversations d'entrées qu'on n'a jamais voulu rouvrir. Ce garde-fou lit
+// la source du composant — la règle est un choix d'interface, pas un calcul.
+test('une action rapide n’entre pas dans l’historique de l’assistant', () => {
+  const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
+  const source = fs.readFileSync(
+    path.join(root, 'src', 'components', 'OrbitAssistant.jsx'),
+    'utf8'
+  );
+  assert.doesNotMatch(
+    source,
+    /storeQuickAction/,
+    'les actions rapides ne doivent pas enregistrer de session'
+  );
+  // Le seul enregistrement d'un échange reste celui de la discussion.
+  const guarded = source.match(/if \(submittedMode === 'chat'\) \{[\s\S]{0,160}?\}/g) || [];
+  assert.ok(guarded.length >= 2, 'les deux chemins (local et fournisseur) doivent être gardés');
+  for (const block of guarded) {
+    assert.match(block, /storeChatTurn/);
+  }
 });
 
 test('renommer refuse un titre vide et borne la longueur', () => {

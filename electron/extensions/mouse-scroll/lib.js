@@ -51,8 +51,13 @@
   // d'Orbit.
   // Ce qu'Orbit avale en Alt+Maj. Attention : plusieurs de ses branches ne
   // testent même pas Maj (`k` recherche, `l` URL, `b` barre latérale,
-  // `s` veille), donc Alt+Maj+K / L / B / S sont pris aussi.
-  var ORBIT_ALT_SHIFT_KEYS = ['a', 'b', 'e', 'h', 'i', 'k', 'l', 'm', 'o', 'p', 'pagedown', 'pageup', 's'];
+  // `s` veille, `t` / `w` pages volantes), donc Alt+Maj+K / L / B / S / W
+  // sont pris aussi. `c`, `g`, `x` : écran partagé ; `n` détacher ; `v`
+  // coffre ; `t` téléchargements.
+  var ORBIT_ALT_SHIFT_KEYS = [
+    'a', 'b', 'c', 'e', 'g', 'h', 'i', 'k', 'l', 'm', 'n', 'o', 'p',
+    'pagedown', 'pageup', 's', 't', 'v', 'w', 'x',
+  ];
   // Pris par ailleurs : `f` par l'extension Fake Data, et `j`/`u`/`y` sont les
   // autres touches possibles de la discussion de l'assistant (configurable).
   var RESERVED_BY_OTHERS = ['f', 'j', 'u', 'y'];

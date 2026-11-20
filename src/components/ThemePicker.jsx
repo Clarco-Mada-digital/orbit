@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { Palette, Upload, Download, Trash2, AlertTriangle, Check, Sun, Moon, Monitor } from 'lucide-react';
 import { useStore } from '../stores/useStore';
+import { useShallow } from 'zustand/react/shallow';
 import { useT } from '../lib/i18n';
 import {
   MODES,
@@ -109,7 +110,9 @@ function ThemeSwatch({ theme, size = 'normal' }) {
 const MODE_ICON = { dark: Moon, light: Sun, auto: Monitor };
 
 export default function ThemePicker() {
-  const { settings, updateSettings } = useStore();
+  const { settings, updateSettings } = useStore(
+    useShallow((s) => ({ settings: s.settings, updateSettings: s.updateSettings })),
+  );
   const t = useT();
   const fileRef = useRef(null);
   // Retour du dernier import : erreurs (refus) ou avertissements (accepté

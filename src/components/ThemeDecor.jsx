@@ -17,7 +17,7 @@
 // `left`/`delay`/`duration` sont dispersés à la main plutôt que tirés au
 // hasard : deux lancements doivent donner exactement le même décor.
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useSyncExternalStore } from 'react';
 
 // --- Noël : flocons -------------------------------------------------------
 // Deux familles : des flocons proches, plus gros et plus rapides, et des
@@ -142,17 +142,35 @@ const Star = ({ star }) => (
   />
 );
 
+// Thème actif, lu sur `<html data-skin>` (posé par App). On ne monte QUE le
+// décor de ce thème : les autres n'existent pas dans le DOM et le canvas de
+// Tech ne tourne pas, au lieu d'être simplement masqués par le CSS.
+function subscribeSkin(callback) {
+  const observer = new MutationObserver(callback);
+  observer.observe(document.documentElement, { attributes: true, attributeFilter: ['data-skin'] });
+  return () => observer.disconnect();
+}
+const readSkin = () => document.documentElement.dataset.skin || '';
+function useSkin() {
+  return useSyncExternalStore(subscribeSkin, readSkin, () => '');
+}
+
 // Décor plein écran. Quand une app occupe la page, le CSS découpe la couche
 // (voir `[data-decor='chrome']` dans index.css) pour ne garder que l'en-tête
-// et le pied de fenêtre.
+// et le pied de fenêtre — et y fige les mouvements (voir plus bas).
 export default function ThemeDecor() {
-  return (
-    <>
+  const skin = useSkin();
+  if (skin === 'noel') {
+    return (
       <div className="orbit-snow" aria-hidden="true">
         {NOEL_FLAKES.map((flake, index) => (
           <Flake key={index} flake={flake} />
         ))}
       </div>
+    );
+  }
+  if (skin === 'aurore') {
+    return (
       <div className="orbit-cosmos" aria-hidden="true">
         <span className="orbit-cosmos__ribbon" />
         <span className="orbit-cosmos__ribbon orbit-cosmos__ribbon--2" />
@@ -168,25 +186,37 @@ export default function ThemeDecor() {
         <span className="orbit-cosmos__planet orbit-cosmos__planet--2" />
         <span className="orbit-cosmos__planet orbit-cosmos__planet--3" />
       </div>
-      <TechNetwork />
-    </>
-  );
+    );
+  }
+  if (skin === 'tech') return <TechNetwork />;
+  return null;
 }
 
 // --- Tech : réseau de points reliés --------------------------------------
 // Décor propre au thème Tech : des points dérivent lentement, se relient
 // entre eux quand ils se rapprochent, et le curseur attire les plus proches.
 // C'est un canvas, donc le seul décor qui a besoin de JavaScript : le CSS ne
-// sait pas suivre une souris. Il est masqué par la même découpe que les
-// autres décors, donc il ne dessine jamais sur la page d'une app ouverte.
+// sait pas suivre une souris.
 //
-// Il ne tourne que pour Tech et se FIGE si les animations sont coupées — au
-// lieu de disparaître : le réseau fait partie de l'identité du thème.
+// Coût maîtrisé :
+//   • 30 images/s au plus — une dérive lente n'a rien à gagner à 120 Hz, et
+//     chaque image du décor force aussi la recomposition de la fenêtre ;
+//   • les liens sont regroupés par niveau d'opacité (Path2D) : une dizaine de
+//     `stroke()` par image au lieu d'un par lien (jusqu'à ~10 000) ;
+//   • distances au carré, couleurs précalculées : aucune chaîne ni racine
+//     carrée inutile dans la boucle ;
+//   • quand une app est ouverte (`data-decor='chrome'`), le réseau plein écran
+//     n'est plus visible que dans deux bandes étroites : il se fige.
+//
+// Il se FIGE aussi si les animations sont coupées — au lieu de disparaître :
+// le réseau fait partie de l'identité du thème.
 const NETWORK_DENSITY = 15000; // un point par ~15 000 px²
 const NETWORK_MAX = 140;
 const NETWORK_MIN = 30;
 const NETWORK_LINK = 132; // distance où deux points se relient
 const NETWORK_REACH = 190; // rayon d'influence du curseur
+const FRAME_MS = 1000 / 30;
+const ALPHA_STEPS = 8; // niveaux d'opacité des liens
 
 // Variante locale à la barre latérale : moins de points, liens plus courts,
 // pas de curseur (la barre est trop étroite pour que ça veuille dire quelque
@@ -195,6 +225,15 @@ const SIDE_DENSITY = 6500;
 const SIDE_MAX = 32;
 const SIDE_MIN = 12;
 const SIDE_LINK = 92;
+
+const tint = (triplet, alpha) => {
+  const [r, g, b] = String(triplet).split(/\s+/).map(Number);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+};
+
+// Opacité moyenne du niveau `step` (0 … ALPHA_STEPS-1) pour un maximum donné.
+const stepAlpha = (step, max) => ((step + 0.5) / ALPHA_STEPS) * max;
+const stepOf = (ratio) => Math.min(ALPHA_STEPS - 1, Math.floor(ratio * ALPHA_STEPS));
 
 function TechNetwork({ side = false }) {
   const canvasRef = useRef(null);
@@ -205,31 +244,45 @@ function TechNetwork({ side = false }) {
     if (!canvas || !context) return undefined;
 
     const root = document.documentElement;
+    // Conteneur qui porte `data-decor` (full | chrome) : posé par App.
+    const decorHost = canvas.closest('[data-decor]');
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)');
     const linkDistance = side ? SIDE_LINK : NETWORK_LINK;
+    const link2 = linkDistance * linkDistance;
     const reach = NETWORK_REACH;
+    const reach2 = reach * reach;
     const state = {
       width: 1,
       height: 1,
       accent: '34 211 238',
       ink: '219 240 248',
+      styles: null,
       nodes: [],
       mouse: null,
       frame: 0,
       last: 0,
+      lastDraw: 0,
     };
 
     // Les couleurs viennent des variables du thème : un thème dérivé (ou
     // importé) garde donc un réseau cohérent sans rien savoir de Tech.
+    // Toutes les chaînes rgba() sont construites ICI, une fois.
     const readColors = () => {
       const style = getComputedStyle(root);
-      state.accent = style.getPropertyValue('--accent-primary').trim() || state.accent;
-      state.ink = style.getPropertyValue('--text-primary').trim() || state.ink;
-    };
-
-    const tint = (triplet, alpha) => {
-      const [r, g, b] = triplet.split(/\s+/).map(Number);
-      return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+      const accent = style.getPropertyValue('--accent-primary').trim() || state.accent;
+      const ink = style.getPropertyValue('--text-primary').trim() || state.ink;
+      if (state.styles && accent === state.accent && ink === state.ink) return false;
+      state.accent = accent;
+      state.ink = ink;
+      state.styles = {
+        links: Array.from({ length: ALPHA_STEPS }, (_, i) => tint(accent, stepAlpha(i, 0.26))),
+        mouseLinks: Array.from({ length: ALPHA_STEPS }, (_, i) => tint(accent, stepAlpha(i, 0.55))),
+        glowIn: tint(accent, 0.14),
+        glowOut: tint(accent, 0),
+        nodeOuter: tint(ink, 0.55),
+        nodeInner: tint(accent, 0.85),
+      };
+      return true;
     };
 
     // Graine fixe : deux lancements donnent le même réseau. Le décor ne doit
@@ -260,75 +313,94 @@ function TechNetwork({ side = false }) {
     };
 
     const draw = () => {
-      const { width, height, nodes, mouse, accent, ink } = state;
+      const { width, height, nodes, mouse, styles } = state;
       context.clearRect(0, 0, width, height);
+      const withMouse = mouse && !side;
 
       // Un halo très doux sous le curseur : on voit que le réseau le sent.
-      if (mouse) {
-        const glow = context.createRadialGradient(
-          mouse.x, mouse.y, 0,
-          mouse.x, mouse.y, NETWORK_REACH * 0.6,
-        );
-        glow.addColorStop(0, tint(accent, 0.14));
-        glow.addColorStop(1, tint(accent, 0));
+      if (withMouse) {
+        const radius = reach * 0.6;
+        const glow = context.createRadialGradient(mouse.x, mouse.y, 0, mouse.x, mouse.y, radius);
+        glow.addColorStop(0, styles.glowIn);
+        glow.addColorStop(1, styles.glowOut);
         context.fillStyle = glow;
         context.beginPath();
-        context.arc(mouse.x, mouse.y, NETWORK_REACH * 0.6, 0, Math.PI * 2);
+        context.arc(mouse.x, mouse.y, radius, 0, Math.PI * 2);
         context.fill();
       }
 
+      // Liens entre points, regroupés par niveau d'opacité.
+      const links = Array.from({ length: ALPHA_STEPS }, () => new Path2D());
+      const used = new Array(ALPHA_STEPS).fill(false);
       for (let i = 0; i < nodes.length; i += 1) {
         const a = nodes[i];
         for (let j = i + 1; j < nodes.length; j += 1) {
           const b = nodes[j];
           const dx = a.x - b.x;
           const dy = a.y - b.y;
-          const distance = Math.hypot(dx, dy);
-          if (distance > linkDistance) continue;
-          const alpha = (1 - distance / linkDistance) * 0.26;
-          context.strokeStyle = tint(accent, alpha);
-          context.lineWidth = 1;
-          context.beginPath();
-          context.moveTo(a.x, a.y);
-          context.lineTo(b.x, b.y);
-          context.stroke();
+          const d2 = dx * dx + dy * dy;
+          if (d2 > link2) continue;
+          const step = stepOf(1 - Math.sqrt(d2) / linkDistance);
+          links[step].moveTo(a.x, a.y);
+          links[step].lineTo(b.x, b.y);
+          used[step] = true;
         }
       }
 
       // Le curseur devient un nœud : les points proches s'y accrochent.
-      if (mouse && !side) {
+      const mouseLinks = withMouse ? Array.from({ length: ALPHA_STEPS }, () => new Path2D()) : null;
+      const mouseUsed = new Array(ALPHA_STEPS).fill(false);
+      if (withMouse) {
         for (const node of nodes) {
-          const distance = Math.hypot(node.x - mouse.x, node.y - mouse.y);
-          if (distance > reach) continue;
-          context.strokeStyle = tint(accent, (1 - distance / reach) * 0.55);
-          context.lineWidth = 1;
-          context.beginPath();
-          context.moveTo(node.x, node.y);
-          context.lineTo(mouse.x, mouse.y);
-          context.stroke();
+          const dx = node.x - mouse.x;
+          const dy = node.y - mouse.y;
+          const d2 = dx * dx + dy * dy;
+          if (d2 > reach2) continue;
+          const step = stepOf(1 - Math.sqrt(d2) / reach);
+          mouseLinks[step].moveTo(node.x, node.y);
+          mouseLinks[step].lineTo(mouse.x, mouse.y);
+          mouseUsed[step] = true;
         }
       }
 
-      for (const node of nodes) {
-        context.fillStyle = tint(ink, 0.55);
-        context.beginPath();
-        context.arc(node.x, node.y, node.radius, 0, Math.PI * 2);
-        context.fill();
-        context.fillStyle = tint(accent, 0.85);
-        context.beginPath();
-        context.arc(node.x, node.y, node.radius * 0.45, 0, Math.PI * 2);
-        context.fill();
+      context.lineWidth = 1;
+      for (let step = 0; step < ALPHA_STEPS; step += 1) {
+        if (used[step]) {
+          context.strokeStyle = styles.links[step];
+          context.stroke(links[step]);
+        }
+        if (mouseUsed[step]) {
+          context.strokeStyle = styles.mouseLinks[step];
+          context.stroke(mouseLinks[step]);
+        }
       }
+
+      // Points : deux remplissages pour tout le réseau.
+      const outer = new Path2D();
+      const inner = new Path2D();
+      for (const node of nodes) {
+        outer.moveTo(node.x + node.radius, node.y);
+        outer.arc(node.x, node.y, node.radius, 0, Math.PI * 2);
+        const r = node.radius * 0.45;
+        inner.moveTo(node.x + r, node.y);
+        inner.arc(node.x, node.y, r, 0, Math.PI * 2);
+      }
+      context.fillStyle = styles.nodeOuter;
+      context.fill(outer);
+      context.fillStyle = styles.nodeInner;
+      context.fill(inner);
     };
 
     const step = (dt) => {
       const { width, height, nodes, mouse } = state;
+      const withMouse = mouse && !side;
       for (const node of nodes) {
-        if (mouse && !side) {
+        if (withMouse) {
           const dx = mouse.x - node.x;
           const dy = mouse.y - node.y;
-          const distance = Math.hypot(dx, dy) || 1;
-          if (distance < NETWORK_REACH) {
+          const d2 = dx * dx + dy * dy;
+          if (d2 < reach2) {
+            const distance = Math.sqrt(d2) || 1;
             const force = (1 - distance / reach) * 0.03;
             node.vx += (dx / distance) * force * dt;
             node.vy += (dy / distance) * force * dt;
@@ -345,17 +417,26 @@ function TechNetwork({ side = false }) {
       }
     };
 
+    // Plein écran avec une app ouverte : seules deux bandes restent visibles,
+    // le mouvement n'y vaut pas une recomposition de toute la fenêtre.
+    const coveredByApp = () => !side && decorHost?.dataset.decor === 'chrome';
+
     const active = () =>
-      root.dataset.skin === 'tech'
+      !document.hidden
+      && !coveredByApp()
       && !root.classList.contains('no-animations')
       && !reducedMotion.matches;
 
     const loop = (now) => {
-      const dt = state.last ? Math.min(3, (now - state.last) / 16.667) : 1;
+      state.frame = requestAnimationFrame(loop);
+      if (state.lastDraw && now - state.lastDraw < FRAME_MS - 1) return;
+      state.lastDraw = now;
+      // dt en « images à 60 Hz » : la vitesse reste la même quel que soit le
+      // rythme réel.
+      const dt = state.last ? Math.min(4, (now - state.last) / 16.667) : 1;
       state.last = now;
       step(dt);
       draw();
-      state.frame = requestAnimationFrame(loop);
     };
 
     // Un seul point d'entrée : on arrête tout, puis on redémarre si le thème
@@ -364,43 +445,51 @@ function TechNetwork({ side = false }) {
       cancelAnimationFrame(state.frame);
       state.frame = 0;
       state.last = 0;
-      if (root.dataset.skin !== 'tech') return;
+      state.lastDraw = 0;
       draw();
       if (active()) state.frame = requestAnimationFrame(loop);
     };
 
     const resize = () => {
       const rect = canvas.parentElement.getBoundingClientRect();
-      state.width = Math.max(1, Math.round(rect.width));
-      state.height = Math.max(1, Math.round(rect.height));
+      const width = Math.max(1, Math.round(rect.width));
+      const height = Math.max(1, Math.round(rect.height));
+      if (width === state.width && height === state.height && state.nodes.length) return;
+      state.width = width;
+      state.height = height;
       const dpr = Math.min(2, window.devicePixelRatio || 1);
-      canvas.width = Math.round(state.width * dpr);
-      canvas.height = Math.round(state.height * dpr);
+      canvas.width = Math.round(width * dpr);
+      canvas.height = Math.round(height * dpr);
       context.setTransform(dpr, 0, 0, dpr, 0, 0);
       buildNodes();
       sync();
     };
 
     const onPointerMove = (event) => {
-      state.mouse = { x: event.clientX, y: event.clientY };
+      if (state.mouse) {
+        state.mouse.x = event.clientX;
+        state.mouse.y = event.clientY;
+      } else {
+        state.mouse = { x: event.clientX, y: event.clientY };
+      }
     };
     const onPointerLeave = () => {
       state.mouse = null;
     };
-    const onVisibility = () => {
-      if (document.hidden) {
-        cancelAnimationFrame(state.frame);
-        state.frame = 0;
-      } else {
-        sync();
-      }
-    };
 
-    const observer = new MutationObserver(() => {
-      readColors();
-      sync();
+    // Le thème (couleurs, mode clair/sombre, accent posé en style inline) ou
+    // le réglage des animations changent : on relit, et on ne redémarre que si
+    // l'état d'animation a pu changer.
+    const rootObserver = new MutationObserver((records) => {
+      const recolored = readColors();
+      if (records.some((r) => r.attributeName === 'class') || recolored) sync();
     });
-    observer.observe(root, { attributes: true, attributeFilter: ['data-skin', 'data-theme', 'class'] });
+    rootObserver.observe(root, { attributes: true, attributeFilter: ['data-theme', 'class', 'style'] });
+
+    const decorObserver = new MutationObserver(sync);
+    if (decorHost && !side) {
+      decorObserver.observe(decorHost, { attributes: true, attributeFilter: ['data-decor'] });
+    }
 
     const resizeObserver = new ResizeObserver(resize);
     resizeObserver.observe(canvas);
@@ -411,18 +500,19 @@ function TechNetwork({ side = false }) {
       window.addEventListener('pointermove', onPointerMove, { passive: true });
       document.addEventListener('pointerleave', onPointerLeave);
     }
-    document.addEventListener('visibilitychange', onVisibility);
+    document.addEventListener('visibilitychange', sync);
     reducedMotion.addEventListener('change', sync);
 
     return () => {
       cancelAnimationFrame(state.frame);
-      observer.disconnect();
+      rootObserver.disconnect();
+      decorObserver.disconnect();
       resizeObserver.disconnect();
       if (!side) {
         window.removeEventListener('pointermove', onPointerMove);
         document.removeEventListener('pointerleave', onPointerLeave);
       }
-      document.removeEventListener('visibilitychange', onVisibility);
+      document.removeEventListener('visibilitychange', sync);
       reducedMotion.removeEventListener('change', sync);
     };
   }, [side]);
@@ -438,19 +528,25 @@ function TechNetwork({ side = false }) {
 // quand la barre passe en surimpression) et comble le seul endroit que la
 // découpe plein écran laisse volontairement vide.
 export function ThemeSideDecor() {
-  return (
-    <>
+  const skin = useSkin();
+  if (skin === 'noel') {
+    return (
       <div className="orbit-snow-side" aria-hidden="true">
         {NOEL_SIDE_FLAKES.map((flake, index) => (
           <Flake key={index} flake={flake} />
         ))}
       </div>
+    );
+  }
+  if (skin === 'aurore') {
+    return (
       <div className="orbit-cosmos-side" aria-hidden="true">
         {COSMOS_SIDE_STARS.map((star, index) => (
           <Star key={index} star={star} />
         ))}
       </div>
-      <TechNetwork side />
-    </>
-  );
+    );
+  }
+  if (skin === 'tech') return <TechNetwork side />;
+  return null;
 }

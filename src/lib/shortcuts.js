@@ -24,122 +24,105 @@ export function normalizeAssistantChatShortcutKey(value) {
   return ASSISTANT_CHAT_SHORTCUT_KEYS.includes(normalized) ? normalized : null;
 }
 
-// La combinaison est-elle un raccourci d'Orbit ? (événement keydown du DOM)
-export function matchShortcut(e, assistantChatShortcutKey = 'a') {
-  const mac = isMac();
+// Cœur commun : une combinaison normalisée { key, ctrl, alt, meta, shift } →
+// nom d'action, ou null. Le DOM (keydown) et le main process
+// (before-input-event) n'en diffèrent que par la forme de l'événement : une
+// seule table évite que les deux listes divergent.
+//
+// Choix des touches :
+//   • lettres plutôt que symboles — « \ », « / » ou « [ » demandent AltGr ou
+//     Maj sur un clavier AZERTY ;
+//   • jamais ⌘X, ⌘Z, ⌘C, ⌘V, ⌘A sur macOS (couper, annuler, copier…) ;
+//   • l'écran partagé vit sur la couche ⇧, plus sûre côté apps web.
+export function matchCombo({ key, code, ctrl, alt, meta, shift }, mac, assistantChatShortcutKey = 'a') {
+  const k = String(key || '').toLowerCase();
   // Rechercher dans la page : Ctrl+F (Win/Linux) ou ⌘F (mac) — remplace la
   // recherche de l'app embarquée par celle d'Orbit.
-  if (
-    (mac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.altKey) &&
-    !e.shiftKey &&
-    (e.key || '').toLowerCase() === 'f'
-  ) {
-    return 'find';
-  }
+  if ((mac ? meta && !ctrl : ctrl && !alt) && !shift && k === 'f') return 'find';
   // Recharger la page de l'app active : Ctrl+R / ⌘R et F5 — comme dans un
-  // navigateur. Sans ça, Ctrl+R était simplement avalé par l'app embarquée
-  // (aucun raccourci Orbit ne le gérait) et « rien ne se rechargeait ».
-  // Avec Maj (⇧R / ⇧F5) → rechargement FORT, cache ignoré.
-  {
-    const modReload = mac ? e.metaKey && !e.ctrlKey : e.ctrlKey && !e.altKey;
-    const k0 = (e.key || '').toLowerCase();
-    if (modReload && k0 === 'r') return e.shiftKey ? 'reload-hard' : 'reload';
-    if (k0 === 'f5' && !e.altKey) {
-      return e.shiftKey || e.ctrlKey || e.metaKey ? 'reload-hard' : 'reload';
+  // navigateur. Avec Maj (⇧R / ⇧F5) → rechargement FORT, cache ignoré.
+  const modReload = mac ? meta && !ctrl : ctrl && !alt;
+  if (modReload && k === 'r') return shift ? 'reload-hard' : 'reload';
+  if (k === 'f5' && !alt) return shift || ctrl || meta ? 'reload-hard' : 'reload';
+  // Aide : la liste des raccourcis, sans modificateur.
+  if (k === 'f1' && !alt && !ctrl && !meta && !shift) return 'help';
+
+  const mod = mac ? meta : alt;
+  // Modificateur parasite (Ctrl, ou l'autre) → pas un raccourci Orbit
+  if (!mod || ctrl || (mac ? alt : meta)) return null;
+  const chatKey = normalizeAssistantChatShortcutKey(assistantChatShortcutKey);
+  if (shift && chatKey && k === chatKey) return 'assistant-chat';
+
+  if (shift) {
+    switch (k) {
+      case 's': return 'screenshot';
+      case 'e': return 'proofread-editor';
+      case 'i': return 'assistant-editor';
+      case 'o': return 'store';
+      case 'p': return 'profiles';
+      case 'm': return 'mark-all-read';
+      case 'h': return 'toggle-bars';
+      // Libres d'usage ailleurs : ⇧D (palette de Mouse Scroll), ⇧F (Fake
+      // Data) et ⇧J / ⇧U / ⇧Y (touches possibles de l'assistant) ne sont
+      // jamais pris ici — voir test/mouse-scroll.test.js.
+      case 't': return 'downloads';
+      case 'v': return 'vault';
+      case 'n': return 'detach';
+      // Écran partagé
+      case 'x': return 'split-toggle';
+      case 'c': return 'split-direction';
+      case 'g': return 'split-focus';
+      // Profil suivant / précédent : même geste que pour les apps, avec ⇧.
+      case 'pagedown': return 'next-profile';
+      case 'pageup': return 'prev-profile';
+      default: break;
     }
   }
-  const mod = mac ? e.metaKey : e.altKey;
-  // Modificateur parasite (Ctrl, ou l'autre) → pas un raccourci Orbit
-  if (!mod || e.ctrlKey || (mac ? e.altKey : e.metaKey)) return null;
-  const k = (e.key || '').toLowerCase();
-  const shift = !!e.shiftKey;
-  const chatKey = normalizeAssistantChatShortcutKey(assistantChatShortcutKey);
-  if (shift && chatKey && k === chatKey) {
-    return 'assistant-chat';
+
+  switch (k) {
+    case 'k': return 'search';
+    case ',': return 'settings';
+    // Modifier l'URL de la page courante — surtout utile sur une page VOLANTE.
+    case 'l': return 'edit-url';
+    case 't': return 'new-page';
+    case 'w': return 'close-page';
+    case 's': return shift ? null : 'toggle-sleep';
+    case 'b': return 'toggle-sidebar';
+    case 'pagedown': return 'next-app';
+    case 'pageup': return 'prev-app';
+    case '+':
+    case '=': return 'zoom-in';
+    case '-': return 'zoom-out';
+    case '0': return 'zoom-reset';
+    default: break;
   }
-  if (shift && k === 's') return 'screenshot';
-  if (shift && k === 'e') return 'proofread-editor';
-  if (shift && k === 'i') return 'assistant-editor';
-  if (k === 'k') return 'search';
-  if (k === ',') return 'settings';
-  // Modifier l'URL de la page courante — surtout utile sur une page VOLANTE :
-  // s'être trompé d'un caractère ne doit pas obliger à tout fermer et rouvrir.
-  if (k === 'l') return 'edit-url';
-  if (shift && k === 'o') return 'store';
-  if (shift && k === 'p') return 'profiles';
-  if (shift && k === 'm') return 'mark-all-read';
-  if (k === 's') return 'toggle-sleep';
-  if (k === 'b') return 'toggle-sidebar';
-  if (shift && k === 'h') return 'toggle-bars';
-  // Profil suivant / précédent : même geste que pour les apps, avec ⇧.
-  // Doit être testé AVANT la version sans ⇧, sinon Alt+⇧+Page↓ serait avalé
-  // par « app suivante ».
-  if (shift && k === 'pagedown') return 'next-profile';
-  if (shift && k === 'pageup') return 'prev-profile';
-  if (k === 'pagedown') return 'next-app';
-  if (k === 'pageup') return 'prev-app';
   if (/^[1-9]$/.test(k)) return `app-${k}`;
-  if (k === '+' || k === '=') return 'zoom-in';
-  if (k === '-') return 'zoom-out';
-  if (k === '0') return 'zoom-reset';
+  // Clavier AZERTY : la rangée du haut donne « & é " ' ( … » sans Maj. La
+  // position physique de la touche (`code`) désigne alors le chiffre.
+  const digit = /^Digit([1-9])$/.exec(String(code || ''));
+  if (digit) return `app-${digit[1]}`;
   return null;
+}
+
+// La combinaison est-elle un raccourci d'Orbit ? (événement keydown du DOM)
+export function matchShortcut(e, assistantChatShortcutKey = 'a') {
+  if (!e) return null;
+  return matchCombo(
+    { key: e.key, code: e.code, ctrl: e.ctrlKey, alt: e.altKey, meta: e.metaKey, shift: e.shiftKey },
+    isMac(),
+    assistantChatShortcutKey,
+  );
 }
 
 // Même logique pour l'objet `input` du main process (before-input-event)
 export function matchShortcutInput(input, assistantChatShortcutKey = 'a') {
   if (!input || input.type !== 'keyDown') return null;
   const mac = typeof process !== 'undefined' && process.platform === 'darwin';
-  // Rechercher dans la page : Ctrl+F (Win/Linux) ou ⌘F (mac)
-  if (
-    (mac ? input.meta && !input.control : input.control && !input.alt) &&
-    !input.shift &&
-    String(input.key || '').toLowerCase() === 'f'
-  ) {
-    return 'find';
-  }
-  // Recharger : Ctrl+R / ⌘R et F5 (Maj → rechargement fort). Intercepté ICI
-  // pour fonctionner même quand le focus est DANS l'app embarquée.
-  {
-    const modReload = mac ? input.meta && !input.control : input.control && !input.alt;
-    const k0 = String(input.key || '').toLowerCase();
-    if (modReload && k0 === 'r') return input.shift ? 'reload-hard' : 'reload';
-    if (k0 === 'f5' && !input.alt) {
-      return input.shift || input.control || input.meta ? 'reload-hard' : 'reload';
-    }
-  }
-  const mod = mac ? input.meta : input.alt;
-  if (!mod || input.control || (mac ? input.alt : input.meta)) return null;
-  const k = String(input.key || '').toLowerCase();
-  const shift = !!input.shift;
-  const chatKey = normalizeAssistantChatShortcutKey(assistantChatShortcutKey);
-  if (shift && chatKey && k === chatKey) {
-    return 'assistant-chat';
-  }
-  if (shift && k === 's') return 'screenshot';
-  if (shift && k === 'e') return 'proofread-editor';
-  if (shift && k === 'i') return 'assistant-editor';
-  if (k === 'k') return 'search';
-  if (k === ',') return 'settings';
-  // Même geste que côté renderer : Alt+L / ⌘L.
-  if (k === 'l') return 'edit-url';
-  if (shift && k === 'o') return 'store';
-  if (shift && k === 'p') return 'profiles';
-  if (shift && k === 'm') return 'mark-all-read';
-  if (k === 's') return 'toggle-sleep';
-  if (k === 'b') return 'toggle-sidebar';
-  if (shift && k === 'h') return 'toggle-bars';
-  // Profil suivant / précédent : même geste que pour les apps, avec ⇧.
-  // Doit être testé AVANT la version sans ⇧, sinon Alt+⇧+Page↓ serait avalé
-  // par « app suivante ».
-  if (shift && k === 'pagedown') return 'next-profile';
-  if (shift && k === 'pageup') return 'prev-profile';
-  if (k === 'pagedown') return 'next-app';
-  if (k === 'pageup') return 'prev-app';
-  if (/^[1-9]$/.test(k)) return `app-${k}`;
-  if (k === '+' || k === '=') return 'zoom-in';
-  if (k === '-') return 'zoom-out';
-  if (k === '0') return 'zoom-reset';
-  return null;
+  return matchCombo(
+    { key: input.key, code: input.code, ctrl: input.control, alt: input.alt, meta: input.meta, shift: input.shift },
+    mac,
+    assistantChatShortcutKey,
+  );
 }
 
 // Liste d'affichage (panneau « help ») — adaptée à la plateforme.
@@ -180,6 +163,15 @@ export function shortcutKeys(t, assistantOptions = {}) {
     { keys: [M, '+'], desc: d('sc.zoomIn', 'Zoom avant (app active)') },
     { keys: [M, '−'], desc: d('sc.zoomOut', 'Zoom arrière (app active)') },
     { keys: [M, '0'], desc: d('sc.zoomReset', 'Réinitialiser le zoom') },
+    { keys: [M, 'T'], desc: d('sc.newPage', 'Ouvrir une adresse dans une page volante') },
+    { keys: [M, 'W'], desc: d('sc.closePage', 'Fermer l’aperçu de lien ou la page volante active') },
+    { keys: [M, '⇧', 'X'], desc: d('sc.splitToggle', 'Écran partagé : partager avec l’app précédente / quitter') },
+    { keys: [M, '⇧', 'C'], desc: d('sc.splitDirection', 'Écran partagé : côte à côte ↔ haut / bas') },
+    { keys: [M, '⇧', 'G'], desc: d('sc.splitFocus', 'Écran partagé : passer au panneau suivant') },
+    { keys: [M, '⇧', 'N'], desc: d('sc.detach', 'Détacher l’app active dans sa propre fenêtre') },
+    { keys: [M, '⇧', 'T'], desc: d('sc.downloads', 'Téléchargements') },
+    { keys: [M, '⇧', 'V'], desc: d('sc.vault', 'Coffre-fort de mots de passe') },
+    { keys: ['F1'], desc: d('sc.help', 'Afficher cette liste de raccourcis') },
     { keys: [d('sc.escKey', 'Échap')], desc: d('sc.escape', 'Fermer / annuler') },
   ];
   if (assistantOptions.assistantChatEnabled !== false && assistantOptions.assistantChatShortcutEnabled !== false) {

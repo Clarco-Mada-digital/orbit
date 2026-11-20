@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Plus, Trash2, ArrowUp, ArrowDown, Zap, AlertCircle } from 'lucide-react';
 import { useStore } from '../stores/useStore';
+import { useShallow } from 'zustand/react/shallow';
 import { useT } from '../lib/i18n';
 import { validateRule, describeRule, LINK_ACTIONS } from '../lib/rules';
 
@@ -14,7 +15,9 @@ const blank = (trigger) =>
 
 export default function RulesSettings() {
   const t = useT();
-  const { rules, apps, profiles, addRule, updateRule, deleteRule, moveRule } = useStore();
+  const { rules, apps, profiles, addRule, updateRule, deleteRule, moveRule } = useStore(
+    useShallow((s) => ({ rules: s.rules, apps: s.apps, profiles: s.profiles, addRule: s.addRule, updateRule: s.updateRule, deleteRule: s.deleteRule, moveRule: s.moveRule })),
+  );
   const [draft, setDraft] = useState(null);
 
   const errors = draft ? validateRule(draft) : [];

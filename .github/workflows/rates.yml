@@ -1,0 +1,46 @@
+name: Taux de change
+
+# Les taux bougent tous les jours, et le code ne bouge pas avec eux. Sans ce
+# workflow, l'instantané embarqué (src/lib/ratesSnapshot.js) resterait figé à la
+# date de la dernière release : la conversion hors ligne annoncerait un cours
+# vieux de plusieurs mois.
+#
+# Tous les jours, donc : on relève les taux, on réécrit le fichier, on commite
+# seulement s'il a changé. Chaque release embarque ainsi un relevé du jour, et
+# les installations existantes le récupèrent via les mises à jour d'Orbit.
+#
+# `node scripts/update-rates.js --check` peut être lancé à la main pour savoir
+# si l'instantané du dépôt est encore à la date du relevé.
+on:
+  schedule:
+    # 04 h 17 UTC : après le relevé quotidien de l'API, avant la journée.
+    - cron: '17 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  rates:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+
+      - name: Relever les taux et réécrire l'instantané
+        run: node scripts/update-rates.js
+
+      - name: Commiter si le relevé a changé
+        run: |
+          if git diff --quiet -- src/lib/ratesSnapshot.js; then
+            echo "Instantané déjà à jour : rien à commiter."
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add src/lib/ratesSnapshot.js
+          git commit -m "Taux de change : relevé du $(date -u +%d/%m/%Y)"
+          git push

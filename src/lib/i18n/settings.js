@@ -281,6 +281,18 @@ export const fr = {
   'st.search.customHint':
     'L’URL doit contenir {q} à l’emplacement des termes cherchés (%s est aussi accepté).',
   'st.search.keywordTaken': 'Le raccourci @{keyword} est déjà pris.',
+  'st.search.customSave': 'Enregistrer',
+  'st.search.customEdit': 'Modifier',
+  'st.search.customCancel': 'Annuler',
+  'st.search.catalogTitle': 'Catalogue de raccourcis',
+  'st.search.catalog': 'Utiliser le catalogue ({count} sites)',
+  'st.search.catalogDesc':
+    '« @amz casque », « @mdn grid », « @imdb dune »… Vos moteurs et ceux d’Orbit passent toujours en premier. Source : Helium / Kagi (licence MIT).',
+  'st.search.catalogSearch': 'Chercher un site ou un raccourci (ex. amazon, @amz)',
+  'st.search.catalogEmpty': 'Aucun raccourci ne correspond.',
+  'st.search.catalogCustomize': 'Personnaliser',
+  'st.search.catalogCustomizeTitle': 'Copier dans vos moteurs pour modifier le nom, le raccourci ou l’URL',
+  'st.search.catalogLoading': 'Chargement du catalogue…',
   'st.hist.title': 'Historique de navigation',
   'st.hist.desc':
     'Les pages visitées dans vos apps alimentent la recherche Alt+K (« cette page vue hier »). L’historique reste sur cette machine : il n’entre pas dans la synchronisation.',
@@ -457,6 +469,9 @@ export const fr = {
   'st.popupNativeDesc': 'Décoration classique de votre système d’exploitation',
   'st.popupExternal': 'Navigateur externe',
   'st.popupExternalDesc': 'Ouvrir dans votre navigateur par défaut (la connexion peut échouer)',
+  'st.linkPeek': 'Aperçu des liens ouverts « à côté »',
+  'st.linkPeekDesc':
+    'Ctrl+clic, clic molette ou lien « nouvel onglet » dans une app : la page s’affiche d’abord par-dessus, avec le choix de l’ouvrir dans Orbit, à côté, dans une fenêtre détachée ou dans le navigateur. Les fenêtres de connexion (Google, paiement…) ne sont pas concernées.',
   'sys.tooltip': 'Processeur ({cores} cœurs) et mémoire — {mem}',
   'profile.switch': 'Changer de profil',
   'st.focusWorkSound': 'Son de fin de session (Pomodoro)',
@@ -819,6 +834,18 @@ export const en = {
   'st.search.customHint':
     'The URL must contain {q} where the search terms go (%s is accepted too).',
   'st.search.keywordTaken': 'The @{keyword} shortcut is already taken.',
+  'st.search.customSave': 'Save',
+  'st.search.customEdit': 'Edit',
+  'st.search.customCancel': 'Cancel',
+  'st.search.catalogTitle': 'Shortcut catalog',
+  'st.search.catalog': 'Use the catalog ({count} sites)',
+  'st.search.catalogDesc':
+    '“@amz headphones”, “@mdn grid”, “@imdb dune”… Your engines and Orbit’s always come first. Source: Helium / Kagi (MIT license).',
+  'st.search.catalogSearch': 'Find a site or a shortcut (e.g. amazon, @amz)',
+  'st.search.catalogEmpty': 'No shortcut matches.',
+  'st.search.catalogCustomize': 'Customize',
+  'st.search.catalogCustomizeTitle': 'Copy into your engines to change the name, shortcut or URL',
+  'st.search.catalogLoading': 'Loading the catalog…',
   'st.hist.title': 'Browsing history',
   'st.hist.desc':
     'Pages visited in your apps feed the Alt+K search (“that page I saw yesterday”). The history stays on this machine: it is not part of sync.',
@@ -982,6 +1009,9 @@ export const en = {
   'st.popupNativeDesc': 'Your operating system’s standard decoration',
   'st.popupExternal': 'External browser',
   'st.popupExternalDesc': 'Open in your default browser (sign-in may fail)',
+  'st.linkPeek': 'Preview links opened “in a new tab”',
+  'st.linkPeekDesc':
+    'Ctrl+click, middle click or a “new tab” link inside an app: the page first shows on top, with the choice to open it in Orbit, beside, in a detached window or in the browser. Sign-in windows (Google, payment…) are not affected.',
   'sys.tooltip': 'CPU ({cores} cores) and memory — {mem}',
   'profile.switch': 'Switch profile',
   'st.focusWorkSound': 'End-of-session sound (Pomodoro)',

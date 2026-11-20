@@ -1,8 +1,11 @@
-import { useState } from 'react';
-import { Search, History, PanelsTopLeft, KeyRound, Timer, Globe, Plus, Trash2, Eye, EyeOff } from 'lucide-react';
+import { useMemo, useRef, useState } from 'react';
+import { Search, History, PanelsTopLeft, KeyRound, Timer, Globe, Plus, Trash2, Eye, EyeOff, Pencil, BookOpen, Wand2, X } from 'lucide-react';
 import { useStore } from '../stores/useStore';
+import { useShallow } from 'zustand/react/shallow';
 import { useT } from '../lib/i18n';
 import { BUILTIN_ENGINES, allEngines, isValidEngine, normalizeKeyword } from '../lib/searchEngines';
+import { searchBangCatalog } from '../lib/bangs';
+import { useBangCatalog } from '../lib/useBangs';
 
 // ---------------------------------------------------------------------------
 // Réglages → Général → Recherche (Alt+K)
@@ -22,7 +25,9 @@ const SOURCES = [
 ];
 
 export default function SearchSettings() {
-  const { settings, updateSettings } = useStore();
+  const { settings, updateSettings } = useStore(
+    useShallow((s) => ({ settings: s.settings, updateSettings: s.updateSettings })),
+  );
   const t = useT();
   const search = settings.search || {};
   const on = (id) => search[id] !== false;
@@ -101,30 +106,50 @@ function WebSearchSection({ search, toggle, patch, on, t }) {
   const hidden = search.hiddenEngines || [];
   const custom = search.customEngines || [];
   const [draft, setDraft] = useState({ name: '', keyword: '', url: '' });
+  // Moteur personnalisé en cours de modification (null = ajout).
+  const [editingId, setEditingId] = useState(null);
+  const nameRef = useRef(null);
 
   // Raccourci déjà pris : le laisser passer donnerait un « @g » qui répond
   // tantôt l'un tantôt l'autre selon l'ordre de la liste. On le dit avant.
+  // Le moteur qu'on modifie ne compte pas : garder son propre raccourci est
+  // permis. Le catalogue non plus : un moteur à soi a justement vocation à
+  // passer devant lui.
   const draftKeyword = normalizeKeyword(draft.keyword);
   const taken =
     Boolean(draftKeyword) &&
-    engines.some((e) => normalizeKeyword(e.keyword) === draftKeyword);
+    engines.some((e) => e.id !== editingId && normalizeKeyword(e.keyword) === draftKeyword);
   const canAdd = isValidEngine(draft) && !taken;
+
+  const resetDraft = () => {
+    setDraft({ name: '', keyword: '', url: '' });
+    setEditingId(null);
+  };
 
   const addEngine = () => {
     if (!canAdd) return;
+    const engine = {
+      name: draft.name.trim(),
+      keyword: draftKeyword,
+      url: draft.url.trim(),
+    };
     patch({
-      customEngines: [
-        ...custom,
-        {
-          id: `engine-${Date.now()}`,
-          name: draft.name.trim(),
-          keyword: draftKeyword,
-          url: draft.url.trim(),
-          color: '#6366f1',
-        },
-      ],
+      customEngines: editingId
+        ? custom.map((e) => (e.id === editingId ? { ...e, ...engine } : e))
+        : [...custom, { id: `engine-${Date.now()}`, color: '#6366f1', ...engine }],
     });
-    setDraft({ name: '', keyword: '', url: '' });
+    resetDraft();
+  };
+
+  // Charge un moteur dans le formulaire : pour le modifier (moteur à soi) ou
+  // pour en faire une copie personnalisée (entrée du catalogue).
+  const loadDraft = (engine, id = null) => {
+    setDraft({ name: engine.name, keyword: engine.keyword, url: engine.url });
+    setEditingId(id);
+    requestAnimationFrame(() => {
+      nameRef.current?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      nameRef.current?.focus();
+    });
   };
 
   const removeEngine = (id) => {
@@ -220,6 +245,8 @@ function WebSearchSection({ search, toggle, patch, on, t }) {
         </div>
       </div>
 
+      <BangCatalogSection toggle={toggle} on={on} t={t} onCustomize={(e) => loadDraft(e)} />
+
       {/* Moteurs personnalisés */}
       <div className="mt-5">
         <h5 className="text-xs font-semibold text-text-muted uppercase mb-2">
@@ -237,6 +264,13 @@ function WebSearchSection({ search, toggle, patch, on, t }) {
                 <span className="text-sm font-medium flex-shrink-0">{e.name}</span>
                 <span className="text-xs text-text-muted truncate flex-1 font-mono">{e.url}</span>
                 <button
+                  onClick={() => loadDraft(e, e.id)}
+                  className="btn-icon flex-shrink-0"
+                  title={t('st.search.customEdit')}
+                >
+                  <Pencil size={14} />
+                </button>
+                <button
                   onClick={() => removeEngine(e.id)}
                   className="btn-icon flex-shrink-0 hover:text-error"
                   title={t('common.remove')}
@@ -250,6 +284,7 @@ function WebSearchSection({ search, toggle, patch, on, t }) {
 
         <div className="grid grid-cols-1 sm:grid-cols-[1fr_6rem] gap-2">
           <input
+            ref={nameRef}
             type="text"
             value={draft.name}
             onChange={(ev) => setDraft({ ...draft, name: ev.target.value })}
@@ -283,11 +318,110 @@ function WebSearchSection({ search, toggle, patch, on, t }) {
               t('st.search.customHint')
             )}
           </p>
-          <button onClick={addEngine} disabled={!canAdd} className="btn btn-primary flex-shrink-0 disabled:opacity-40">
-            <Plus size={14} /> {t('st.search.customAdd')}
-          </button>
+          <div className="flex items-center gap-2 flex-shrink-0">
+            {(editingId || draft.name || draft.keyword || draft.url) && (
+              <button onClick={resetDraft} className="btn btn-secondary">
+                {t('st.search.customCancel')}
+              </button>
+            )}
+            <button onClick={addEngine} disabled={!canAdd} className="btn btn-primary disabled:opacity-40">
+              <Plus size={14} /> {editingId ? t('st.search.customSave') : t('st.search.customAdd')}
+            </button>
+          </div>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Catalogue de raccourcis (« @amz », « @mdn »… — voir lib/bangs.js).
+//
+// On peut le couper, y chercher un site, et surtout « personnaliser » une
+// entrée : elle est copiée dans le formulaire de vos moteurs, où l'on change
+// librement nom, raccourci et URL. Un moteur à soi passe toujours devant le
+// catalogue, donc la copie remplace l'original dès qu'elle est enregistrée.
+// ---------------------------------------------------------------------------
+function BangCatalogSection({ toggle, on, t, onCustomize }) {
+  const enabled = on('bangCatalog');
+  const [query, setQuery] = useState('');
+  // Les réglages ouverts ne chargent pas le catalogue : seulement la recherche.
+  const catalog = useBangCatalog(Boolean(query.trim()));
+  const results = useMemo(
+    () => (catalog ? searchBangCatalog(catalog.data, query, 30) : []),
+    [catalog, query]
+  );
+  const count = catalog ? catalog.index.size.toLocaleString() : '10 000+';
+
+  return (
+    <div className="mt-5">
+      <h5 className="text-xs font-semibold text-text-muted uppercase mb-2">
+        {t('st.search.catalogTitle')}
+      </h5>
+      <label className="flex items-center justify-between gap-3">
+        <span className="flex items-start gap-3 min-w-0">
+          <BookOpen size={16} className={`mt-0.5 flex-shrink-0 ${enabled ? 'text-accent-primary' : 'text-text-muted'}`} />
+          <span className="min-w-0">
+            <span className="block font-medium text-sm">{t('st.search.catalog', { count })}</span>
+            <span className="block text-xs text-text-muted">{t('st.search.catalogDesc')}</span>
+          </span>
+        </span>
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={(e) => toggle('bangCatalog', e.target.checked)}
+          className="flex-shrink-0 w-12 h-6 bg-bg-hover rounded-full relative cursor-pointer appearance-none checked:bg-accent-primary transition-colors after:content-[''] after:absolute after:top-1 after:left-1 after:w-4 after:h-4 after:bg-white after:rounded-full after:transition-transform checked:after:translate-x-6"
+        />
+      </label>
+
+      <div className="relative mt-3">
+        <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-text-muted pointer-events-none" />
+        <input
+          type="text"
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder={t('st.search.catalogSearch')}
+          spellCheck={false}
+          className="input w-full pl-9 pr-8"
+        />
+        {query && (
+          <button
+            onClick={() => setQuery('')}
+            className="absolute right-2 top-1/2 -translate-y-1/2 btn-icon"
+            title={t('st.search.customCancel')}
+          >
+            <X size={13} />
+          </button>
+        )}
+      </div>
+
+      {query.trim() && (
+        <div className="mt-2 max-h-72 overflow-y-auto space-y-1 pr-1">
+          {!catalog && <p className="text-xs text-text-muted px-1 py-2">{t('st.search.catalogLoading')}</p>}
+          {catalog && results.length === 0 && (
+            <p className="text-xs text-text-muted px-1 py-2">{t('st.search.catalogEmpty')}</p>
+          )}
+          {results.map((e) => (
+            <div
+              key={e.id}
+              className="flex items-center gap-2 px-2.5 py-1.5 rounded-lg bg-bg-secondary border border-border min-w-0"
+            >
+              <span className="font-mono text-xs flex-shrink-0 text-accent-primary">@{e.keyword}</span>
+              <span className="text-sm font-medium flex-shrink-0 max-w-[40%] truncate">{e.name}</span>
+              <span className="text-xs text-text-muted truncate flex-1 font-mono" title={e.url}>
+                {e.url}
+              </span>
+              <button
+                onClick={() => onCustomize(e)}
+                className="btn btn-secondary flex-shrink-0 !px-2 !py-1 text-xs"
+                title={t('st.search.catalogCustomizeTitle')}
+              >
+                <Wand2 size={12} /> {t('st.search.catalogCustomize')}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

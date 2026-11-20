@@ -3,6 +3,7 @@ import { Globe, Check, X, Search } from 'lucide-react';
 import { useT, resolveLang } from '../lib/i18n';
 import { useStore } from '../stores/useStore';
 import { resolveOmniInput } from '../lib/searchEngines';
+import { useBangCatalog, wantsBangs } from '../lib/useBangs';
 
 // // Réécrire l'adresse de la page courante, sans la fermer.
 //
@@ -37,9 +38,11 @@ export default function EditUrlDialog({ initialUrl = '', onSubmit, onClose }) {
   // Ce que la validation va faire, calculé à chaque frappe : la réponse est
   // AFFICHÉE sous le champ. Annoncer « je vais chercher ça » avant d'ouvrir
   // vaut mieux qu'ouvrir une recherche surprise sur une adresse mal tapée.
+  const bangCatalog = useBangCatalog(wantsBangs(value) && search?.bangCatalog !== false);
+  const bangs = bangCatalog?.index || null;
   const resolved = useMemo(
-    () => resolveOmniInput(value, { search: search || {}, lang }),
-    [value, search, lang]
+    () => resolveOmniInput(value, { search: search || {}, lang, bangs }),
+    [value, search, lang, bangs]
   );
 
   // Échap annule, Entrée valide — comme n'importe quelle boîte de dialogue.

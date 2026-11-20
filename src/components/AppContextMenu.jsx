@@ -22,6 +22,7 @@ import {
   Check as CheckIcon,
 } from 'lucide-react';
 import { useStore } from '../stores/useStore';
+import { useShallow } from 'zustand/react/shallow';
 import { getWebview } from '../lib/webviewRegistry';
 import { reloadUrlFor } from '../lib/urls';
 import { appPartition } from '../lib/session';
@@ -47,7 +48,9 @@ export default function AppContextMenu({ appId, x, y, onClose }) {
     setAppContainer,
     createContainerForApp,
     settings,
-  } = useStore();
+  } = useStore(
+    useShallow((s) => ({ apps: s.apps, profiles: s.profiles, activeApp: s.activeApp, setActiveApp: s.setActiveApp, toggleAppSleep: s.toggleAppSleep, deleteApp: s.deleteApp, updateApp: s.updateApp, moveAppToProfile: s.moveAppToProfile, containers: s.containers, setAppContainer: s.setAppContainer, createContainerForApp: s.createContainerForApp, settings: s.settings })),
+  );
   const [renaming, setRenaming] = useState(false);
   const [editing, setEditing] = useState(false);
   const [moving, setMoving] = useState(false);

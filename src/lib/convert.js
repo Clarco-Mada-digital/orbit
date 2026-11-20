@@ -7,6 +7,7 @@
 // palette essaie les analyseurs l'un après l'autre.
 // ---------------------------------------------------------------------------
 import { formatNumber } from './calc.js';
+import { RATES_SNAPSHOT } from './ratesSnapshot.js';
 
 // Facteurs vers l'unité de référence de chaque famille (mètre, gramme, litre…)
 const UNITS = {
@@ -272,46 +273,167 @@ export function convertTime(input, locale = 'fr-FR', now = new Date()) {
   return null;
 }
 
-// « 100 usd en eur » — taux récupérés en ligne, mis en cache 12 h.
+// ---------------------------------------------------------------------------
+// Devises — « 100 eur en mga »
+//
+// Un taux de change n'est jamais « la » vérité : c'est un relevé daté. D'où
+// trois sources en cascade, de la plus fraîche à la plus sûre :
+//
+//   1. le réseau (open.er-api.com, base USD) → écrit dans le cache local ;
+//   2. le cache local (localStorage), MÊME PÉRIMÉ : un taux d'hier vaut mieux
+//      qu'aucun taux, et l'âge est affiché à l'utilisateur ;
+//   3. l'instantané livré avec l'application (src/lib/ratesSnapshot.js),
+//      régénéré chaque jour par la CI : c'est ce qui fait marcher les
+//      conversions hors ligne, dès la première ouverture.
+// ---------------------------------------------------------------------------
 const RATE_CACHE_KEY = 'orbit.fx.rates';
+// Durée pendant laquelle un relevé est considéré comme frais.
+export const RATE_TTL = 12 * 3600 * 1000;
+// Au-delà de cette fraction du TTL, on rafraîchit en tâche de fond : le cache
+// reste servi tout de suite, mais la prochaine ouverture sera plus fraîche.
+const RATE_BACKGROUND_AFTER = RATE_TTL / 4;
+const RATE_TIMEOUT = 8000;
+
+// Codes proposés même quand aucun taux n'est encore chargé (saisie hors ligne
+// avant le premier repli). Ce n'est PAS un filtre : tout code présent dans les
+// taux reçus est accepté, voir `parseCurrencyQuery`.
 const CURRENCIES = new Set([
   'usd', 'eur', 'gbp', 'chf', 'jpy', 'cny', 'cad', 'aud', 'mga', 'mad', 'xof', 'xaf',
   'zar', 'inr', 'brl', 'rub', 'sek', 'nok', 'dkk', 'pln', 'try', 'krw', 'mxn', 'aed',
   'sgd', 'hkd', 'nzd', 'thb', 'ils', 'egp', 'ngn', 'kes', 'tnd', 'dzd', 'mur',
 ]);
 
-export function parseCurrencyQuery(input) {
+function storage() {
+  try {
+    return typeof localStorage === 'undefined' ? null : localStorage;
+  } catch {
+    return null; // navigation privée / quota : on vit sans cache
+  }
+}
+
+function readCachedRates() {
+  const ls = storage();
+  if (!ls) return null;
+  try {
+    const cached = JSON.parse(ls.getItem(RATE_CACHE_KEY) || 'null');
+    if (!cached || !cached.rates || !Number.isFinite(cached.at)) return null;
+    return {
+      at: cached.at,
+      rates: cached.rates,
+      // Date de la LECTURE, distincte de la date du relevé : l'API ne publie
+      // qu'une fois par jour, donc un taux reçu à l'instant peut déjà avoir
+      // 20 h selon son propre horodatage. Juger la fraîcheur là-dessus ferait
+      // redemander le réseau à chaque frappe.
+      fetchedAt: Number.isFinite(cached.fetchedAt) ? cached.fetchedAt : cached.at,
+    };
+  } catch {
+    return null; // cache illisible : on repart du réseau
+  }
+}
+
+function writeCachedRates(at, rates) {
+  const ls = storage();
+  if (!ls) return;
+  try {
+    ls.setItem(RATE_CACHE_KEY, JSON.stringify({ at, rates, fetchedAt: Date.now() }));
+  } catch {
+    /* quota : tant pis, on ne met pas en cache */
+  }
+}
+
+// Instantané embarqué, sous la même forme que le cache.
+function bundledRates() {
+  if (!RATES_SNAPSHOT || !RATES_SNAPSHOT.rates) return null;
+  const at = Date.parse(RATES_SNAPSHOT.at);
+  return { at: Number.isFinite(at) ? at : 0, rates: RATES_SNAPSHOT.rates };
+}
+
+export function parseCurrencyQuery(input, rates) {
   const m = new RegExp(`^${NUM}\\s*([a-zA-Z]{3})\\s+${SEPARATORS}\\s+([a-zA-Z]{3})$`, 'i').exec(
     String(input || '').trim()
   );
   if (!m) return null;
   const from = m[2].toLowerCase();
   const to = m[3].toLowerCase();
-  if (!CURRENCIES.has(from) || !CURRENCIES.has(to) || from === to) return null;
+  if (from === to) return null;
+  // La liste statique sert de repli avant chargement ; dès que des taux sont
+  // là, c'est EUX qui font foi — l'API en connaît bien plus que nos 35 codes.
+  const known = (code) =>
+    CURRENCIES.has(code) ||
+    Boolean(rates && Object.prototype.hasOwnProperty.call(rates, code.toUpperCase()));
+  if (!known(from) || !known(to)) return null;
   return { amount: parseFloat(m[1].replace(',', '.')), from, to };
 }
 
-// Taux base USD, en cache local (12 h). Silencieux en cas d'échec réseau :
-// la palette affiche simplement les autres résultats.
-export async function fetchRates() {
+// Choix du jeu de taux, du plus frais au plus sûr. Fonction pure : le pourtour
+// (localStorage, réseau) est testé séparément de la décision.
+export function chooseRates({ cached, fetched, snapshot, now = Date.now() }) {
+  // Fraîcheur mesurée sur la lecture (`fetchedAt`), pas sur la date du relevé.
+  const readAt = cached ? cached.fetchedAt ?? cached.at : 0;
+  if (cached && cached.rates && now - readAt < RATE_TTL) {
+    return { rates: cached.rates, at: cached.at, source: 'cache', stale: false };
+  }
+  if (fetched && fetched.rates) {
+    return { rates: fetched.rates, at: fetched.at, source: 'network', stale: false };
+  }
+  if (cached && cached.rates) {
+    return { rates: cached.rates, at: cached.at, source: 'cache', stale: true };
+  }
+  if (snapshot && snapshot.rates) {
+    return { rates: snapshot.rates, at: snapshot.at, source: 'bundled', stale: true };
+  }
+  return null;
+}
+
+// Un seul appel réseau à la fois : la palette peut relancer la conversion à
+// chaque frappe, elle ne doit pas lancer dix requêtes.
+let inflight = null;
+
+async function requestRates() {
   try {
-    const raw = localStorage.getItem(RATE_CACHE_KEY);
-    if (raw) {
-      const cached = JSON.parse(raw);
-      if (cached && Date.now() - cached.at < 12 * 3600 * 1000 && cached.rates) return cached.rates;
-    }
-  } catch { /* cache illisible : on refait l'appel */ }
-  try {
-    const res = await fetch('https://open.er-api.com/v6/latest/USD');
+    const res = await fetch('https://open.er-api.com/v6/latest/USD', {
+      signal: AbortSignal.timeout(RATE_TIMEOUT),
+    });
+    if (!res.ok) return null;
     const json = await res.json();
     if (!json || json.result !== 'success' || !json.rates) return null;
-    try {
-      localStorage.setItem(RATE_CACHE_KEY, JSON.stringify({ at: Date.now(), rates: json.rates }));
-    } catch { /* quota : tant pis, on ne met pas en cache */ }
-    return json.rates;
+    // La date est celle DU RELEVÉ, pas celle de la requête.
+    const at = Number.isFinite(json.time_last_update_unix)
+      ? json.time_last_update_unix * 1000
+      : Date.now();
+    return { at, rates: json.rates };
   } catch {
-    return null;
+    return null; // hors ligne, DNS, délai dépassé : on passera au repli
   }
+}
+
+async function loadRates({ force = false } = {}) {
+  const cached = readCachedRates();
+  const readAt = cached ? cached.fetchedAt : 0;
+  const fresh = cached && !force && Date.now() - readAt < RATE_TTL;
+  let fetched = null;
+  if (!fresh) {
+    fetched = await requestRates();
+    if (fetched) writeCachedRates(fetched.at, fetched.rates);
+  } else if (Date.now() - readAt > RATE_BACKGROUND_AFTER) {
+    // Rafraîchissement silencieux : la réponse part tout de suite, le cache
+    // se réchauffe pour la prochaine fois. Rien n'est attendu ici.
+    requestRates().then((r) => {
+      if (r) writeCachedRates(r.at, r.rates);
+    });
+  }
+  return chooseRates({ cached, fetched, snapshot: bundledRates() });
+}
+
+// Renvoie { rates, at, source, stale } — jamais `null` tant que l'instantané
+// embarqué existe. `force` ignore le cache frais (bouton « actualiser »).
+export function fetchRates({ force = false } = {}) {
+  if (inflight) return inflight;
+  const run = loadRates({ force }).finally(() => {
+    if (inflight === run) inflight = null;
+  });
+  inflight = run;
+  return run;
 }
 
 export function convertCurrency(query, rates, locale = 'fr-FR') {

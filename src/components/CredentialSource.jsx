@@ -1,5 +1,6 @@
 import { KeyRound, Vault, Layers, Ban, Timer } from 'lucide-react';
 import { useStore } from '../stores/useStore';
+import { useShallow } from 'zustand/react/shallow';
 import { useT } from '../lib/i18n';
 
 // Deux gestionnaires d'identifiants cohabitent dans Orbit : le pont KeePassXC
@@ -17,7 +18,9 @@ const OPTIONS = [
 ];
 
 export default function CredentialSource() {
-  const { settings, updateSettings } = useStore();
+  const { settings, updateSettings } = useStore(
+    useShallow((s) => ({ settings: s.settings, updateSettings: s.updateSettings })),
+  );
   const t = useT();
   const source = settings.credentials?.source || 'both';
   const useVaultSource = source === 'both' || source === 'vault';

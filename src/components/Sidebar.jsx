@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useStore } from '../stores/useStore';
+import { useShallow } from 'zustand/react/shallow';
 import { ChevronLeft, ChevronRight, ChevronDown, Plus, Settings, Grid, User, Moon, BellOff, Lock, Volume2, VolumeX, LogIn, Globe, X, EyeOff, FolderPlus, Check, GripVertical, MessageCircle, Download } from 'lucide-react';
 import AppContextMenu from './AppContextMenu';
 import MultiSelectionMenu from './MultiSelectionMenu';
@@ -12,6 +13,7 @@ import { getWebview, getRegisteredWebviews } from '../lib/webviewRegistry';
 import { useT } from '../lib/i18n';
 import { useZoneHold, REVEALED_BAR_Z } from '../lib/autoHide';
 import { ThemeSideDecor } from './ThemeDecor';
+import { startAppDrag, endAppDrag } from './SplitDropOverlay';
 import { useDismiss } from '../lib/useDismiss';
 import { flyPageLabel } from '../lib/flyPages';
 import {
@@ -64,7 +66,9 @@ export default function Sidebar({
     createFolderWithApps,
     setAppFolder,
     toggleFolderCollapsed,
-  } = useStore();
+  } = useStore(
+    useShallow((s) => ({ profiles: s.profiles, activeProfile: s.activeProfile, setActiveProfile: s.setActiveProfile, getProfileApps: s.getProfileApps, activeApp: s.activeApp, settings: s.settings, reorderApps: s.reorderApps, containers: s.containers, flyPages: s.flyPages, closeFlyPage: s.closeFlyPage, closeAllFlyPages: s.closeAllFlyPages, apps: s.apps, folders: s.folders, sidebarProfilesOpen: s.sidebarProfilesOpen, setSidebarProfilesOpen: s.setSidebarProfilesOpen, createFolderWithApps: s.createFolderWithApps, setAppFolder: s.setAppFolder, toggleFolderCollapsed: s.toggleFolderCollapsed })),
+  );
   const assistantSessions = useStore((state) => state.assistantSessions || []);
   const { lockedProfileIds, unlockedProfileIds } = useSecurityStore();
   const t = useT();
@@ -349,6 +353,9 @@ export default function Sidebar({
     } catch {
       /* ignore */
     }
+    // Le même geste sert à l'écran partagé : lâchée sur la zone de contenu,
+    // près d'un bord, l'app s'y range (voir SplitDropOverlay).
+    startAppDrag(e, appId);
   };
 
   const handleDragOver = (e, targetId) => {
@@ -451,6 +458,7 @@ export default function Sidebar({
   };
 
   const handleDragEnd = () => {
+    endAppDrag();
     dragIdRef.current = null;
     dragProfileRef.current = null;
     setDragId(null);
@@ -1089,6 +1097,13 @@ export default function Sidebar({
                   key={page.id}
                   onClick={() => onSelectApp?.(page.id)}
                   onContextMenu={(e) => onFlyPageMenu?.(e, page)}
+                  // Un lien libre se glisse aussi vers l'écran partagé.
+                  draggable
+                  onDragStart={(e) => {
+                    e.dataTransfer.effectAllowed = 'move';
+                    startAppDrag(e, page.id);
+                  }}
+                  onDragEnd={endAppDrag}
                   onMouseEnter={(e) => showMemPopup(page, e)}
                   onMouseLeave={hideMemPopup}
                   title={`${page.private ? `${t('fly.privateBadge')} — ` : ''}${flyPageLabel(page)}${page.url ? ` — ${page.url}` : ''}`}

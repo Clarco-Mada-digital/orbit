@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { matchShortcutInput, shortcutKeys } from '../src/lib/shortcuts.js';
+import { matchShortcutInput, shortcutKeys, matchCombo } from '../src/lib/shortcuts.js';
 
 // Sur Linux (et le CI ubuntu), le modificateur d'Orbit est Alt.
 const alt = (key, extra = {}) => matchShortcutInput({ type: 'keyDown', alt: true, key, ...extra });
@@ -49,3 +49,39 @@ test('sans modificateur → aucun raccourci', () =>
 
 test('événement qui n’est pas keyDown → ignoré', () =>
   assert.equal(matchShortcutInput({ type: 'keyUp', alt: true, key: 'k' }), null));
+
+// --- Raccourcis ajoutés (écran partagé, pages, panneaux) --------------------
+
+const altK = (key, extra = {}) => ({ key, alt: true, ctrl: false, meta: false, shift: false, ...extra });
+const cmdK = (key, extra = {}) => ({ key, meta: true, ctrl: false, alt: false, shift: false, ...extra });
+
+test('nouveaux raccourcis (Windows / Linux)', () => {
+  assert.equal(matchCombo(altK('X', { shift: true }), false), 'split-toggle');
+  assert.equal(matchCombo(altK('C', { shift: true }), false), 'split-direction');
+  assert.equal(matchCombo(altK('G', { shift: true }), false), 'split-focus');
+  assert.equal(matchCombo(altK('t'), false), 'new-page');
+  assert.equal(matchCombo(altK('w'), false), 'close-page');
+  assert.equal(matchCombo(altK('T', { shift: true }), false), 'downloads');
+  assert.equal(matchCombo(altK('V', { shift: true }), false), 'vault');
+  assert.equal(matchCombo(altK('N', { shift: true }), false), 'detach');
+  assert.equal(matchCombo({ key: 'F1' }, false), 'help');
+});
+
+test('macOS : ⌘X / ⌘Z restent couper / annuler', () => {
+  assert.equal(matchCombo(cmdK('x'), true), null);
+  assert.equal(matchCombo(cmdK('z'), true), null);
+  assert.equal(matchCombo(cmdK('X', { shift: true }), true), 'split-toggle');
+});
+
+test('AZERTY : Alt + touche « 1 » physique', () => {
+  assert.equal(matchCombo(altK('&', { code: 'Digit1' }), false), 'app-1');
+  assert.equal(matchCombo(altK('1', { shift: true, code: 'Digit1' }), false), 'app-1');
+});
+
+test('Ctrl+F reste la recherche ; ⇧D / ⇧F laissés aux extensions', () => {
+  assert.equal(matchCombo({ key: 'f', ctrl: true }, false), 'find');
+  assert.equal(matchCombo(cmdK('G', { shift: true }), true), 'split-focus');
+  // ⇧D et ⇧F restent aux extensions (Mouse Scroll, Fake Data)
+  assert.equal(matchCombo(altK('D', { shift: true }), false), null);
+  assert.equal(matchCombo(altK('F', { shift: true }), false), null);
+});

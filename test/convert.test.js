@@ -7,7 +7,10 @@ import {
   convertTime,
   parseCurrencyQuery,
   convertCurrency,
+  chooseRates,
+  RATE_TTL,
 } from '../src/lib/convert.js';
+import { RATES_SNAPSHOT } from '../src/lib/ratesSnapshot.js';
 
 // Les convertisseurs de la palette Alt+K. Comme pour le calcul, chacun doit
 // renvoyer `null` dès que l'entrée ne le concerne pas : ils sont essayés en
@@ -186,4 +189,97 @@ test('convertCurrency : taux absents ou incomplets → null (jamais NaN affiché
   assert.equal(convertCurrency({ amount: 1, from: 'usd', to: 'eur' }, null, EN), null);
   assert.equal(convertCurrency(null, { USD: 1 }, EN), null);
   assert.equal(convertCurrency({ amount: 1, from: 'usd', to: 'xyz' }, { USD: 1 }, EN), null);
+});
+
+// --- Devises : la cascade des sources -------------------------------------
+//
+// L'application doit convertir DÈS LA PREMIÈRE OUVERTURE, hors ligne. Le repli
+// « réseau → cache → instantané livré » est donc une garantie, pas un confort :
+// ces tests décrivent l'ordre exact et vérifient qu'un cache périmé n'est
+// jamais jeté alors qu'il est la seule source disponible.
+
+const FX_NOW = Date.parse('2026-11-18T12:00:00.000Z');
+const day = (n) => FX_NOW - n * 24 * 3600 * 1000;
+const hour = (n) => FX_NOW - n * 3600 * 1000;
+const R = (code) => ({ [code]: 1 });
+
+const cachedAt = (at, code = 'EUR') => ({ at, rates: R(code) });
+const fetchedNow = { at: FX_NOW, rates: R('GBP') };
+const snapshot = { at: day(3), rates: R('MGA') };
+
+test('chooseRates : cache frais servi tel quel, sans réseau', () => {
+  const r = chooseRates({ cached: cachedAt(hour(1)), fetched: fetchedNow, snapshot, now: FX_NOW });
+  assert.equal(r.source, 'cache');
+  assert.equal(r.stale, false);
+  assert.deepEqual(r.rates, R('EUR'));
+});
+
+test('chooseRates : cache périmé + réseau → réseau, et l’âge repart à zéro', () => {
+  const r = chooseRates({ cached: cachedAt(day(2)), fetched: fetchedNow, snapshot, now: FX_NOW });
+  assert.equal(r.source, 'network');
+  assert.equal(r.stale, false);
+  assert.equal(r.at, FX_NOW);
+});
+
+test('chooseRates : cache périmé + réseau KO → cache périmé, marqué périmé', () => {
+  const r = chooseRates({ cached: cachedAt(day(2)), fetched: null, snapshot, now: FX_NOW });
+  assert.equal(r.source, 'cache');
+  assert.equal(r.stale, true);
+  assert.equal(r.at, day(2)); // la date du relevé, pas celle de la lecture
+});
+
+test('chooseRates : ni cache ni réseau → instantané livré avec l’app', () => {
+  const r = chooseRates({ cached: null, fetched: null, snapshot, now: FX_NOW });
+  assert.equal(r.source, 'bundled');
+  assert.equal(r.stale, true);
+  assert.deepEqual(r.rates, R('MGA'));
+});
+
+test('chooseRates : un relevé ancien mais LU à l’instant reste frais', () => {
+  // L'API ne publie qu'une fois par jour : un taux reçu maintenant peut être
+  // daté de la veille. La fraîcheur se mesure sur la lecture, la date affichée
+  // reste celle du relevé — sinon on redemanderait le réseau à chaque frappe.
+  const cached = { at: day(5), fetchedAt: hour(1), rates: R('EUR') };
+  const r = chooseRates({ cached, fetched: fetchedNow, snapshot, now: FX_NOW });
+  assert.equal(r.source, 'cache');
+  assert.equal(r.stale, false);
+  assert.equal(r.at, day(5));
+});
+
+test('chooseRates : le cache n’est plus frais après le TTL', () => {
+  const limite = cachedAt(FX_NOW - RATE_TTL + 1000);
+  const expire = cachedAt(FX_NOW - RATE_TTL - 1000);
+  assert.equal(chooseRates({ cached: limite, fetched: null, snapshot, now: FX_NOW }).stale, false);
+  assert.equal(chooseRates({ cached: expire, fetched: null, snapshot, now: FX_NOW }).stale, true);
+});
+
+test('chooseRates : rien du tout → null (jamais d’objet à moitié rempli)', () => {
+  assert.equal(chooseRates({ cached: null, fetched: null, snapshot: null, now: FX_NOW }), null);
+});
+
+// L'instantané embarqué est un fichier GÉNÉRÉ : ces tests le tiennent honnête.
+test('instantané : daté, base USD, et les devises du quotidien y sont', () => {
+  assert.match(RATES_SNAPSHOT.at, /^\d{4}-\d{2}-\d{2}$/);
+  assert.equal(RATES_SNAPSHOT.base, 'USD');
+  assert.equal(RATES_SNAPSHOT.rates.USD, 1);
+  for (const code of ['EUR', 'MGA', 'GBP', 'XOF', 'MAD']) {
+    const v = RATES_SNAPSHOT.rates[code];
+    assert.ok(Number.isFinite(v) && v > 0, `${code} absent ou invalide dans l’instantané`);
+  }
+});
+
+test('instantané : convertible de bout en bout, même sans réseau', () => {
+  const q = parseCurrencyQuery('100 eur en mga', RATES_SNAPSHOT.rates);
+  const r = convertCurrency(q, RATES_SNAPSHOT.rates, EN);
+  assert.ok(r && r.value > 0);
+  assert.match(r.text, /MGA$/);
+});
+
+test('parseCurrencyQuery : la liste des devises s’élargit avec les taux reçus', () => {
+  // GEL n'est pas dans la liste statique : sans taux, l'entrée ne veut rien dire.
+  assert.equal(parseCurrencyQuery('100 gel en eur'), null);
+  const rates = { USD: 1, GEL: 2.6, EUR: 0.9 };
+  assert.deepEqual(parseCurrencyQuery('100 gel en eur', rates), { amount: 100, from: 'gel', to: 'eur' });
+  // Un code toujours inconnu reste refusé, même avec des taux sous la main.
+  assert.equal(parseCurrencyQuery('100 zzz en eur', rates), null);
 });
