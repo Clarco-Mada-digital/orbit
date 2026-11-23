@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generatedAt": "2026-11-23T12:32:22.075Z",
+  "generatedAt": "2026-11-23T13:53:25.297Z",
   "extensions": [
     {
       "file": "color-picker.zip",
@@ -15,12 +15,12 @@
     {
       "file": "fake-data-filler-orbit.zip",
       "name": "Fake Data Filler (Orbit)",
-      "version": "1.7.0",
+      "version": "1.8.0",
       "description": "Remplit les champs de formulaires non de connexion avec des données réalistes (identité, adresse, IBAN et carte de test, dates) et des images de test : photo de profil et fichier image généré localement. Inspiré des extensions Fake Filler / Fill Millier.",
       "nativeApp": null,
       "minOrbitVersion": null,
-      "size": 29448,
-      "sha256": "aab1f66f53e29693b85bc649dc4dd99cfdc18d11f6ac30fbb8d7cb4b414816a4"
+      "size": 35212,
+      "sha256": "408607fc7cdeaf53e3a8b0f18c7f4239463d0e18b4551b1803442be70d1806fa"
     },
     {
       "file": "mouse-scroll.zip",

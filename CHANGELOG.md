@@ -64,6 +64,10 @@ La plus récente en premier.
   même écran que les apps, avec « Continuer quand même ». Sur un certificat
   refusé, ce choix passe désormais avant « Continuer en HTTP », qui ne ferait
   que reproduire l'erreur sur un serveur qui force HTTPS.
+- **Fake Data Filler 1.8.0** : l'extension reprend la détection des champs du
+  remplissage intégré d'Orbit. Un champ dont le seul indice est son libellé
+  (« Nom », « Prénom », « Société »…) reçoit enfin la bonne donnée au lieu de
+  Lorem Ipsum, et les deux remplissages devinent désormais la même chose.
 - Copier une capture d'écran dans le presse-papiers refonctionne sous
   Electron 45, et l'enregistrement d'écran du studio est accordé.
 
