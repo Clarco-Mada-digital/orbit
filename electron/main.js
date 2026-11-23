@@ -861,8 +861,10 @@ function attachWindowLoadFailure(contents) {
     const info = describeLoadFailure(code, description, { upgraded: !!upgrade });
     const host = hostLabel(upgrade?.from) || hostLabel(url);
     const buttons = [];
-    if (offerHttp) buttons.push('Continuer en HTTP (non sécurisé)');
+    // Certificat refusé d'abord : beaucoup de serveurs renvoient http vers
+    // https, et l'offre HTTP n'y ferait que reproduire l'erreur.
     if (offerTrust) buttons.push('Continuer quand même');
+    if (offerHttp) buttons.push('Continuer en HTTP (non sécurisé)');
     buttons.push('Réessayer', 'Fermer');
     asking = true;
     try {
@@ -870,11 +872,16 @@ function attachWindowLoadFailure(contents) {
         type: 'warning',
         title: info.title,
         message: `${host} — ${info.title}`,
-        detail: `${info.detail}\n\n${
+        detail: `${info.detail}\n\n${[
+          offerTrust
+            ? '« Continuer quand même » accepte un certificat qui ne prouve pas l’identité du serveur, pour cet hôte et jusqu’à la fermeture d’Orbit.'
+            : '',
           offerHttp
-            ? 'En HTTP, ce que vous envoyez et recevez circule en clair. Le choix vaut pour ce site jusqu’à la fermeture d’Orbit.'
-            : 'Le certificat de ce site n’est pas valide. Le choix vaut pour cet hôte jusqu’à la fermeture d’Orbit.'
-        }\n\n(${info.name})`,
+            ? '« Continuer en HTTP » fait circuler ce que vous envoyez et recevez en clair, pour ce site et jusqu’à la fermeture d’Orbit.'
+            : '',
+        ]
+          .filter(Boolean)
+          .join('\n')}\n\n(${info.name})`,
         buttons,
         defaultId: buttons.indexOf('Fermer'),
         cancelId: buttons.indexOf('Fermer'),

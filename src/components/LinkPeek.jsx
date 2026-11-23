@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { X, Maximize2, Columns2, AppWindow, Globe, Copy, Check, Loader2 } from 'lucide-react';
 import { CHROME_UA } from '../lib/userAgent';
 import { useT } from '../lib/i18n';
+import { isDisplayableFailure } from '../lib/loadFailure';
+import LoadFailure from './LoadFailure';
 
 // ---------------------------------------------------------------------------
 // Aperçu de lien.
@@ -36,6 +38,10 @@ export default function LinkPeek({ peek, onClose, onOpenInOrbit, onOpenSplit }) 
   const [title, setTitle] = useState('');
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
+  // Échec de chargement de la page de l'aperçu (certificat refusé, site sans
+  // HTTPS, serveur injoignable…). Sans cet écran, l'aperçu restait noir avec
+  // un indicateur qui tournait : aucune issue, aucune explication.
+  const [failure, setFailure] = useState(null);
 
   useEffect(() => {
     const wv = ref.current;
@@ -47,14 +53,33 @@ export default function LinkPeek({ peek, onClose, onOpenInOrbit, onOpenSplit }) 
       if (e.isMainFrame && e.url) setCurrent(e.url);
     };
     const onTitle = (e) => setTitle(e.title || '');
-    const onStart = () => setLoading(true);
+    const onStart = () => {
+      setLoading(true);
+      // Nouveau chargement : l'échec précédent n'a plus cours.
+      setFailure(null);
+    };
     const onStop = () => setLoading(false);
+    const onFail = (e) => {
+      // Frame principale seulement : une ressource annexe qui échoue ne doit
+      // pas masquer une page qui s'affiche.
+      if (!e.isMainFrame || !isDisplayableFailure(e.errorCode)) return;
+      let webContentsId = null;
+      try {
+        webContentsId = wv.getWebContentsId?.() ?? null;
+      } catch {
+        /* webview pas encore attaché : l'écran s'affiche sans l'offre HTTP */
+      }
+      setLoading(false);
+      setFailure({ code: e.errorCode, description: e.errorDescription || '', url: e.validatedURL || '', webContentsId });
+    };
     wv.addEventListener('did-navigate', onNav);
     wv.addEventListener('did-navigate-in-page', onInPage);
     wv.addEventListener('page-title-updated', onTitle);
     wv.addEventListener('did-start-loading', onStart);
     wv.addEventListener('did-stop-loading', onStop);
+    wv.addEventListener('did-fail-load', onFail);
     return () => {
+      wv.removeEventListener('did-fail-load', onFail);
       wv.removeEventListener('did-navigate', onNav);
       wv.removeEventListener('did-navigate-in-page', onInPage);
       wv.removeEventListener('page-title-updated', onTitle);
@@ -150,14 +175,36 @@ export default function LinkPeek({ peek, onClose, onOpenInOrbit, onOpenSplit }) 
               {copied ? <Check size={13} className="text-success" /> : <Copy size={13} />}
             </button>
           </div>
-          <webview
-            ref={ref}
-            src={peek.url}
-            partition={peek.partition}
-            useragent={CHROME_UA}
-            allowpopups="true"
-            className="flex-1 w-full min-h-0"
-          />
+          <div className="relative flex-1 min-h-0 flex flex-col">
+            <webview
+              ref={ref}
+              src={peek.url}
+              partition={peek.partition}
+              useragent={CHROME_UA}
+              allowpopups="true"
+              className="flex-1 w-full min-h-0"
+            />
+            {failure ? (
+              <LoadFailure
+                app={{ name: hostOf(current), url: current }}
+                failure={failure}
+                onRetry={() => {
+                  try {
+                    ref.current?.loadURL(failure.url || current);
+                  } catch {
+                    /* aperçu fermé entre-temps */
+                  }
+                }}
+                onLoadUrl={(url) => {
+                  try {
+                    ref.current?.loadURL(url);
+                  } catch {
+                    /* aperçu fermé entre-temps */
+                  }
+                }}
+              />
+            ) : null}
+          </div>
         </div>
       </div>
     </div>

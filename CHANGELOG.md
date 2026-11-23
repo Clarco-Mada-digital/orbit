@@ -58,6 +58,12 @@ La plus récente en premier.
   quand même » au lieu de rester sur une page d'erreur. Une fenêtre détachée
   ouverte sur une app pas encore chargée a aussi ses boucliers, son bloqueur
   et ses autorisations.
+- **Aperçu de lien** (Ctrl+clic, `target=_blank`) : une page qui ne charge pas
+  — certificat auto-signé (Traefik, Dokploy, `*.traefik.me`…), site sans
+  HTTPS, serveur injoignable — n'affiche plus un cadre noir sans fin, mais le
+  même écran que les apps, avec « Continuer quand même ». Sur un certificat
+  refusé, ce choix passe désormais avant « Continuer en HTTP », qui ne ferait
+  que reproduire l'erreur sur un serveur qui force HTTPS.
 - Copier une capture d'écran dans le presse-papiers refonctionne sous
   Electron 45, et l'enregistrement d'écran du studio est accordé.
 

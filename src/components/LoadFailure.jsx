@@ -127,18 +127,22 @@ export default function LoadFailure({ app, failure, onRetry, onLoadUrl, onAccept
       </div>
 
       {/* Ce que l'utilisateur accepte, dit avant qu'il clique — pas après. */}
-      {offerHttp && (
-        <p className="text-sm text-center max-w-prose text-warning">
-          En continuant, les données échangées avec ce site circuleront{' '}
-          <strong>en clair</strong> : toute personne sur le réseau peut les lire.
-          L’exception ne vaut que pour cette origine et disparaît à la fermeture d’Orbit.
-        </p>
-      )}
+      {/* Certificat refusé : c'est LUI le problème, donc la confiance passe en
+          premier. Beaucoup de serveurs (Traefik, Dokploy, `*.traefik.me`…)
+          renvoient de toute façon http vers https : l'offre HTTP n'y ferait
+          que reproduire l'erreur. */}
       {offerTrust && (
         <p className="text-sm text-center max-w-prose text-warning">
           En continuant, vous acceptez un certificat qui ne prouve pas l’identité du
           serveur. L’exception ne vaut que pour <strong>{host}</strong> et disparaît à la
           fermeture d’Orbit.
+        </p>
+      )}
+      {offerHttp && (
+        <p className="text-sm text-center max-w-prose text-warning">
+          En continuant, les données échangées avec ce site circuleront{' '}
+          <strong>en clair</strong> : toute personne sur le réseau peut les lire.
+          L’exception ne vaut que pour cette origine et disparaît à la fermeture d’Orbit.
         </p>
       )}
 
@@ -147,15 +151,15 @@ export default function LoadFailure({ app, failure, onRetry, onLoadUrl, onAccept
           <RotateCw size={15} /> Réessayer
         </button>
 
-        {offerHttp && (
-          <button onClick={continueInHttp} className="btn btn-sm" disabled={busy}>
-            <Unlock size={15} /> Continuer en HTTP (non sécurisé)
-          </button>
-        )}
-
         {offerTrust && (
           <button onClick={trustAndRetry} className="btn btn-sm" disabled={busy}>
             <Unlock size={15} /> Continuer quand même
+          </button>
+        )}
+
+        {offerHttp && (
+          <button onClick={continueInHttp} className="btn btn-sm" disabled={busy}>
+            <Unlock size={15} /> Continuer en HTTP (non sécurisé)
           </button>
         )}
 
