@@ -363,6 +363,115 @@ try {
   /* executeInMainWorld absent (Electron ancien) : les boîtes natives restent */
 }
 
+// ---------------------------------------------------------------------------
+// Autorisations : rendre l'état « pas encore demandé ».
+//
+// Electron ne répond que oui/non aux vérifications de permission. Tant que
+// l'utilisateur n'a rien décidé, `Notification.permission` valait donc
+// 'denied' et `navigator.permissions.query({ name: 'camera' })` aussi — et la
+// plupart des sites renoncent alors à DEMANDER : ils affichent « autorisation
+// bloquée dans votre navigateur » sans que la question d'Orbit ne s'affiche
+// jamais. On corrige l'état présenté à la page quand le processus principal
+// indique que la question reste à poser ('prompt').
+function orbitPermissionState(permission) {
+  try {
+    return ipcRenderer.sendSync('permissions:state', { permission });
+  } catch {
+    return null;
+  }
+}
+
+try {
+  contextBridge.executeInMainWorld({
+    func: (bridge) => {
+      if (window.__orbitPermissions) return;
+      window.__orbitPermissions = true;
+      // Petit cache : certains sites lisent Notification.permission en boucle.
+      const cache = new Map();
+      const state = (permission) => {
+        const hit = cache.get(permission);
+        const now = Date.now();
+        if (hit && now - hit.at < 1500) return hit.value;
+        let value = null;
+        try {
+          value = bridge.state(permission);
+        } catch {
+          value = null;
+        }
+        cache.set(permission, { value, at: now });
+        return value;
+      };
+      // Noms de l'API Permissions → noms de permission d'Electron.
+      const NAMES = {
+        notifications: 'notifications',
+        camera: 'media',
+        microphone: 'media',
+        geolocation: 'geolocation',
+        'clipboard-read': 'clipboard-read',
+        'idle-detection': 'idle-detection',
+        'window-management': 'window-management',
+      };
+
+      try {
+        const N = window.Notification;
+        const desc = N && Object.getOwnPropertyDescriptor(N, 'permission');
+        if (desc && desc.get && desc.configurable) {
+          Object.defineProperty(N, 'permission', {
+            configurable: true,
+            enumerable: desc.enumerable,
+            get() {
+              const real = desc.get.call(N);
+              if (real !== 'denied') return real;
+              return state('notifications') === 'prompt' ? 'default' : real;
+            },
+          });
+          // Une réponse donnée à l'instant doit se voir tout de suite.
+          const request = N.requestPermission;
+          if (typeof request === 'function') {
+            N.requestPermission = function requestPermission(...args) {
+              cache.clear();
+              return request.apply(N, args).then((r) => {
+                cache.clear();
+                return r;
+              });
+            };
+          }
+        }
+      } catch {
+        /* Notification absent ou figé : on laisse l'état natif */
+      }
+
+      try {
+        const P = window.Permissions && window.Permissions.prototype;
+        const query = P && P.query;
+        if (typeof query === 'function') {
+          P.query = function query_(descriptor) {
+            return query.call(this, descriptor).then((status) => {
+              try {
+                const name = NAMES[descriptor && descriptor.name];
+                if (name && status && status.state === 'denied' && state(name) === 'prompt') {
+                  Object.defineProperty(status, 'state', {
+                    configurable: true,
+                    get: () => 'prompt',
+                  });
+                }
+              } catch {
+                /* objet natif récalcitrant : état d'origine */
+              }
+              return status;
+            });
+          };
+        }
+      } catch {
+        /* API Permissions absente */
+      }
+    },
+    args: [{ state: orbitPermissionState }],
+  });
+} catch {
+  /* executeInMainWorld absent (Electron ancien) */
+}
+
 // NB : ce preload ne touche plus à l'identité du navigateur. Elle est fixée
 // une fois pour toutes dans main.js (CHROME_UA), et toute retouche
 // supplémentaire — navigator.userAgent, navigator.userAgentData, en-têtes

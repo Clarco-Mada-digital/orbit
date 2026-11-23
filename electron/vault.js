@@ -26,7 +26,8 @@
 // entrées est envoyée SANS les mots de passe, qui ne sortent que sur demande
 // explicite (afficher / copier / remplir).
 // ---------------------------------------------------------------------------
-import { clipboard, dialog, safeStorage } from 'electron';
+import { dialog, safeStorage } from 'electron';
+import { copyText, readText, clear as clearClipboard } from './clipboard-compat.js';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
@@ -504,9 +505,11 @@ export function copySecret(id, entryId, field = 'password') {
   if (!res.success) return res;
   const value = field === 'totp' ? totpCode(res.value).code : res.value;
   if (!value) return { success: false, error: 'empty' };
-  clipboard.writeText(value);
-  const timer = setTimeout(() => {
-    if (clipboard.readText() === value) clipboard.clear();
+  copyText(value);
+  const timer = setTimeout(async () => {
+    // Électron 44+ : lecture ASYNCHRONE — sans `await`, la comparaison
+    // échouait toujours et le secret restait dans le presse-papiers.
+    if ((await readText()) === value) await clearClipboard();
   }, 30000);
   timer.unref?.();
   return { success: true, clearedInSeconds: 30 };

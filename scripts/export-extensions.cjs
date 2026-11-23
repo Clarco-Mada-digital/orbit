@@ -108,6 +108,7 @@ function writeCatalog() {
         version: manifest.version,
         description: manifest.description || '',
         nativeApp: manifest.orbit?.nativeApp || null,
+        minOrbitVersion: manifest.orbit?.minOrbitVersion || null,
         size: bytes.length,
         // Empreinte OBLIGATOIRE côté application : les archives ne voyagent
         // plus dans Orbit, elles sont téléchargées. C'est elle qui distingue

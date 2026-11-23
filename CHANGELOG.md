@@ -8,6 +8,66 @@ Format : une section `## [X.Y.Z] — AAAA-MM-JJ` par version, puis des
 sous-sections `### Ajouté` / `### Modifié` / `### Corrigé` / `### Sécurité`.
 La plus récente en premier.
 
+## [1.21.0] — 2026-11-23
+
+### Ajouté
+- **Extension « Orbit Base de données ».** Un client SQL intégré pour
+  **SQLite, MySQL / MariaDB, PostgreSQL et SQL Server** : connexions
+  **épinglées** (mot de passe chiffré par le trousseau du système) ou
+  **jetables** (rien n'est écrit, tout est oublié à la fermeture), mode
+  **lecture seule**, éditeur SQL qui exécute un fichier `.sql` requête par
+  requête (un ▶ dans la marge, `Ctrl+Entrée` pour celle sous le curseur),
+  données paginées avec filtre et tri, **modification au double-clic**, ajout
+  et suppression de lignes, **analyse** des colonnes, export CSV / JSON /
+  `INSERT`, historique et favoris.
+- **Diagramme des relations.** Les tables en cartes (8 colonnes, puis « +N »),
+  les clés étrangères en liens animés au survol, les relations **déduites** des
+  noms de colonnes (`client_id` → `clients`) en pointillés. On glisse le fond
+  pour se déplacer, `Ctrl` + molette pour zoomer, on déplace les cartes (la
+  disposition est mémorisée), un clic ouvre le détail de la table et ses
+  relations dans les deux sens ; mini-carte, recherche et réorganisation
+  automatique.
+- **Extension « Orbit API ».** Client API façon Postman et REST Client :
+  requêtes en formulaire ou **fichiers `.http`** exécutables d'un clic,
+  réponses nommées réutilisables (`{{login.response.body.$.token}}`),
+  collections, environnements, variables système, import **cURL / OpenAPI /
+  Postman**, historique. Les requêtes partent d'Orbit : pas de blocage CORS.
+- **Bouton « Autorisations ».** Caméra, micro, notifications, position… :
+  le bouton n'apparaît dans la barre que lorsqu'un site demande un accès, en
+  rouge si un accès a été bloqué, et permet de débloquer sur place.
+- **Zoom des outils** Base de données et API : `Ctrl` + molette ou `Alt`
+  `+` / `−` / `0`, mémorisé par outil.
+- **À propos → Moteur web** : versions de Chromium, Electron, V8 et Node, et
+  ce qu'elles changent pour les sites.
+
+### Modifié
+- **Electron 45 (Chromium 156).** Les sites disposent des fonctions CSS et
+  JavaScript les plus récentes.
+- Le pilote **SQL Server** n'alourdit plus Orbit : il est téléchargé (≈ 1,6 Mo)
+  et vérifié par empreinte à la première connexion SQL Server.
+- Une extension qui demande une version d'Orbit plus récente est signalée
+  dans le magasin au lieu d'être installée pour rien.
+
+### Corrigé
+- Les sites se croyaient **bloqués** (« notifications refusées par votre
+  navigateur ») avant même qu'Orbit leur pose la question : ils voient
+  désormais « pas encore demandé », comme dans Chrome. Une autorisation
+  accordée sans « Retenir » vaut jusqu'à la fermeture d'Orbit.
+- **Fenêtres détachées** : quand un site ne gère pas HTTPS (ou présente un
+  certificat refusé), la fenêtre propose « Continuer en HTTP » / « Continuer
+  quand même » au lieu de rester sur une page d'erreur. Une fenêtre détachée
+  ouverte sur une app pas encore chargée a aussi ses boucliers, son bloqueur
+  et ses autorisations.
+- Copier une capture d'écran dans le presse-papiers refonctionne sous
+  Electron 45, et l'enregistrement d'écran du studio est accordé.
+
+### Sécurité
+- Le coffre-fort **vide de nouveau le presse-papiers** 30 s après la copie
+  d'un mot de passe (la lecture du presse-papiers est devenue asynchrone avec
+  Electron 44 et la comparaison échouait sans bruit).
+- Les outils développeur ne lisent et n'écrivent que des fichiers choisis dans
+  une boîte de dialogue pendant la session.
+
 ## [1.20.0] — 2026-11-20
 
 ### Ajouté

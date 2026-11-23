@@ -21,7 +21,8 @@
     "docs:html": "node scripts/build-docs.js --html",
     "export:extensions": "node scripts/export-extensions.cjs",
     "export:fake-data": "node scripts/export-fake-data.cjs",
-    "dev:fresh": "concurrently \"npm run dev\" \"wait-on http://localhost:5173 && electron . --user-data-dir=.dev-profile\""
+    "dev:fresh": "concurrently \"npm run dev\" \"wait-on http://localhost:5173 && electron . --user-data-dir=.dev-profile\"",
+    "drivers": "node scripts/bundle-db-drivers.mjs"
   },
   "keywords": [
     "electron",
@@ -41,12 +42,14 @@
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "^10.4.20",
     "concurrently": "^9.1.2",
-    "electron": "43.8.3",
+    "electron": "45.4.1",
     "electron-builder": "^26.15.3",
+    "esbuild": "0.25.12",
     "eslint": "^9.39.5",
     "eslint-plugin-react": "^7.37.5",
     "eslint-plugin-react-hooks": "^7.1.1",
     "globals": "^17.12.0",
+    "mssql": "^12.8.1",
     "postcss": "^8.4.49",
     "tailwindcss": "^4.3.3",
     "vite": "^6.0.7",
@@ -62,7 +65,9 @@
     "katex": "0.19.1",
     "kdbxweb": "^2.1.1",
     "lucide-react": "^0.468.0",
+    "mysql2": "^3.24.6",
     "onnxruntime-node": "^1.29.0",
+    "pg": "^8.23.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-markdown": "^10.1.0",
@@ -119,6 +124,7 @@
       "src/lib/videoEdit.js",
       "src/lib/sensitive.js",
       "src/lib/aiProviders.js",
+      "src/lib/loadFailure.js",
       "build/icon.png",
       "package.json"
     ],

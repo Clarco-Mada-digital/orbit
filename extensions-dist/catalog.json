@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generatedAt": "2026-11-20T07:40:43.134Z",
+  "generatedAt": "2026-11-23T12:32:22.075Z",
   "extensions": [
     {
       "file": "color-picker.zip",
@@ -8,6 +8,7 @@
       "version": "1.1.0",
       "description": "Pipette de couleur intégrée : bouton 🎨 flottant, survolez pour voir la couleur, cliquez pour copier (Alt+C). Ne touche pas au menu contextuel.",
       "nativeApp": null,
+      "minOrbitVersion": null,
       "size": 28592,
       "sha256": "674e77b9650eed3245ea540f253eff7a0fb4238a0b11f8f6a384edda3e2f39f4"
     },
@@ -17,6 +18,7 @@
       "version": "1.7.0",
       "description": "Remplit les champs de formulaires non de connexion avec des données réalistes (identité, adresse, IBAN et carte de test, dates) et des images de test : photo de profil et fichier image généré localement. Inspiré des extensions Fake Filler / Fill Millier.",
       "nativeApp": null,
+      "minOrbitVersion": null,
       "size": 29448,
       "sha256": "aab1f66f53e29693b85bc649dc4dd99cfdc18d11f6ac30fbb8d7cb4b414816a4"
     },
@@ -26,8 +28,29 @@
       "version": "1.1.1",
       "description": "Défilement lissé et réglable (vitesse, sens, par site), défilement automatique au clic du milieu, et une palette de présentation (Alt+Maj+D) : pointeur laser, stylo, surligneur, flèche, couleurs, épaisseurs, spot lumineux, halo de clic. 100% local, configurable (⚙️).",
       "nativeApp": null,
+      "minOrbitVersion": null,
       "size": 29886,
       "sha256": "dece6284d07fc8df10d57b6bab3e5439440f0cf36587f6e838604d2b95697dcf"
+    },
+    {
+      "file": "orbit-api.zip",
+      "name": "Orbit API",
+      "version": "1.0.0",
+      "description": "Client API façon Postman et REST Client : requêtes en formulaire ou fichiers .http exécutables d'un clic, collections, environnements et variables, import cURL / OpenAPI / Postman, historique. Les requêtes partent d'Orbit : pas de blocage CORS.",
+      "nativeApp": "api",
+      "minOrbitVersion": "1.21.0",
+      "size": 9501,
+      "sha256": "7f1c772ab33a46be2cb61f68071e3dd86edfbf1e46dbb3589cb589cb6ca3817b"
+    },
+    {
+      "file": "orbit-database.zip",
+      "name": "Orbit Base de données",
+      "version": "1.0.0",
+      "description": "Client SQL intégré : SQLite, MySQL/MariaDB, PostgreSQL et SQL Server. Connexions épinglées (mot de passe chiffré) ou jetables, fichiers .sql exécutables requête par requête, édition des données, analyse des colonnes, export CSV/JSON/SQL.",
+      "nativeApp": "database",
+      "minOrbitVersion": "1.21.0",
+      "size": 10936,
+      "sha256": "90ed9ae9f7d6cd5ea09572dbfb7cf06fd111db5cc67d1ccafb07e2d95cf4f1a3"
     },
     {
       "file": "orbit-phone.zip",
@@ -35,6 +58,7 @@
       "version": "1.4.0",
       "description": "Ajoute le Téléphone à Orbit : fenêtres de bureau indépendantes pour les applications Android, miroir séparé, notifications du mobile et pilotage via adb/scrcpy.",
       "nativeApp": "phone",
+      "minOrbitVersion": "1.14.0",
       "size": 11826,
       "sha256": "d68203f08aaa13b2eba6d5e29ea0e1da518f49e3c99ccb2b7ac335cc8852917d"
     },
@@ -44,6 +68,7 @@
       "version": "1.1.0",
       "description": "Ajoute « Convertir la page en Markdown » au menu clic droit d'Orbit, et télécharge le .md (raccourci Alt+M).",
       "nativeApp": null,
+      "minOrbitVersion": null,
       "size": 21375,
       "sha256": "bcaf9fb63dc93f259feb4de26e121f7e2671c877f92997ee26ee4b14210132c5"
     },
@@ -53,6 +78,7 @@
       "version": "1.0.0",
       "description": "Génère un QR code de la page ou de tout texte/lien : bouton flottant ou Alt+Q. 100% local (aucune requête réseau), personnalisable (⚙️).",
       "nativeApp": null,
+      "minOrbitVersion": null,
       "size": 17521,
       "sha256": "09d23e0a7a43dd3f6b8b799ccd1676a7b80364271352fb606a2cd38f60e9b56b"
     },
@@ -62,6 +88,7 @@
       "version": "1.0.0",
       "description": "Notes collantes par site : le bouton 📝 ouvre un bloc-notes attaché au domaine courant. Les notes se rouvrent automatiquement à chaque visite. Aucune donnée ne quitte la machine.",
       "nativeApp": null,
+      "minOrbitVersion": null,
       "size": 14267,
       "sha256": "af639c71be3b67cce093d0881668752c8de60f4ed0e17cace6fdbdad30377d0b"
     },
@@ -71,6 +98,7 @@
       "version": "1.3.1",
       "description": "Abréviations extensibles : tapez ;email, ;addr, ;sig… puis Tab dans un champ. Champs de mot de passe exclus, réglages conservés lors des mises à jour. Configurable (⚙️).",
       "nativeApp": null,
+      "minOrbitVersion": null,
       "size": 15643,
       "sha256": "2e9e4901fd7e3aa807c6a8b03c5f2062a238b5a65711f97f445f338db14465b6"
     },
@@ -80,6 +108,7 @@
       "version": "1.0.0",
       "description": "Capture localement une sélection ou le contenu principal d’une page, puis retrouvez et exportez vos captures en Markdown.",
       "nativeApp": null,
+      "minOrbitVersion": null,
       "size": 6687,
       "sha256": "e4c967adce9b36f16e36534062efa7ae6e69a1b5f1087fe0667e715188251dc7"
     }

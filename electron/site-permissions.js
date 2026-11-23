@@ -20,6 +20,11 @@ const MODES = new Set(['ask', 'allow', 'deny']);
 
 let file = null;
 let state = { mode: 'ask', sites: {} };
+// Réponses données SANS « Retenir ce choix » : elles valent jusqu'à la
+// fermeture d'Orbit, comme « Autoriser cette fois » dans Chrome. Sans elles,
+// un site autorisé à l'instant se voyait répondre « refusé » à la vérification
+// suivante (Notification.permission…) et se croyait bloqué.
+const sessionSites = new Map(); // origine → { permission: 'allow' | 'deny' }
 
 function save() {
   if (!file) return;
@@ -73,7 +78,45 @@ export function decisionFor(origin, permission) {
   if (!origin) return null;
   const entry = state.sites[origin];
   const value = entry && entry[permission];
-  return value === 'allow' || value === 'deny' ? value : null;
+  if (value === 'allow' || value === 'deny') return value;
+  const temp = sessionSites.get(origin);
+  const tempValue = temp && temp[permission];
+  return tempValue === 'allow' || tempValue === 'deny' ? tempValue : null;
+}
+
+// Décision valable jusqu'à la fermeture d'Orbit (jamais écrite sur disque).
+export function rememberForSession(origin, permission, allowed) {
+  if (!origin || !permission) return;
+  const entry = sessionSites.get(origin) || {};
+  entry[permission] = allowed ? 'allow' : 'deny';
+  sessionSites.set(origin, entry);
+}
+
+// Pour le bouton « Autorisations » de la barre : décisions d'UN site, avec
+// leur portée (enregistrée ou seulement pour cette session).
+export function forSite(origin) {
+  const out = {};
+  if (!origin) return out;
+  for (const [permission, value] of Object.entries(sessionSites.get(origin) || {})) {
+    out[permission] = { value, scope: 'session' };
+  }
+  for (const [permission, value] of Object.entries(state.sites[origin] || {})) {
+    out[permission] = { value, scope: 'saved' };
+  }
+  return out;
+}
+
+// Réglage explicite depuis la barre : 'allow' | 'deny' enregistrés, ou
+// null pour revenir à « Demander ».
+export function set(origin, permission, value) {
+  if (!origin || !permission) return { success: false, error: 'parametres' };
+  const temp = sessionSites.get(origin);
+  if (temp) delete temp[permission];
+  if (value === 'allow' || value === 'deny') {
+    remember(origin, permission, value === 'allow');
+    return { success: true };
+  }
+  return forget(origin, permission);
 }
 
 export function remember(origin, permission, allowed) {
@@ -85,6 +128,11 @@ export function remember(origin, permission, allowed) {
 
 // Oublie une permission précise, ou tout le site quand `permission` est absent.
 export function forget(origin, permission) {
+  const temp = origin && sessionSites.get(origin);
+  if (temp) {
+    if (permission) delete temp[permission];
+    else sessionSites.delete(origin);
+  }
   if (!origin || !state.sites[origin]) return { success: true };
   if (permission) {
     delete state.sites[origin][permission];
@@ -97,6 +145,7 @@ export function forget(origin, permission) {
 }
 
 export function forgetAll() {
+  sessionSites.clear();
   state.sites = {};
   save();
   return { success: true };

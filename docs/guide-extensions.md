@@ -71,7 +71,7 @@ un fichier inerte jusqu'à ce que l'utilisateur clique sur « Installer ».
 | `options_ui.page` / `options_page` | Fait apparaître le bouton de réglages de l'extension dans Orbit. |
 | `permissions`, `optional_permissions` | Servent aussi à produire les avertissements ci-dessous. |
 | `orbit.nativeApp` | **Propre à Orbit.** Voir §5. |
-| `orbit.minOrbitVersion` | Version minimale d'Orbit attendue (indicatif). |
+| `orbit.minOrbitVersion` | Version minimale d'Orbit. Le magasin la respecte : sur une version plus ancienne, l'extension est affichée avec « Nécessite Orbit X.Y.Z » et ne s'installe pas. |
 
 ### Versionner correctement
 

@@ -1,0 +1,8 @@
+{
+  "mssql": {
+    "version": "12.8.1",
+    "file": "mssql-12.8.1.cjs",
+    "sha256": "05cf21c0af370fe2fab4d58be76a3e0da8d46e39b6eca762b022650d5daee927",
+    "size": 1697078
+  }
+}

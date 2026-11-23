@@ -28,12 +28,16 @@ import {
   KeyRound,
   ShieldCheck,
   ShieldOff,
+  Database,
+  Globe,
 } from 'lucide-react';
 import { useStore, appVisibleIn } from '../../stores/useStore';
 import { useShallow } from 'zustand/react/shallow';
 import { layoutsFor, layoutFor, areaLetter } from '../../lib/splitLayouts';
 import { loadExtensionInfo } from '../../lib/extensionInfo';
 import { usePhoneStore } from '../../lib/phoneStore';
+import { useDevToolsStore } from '../../lib/devToolsStore';
+import { openNativeApp } from '../../lib/nativeApps';
 import { useT } from '../../lib/i18n';
 import { useZoneHold } from '../../lib/autoHide';
 import { useGuestDismiss } from '../../lib/useDismiss';
@@ -51,6 +55,7 @@ import FocusTimer from './FocusTimer';
 import SystemWidget from './SystemWidget';
 import ProfileWidget from './ProfileWidget';
 import ShieldsPanel from './ShieldsPanel';
+import PermissionsButton from './PermissionsButton';
 import MediaDownloadButton, { topbarEnabled } from './MediaDownloadButton';
 
 function ShieldsButton({ appId, webContentsId, url, menuAlign, menuPos, t }) {
@@ -287,6 +292,7 @@ export function useTopbarModules({ onOpenQuickSwitcher, onOpenVault, placement =
   // badge compte les notifications du mobile poussées par le main process.
   const phoneNotifications = usePhoneStore((s) => s.notifications);
   const phoneOpen = usePhoneStore((s) => s.open);
+  const devToolOpen = useDevToolsStore((s) => s.open);
   const phoneSerial = usePhoneStore((s) => s.serial);
   const phoneAvailable = Array.isArray(nativeApps) && nativeApps.includes('phone');
   const notifRef = useRef(null);
@@ -497,6 +503,13 @@ const app = apps.find((a) => a.id === activeApp)
     const activeTabTitle = app?.title || app?.name || '';
 
     const lancer = (resolu) => {
+      // Extension « app native » (Téléphone, Base de données, API) : elle n'a
+      // pas de panneau, la cliquer ouvre l'app qu'elle active.
+      if (resolu?.nativeApp && openNativeApp(resolu.nativeApp)) {
+        setShowExtsPopover(false);
+        setExtMenu(null);
+        return;
+      }
       // Pas de panneau : le menu reste le seul geste utile.
       if (!resolu?.hasPopup) return openExtMenu(ext);
       setShowExtsPopover(false);
@@ -1282,6 +1295,27 @@ const app = apps.find((a) => a.id === activeApp)
           </Fragment>
         );
       }
+      case 'database':
+      case 'api': {
+        // Sans l'extension correspondante : aucun bouton, aucun espace réservé.
+        if (!Array.isArray(nativeApps) || !nativeApps.includes(id)) return null;
+        const Icon = id === 'database' ? Database : Globe;
+        const active = devToolOpen === id;
+        return (
+          <Fragment key={key}>
+            <button
+              onClick={() => {
+                usePhoneStore.getState().setOpen(false);
+                useDevToolsStore.getState().toggle(id);
+              }}
+              className={`btn-icon ${active ? 'bg-bg-hover text-accent-primary' : ''}`}
+              title={t(id === 'database' ? 'tbm.database' : 'tbm.api')}
+            >
+              <Icon size={18} />
+            </button>
+          </Fragment>
+        );
+      }
       case 'phone': {
         // Sans extension : aucun bouton, aucun espace réservé.
         if (!Array.isArray(nativeApps) || !nativeApps.includes('phone')) return null;
@@ -1289,7 +1323,10 @@ const app = apps.find((a) => a.id === activeApp)
         return (
           <Fragment key={key}>
             <button
-              onClick={() => usePhoneStore.getState().toggle()}
+              onClick={() => {
+                useDevToolsStore.getState().setOpen(null);
+                usePhoneStore.getState().toggle();
+              }}
               className={`btn-icon relative ${phoneOpen ? 'bg-bg-hover' : ''}`}
               title={t('tbm.phoneTitle')}
             >
@@ -1527,6 +1564,22 @@ const app = apps.find((a) => a.id === activeApp)
               <ShieldsButton
                 appId={app.id}
                 webContentsId={getWebContentsIdFor(app.id)}
+                url={app.url}
+                menuAlign={menuAlign}
+                menuPos={menuPos}
+                t={t}
+              />
+            )}
+          </Fragment>
+        );
+      case 'permissions':
+        // N'apparaît que lorsque le site actif a demandé un accès ou qu'une
+        // décision existe pour lui (voir PermissionsButton).
+        return (
+          <Fragment key={key}>
+            {app && (
+              <PermissionsButton
+                appId={app.id}
                 url={app.url}
                 menuAlign={menuAlign}
                 menuPos={menuPos}

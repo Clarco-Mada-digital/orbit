@@ -22,6 +22,13 @@ export const fr = {
   'about.checking': 'Vérification…',
   'about.features': 'Ce qu’Orbit sait faire',
   'about.tech': 'Technologies',
+  'about.engine': 'Moteur web',
+  'about.engineDesc':
+    "Orbit embarque son propre moteur Chromium. Ce sont ces versions — et non celle du Chrome installé sur votre ordinateur — qui décident des propriétés CSS et des fonctions JavaScript que les sites peuvent utiliser.",
+  'about.engineUpdate':
+    "Le moteur se met à jour avec Orbit : chaque nouvelle version d'Orbit peut embarquer un Chromium plus récent, installé automatiquement par « Vérifier les mises à jour ». Mettre à jour Chrome sur votre machine ne change rien ici.",
+  'about.engineCaniuse': 'Vérifier une fonction (Chrome {version}) sur Can I use',
+  'about.engineNews': 'Nouveautés de Chrome',
 
   // Mise à jour
   'update.ready': 'Mise à jour prête',
@@ -576,6 +583,13 @@ export const en = {
   'about.checking': 'Checking…',
   'about.features': 'What Orbit can do',
   'about.tech': 'Technologies',
+  'about.engine': 'Web engine',
+  'about.engineDesc':
+    'Orbit ships its own Chromium engine. These versions — not the Chrome installed on your computer — decide which CSS properties and JavaScript features websites can use.',
+  'about.engineUpdate':
+    'The engine is updated together with Orbit: each new Orbit release can ship a newer Chromium, installed automatically through “Check for updates”. Updating Chrome on your machine changes nothing here.',
+  'about.engineCaniuse': 'Check a feature (Chrome {version}) on Can I use',
+  'about.engineNews': "What's new in Chrome",
 
   // Update
   'update.ready': 'Update ready',

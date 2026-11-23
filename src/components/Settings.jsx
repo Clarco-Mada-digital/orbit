@@ -106,8 +106,13 @@ export default function Settings({ onClose }) {
   // réglages de l'interface.
   const [adblockLevel, setAdblockLevel] = useState('standard');
 
+  // Versions du moteur embarqué : c'est LUI, et non le Chrome installé sur
+  // la machine, qui décide des fonctions CSS/JavaScript disponibles.
+  const [engine, setEngine] = useState(null);
+
   useEffect(() => {
     window.electronAPI?.getVersion?.().then((v) => v && setAppVersion(v));
+    window.electronAPI?.getEngineVersions?.().then((v) => v && setEngine(v));
   }, []);
 
   const checkUpdate = async () => {
@@ -1288,7 +1293,7 @@ export default function Settings({ onClose }) {
 
               {activeTab === 'shortcuts' && <ShortcutsSettings />}
 
-              {activeTab === 'extensions' && <Extensions />}
+              {activeTab === 'extensions' && <Extensions onClose={onClose} />}
 
               {activeTab === 'passwords' && <PasswordVault />}
 
@@ -1647,6 +1652,45 @@ export default function Settings({ onClose }) {
                       </button>
                     </div>
                     {updateMsg && <p className="text-xs text-text-muted mt-3">{updateMsg}</p>}
+                  </div>
+
+                  <div className="card">
+                    <h4 className="font-semibold mb-2">{t('about.engine')}</h4>
+                    <p className="text-sm text-text-muted mb-3">{t('about.engineDesc')}</p>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-sm">
+                      {[
+                        ['Chromium', engine?.chrome],
+                        ['Electron', engine?.electron],
+                        ['V8 (JavaScript)', engine?.v8],
+                        ['Node.js', engine?.node],
+                      ].map(([name, version]) => (
+                        <div key={name} className="rounded-lg border border-border bg-bg-primary p-2">
+                          <div className="text-xs text-text-muted">{name}</div>
+                          <div className="font-mono text-xs break-all select-text">
+                            {version || '—'}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <p className="text-xs text-text-muted mt-3">{t('about.engineUpdate')}</p>
+                    <div className="flex gap-3 flex-wrap mt-3">
+                      <button
+                        onClick={() => window.open('https://caniuse.com/', '_blank')}
+                        className="btn btn-secondary btn-sm"
+                      >
+                        {t('about.engineCaniuse', {
+                          version: (engine?.chrome || '').split('.')[0] || '?',
+                        })}
+                      </button>
+                      <button
+                        onClick={() =>
+                          window.open('https://developer.chrome.com/release-notes', '_blank')
+                        }
+                        className="btn btn-secondary btn-sm"
+                      >
+                        {t('about.engineNews')}
+                      </button>
+                    </div>
                   </div>
 
                   {/* Ce qui a changé, à côté du numéro de version et du bouton

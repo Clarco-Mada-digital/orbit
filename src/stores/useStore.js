@@ -3,6 +3,9 @@ import { persist } from 'zustand/middleware';
 import { recipes } from '../lib/recipes.js';
 import { flyPageTarget, outsideFallbackFor } from '../lib/urls.js';
 import { DEFAULT_TOPBAR, DEFAULT_BOTTOMBAR } from '../lib/topbarLayout.js';
+
+// Apps natives qu'une extension peut activer (`orbit.nativeApp`).
+const NATIVE_APP_KINDS = new Set(['phone', 'database', 'api']);
 import { stampSync, NO_STAMP } from '../lib/syncStamp.js';
 import { reconcileLocal } from '../lib/syncMerge.js';
 import {
@@ -475,7 +478,7 @@ export const useStore = create(
       // persisté peut encore contenir l'app alors que l'extension est partie.
       syncNativeApps: (kinds) =>
         set((state) => {
-          const next = [...new Set((Array.isArray(kinds) ? kinds : []).filter((k) => k === 'phone'))];
+          const next = [...new Set((Array.isArray(kinds) ? kinds : []).filter((k) => NATIVE_APP_KINDS.has(k)))];
           const patch = {};
           const current = Array.isArray(state.nativeApps) ? state.nativeApps : [];
           if (current.length !== next.length || current.some((k, i) => k !== next[i])) {
@@ -1170,7 +1173,10 @@ export const useStore = create(
       // v17 : style d'animation choisi (aucune / fondu / glissement / zoom).
       // Une ancienne installation qui avait coupé les animations reste sans
       // animation, au lieu de les voir revenir au premier lancement.
-      version: 17,
+      // v18 : bouton « Autorisations » (caméra, micro, notifications…). Placé
+      // juste après les Boucliers pour les installations existantes ; il ne
+      // s'affiche que lorsqu'un site demande un accès.
+      version: 18,
       migrate: (persistedState, version) => {
         // Fusionne les anciennes données avec les paramètres par défaut
         // (évite les champs manquants → bug "input non contrôlé")
@@ -1179,6 +1185,18 @@ export const useStore = create(
           ...base,
           settings: { ...defaultSettings, ...(base.settings || {}) },
         };
+        if (version < 18) {
+          const tb = next.settings.topbar;
+          const placed = tb && ['left', 'center', 'right'].some(
+            (z) => Array.isArray(tb[z]) && tb[z].includes('permissions')
+          );
+          if (tb && Array.isArray(tb.right) && !placed) {
+            const right = [...tb.right];
+            const at = right.indexOf('shields');
+            right.splice(at >= 0 ? at + 1 : 0, 0, 'permissions');
+            next = { ...next, settings: { ...next.settings, topbar: { ...tb, right } } };
+          }
+        }
         if (version < 17) {
           next = {
             ...next,

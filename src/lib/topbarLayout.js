@@ -15,7 +15,7 @@ export const DEFAULT_TOPBAR = {
   center: ['search'],
   // `phone` ne s'affiche que si l'extension Téléphone est installée ; les
   // installations sans extension n'ont donc aucun trou dans la barre.
-  right: ['shields', 'extensions', 'split', 'workspaces', 'favorite', 'nowPlaying', 'media', 'downloads', 'phone', 'notifications'],
+  right: ['shields', 'permissions', 'extensions', 'split', 'workspaces', 'favorite', 'nowPlaying', 'media', 'downloads', 'phone', 'notifications'],
 };
 
 // Disposition par défaut de la barre du bas (désactivée par défaut).
@@ -43,6 +43,8 @@ export const TOPBAR_MODULES = [
   { id: 'nowPlaying', labelKey: 'tbm.nowPlaying', descKey: 'tbm.nowPlaying.desc' },
   { id: 'downloads', labelKey: 'tbm.downloads', descKey: 'tbm.downloads.desc' },
   { id: 'media', labelKey: 'tbm.media', descKey: 'tbm.media.desc' },
+  { id: 'database', labelKey: 'tbm.database', descKey: 'tbm.database.desc' },
+  { id: 'api', labelKey: 'tbm.api', descKey: 'tbm.api.desc' },
   { id: 'phone', labelKey: 'tbm.phone', descKey: 'tbm.phone.desc' },
   { id: 'notifications', labelKey: 'tbm.notifications', descKey: 'tbm.notifications.desc' },
   { id: 'clock', labelKey: 'tbm.clock', descKey: 'tbm.clock.desc' },
@@ -51,6 +53,7 @@ export const TOPBAR_MODULES = [
   { id: 'focus', labelKey: 'tbm.focus', descKey: 'tbm.focus.desc' },
   { id: 'system', labelKey: 'tbm.system', descKey: 'tbm.system.desc' },
   { id: 'shields', labelKey: 'shields.module', descKey: 'shields.moduleDesc' },
+  { id: 'permissions', labelKey: 'permbtn.module', descKey: 'permbtn.moduleDesc' },
   { id: 'divider', labelKey: 'tbm.divider', descKey: 'tbm.divider.desc', repeatable: true },
 ];
 

@@ -18,6 +18,7 @@ const AppStore = lazy(() => import('./components/AppStore'));
 // L'espace Téléphone vient d'une extension : bureau, aperçu et réglages ne
 // sont chargés qu'à la première ouverture, si l'extension est installée.
 const PhoneOverlay = lazy(() => import('./components/PhoneOverlay'));
+const DevToolsOverlay = lazy(() => import('./components/DevToolsOverlay'));
 const PhoneFloatingAccess = lazy(() => import('./components/PhoneFloatingAccess'));
 // Même raison pour ces quatre-là, et une de plus pour la visionneuse : elle
 // embarque KaTeX (~280 Ko) pour les formules des documents. Statique, elle le
@@ -54,6 +55,7 @@ import { useMediaStore } from './lib/mediaStore';
 import { mediaToggle, mediaPrev, mediaNext, mediaSeek, pickNowPlaying } from './lib/mediaControls';
 import { appViewKey, appPartition, resolveProxy } from './lib/session';
 import { matchShortcut, normalizeAssistantChatShortcutKey } from './lib/shortcuts';
+import { useDevToolsStore } from './lib/devToolsStore';
 import { createAutomationRunner } from './lib/automationRunner';
 import { useAutomationLog, setActiveRunner } from './lib/automationLog';
 import { layoutFor, areaLetter, parseTracks } from './lib/splitLayouts';
@@ -1353,6 +1355,13 @@ const openEditUrl = useCallback((id) => {
       if (target) setAa(target.id);
       return;
     }
+    // Un outil natif (Base de données, API) est affiché par-dessus l'app :
+    // le zoom s'applique à lui, pas à la page cachée dessous.
+    const devTool = useDevToolsStore.getState().open;
+    if (devTool && /^zoom-/.test(action)) {
+      useDevToolsStore.getState().setZoom(devTool, action);
+      return;
+    }
     const { activeApp, adjustAppZoom, resetAppZoom } = useStore.getState();
     if (!activeApp) return;
     if (action === 'zoom-in') adjustAppZoom(activeApp, 0.1);
@@ -1848,6 +1857,9 @@ const openEditUrl = useCallback((id) => {
           </div>
           <Suspense fallback={null}>
             <PhoneOverlay />
+          </Suspense>
+          <Suspense fallback={null}>
+            <DevToolsOverlay />
           </Suspense>
         </div>
       </div>

@@ -83,6 +83,7 @@ const VALID = {
   version: '1.4.0',
   description: 'Fenêtres de bureau pour les applications Android.',
   nativeApp: 'phone',
+  minOrbitVersion: '1.14.0',
   size: 11826,
   sha256: 'a'.repeat(64),
 };
@@ -180,4 +181,16 @@ test('catalogIsStale : une copie datée se dit datée', () => {
   // Jamais récupéré : vieux par défaut, donc on tente le réseau.
   assert.equal(catalogIsStale(0, now), true);
   assert.equal(catalogIsStale(undefined, now), true);
+});
+
+test('version minimale d’Orbit : transmise par le catalogue et respectée', async () => {
+  const { normalizeCatalogEntry, isCompatibleWithOrbit } = await import('../src/lib/extensionCatalog.js');
+  const base = { file: 'a.zip', name: 'A', version: '1.0.0', size: 10, sha256: 'a'.repeat(64) };
+  const e = normalizeCatalogEntry({ ...base, minOrbitVersion: '1.21.0' });
+  assert.equal(e.minOrbitVersion, '1.21.0');
+  assert.equal(isCompatibleWithOrbit(e, '1.20.0'), false);
+  assert.equal(isCompatibleWithOrbit(e, '1.21.0'), true);
+  assert.equal(isCompatibleWithOrbit(e, '1.22.3-beta.1'), true);
+  assert.equal(normalizeCatalogEntry({ ...base, minOrbitVersion: 'n’importe' }).minOrbitVersion, null);
+  assert.equal(isCompatibleWithOrbit(normalizeCatalogEntry(base), '0.1.0'), true);
 });

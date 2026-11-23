@@ -79,7 +79,7 @@ export default [
 
   // --- Processus principal Electron ---------------------------------------
   {
-    files: ['electron/**/*.js', 'scripts/**/*.js'],
+    files: ['electron/**/*.js', 'scripts/**/*.{js,mjs}'],
     languageOptions: {
       ecmaVersion: 2023,
       sourceType: 'module',

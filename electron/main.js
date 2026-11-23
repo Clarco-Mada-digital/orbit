@@ -1,4 +1,4 @@
-import { app, BrowserWindow, session, ipcMain, shell, Notification, dialog, net, screen, Menu, clipboard, globalShortcut, Tray, nativeImage, powerMonitor, powerSaveBlocker, webContents, desktopCapturer, safeStorage } from 'electron';
+import { app, BrowserWindow, session, ipcMain, shell, Notification, dialog, net, screen, Menu, globalShortcut, Tray, nativeImage, powerMonitor, powerSaveBlocker, webContents, desktopCapturer, safeStorage } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import os from 'node:os';
@@ -20,6 +20,7 @@ import { init as initKeepass, setEnabled as keepassSetEnabled, getLogins as keep
 import * as security from './security.js';
 import {
   permissionCheckAllowed,
+  permissionPageState,
   permissionRequestDecision,
 } from './permission-rules.js';
 import * as adblock from './adblock.js';
@@ -40,6 +41,14 @@ import electronUpdater from 'electron-updater';
 import { matchShortcutInput } from '../src/lib/shortcuts.js';
 import { matchLinkRule } from '../src/lib/rules.js';
 import { hasBinaryContent } from '../src/lib/documents.js';
+import { isCompatibleWithOrbit } from '../src/lib/extensionCatalog.js';
+import {
+  canFallBackToHttp,
+  describeLoadFailure,
+  hostLabel,
+  isCertificateFailure,
+  isDisplayableFailure,
+} from '../src/lib/loadFailure.js';
 import { parsePngDataUrl, pinnedWindowBounds } from '../src/lib/annotate.js';
 import { pageMenuScript, serializeMenuTemplate } from './page-menu.js';
 import {
@@ -54,6 +63,7 @@ import { selectCookiesForUrl } from '../src/lib/mediaCookies.js';
 import { getDomain } from 'tldts-experimental';
 import { fileURLToPath } from 'url';
 import { installWebviewIpcGuard } from './ipc-guard.js';
+import { copyImage as copyImageToClipboard, copyText as copyTextToClipboard } from './clipboard-compat.js';
 
 // Avant tout `ipcMain.handle/on` : les pages embarquées n'atteignent que
 // leurs propres canaux (voir ipc-guard.js).
@@ -567,6 +577,7 @@ app.on('web-contents-created', (event, contents) => {
     });
     contents.on('did-navigate', trackWindowOrigin);
     contents.on('did-navigate-in-page', trackWindowOrigin);
+    attachWindowLoadFailure(contents);
     contents.once('destroyed', () => {
     shields.clearContentsOrigin(contents.id);
     // Trace de mise à niveau HTTPS : sans ce ménage, la Map garderait une
@@ -827,6 +838,73 @@ function originOfHttp(url) {
   }
 }
 
+// Échec de chargement dans une fenêtre SANS interface Orbit (fenêtre détachée,
+// pop-up d'app) : l'interstitielle de LoadFailure.jsx n'existe pas là, et la
+// page d'erreur brute de Chromium laissait l'utilisateur sans issue quand le
+// bouclier avait mis un site http à niveau vers un https qu'il ne gère pas.
+// On pose donc la même question, avec les mêmes règles (src/lib/loadFailure.js),
+// dans une boîte native rattachée à la fenêtre.
+function attachWindowLoadFailure(contents) {
+  let asking = false;
+  contents.on('did-fail-load', async (_e, code, description, url, isMainFrame) => {
+    if (!isMainFrame || asking || !isDisplayableFailure(code)) return;
+    // La fenêtre principale et les panneaux d'Orbit ont leur propre interface.
+    if (mainWindow && !mainWindow.isDestroyed() && contents.id === mainWindow.webContents.id) return;
+    if (isOrbitPanel(contents)) return;
+    const trace = lastHttpUpgrade.get(contents.id);
+    const upgrade = trace && trace.to === url && Date.now() - trace.at <= UPGRADE_TRACE_MS ? trace : null;
+    const offerHttp = canFallBackToHttp(code, { upgraded: !!upgrade });
+    const offerTrust = isCertificateFailure(code);
+    if (!offerHttp && !offerTrust) return; // rien à proposer : la page d'erreur suffit
+    const win = BrowserWindow.fromWebContents(contents);
+    if (!win || win.isDestroyed()) return;
+    const info = describeLoadFailure(code, description, { upgraded: !!upgrade });
+    const host = hostLabel(upgrade?.from) || hostLabel(url);
+    const buttons = [];
+    if (offerHttp) buttons.push('Continuer en HTTP (non sécurisé)');
+    if (offerTrust) buttons.push('Continuer quand même');
+    buttons.push('Réessayer', 'Fermer');
+    asking = true;
+    try {
+      const { response } = await dialog.showMessageBox(win, {
+        type: 'warning',
+        title: info.title,
+        message: `${host} — ${info.title}`,
+        detail: `${info.detail}\n\n${
+          offerHttp
+            ? 'En HTTP, ce que vous envoyez et recevez circule en clair. Le choix vaut pour ce site jusqu’à la fermeture d’Orbit.'
+            : 'Le certificat de ce site n’est pas valide. Le choix vaut pour cet hôte jusqu’à la fermeture d’Orbit.'
+        }\n\n(${info.name})`,
+        buttons,
+        defaultId: buttons.indexOf('Fermer'),
+        cancelId: buttons.indexOf('Fermer'),
+        noLink: true,
+      });
+      if (contents.isDestroyed()) return;
+      const choice = buttons[response];
+      if (choice === 'Continuer en HTTP (non sécurisé)') {
+        const origin = originOfHttp(upgrade.from);
+        if (origin) {
+          httpAllowedOrigins.add(origin);
+          console.warn('[orbit] connexion NON CHIFFRÉE acceptée par l’utilisateur :', origin);
+          contents.loadURL(upgrade.from);
+        }
+      } else if (choice === 'Continuer quand même') {
+        const certHost = hostLabel(url);
+        if (certHost) {
+          trustedCertHosts.add(certHost);
+          console.warn('[orbit] certificat accepté par l’utilisateur pour la session :', certHost);
+          contents.loadURL(url);
+        }
+      } else if (choice === 'Réessayer') {
+        contents.loadURL(upgrade?.to || url);
+      }
+    } finally {
+      asking = false;
+    }
+  });
+}
+
 // Etape 1 — onBeforeRequest : mise à niveau HTTPS + blocage des scripts.
 // Renvoie true si la requête a été traitée (et `done` a été appelé).
 function shieldsBeforeRequest(details, done) {
@@ -1071,7 +1149,10 @@ function setupPermissions(ses) {
       // DroidCam comprise, avant même le premier clic sur la liste des
       // périphériques. Les pages embarquées gardent intégralement le circuit
       // normal ci-dessous.
-      if (permission === 'media' && fromOrbitUi({ sender: wc })) {
+      // Depuis Electron 45, la capture d'écran (getDisplayMedia) arrive ici
+      // sous `display-capture` et non plus `media` : le studio a besoin des
+      // deux, sinon l'enregistrement d'écran est refusé en silence.
+      if ((permission === 'media' || permission === 'display-capture') && fromOrbitUi({ sender: wc })) {
         permLog(
           studio.hasPendingSource()
             ? 'media — studio Orbit, source déjà choisie par l’utilisateur : accordé'
@@ -1100,6 +1181,7 @@ function setupPermissions(ses) {
       );
       if (decision !== 'ask') {
         permLog(`${permission} pour ${origin || 'origine illisible'} — décision : ${decision}`);
+        notePermissionRequest(wc, origin, permission, decision === 'allow');
         return cb(decision === 'allow');
       }
 
@@ -1115,8 +1197,10 @@ function setupPermissions(ses) {
         // refuse plutôt que d'accorder silencieusement une permission sensible.
         if (answer === null) {
           permLog(`${permission} pour ${origin} — aucune interface, demande refusée`);
+          notePermissionRequest(wc, origin, permission, false);
           return cb(false);
         }
+        notePermissionRequest(wc, origin, permission, !!answer);
         cb(answer);
       });
     });
@@ -1127,7 +1211,7 @@ function setupPermissions(ses) {
       // l'interface d'Orbit passait pour un site non identifiable, donc non
       // autorisé. Résultat : `enumerateDevices` ne livrait que des entrées
       // anonymes — aucune webcam nommable, DroidCam incluse.
-      if (permission === 'media' && fromOrbitUi({ sender: wc })) return true;
+      if ((permission === 'media' || permission === 'display-capture') && fromOrbitUi({ sender: wc })) return true;
       const origin = sitePermissions.originOf(requestingOrigin || '');
       return permissionCheckAllowed(
         permission,
@@ -2137,7 +2221,7 @@ async function captureGuestPage(wc, mode, copyDirect = false) {
     if (!image || image.isEmpty()) throw new Error('image vide');
 
     if (copyDirect) {
-      clipboard.writeImage(image);
+      copyImageToClipboard(image);
       if (Notification.isSupported()) {
         const notif = new Notification({
           title: 'Capture copiée',
@@ -2194,7 +2278,7 @@ function screenshotImageFor(pending, dataUrl) {
 handleFromUi('screenshot:copy', (_event, { id, dataUrl } = {}) => {
   const pending = pendingScreenshots.get(id);
   if (!pending) return { success: false, error: 'capture-expired' };
-  clipboard.writeImage(screenshotImageFor(pending, dataUrl));
+  copyImageToClipboard(screenshotImageFor(pending, dataUrl));
   pendingScreenshots.delete(id);
   if (activeScreenshotId === id) activeScreenshotId = null;
   return { success: true };
@@ -2471,7 +2555,7 @@ handleFromUi('screenshot:pin', (_event, { id, dataUrl } = {}) => {
 ipcMain.handle('pin:copy', (event) => {
   const entry = pinnedShotFor(event);
   if (!entry) return { success: false, error: 'fenêtre inconnue' };
-  clipboard.writeImage(entry.image);
+  copyImageToClipboard(entry.image);
   return { success: true };
 });
 
@@ -2586,7 +2670,7 @@ function buildGuestContextMenu(wc, params) {
         click: () => shell.openExternal(params.linkURL),
       });
     }
-    t.push({ label: "Copier l'adresse du lien", click: () => clipboard.writeText(params.linkURL) });
+    t.push({ label: "Copier l'adresse du lien", click: () => copyTextToClipboard(params.linkURL) });
     if (isDownloadableUrl(params.linkURL)) {
       t.push({ label: 'Télécharger le lien…', click: () => wc.downloadURL(params.linkURL) });
     }
@@ -2614,7 +2698,7 @@ function buildGuestContextMenu(wc, params) {
         if (await focusGuestContents(wc) && !wc.isDestroyed()) wc.copyImageAt(params.x, params.y);
       },
     });
-    t.push({ label: "Copier l'adresse de l'image", click: () => clipboard.writeText(params.srcURL) });
+    t.push({ label: "Copier l'adresse de l'image", click: () => copyTextToClipboard(params.srcURL) });
     if (isDownloadableUrl(params.srcURL)) {
       t.push({ label: "Enregistrer l'image…", click: () => wc.downloadURL(params.srcURL) });
     }
@@ -2783,7 +2867,7 @@ function buildGuestContextMenu(wc, params) {
       },
     ],
   });
-  t.push({ label: "Copier l'adresse de la page", click: () => clipboard.writeText(wc.getURL()) });
+  t.push({ label: "Copier l'adresse de la page", click: () => copyTextToClipboard(wc.getURL()) });
   const pageUrl = params.pageURL || wc.getURL();
   if (isWebUrl(pageUrl)) {
     t.push({ label: 'Ouvrir la page dans Orbit', click: () => openUrlInOrbitWindow(pageUrl) });
@@ -3093,6 +3177,13 @@ let phoneNotifKnown = new Set();
 let phoneNotifPrimed = false;
 let phoneNotifSerial = null;
 let phoneNotifCache = { serial: null, items: [] };
+// API des extensions d'une session. Electron 45 a déplacé `loadExtension`,
+// `removeExtension`… sous `session.extensions` (l'ancien emplacement est
+// déprécié) : on prend le nouveau quand il existe.
+function sesExtensions(ses) {
+  return ses.extensions && typeof ses.extensions.loadExtension === 'function' ? ses.extensions : ses;
+}
+
 function readNativeAppKind(extPath) {
   try {
     const manifest = JSON.parse(fs.readFileSync(path.join(extPath, 'manifest.json'), 'utf8'));
@@ -3174,7 +3265,7 @@ async function ensureExtensionsForPartition(partition) {
           continue;
         }
         try {
-          const loadedExt = await ses.loadExtension(ext.path);
+          const loadedExt = await sesExtensions(ses).loadExtension(ext.path);
           loaded.add(loadedExt.id);
         } catch (err) {
           success = false;
@@ -3229,7 +3320,7 @@ async function syncExtensions(list) {
           : ses.getAllExtensions();
       for (const ext of getAll()) {
         if (!enabledExtensions.some((e) => e.id === ext.id)) {
-          ses.removeExtension(ext.id);
+          sesExtensions(ses).removeExtension(ext.id);
         }
       }
     } catch { /* ignore */ }
@@ -3264,7 +3355,7 @@ function removeExtensionFromAll(id, managedPath) {
           ? ses.extensions.getAllExtensions()
           : ses.getAllExtensions();
       if (getAll().some((e) => e.id === id)) {
-        ses.removeExtension(id);
+        sesExtensions(ses).removeExtension(id);
       }
     } catch { /* ignore */ }
     loadedPerPartition.get(partition)?.delete(id);
@@ -3321,24 +3412,7 @@ function hardenWebviewAttach(event, webPreferences, params) {
     // Appliquer le contournement X-Frame-Options à la partition du webview
     // (chaque profil utilise sa propre partition → cookies séparés)
     const partition = (params && params.partition) || 'persist:default';
-    if (partition !== 'default') {
-      try {
-        const pSes = session.fromPartition(partition);
-        setupHeaderBypass(pSes);
-        setupPermissions(pSes);
-        setupDownloads(pSes);
-      } catch (err) {
-        console.error('[orbit] partition bypass failed:', err);
-      }
-    }
-
-    // UA « client identifié » pour les requêtes Google (connexion Gmail/Drive,
-    // « Se connecter avec Google »), pendant que la page garde CHROME_UA
-    try {
-      setupGoogleUA(session.fromPartition(partition));
-    } catch (err) {
-      console.error('[orbit] partition google UA failed:', err);
-    }
+    setupPartitionSession(partition);
 
     // Page privée : session en mémoire, rien n'en sort. Pas d'extensions (elles
     // gardent leur propre stockage sur disque et voient les pages visitées),
@@ -4696,7 +4770,7 @@ handleFromUi('ctx:action', async (_event, { wcId, action, value } = {}) => {
       wc.reload();
       break;
     case 'copyPageUrl':
-      clipboard.writeText(pageUrl);
+      copyTextToClipboard(pageUrl);
       break;
     case 'copy':
       if (!(await focusGuestContents(wc))) return { success: false, error: 'focus-failed' };
@@ -4864,7 +4938,7 @@ handleFromUi('ctx:action', async (_event, { wcId, action, value } = {}) => {
       if (isWebUrl(params.linkURL)) shell.openExternal(params.linkURL);
       break;
     case 'copyLink':
-      if (params.linkURL) clipboard.writeText(params.linkURL);
+      if (params.linkURL) copyTextToClipboard(params.linkURL);
       break;
     case 'downloadLink':
       if (isDownloadableUrl(params.linkURL)) wc.downloadURL(params.linkURL);
@@ -4874,7 +4948,7 @@ handleFromUi('ctx:action', async (_event, { wcId, action, value } = {}) => {
       wc.copyImageAt(params.x, params.y);
       break;
     case 'copyImageUrl':
-      if (params.srcURL) clipboard.writeText(params.srcURL);
+      if (params.srcURL) copyTextToClipboard(params.srcURL);
       break;
     case 'saveImage':
       if (isDownloadableUrl(params.srcURL)) wc.downloadURL(params.srcURL);
@@ -5025,7 +5099,7 @@ handleFromUi('assistant:copyText', (_event, text) => {
   if (typeof text !== 'string' || text.length > 12000) {
     return { success: false, error: 'invalid-text' };
   }
-  clipboard.writeText(text);
+  copyTextToClipboard(text);
   return { success: true };
 });
 handleFromUi('assistant:getDocument', async (_event, { wcId } = {}) => {
@@ -5188,6 +5262,8 @@ const dialogBursts = new Map(); // wcId → { count, since }
 function forgetDialogState(wcId) {
   silencedContents.delete(wcId);
   dialogBursts.delete(wcId);
+  // Nouvelle page : ses demandes d'accès repartent de zéro (bouton de la barre).
+  pageRequests.delete(wcId);
 }
 
 // Où afficher la modale ? Uniquement dans la fenêtre qui héberge l'interface
@@ -5371,6 +5447,7 @@ handleFromUi('orbit-dialog:answer', (_event, { id, value, allowed, remember, sil
     // « Retenir mon choix » : la décision vaudra pour tout ce site, jusqu'à ce
     // qu'elle soit oubliée depuis Paramètres → Autorisations des sites.
     if (remember) sitePermissions.remember(entry.origin, entry.permission, !!allowed);
+    else sitePermissions.rememberForSession(entry.origin, entry.permission, !!allowed);
     finishPrompt(id, !!allowed);
     return { success: true };
   }
@@ -5386,6 +5463,79 @@ handleFromUi('orbit-dialog:ack', (_event, { id } = {}) => {
   permLog(`modale ${id} affichée${entry ? '' : ' (demande déjà close)'}`);
   return { success: true };
 });
+
+// --- Bouton « Autorisations » de la barre ------------------------------------
+//
+// Ce que chaque page a demandé depuis son chargement : le bouton n'apparaît
+// que lorsqu'il y a quelque chose à montrer, et signale en rouge un refus.
+const pageRequests = new Map(); // wcId(page) → { origin, items: { permission: 'allowed'|'blocked' } }
+
+function notePermissionRequest(wc, origin, permission, allowed) {
+  if (!wc || !origin) return;
+  let id;
+  try {
+    if (wc.isDestroyed()) return;
+    id = wc.id;
+  } catch {
+    return;
+  }
+  let entry = pageRequests.get(id);
+  if (!entry || entry.origin !== origin) {
+    entry = { origin, items: {} };
+    pageRequests.set(id, entry);
+  }
+  entry.items[permission] = allowed ? 'allowed' : 'blocked';
+  const ui = orbitUiFor(wc);
+  if (ui && !ui.isDestroyed()) {
+    ui.send('orbit:permission-activity', { wcId: id, origin, permission, allowed });
+  }
+}
+
+handleFromUi('permissions:site', (_event, { origin, wcId } = {}) => {
+  const site = sitePermissions.originOf(origin || '');
+  const page = wcId ? pageRequests.get(wcId) : null;
+  return {
+    success: true,
+    origin: site,
+    mode: sitePermissions.getMode(),
+    decisions: sitePermissions.forSite(site),
+    requests: page && page.origin === site ? { ...page.items } : {},
+  };
+});
+handleFromUi('permissions:set', (_event, { origin, permission, value } = {}) =>
+  sitePermissions.set(sitePermissions.originOf(origin || ''), permission, value ?? null)
+);
+
+// Vérification synchrone demandée par le preload des pages : rend 'prompt'
+// quand rien n'est décidé (voir permissionPageState). L'origine est celle de
+// la FRAME émettrice — une iframe de visio n'est pas la page qui l'héberge.
+ipcMain.on('permissions:state', (event, { permission } = {}) => {
+  try {
+    let url = '';
+    try {
+      url = event.senderFrame?.url || event.sender.getURL();
+    } catch { /* frame partie */ }
+    const origin = sitePermissions.originOf(url);
+    event.returnValue = permissionPageState(
+      String(permission || ''),
+      sitePermissions.getMode(),
+      sitePermissions.decisionFor(origin, permission),
+      origin
+    );
+  } catch {
+    event.returnValue = 'denied';
+  }
+});
+
+// Versions du moteur embarqué (Paramètres → À propos).
+handleFromUi('app:engineVersions', () => ({
+  electron: process.versions.electron,
+  chrome: process.versions.chrome,
+  node: process.versions.node,
+  v8: process.versions.v8,
+  platform: process.platform,
+  arch: process.arch,
+}));
 
 handleFromUi('permissions:remember', (_event, { origin, permission, allowed } = {}) => {
   sitePermissions.remember(origin, permission, allowed);
@@ -6789,11 +6939,34 @@ function isOrbitPanel(contents) {
   return false;
 }
 
+// Règles de session d'une partition d'app : boucliers et mise à niveau HTTPS,
+// bloqueur, autorisations, téléchargements, UA Google. Toutes idempotentes.
+//
+// Posées quand le <webview> de l'app s'attache — mais une fenêtre DÉTACHÉE
+// peut s'ouvrir sur une partition dont le webview ne s'est pas encore attaché
+// depuis le lancement (app en veille) : elle se retrouvait alors sans
+// boucliers, sans bloqueur et sans question d'autorisation.
+function setupPartitionSession(partition) {
+  if (!partition || partition === 'default') return;
+  try {
+    const pSes = session.fromPartition(partition);
+    setupHeaderBypass(pSes);
+    setupPermissions(pSes);
+    setupDownloads(pSes);
+    // UA « client identifié » pour les requêtes Google (connexion Gmail/Drive,
+    // « Se connecter avec Google »), pendant que la page garde CHROME_UA
+    setupGoogleUA(pSes);
+  } catch (err) {
+    console.error('[orbit] règles de session non posées :', partition, err);
+  }
+}
+
 // Ouvrir une app dans une fenêtre DÉTACHÉE (séparée), en réutilisant la même
 // partition → session/connexion partagée avec l'onglet embarqué.
 const detachedWindows = new Map();
 ipcMain.handle('app:openDetached', async (_e, { appId, url, partition, title, zoom } = {}) => {
   if (!url || !/^https?:\/\//.test(url) || !partition) return { success: false };
+  setupPartitionSession(partition);
   if (!isPrivatePartition(partition)) {
     const extensionsReady = await ensureExtensionsForPartition(partition);
     if (!extensionsReady) {
@@ -7100,6 +7273,12 @@ ipcMain.handle('extensions:installFromCatalog', async (_event, { file } = {}) =>
     if (!entry) {
       return { success: false, error: 'Cette extension n’est pas (ou plus) au catalogue.' };
     }
+    if (!isCompatibleWithOrbit(entry, app.getVersion())) {
+      return {
+        success: false,
+        error: `Cette extension nécessite Orbit ${entry.minOrbitVersion} ou plus récent (vous avez ${app.getVersion()}). Mettez Orbit à jour, puis réessayez.`,
+      };
+    }
     const downloads = path.join(app.getPath('userData'), 'extensions', 'downloads');
     const download = await store.downloadExtension({ entry, destDir: downloads, url: catalog.url });
     if (!download.success) return download;
@@ -7238,7 +7417,7 @@ async function installExtensionFromZip(zipPath) {
         for (const loaded of getAll()) {
           if (loaded.name === extName) {
             previousIds.set(partition, loaded.id);
-            ses.removeExtension(loaded.id);
+            sesExtensions(ses).removeExtension(loaded.id);
             loadedPerPartition.get(partition)?.delete(loaded.id);
           }
         }
@@ -7252,7 +7431,7 @@ async function installExtensionFromZip(zipPath) {
     console.log('[orbit] chargement extension depuis:', targetDir);
     let ext;
     try {
-      ext = await session.defaultSession.loadExtension(targetDir);
+      ext = await sesExtensions(session.defaultSession).loadExtension(targetDir);
     } catch (loadError) {
       // Version qui ne se charge pas (manifeste refusé… ) : on remet la
       // précédente en place plutôt que de laisser l'utilisateur sans
@@ -7261,7 +7440,7 @@ async function installExtensionFromZip(zipPath) {
         try {
           fs.rmSync(targetDir, { recursive: true, force: true });
           fs.renameSync(backupDir, targetDir);
-          await session.defaultSession.loadExtension(targetDir).catch(() => {});
+          await sesExtensions(session.defaultSession).loadExtension(targetDir).catch(() => {});
         } catch { /* l'ancienne version reste dans le dossier de sauvegarde */ }
       }
       throw loadError;
@@ -7279,10 +7458,10 @@ async function installExtensionFromZip(zipPath) {
           storagePaths.push(getSessionForPartition(partition).storagePath);
         } catch { /* session indisponible */ }
       }
-      session.defaultSession.removeExtension(ext.id);
+      sesExtensions(session.defaultSession).removeExtension(ext.id);
       const migrated = copyExtensionStorage({ storagePaths, fromId: previousId, toId: ext.id });
       if (migrated > 0) console.log('[orbit] réglages de', extName, 'repris de l’ancienne installation');
-      ext = await session.defaultSession.loadExtension(targetDir);
+      ext = await sesExtensions(session.defaultSession).loadExtension(targetDir);
     }
 
     // Le dossier de sauvegarde ne sert plus : la nouvelle version est chargée.
@@ -7324,7 +7503,7 @@ ipcMain.handle('extensions:install', async (_event, { kind, path: extPath } = {}
       managed = true;
     }
     // Chargement de validation sur la session par défaut
-    const ext = await session.defaultSession.loadExtension(dir);
+    const ext = await sesExtensions(session.defaultSession).loadExtension(dir);
     return {
       success: true,
       extension: {
@@ -7378,7 +7557,7 @@ ipcMain.handle('extensions:installWebStore', async (_event, { idOrUrl } = {}) =>
     const dir = path.join(extRoot, extId);
     discardDirectory(replaceExtensionDir(staged, dir));
 
-    const ext = await session.defaultSession.loadExtension(dir);
+    const ext = await sesExtensions(session.defaultSession).loadExtension(dir);
     return {
       success: true,
       extension: {
@@ -7497,7 +7676,7 @@ ipcMain.handle('extensions:openOptions', async (_event, { id, path: extPath, par
         ? ses.extensions.getAllExtensions()
         : ses.getAllExtensions();
     if (!getAll().some((e) => e.id === id)) {
-      await ses.loadExtension(extPath);
+      await sesExtensions(ses).loadExtension(extPath);
     }
 
     const win = new BrowserWindow({
@@ -7576,7 +7755,7 @@ ipcMain.handle(
         typeof ses.extensions?.getAllExtensions === 'function'
           ? ses.extensions.getAllExtensions()
           : ses.getAllExtensions();
-      if (!getAll().some((e) => e.id === id)) await ses.loadExtension(extPath);
+      if (!getAll().some((e) => e.id === id)) await sesExtensions(ses).loadExtension(extPath);
 
       // Un seul panneau à la fois, comme dans un navigateur : rouvrir sur une
       // autre icône remplace le précédent au lieu de les empiler.
@@ -7696,6 +7875,169 @@ ipcMain.handle(
 ipcMain.handle('extensions:closePopup', () => {
   closeExtensionPopup();
   return { success: true };
+});
+
+// ---------------------------------------------------------------------------
+// IPC — Outils développeur : « Base de données » et « API »
+//
+// Même principe que le Téléphone : le code est dans Orbit, mais rien n'est
+// chargé ni accepté tant qu'une extension active ne déclare pas
+// `orbit.nativeApp: "database"` ou `"api"`. Les pilotes SQL (mysql2, pg,
+// mssql) ne sont importés qu'à la première connexion de leur type.
+// ---------------------------------------------------------------------------
+let databaseRuntime = null;
+let databaseDrivers = null;
+let apiRuntime = null;
+
+function requireNativeApp(kind, label) {
+  if (nativeAppsKnown && !nativeAppKinds.has(kind)) {
+    throw new Error(`Cette fonction est fournie par l'extension « ${label} » : installez-la pour l'utiliser.`);
+  }
+}
+
+async function loadDatabase() {
+  requireNativeApp('database', 'Orbit Base de données');
+  if (!databaseRuntime) {
+    databaseRuntime = await import('./database.js');
+    const driverStore = await import('./db-drivers.js');
+    const catalog = await loadExtensionStore();
+    databaseRuntime.init(
+      app.getPath('userData'),
+      {
+        available: safeStorage.isEncryptionAvailable(),
+        encrypt: (text) => safeStorage.encryptString(String(text)).toString('base64'),
+        decrypt: (b64) => safeStorage.decryptString(Buffer.from(String(b64), 'base64')),
+      },
+      {
+        // SQL Server n'est pas embarqué : téléchargé et vérifié à la première
+        // connexion (voir db-drivers.js). En développement, le module installé
+        // par npm sert directement, sauf ORBIT_DRIVERS_FROM_NETWORK=1.
+        loadDriver: (name) =>
+          driverStore.loadDriver(name, {
+            dir: path.join(app.getPath('userData'), 'db-drivers'),
+            catalogUrl: catalog.catalogUrl(),
+            fetch: (url) => net.fetch(url),
+            preferBundled: !app.isPackaged && process.env.ORBIT_DRIVERS_FROM_NETWORK !== '1',
+          }),
+      }
+    );
+    databaseDrivers = driverStore;
+  }
+  return databaseRuntime;
+}
+
+async function loadApiClient() {
+  requireNativeApp('api', 'Orbit API');
+  if (!apiRuntime) apiRuntime = await import('./api-client.js');
+  return apiRuntime;
+}
+
+// Contrat `{ success, ... }` : une erreur de pilote (mot de passe refusé,
+// syntaxe SQL…) revient en clair dans `error`, jamais en exception.
+function devGuard(loader, fn) {
+  return async (_event, payload = {}) => {
+    try {
+      const mod = await loader();
+      return (await fn(mod, payload || {})) ?? { success: true };
+    } catch (err) {
+      return { success: false, error: String(err?.message || err) };
+    }
+  };
+}
+
+function handleDevFromUi(channel, loader, fn) {
+  handleFromUi(channel, devGuard(loader, fn));
+}
+
+handleDevFromUi('db:driverStatus', loadDatabase, (_db, p) => ({
+  success: true,
+  ...databaseDrivers.driverStatus(p.driver === 'mssql' ? 'mssql' : '', { dir: path.join(app.getPath('userData'), 'db-drivers') }),
+}));
+handleDevFromUi('db:list', loadDatabase, (db) => ({ success: true, connections: db.list() }));
+handleDevFromUi('db:save', loadDatabase, (db, p) => db.upsert(p));
+handleDevFromUi('db:remove', loadDatabase, (db, p) => db.remove(p.id));
+handleDevFromUi('db:test', loadDatabase, (db, p) => db.test(p));
+handleDevFromUi('db:connect', loadDatabase, (db, p) => db.connect(p.id));
+handleDevFromUi('db:disconnect', loadDatabase, (db, p) => db.disconnect(p.id));
+handleDevFromUi('db:tables', loadDatabase, (db, p) => db.tables(p.id));
+handleDevFromUi('db:schema', loadDatabase, (db, p) => db.schema(p.id));
+handleDevFromUi('db:columns', loadDatabase, (db, p) => db.columns(p.id, p.schema, p.table));
+handleDevFromUi('db:query', loadDatabase, (db, p) => db.query(p.id, String(p.sql || ''), p.params || []));
+handleDevFromUi('db:browse', loadDatabase, (db, p) => db.browse(p.id, p));
+handleDevFromUi('db:update', loadDatabase, (db, p) => db.updateRow(p.id, p));
+handleDevFromUi('db:insert', loadDatabase, (db, p) => db.insertRow(p.id, p));
+handleDevFromUi('db:delete', loadDatabase, (db, p) => db.deleteRow(p.id, p));
+handleDevFromUi('db:analyze', loadDatabase, (db, p) => db.analyze(p.id, p.schema, p.table));
+handleFromUi('db:pickSqlite', async (_e, { create } = {}) => {
+  const opts = {
+    title: create ? 'Nouvelle base SQLite' : 'Ouvrir une base SQLite',
+    filters: [
+      { name: 'SQLite', extensions: ['sqlite', 'sqlite3', 'db', 'db3', 's3db'] },
+      { name: 'Tous les fichiers', extensions: ['*'] },
+    ],
+  };
+  const res = create
+    ? await dialog.showSaveDialog(mainWindow, { ...opts, defaultPath: 'base.sqlite' })
+    : await dialog.showOpenDialog(mainWindow, { ...opts, properties: ['openFile'] });
+  const file = create ? res.filePath : res.filePaths?.[0];
+  return res.canceled || !file ? { success: false, canceled: true } : { success: true, file };
+});
+
+handleDevFromUi('api:send', loadApiClient, (api, p) => api.send(p, { canRead: isGrantedDevFile }));
+handleDevFromUi('api:cancel', loadApiClient, (api, p) => api.cancel(p.id));
+
+// Fichiers des outils développeur (.sql, .http, collections, exports) :
+// toujours choisis par l'utilisateur dans une boîte de dialogue.
+//
+// Le processus principal ne lit ni n'écrit un chemin que parce que
+// l'interface le lui donne : seuls les fichiers passés par une boîte de
+// dialogue pendant cette session sont autorisés (réécrire un .sql ouvert,
+// joindre un fichier à une requête). Un chemin inventé est refusé.
+const grantedDevFiles = new Set();
+const grantDevFile = (file) => {
+  if (file) grantedDevFiles.add(path.resolve(file));
+  return file;
+};
+const isGrantedDevFile = (file) => Boolean(file) && grantedDevFiles.has(path.resolve(String(file)));
+handleFromUi('devfiles:open', async (_e, { title, filters } = {}) => {
+  const res = await dialog.showOpenDialog(mainWindow, {
+    title: title || 'Ouvrir',
+    properties: ['openFile'],
+    filters: Array.isArray(filters) ? filters : undefined,
+  });
+  const file = grantDevFile(res.filePaths?.[0]);
+  if (res.canceled || !file) return { success: false, canceled: true };
+  try {
+    const stat = fs.statSync(file);
+    if (stat.size > 20 * 1024 * 1024) return { success: false, error: 'Fichier trop volumineux (20 Mo max).' };
+    return { success: true, path: file, name: path.basename(file), content: fs.readFileSync(file, 'utf8') };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
+});
+handleFromUi('devfiles:pick', async (_e, { title } = {}) => {
+  const res = await dialog.showOpenDialog(mainWindow, { title: title || 'Choisir un fichier', properties: ['openFile'] });
+  const file = grantDevFile(res.filePaths?.[0]);
+  return res.canceled || !file ? { success: false, canceled: true } : { success: true, path: file, name: path.basename(file) };
+});
+handleFromUi('devfiles:save', async (_e, { path: target, defaultPath, content, filters } = {}) => {
+  // Réécrire un fichier sans redemander : seulement s'il a été ouvert ou
+  // enregistré par une boîte de dialogue. Sinon, on la propose.
+  let file = target && isGrantedDevFile(target) ? target : null;
+  if (!file) {
+    const res = await dialog.showSaveDialog(mainWindow, {
+      defaultPath: defaultPath || undefined,
+      filters: Array.isArray(filters) ? filters : undefined,
+    });
+    if (res.canceled || !res.filePath) return { success: false, canceled: true };
+    file = grantDevFile(res.filePath);
+  }
+  try {
+    fs.writeFileSync(file, String(content ?? ''), 'utf8');
+    return { success: true, path: file, name: path.basename(file) };
+  } catch (err) {
+    return { success: false, error: err.message };
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -9050,7 +9392,9 @@ app.on('will-quit', () => {
     phoneRuntime?.cleanup?.();
   } catch {
     /* la fenêtre miroir est déjà fermée */
-  }
+  }  // Bases ouvertes : on ferme proprement. Les connexions jetables n'ont
+  // jamais été écrites, elles disparaissent avec le processus.
+  databaseRuntime?.closeAll?.().catch(() => {});
 });
 
 app.on('window-all-closed', () => {

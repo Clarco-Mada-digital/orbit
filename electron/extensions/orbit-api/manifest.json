@@ -1,0 +1,15 @@
+{
+  "manifest_version": 3,
+  "name": "Orbit API",
+  "version": "1.0.0",
+  "description": "Client API façon Postman et REST Client : requêtes en formulaire ou fichiers .http exécutables d'un clic, collections, environnements et variables, import cURL / OpenAPI / Postman, historique. Les requêtes partent d'Orbit : pas de blocage CORS.",
+  "author": "Orbit",
+  "homepage_url": "https://orbit.app",
+  "icons": {
+    "128": "icon128.png"
+  },
+  "orbit": {
+    "nativeApp": "api",
+    "minOrbitVersion": "1.21.0"
+  }
+}

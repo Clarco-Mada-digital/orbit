@@ -194,6 +194,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   installExtensionFromZip: (fileName) => ipcRenderer.invoke('extensions:installFromZip', fileName),
   // Mise à jour automatique
   getVersion: () => ipcRenderer.invoke('app:getVersion'),
+  getEngineVersions: () => ipcRenderer.invoke('app:engineVersions'),
   checkForUpdate: () => ipcRenderer.invoke('update:check'),
   installUpdate: () => ipcRenderer.invoke('update:install'),
   // Zoom appliqué dans une page (Ctrl + molette) : l'interface met à jour le
@@ -404,6 +405,46 @@ contextBridge.exposeInMainWorld('electronAPI', {
     list: () => ipcRenderer.invoke('permissions:list'),
     setMode: (mode) => ipcRenderer.invoke('permissions:setMode', mode),
     forget: (origin, permission) => ipcRenderer.invoke('permissions:forget', { origin, permission }),
+    // Bouton « Autorisations » de la barre : un site, ce qu'il a demandé.
+    forSite: (origin, wcId) => ipcRenderer.invoke('permissions:site', { origin, wcId }),
+    set: (origin, permission, value) =>
+      ipcRenderer.invoke('permissions:set', { origin, permission, value }),
+    onActivity: (callback) => {
+      const listener = (_e, data) => callback(data);
+      ipcRenderer.on('orbit:permission-activity', listener);
+      return () => ipcRenderer.removeListener('orbit:permission-activity', listener);
+    },
+  },
+  // App native « Base de données » (extension Orbit Base de données)
+  database: {
+    list: () => ipcRenderer.invoke('db:list'),
+    save: (conn) => ipcRenderer.invoke('db:save', conn),
+    remove: (id) => ipcRenderer.invoke('db:remove', { id }),
+    test: (conn) => ipcRenderer.invoke('db:test', conn),
+    connect: (id) => ipcRenderer.invoke('db:connect', { id }),
+    disconnect: (id) => ipcRenderer.invoke('db:disconnect', { id }),
+    tables: (id) => ipcRenderer.invoke('db:tables', { id }),
+    columns: (id, schema, table) => ipcRenderer.invoke('db:columns', { id, schema, table }),
+    schema: (id) => ipcRenderer.invoke('db:schema', { id }),
+    query: (id, sql, params) => ipcRenderer.invoke('db:query', { id, sql, params }),
+    browse: (id, opts) => ipcRenderer.invoke('db:browse', { id, ...opts }),
+    update: (id, args) => ipcRenderer.invoke('db:update', { id, ...args }),
+    insert: (id, args) => ipcRenderer.invoke('db:insert', { id, ...args }),
+    deleteRow: (id, args) => ipcRenderer.invoke('db:delete', { id, ...args }),
+    analyze: (id, schema, table) => ipcRenderer.invoke('db:analyze', { id, schema, table }),
+    pickSqlite: (create) => ipcRenderer.invoke('db:pickSqlite', { create }),
+    driverStatus: (driver) => ipcRenderer.invoke('db:driverStatus', { driver }),
+  },
+  // App native « API » (extension Orbit API)
+  apiClient: {
+    send: (request) => ipcRenderer.invoke('api:send', request),
+    cancel: (id) => ipcRenderer.invoke('api:cancel', { id }),
+  },
+  // Fichiers des outils développeur (.sql, .http, exports)
+  devFiles: {
+    open: (opts) => ipcRenderer.invoke('devfiles:open', opts || {}),
+    pick: (opts) => ipcRenderer.invoke('devfiles:pick', opts || {}),
+    save: (opts) => ipcRenderer.invoke('devfiles:save', opts || {}),
   },
   // Studio d'enregistrement (écran + caméra, composition et export)
   studio: {

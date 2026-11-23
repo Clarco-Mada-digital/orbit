@@ -46,6 +46,11 @@ jobs:
       - name: Vérifier que les archives suivent les sources
         run: node scripts/export-extensions.cjs --check
 
+      # Le pilote publié doit être exactement celui dont Orbit connaît
+      # l'empreinte ; sinon les utilisateurs recevraient un refus.
+      - name: Vérifier les pilotes SQL publiés
+        run: node scripts/bundle-db-drivers.mjs --check
+
       # Le MAGASIN d'extensions d'Orbit. Les archives ne sont plus embarquées
       # dans l'application : elle lit ce catalogue en HTTPS et télécharge
       # l'archive au moment de l'installation. Publier une extension corrigée
@@ -59,6 +64,10 @@ jobs:
           node scripts/export-extensions.cjs --catalog-only
           mkdir -p docs/extensions
           cp extensions-dist/*.zip extensions-dist/catalog.json docs/extensions/
+          # Pilotes SQL téléchargés à la demande par l'app Base de données
+          # (empreinte vérifiée par Orbit : voir electron/db-drivers.json).
+          mkdir -p docs/extensions/drivers
+          cp extensions-dist/drivers/* docs/extensions/drivers/
           echo "Publié :"
           ls -la docs/extensions/
 

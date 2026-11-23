@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Puzzle, FolderOpen, Trash2, Loader2, Info, Globe, Download, Settings2, AlertTriangle, RotateCw, Dice6, Check, X, Upload, Smartphone, CloudOff, WifiOff, Search, FileJson } from 'lucide-react';
+import { Puzzle, FolderOpen, Trash2, Loader2, Info, Globe, Download, Settings2, AlertTriangle, RotateCw, Dice6, Check, X, Upload, Smartphone, Database, CloudOff, WifiOff, Search, FileJson } from 'lucide-react';
 import { useStore } from '../stores/useStore';
 import { useShallow } from 'zustand/react/shallow';
 import { getRegisteredWebviews } from '../lib/webviewRegistry';
@@ -7,7 +7,8 @@ import { appPartition } from '../lib/session';
 import { reloadUrlFor } from '../lib/urls';
 import { useT } from '../lib/i18n';
 import { loadExtensionInfo, clearExtensionInfoCache } from '../lib/extensionInfo';
-import { bundledInstallState } from '../lib/extensionCatalog';
+import { bundledInstallState, isCompatibleWithOrbit } from '../lib/extensionCatalog';
+import { NATIVE_APP_KINDS, openNativeApp } from '../lib/nativeApps';
 import { usePhoneStore } from '../lib/phoneStore';
 
 // Recharge toutes les apps ouvertes : indispensable après un changement
@@ -59,7 +60,7 @@ function ExtIcon({ ext, enabled }) {
 // Une extension peut fournir une app native (`orbit.nativeApp`) : après
 // installation, l'app est créée dans le store — ce bouton l'ouvre directement,
 // sinon il faut la chercher dans la barre latérale.
-function NativeAppLauncher({ ext, enabled }) {
+function NativeAppLauncher({ ext, enabled, onOpened }) {
   const [kind, setKind] = useState(null);
   useEffect(() => {
     let alive = true;
@@ -71,16 +72,16 @@ function NativeAppLauncher({ ext, enabled }) {
     };
   }, [ext.id, ext.path]);
 
-  if (kind !== 'phone' || !enabled) return null;
+  if (!NATIVE_APP_KINDS.includes(kind) || !enabled) return null;
   return (
     <button
       type="button"
       onClick={() => {
-        // Le Téléphone s'ouvre depuis la barre : on l'ouvre directement, sans
-        // créer d'app dans le sidebar.
-        if (kind === 'phone') usePhoneStore.getState().setOpen(true);
+        // L'app s'ouvre dans la zone de contenu, SOUS les Réglages : on les
+        // referme, sinon le clic semble ne rien faire.
+        if (openNativeApp(kind)) onOpened?.();
       }}
-      className="btn btn-secondary flex-shrink-0 text-xs"
+      className="btn btn-primary flex-shrink-0 text-xs"
       title="Ouvrir l'app fournie par cette extension"
     >
       Ouvrir
@@ -214,7 +215,13 @@ function normalizeFakeLists(parsed) {
 // Gestion des extensions Chrome : installation (ZIP, dossier, Chrome Web Store),
 // activation/désactivation et désinstallation. Fake Data Filler (natif) apparaît
 // dans la même liste avec les mêmes contrôles.
-export default function Extensions() {
+export default function Extensions({ onClose }) {
+  // Version d'Orbit, pour masquer l'installation des extensions qui en
+  // demandent une plus récente (`minOrbitVersion` du catalogue).
+  const [orbitVersion, setOrbitVersion] = useState(null);
+  useEffect(() => {
+    window.electronAPI?.getVersion?.().then((v) => v && setOrbitVersion(v));
+  }, []);
   const t = useT();
   const { extensions, updateExtensions, updateSettings, settings, activeApp, apps, profiles } = useStore(
     useShallow((s) => ({ extensions: s.extensions, updateExtensions: s.updateExtensions, updateSettings: s.updateSettings, settings: s.settings, activeApp: s.activeApp, apps: s.apps, profiles: s.profiles })),
@@ -796,6 +803,10 @@ export default function Extensions() {
               const { state, installedVersion } = bundledInstallState(item, extensions);
               const installed = state === 'installed';
               const updatable = state === 'update';
+              // Extension qui attend une version d'Orbit plus récente : on la
+              // montre (elle donne envie de mettre à jour) sans laisser
+              // installer quelque chose qui ne marcherait pas.
+              const compatible = isCompatibleWithOrbit(item, orbitVersion);
               return (
                 <div
                   key={item.file}
@@ -804,6 +815,10 @@ export default function Extensions() {
                   <div className="w-9 h-9 rounded-lg bg-bg-elevated border border-border flex items-center justify-center flex-shrink-0">
                     {item.nativeApp === 'phone' ? (
                       <Smartphone size={17} className="text-accent-primary" />
+                    ) : item.nativeApp === 'database' ? (
+                      <Database size={17} className="text-accent-primary" />
+                    ) : item.nativeApp === 'api' ? (
+                      <Globe size={17} className="text-accent-primary" />
                     ) : (
                       <Puzzle size={17} className="text-text-muted" />
                     )}
@@ -819,6 +834,11 @@ export default function Extensions() {
                     </div>
                     {item.description ? (
                       <p className="line-clamp-2 text-xs text-text-muted">{item.description}</p>
+                    ) : null}
+                    {!compatible ? (
+                      <p className="mt-0.5 text-[11px] font-medium text-amber-500">
+                        Nécessite Orbit {item.minOrbitVersion} ou plus récent — mettez Orbit à jour pour l’installer.
+                      </p>
                     ) : null}
                   </div>
                   <span className="flex-shrink-0 text-right text-xs text-text-muted">
@@ -841,7 +861,7 @@ export default function Extensions() {
                         ? handleInstallFromCatalog(item)
                         : handleInstallFromZip(item.zipPath)
                     }
-                    disabled={installed || !!busy}
+                    disabled={installed || !!busy || !compatible}
                     className={`btn flex-shrink-0 text-xs ${updatable ? 'btn-primary' : 'btn-secondary'}`}
                     title={
                       item.source === 'catalog'
@@ -928,7 +948,7 @@ export default function Extensions() {
                     </div>
                     {!ext.native && <ExtWarnings ext={ext} />}
                   </div>
-                  <NativeAppLauncher ext={ext} enabled={ext.enabled} />
+                  <NativeAppLauncher ext={ext} enabled={ext.enabled} onOpened={onClose} />
                   <button
                     onClick={() => openOptions(ext)}
                     className="btn-icon flex-shrink-0"

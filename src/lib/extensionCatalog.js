@@ -118,15 +118,28 @@ export function normalizeCatalogEntry(raw) {
   if (!/^[0-9a-f]{64}$/.test(sha256)) return null;
   const nativeApp = raw.nativeApp == null ? null : String(raw.nativeApp);
   if (nativeApp !== null && !/^[a-z][a-z0-9-]{0,30}$/.test(nativeApp)) return null;
+  // Version d'Orbit requise : une valeur illisible est ignorée (l'entrée reste
+  // installable), jamais une raison d'écarter l'extension.
+  const min = String(raw.minOrbitVersion || '').trim();
+  const minOrbitVersion = /^\d+(\.\d+){0,2}$/.test(min) ? min : null;
   return {
     file,
     name,
     version,
     description: String(raw.description || '').replace(/\s+/g, ' ').trim().slice(0, 500),
     nativeApp,
+    minOrbitVersion,
     size,
     sha256,
   };
+}
+
+// Cette version d'Orbit peut-elle faire tourner l'extension ? Une app native
+// (Base de données, API…) n'a pas son code dans l'extension mais dans Orbit :
+// installée sur une version qui ne le contient pas, elle ne ferait rien.
+export function isCompatibleWithOrbit(entry, orbitVersion) {
+  if (!entry?.minOrbitVersion || !orbitVersion) return true;
+  return compareExtensionVersions(String(orbitVersion).replace(/-.*$/, ''), entry.minOrbitVersion) >= 0;
 }
 
 // Le catalogue entier. Les entrées illisibles sont ÉCARTÉES une par une : une

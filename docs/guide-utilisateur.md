@@ -619,6 +619,10 @@ version plus récente est livrée avec une mise à jour d’Orbit, le bouton
   (`Alt+M`, ou le menu contextuel).
 - **Téléphone Orbit** : extension optionnelle pour piloter un Android
   compatible. Voir la section suivante.
+- **Orbit Base de données** : client SQL intégré (SQLite, MySQL/MariaDB,
+  PostgreSQL, SQL Server). Voir plus bas.
+- **Orbit API** : client API façon Postman et REST Client, fichiers `.http`
+  compris. Voir plus bas.
 
 ### Téléphone Orbit
 
@@ -685,6 +689,71 @@ sur Android.
 > presse-papiers partagé n’a pas d’équivalent ADB sur Android récent — dans une
 > fenêtre miroir, scrcpy le synchronise déjà dans les deux sens.
 
+### Orbit Base de données
+
+L’extension **Orbit Base de données** se connecte à **SQLite**, **MySQL /
+MariaDB**, **PostgreSQL** et **SQL Server**. Une fois installée, on l’ouvre en
+cliquant sur elle dans le menu des extensions de la barre.
+
+- **Épinglée ou jetable** : une connexion épinglée est retrouvée au prochain
+  lancement, son mot de passe chiffré par le trousseau du système ; une
+  connexion jetable n’est jamais écrite sur le disque et disparaît, avec son
+  historique, à la fermeture d’Orbit.
+- **Lecture seule** : à cocher pour consulter une base de production sans
+  risque — toute requête qui modifierait est refusée.
+- **Éditeur SQL** : `Ctrl+Entrée` exécute la requête sous le curseur (ou la
+  sélection), le **▶** de la marge exécute une requête précise d’un fichier
+  `.sql`, **Tout exécuter** enchaîne le script et s’arrête à la première erreur.
+  Historique et requêtes favorites par connexion.
+- **Tables** : données paginées, filtre `WHERE`, tri par colonne, **double-clic
+  pour modifier** une cellule, ajout et suppression de lignes. L’édition n’est
+  proposée que sur une table qui a une clé primaire : sans elle, une
+  modification pourrait toucher plusieurs lignes.
+- **Analyse** : pour chaque colonne, taux de remplissage, valeurs distinctes,
+  minimum, maximum et valeurs les plus fréquentes.
+- **Export** des résultats en CSV, JSON ou `INSERT` SQL.
+- **Diagramme des relations** (bouton dans la colonne de gauche) : chaque table
+  est une carte — huit colonnes au plus, puis « +N » pour déplier —, chaque clé
+  étrangère un lien. Les relations **déduites** des noms (`client_id` →
+  `clients`), utiles quand la base ne déclare pas ses clés, sont en pointillés
+  et se masquent d'un clic. Glisser le fond déplace la vue, `Ctrl` + molette
+  zoome, une carte se déplace à la souris et la disposition est retenue.
+  Survoler une table met ses relations en avant ; un clic ouvre son détail
+  (colonnes, tables qu'elle référence et qui la référencent), d'où l'on ouvre
+  ses données ou une requête `SELECT` prête.
+- **SQL Server** : son pilote n'est pas livré avec Orbit. Il est téléchargé
+  (≈ 1,6 Mo) et vérifié à la première connexion SQL Server, puis gardé.
+- **Zoom** de l'affichage : `Ctrl` + molette, ou `Alt` `+` / `−` / `0` (`⌘` sur
+  macOS). Il est retenu séparément pour la Base de données et pour l'API.
+
+On ouvre la Base de données et l'API depuis le **menu des extensions** (la
+pièce de puzzle de la barre) ou **Réglages → Extensions → Ouvrir**. Un bouton
+direct peut s'ajouter à la barre dans **Réglages → Barre supérieure** : rien n'y
+est placé d'office.
+
+### Orbit API
+
+L’extension **Orbit API** s’ouvre de la même façon, depuis le menu des
+extensions. Les requêtes partent d’Orbit lui-même : aucun blocage CORS, tous
+les en-têtes sont permis.
+
+- **Formulaire** : méthode, URL, paramètres, en-têtes, corps (JSON, texte, XML,
+  formulaire, multipart avec fichiers, GraphQL, fichier), authentification
+  (Bearer, Basic, clé d’API). Coller une commande **cURL** dans la barre d’URL
+  la convertit en requête.
+- **Fichiers `.http`** au format de l’extension REST Client de VS Code : `###`
+  sépare les requêtes, `@nom = valeur` déclare une variable, et un **▶** dans la
+  marge envoie chaque requête. `# @name login` nomme une réponse réutilisable
+  plus bas : `{{login.response.body.$.token}}`.
+- **Collections** (dossiers compris), exportables en `.http`, et
+  **environnements** (Local, Recette, Production…) pour changer `{{baseUrl}}` ou
+  `{{token}}` en un clic. Variables système : `{{$guid}}`, `{{$timestamp}}`,
+  `{{$datetime iso8601}}`, `{{$randomInt 1 100}}`.
+- **Import** : cURL, `.http`, OpenAPI 3 / Swagger 2 (JSON) et collections
+  Postman.
+- **Réponse** : statut, durée, taille, corps formaté, aperçu HTML et images,
+  en-têtes, commande cURL équivalente. Historique des 100 dernières requêtes.
+
 ### Visionneuse de documents
 
 Un fichier `.md`, `.txt`, `.json`, `.csv` ou un fichier de code ouvert dans
@@ -725,6 +794,12 @@ pastille qui mène au navigateur. Le bouton **Source** affiche le fichier brut.
   cookies, widgets sociaux. Repassez en standard si un site perd un élément qui
   lui servait de contenu. Un réglage ne s’applique qu’au chargement suivant : le
   panneau propose alors de recharger la page.
+- **Autorisations des sites** (caméra, micro, notifications, position…) : la
+  première demande d’un site ouvre une question. Un bouton **Autorisations**
+  apparaît alors dans la barre du haut — en rouge si un accès a été bloqué — et
+  permet de passer chaque accès sur *Demander*, *Autoriser* ou *Bloquer* sans
+  quitter la page. Il n’apparaît que lorsqu’un site a demandé quelque chose ; la
+  liste de tous les sites reste dans **Réglages → Confidentialité**.
 - Les services web intégrés continuent de recevoir les données que vous saisissez
   directement sur leurs pages.
 
