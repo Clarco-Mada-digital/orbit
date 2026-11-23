@@ -24,6 +24,23 @@ test('canaux des pages embarquées', () => {
   assert.equal(isGuestChannel(''), false);
 });
 
+test('les canaux appelés PAR les preloads de page sont autorisés', () => {
+  // Régression constatée au démarrage : ces deux invoke venaient bien d'un
+  // preload de page et étaient refusés (« Error: forbidden » à chaque
+  // chargement). Conséquence silencieuse : le réglage d'affichage du bouton de
+  // téléchargement était ignoré, et les données de test retombaient sur des
+  // valeurs génériques.
+  assert.equal(isGuestChannel('media:buttonSurface'), true);
+  assert.equal(isGuestChannel('fakedata:get'), true);
+});
+
+test('autoriser ces canaux n’ouvre pas leurs voisins', () => {
+  // La liste est NOMINATIVE, pas par préfixe : une page ne doit pas atteindre
+  // le journal des échecs de média ni l'écriture des données de test.
+  assert.equal(isGuestChannel('media:failures'), false);
+  assert.equal(isGuestChannel('fakedata:set'), false);
+});
+
 test("l'interface atteint tout, une page seulement ses canaux", () => {
   assert.equal(isAllowedSender(fakeEvent('window'), 'documents:read'), true);
   assert.equal(isAllowedSender(fakeEvent('webview'), 'documents:read'), false);

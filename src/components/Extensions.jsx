@@ -117,13 +117,13 @@ function ExtWarnings({ ext }) {
           App native
         </span>
       ) : null}
-      {/* Badge de version du manifeste : indique tout de suite si c'est une
-          extension « récente » (V3, souvent bridée dans Electron) ou « classique »
-          (V2, la mieux supportée). */}
+      {/* Badge de version du manifeste : purement informatif. Il était JAUNE
+          pour le V3, ce qui le faisait lire comme un avertissement — relevé
+          fait sur l'Electron embarqué, le V3 tourne (service worker, scripts de
+          page, blocage réseau). Ce qui manque vraiment est dit dans les lignes
+          d'avertissement ci-dessous, extension par extension. */}
       <span
-        className={`inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold ${
-          isV3 ? 'bg-yellow-500/15 text-yellow-500' : 'bg-emerald-500/15 text-emerald-500'
-        }`}
+        className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold bg-bg-hover text-text-secondary"
         title={isV3 ? t('ex.mv3title') : t('ex.mv2title')}
       >
         {isV3 ? 'Manifest V3' : 'Manifest V2'}

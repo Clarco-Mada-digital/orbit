@@ -114,6 +114,32 @@ test('https : le réglage désactivé ne redirige rien', () => {
   assert.equal(rules.decideRequest(site({ httpsUpgrade: false }), mainFrame('http://exemple.com')), null);
 });
 
+test('https : une origine explicitement acceptée en http n’est plus upgradée', () => {
+  // L'utilisateur a cliqué « Continuer en HTTP » dans l'interstitielle. Sans
+  // cette dérogation, le bouclier le renverrait aussitôt vers https et son
+  // choix n'aurait aucun effet : il resterait devant le même cadre vide.
+  const s = site({ httpsUpgrade: true });
+  assert.equal(rules.decideRequest(s, mainFrame('http://exemple.com/page'), true), null);
+  // …et seulement celle-là : le défaut reste la mise à niveau.
+  assert.deepEqual(rules.decideRequest(s, mainFrame('http://exemple.com/page'), false), {
+    action: 'redirect',
+    url: 'https://exemple.com/page',
+    reason: 'https',
+  });
+});
+
+test('https : accepter le http ne baisse pas les autres protections', () => {
+  // Le blocage des scripts continue de s'appliquer sur une origine acceptée en
+  // http — « continuer sans chiffrement » n'est pas « désactiver le bouclier ».
+  const d = rules.decideRequest(
+    site({ httpsUpgrade: true, blockScripts: true }),
+    { url: 'http://exemple.com/app.js', resourceType: 'script' },
+    true
+  );
+  assert.equal(d.action, 'cancel');
+  assert.equal(d.reason, 'script');
+});
+
 test('upgradeToHttps : conserve port, chemin et requête', () => {
   assert.equal(
     rules.upgradeToHttps('http://exemple.com:8080/a/b?c=1&d=2#frag'),

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { AlertTriangle, RotateCw } from 'lucide-react';
+import { AlertTriangle, RotateCw, ExternalLink, X } from 'lucide-react';
 import { useStore } from '../stores/useStore';
 import { useLoadingStore } from '../lib/loadingStore';
 import { useMediaStore } from '../lib/mediaStore';
@@ -23,6 +23,34 @@ const setHistoryTitle = (url, title) => useHistoryStore.getState().setTitle(url,
 //   • les vidéos d'ambiance, muettes et en boucle (bannières de sites) ;
 //   • les lecteurs seulement chargés, jamais lancés (currentTime à 0) — sinon
 //     la barre s'ouvre toute seule sur n'importe quelle page contenant un player.
+// Posé À CHAQUE 'dom-ready', dans la page. Deux événements seulement, et aucun
+// n'est accessible autrement :
+//   • 'encrypted' — Chromium l'émet quand le flux est chiffré par un DRM. C'est
+//     le SEUL signal fiable : la demande EME du site échoue silencieusement
+//     (Electron n'embarque pas Widevine) et le lecteur reste simplement noir ;
+//   • 'error' sur un <video>/<audio> — l'erreur du lecteur, qui disparaît
+//     aussitôt du DOM si personne ne l'a lue.
+//
+// Les deux sont écoutés en phase de CAPTURE sur `document` : ils ne REMONTENT
+// pas (bubbles: false), mais la capture descend bien jusqu'à la cible. Un
+// écouteur posé une fois sur document couvre donc tous les lecteurs de la page,
+// y compris ceux créés plus tard — alors qu'attacher les écouteurs lecteur par
+// lecteur, au rythme du sondage, raterait les pannes arrivées entre deux tours.
+const WATCH_MEDIA_FN = `(() => {
+  try {
+    if (window.__orbitMediaWatch) return true;
+    const w = { drm: false, error: null };
+    window.__orbitMediaWatch = w;
+    document.addEventListener('encrypted', () => { w.drm = true; }, true);
+    document.addEventListener('error', (e) => {
+      const t = e.target;
+      if (!t || (t.tagName !== 'VIDEO' && t.tagName !== 'AUDIO') || !t.error) return;
+      w.error = { code: t.error.code, message: String(t.error.message || '') };
+    }, true);
+    return true;
+  } catch (e) { return false; }
+})()`;
+
 const READ_MEDIA_FN = `(() => {
   try {
     const MIN_DUR = 5; // s — en dessous, c'est un son de notification
@@ -36,6 +64,11 @@ const READ_MEDIA_FN = `(() => {
     const playingEl = real.find((x) => !x.paused && !x.ended);
     const startedEl = real.find((x) => x.paused && !x.ended && x.currentTime > 0);
     const el = playingEl || startedEl || null;
+    // Panne de lecture, relevée par WATCH_MEDIA_FN. Renvoyée dans LES DEUX
+    // branches ci-dessous : une vidéo en panne est précisément une vidéo qui ne
+    // joue pas, donc celle qui sort par « hasMedia: false ».
+    const w = window.__orbitMediaWatch;
+    const fault = w && (w.drm || w.error) ? { drm: !!w.drm, error: w.error } : null;
     const ms = navigator.mediaSession;
     const md = ms && ms.metadata;
     const state = ms && ms.playbackState;
@@ -43,9 +76,10 @@ const READ_MEDIA_FN = `(() => {
     // Media Session sans métadonnées = signal trop faible (une page peut la
     // laisser à 'playing' après un simple son) → on exige un titre.
     const sessionActive = !!md && (sessionPlaying || state === 'paused');
-    if (!el && !sessionActive) return { hasMedia: false };
+    if (!el && !sessionActive) return { hasMedia: false, fault };
     return {
       hasMedia: true,
+      fault,
       paused: el ? !!el.paused : !sessionPlaying,
       sessionPlaying,
       currentTime: el && isFinite(el.currentTime) ? el.currentTime : 0,
@@ -54,9 +88,12 @@ const READ_MEDIA_FN = `(() => {
       artist: (md && md.artist) || '',
       artwork: (md && md.artwork && md.artwork.length ? md.artwork[md.artwork.length - 1].src : '') || '',
     };
-  } catch (e) { return { hasMedia: false }; }
+  } catch (e) { return { hasMedia: false, fault: null }; }
 })()`;
 import { computeStartUrl, reloadUrlFor, isLoginPageUrl } from '../lib/urls';
+import { isDisplayableFailure, describeLoadFailure } from '../lib/loadFailure';
+import { describeMediaFault, mediaFaultKey } from '../lib/mediaFault';
+import LoadFailure from './LoadFailure';
 import { logDiagnostic } from '../lib/diagnosticsStore';
 import { recipes } from '../lib/recipes';
 import { CHROME_UA } from '../lib/userAgent';
@@ -118,6 +155,14 @@ export default function WebView({ app, active, visible, flexLayout }) {
   // pour ne pas clignoter sur les recharges rapides (ex. redirections).
   const [loading, setLoading] = useState(false);
   const [crashed, setCrashed] = useState(false);
+  // Échec de chargement de la FRAME PRINCIPALE : { code, description, url,
+  // webContentsId }. Non nul → l'interstitielle remplace le cadre vide.
+  // Remis à zéro dès qu'un nouveau chargement démarre.
+  const [failure, setFailure] = useState(null);
+  // Panne de LECTURE (vidéo protégée, segment bloqué, refus du CDN…). Ne
+  // masque pas la page : une bannière discrète en bas, car le reste de l'app
+  // fonctionne — seul le lecteur est en panne.
+  const [mediaFault, setMediaFault] = useState(null);
   const loadingTimer = useRef(null);
 
   useEffect(() => {
@@ -278,18 +323,24 @@ export default function WebView({ app, active, visible, flexLayout }) {
       // elle aussi, on ne se bat pas contre le site.)
       if (e.errorCode === -310 && Date.now() - redirectLoopRef.current > 30000) {
         redirectLoopRef.current = Date.now();
-        console.warn('[orbit] boucle de redirection détectée — purge de la session', app.name, e.url || '');
+        // `validatedURL`, pas `url` : l'événement `did-fail-load` d'un <webview>
+        // ne porte PAS de champ `url` (c'est le nom côté webContents du main
+        // process). On retombait donc toujours sur app.url, et la purge visait
+        // l'hôte de l'app au lieu de celui qui boucle — parfois le même, souvent
+        // pas (un SSO sur un autre domaine).
+        const failedUrl = e.validatedURL || app.url || '';
+        console.warn('[orbit] boucle de redirection détectée — purge de la session', app.name, failedUrl);
         logDiagnostic(
           app.id,
           app.name,
           'redirect-loop',
           'Boucle de redirection — cookies de l’hôte purgés',
-          e.url || app.url || ''
+          failedUrl
         );
         const sessionKey = app.sessionKey || `${app.profileId}:${app.id}`;
         let host = '';
         try {
-          host = new URL(e.url || app.url).hostname;
+          host = new URL(failedUrl).hostname;
         } catch {
           /* ignore */
         }
@@ -311,13 +362,32 @@ export default function WebView({ app, active, visible, flexLayout }) {
         return;
       }
       console.warn('[orbit] échec de chargement', app.name, e.errorCode, e.errorDescription);
+      const described = describeLoadFailure(e.errorCode, e.errorDescription);
       logDiagnostic(
         app.id,
         app.name,
         'load-failed',
-        `Échec de chargement (${e.errorCode})`,
-        `${e.errorDescription || ''} ${e.url || ''}`.trim()
+        `${described.title} (${described.name})`,
+        `${e.errorDescription || ''} ${e.validatedURL || ''}`.trim()
       );
+
+      // Interstitielle : seulement pour la frame principale. Une sous-ressource
+      // ou une iframe publicitaire qui échoue ne doit pas masquer une page qui
+      // s'affiche parfaitement — c'est le cas le plus courant, et le recouvrir
+      // d'un message d'erreur serait pire que le silence actuel.
+      if (!e.isMainFrame || !isDisplayableFailure(e.errorCode)) return;
+      let webContentsId = null;
+      try {
+        webContentsId = ref.current?.getWebContentsId?.() ?? null;
+      } catch {
+        /* webview détaché : l'interstitielle s'affichera sans l'offre HTTP */
+      }
+      setFailure({
+        code: e.errorCode,
+        description: e.errorDescription || '',
+        url: e.validatedURL || '',
+        webContentsId,
+      });
     };
 
     // Indicateur de chargement. Deux vitesses :
@@ -337,6 +407,11 @@ export default function WebView({ app, active, visible, flexLayout }) {
 
     const startLoading = () => {
       setCrashed(false);
+      // Un nouveau chargement commence : l'échec précédent n'a plus cours.
+      // C'est le bon moment (did-start-loading précède did-fail-load), et c'est
+      // le seul : effacer l'échec sur did-stop-loading ferait disparaître
+      // l'interstitielle aussitôt après l'avoir affichée.
+      setFailure(null);
       setAppLoading(app.id, true);
       clearTimeout(loadingTimer.current);
       loadingTimer.current = setTimeout(() => setLoading(true), 500);
@@ -409,6 +484,43 @@ export default function WebView({ app, active, visible, flexLayout }) {
     let timer = null;
     let stopped = false;
     let playing = false;
+    // Dernière panne déjà traitée (clé stable) : le sondage repasse toutes les
+    // secondes et redirait la même chose indéfiniment — une ligne de
+    // diagnostic par tour, et une bannière qui se rouvre juste après avoir été
+    // fermée.
+    let lastFaultKey = '';
+
+    // Guetteur de pannes, posé dans la page à chaque chargement. Idempotent
+    // côté page, donc sans risque à rejouer.
+    const installWatch = () => {
+      try {
+        const p = wv.executeJavaScript(WATCH_MEDIA_FN);
+        if (p && typeof p.catch === 'function') p.catch(() => {});
+      } catch {
+        /* webview pas attaché : le prochain dom-ready s'en chargera */
+      }
+    };
+
+    // Une panne observée dans la page ne dit pas POURQUOI. La réponse est
+    // souvent côté réseau (segment bloqué, cookie retiré, refus du CDN) : on va
+    // la chercher dans le journal du processus principal avant de conclure.
+    const reportFault = async (raw) => {
+      let failures = [];
+      try {
+        const id = wv.getWebContentsId();
+        const got = await window.electronAPI?.media?.failures?.(id);
+        if (Array.isArray(got)) failures = got;
+      } catch {
+        /* journal indisponible : on conclut sur la seule erreur du lecteur */
+      }
+      if (stopped) return;
+      const fault = describeMediaFault({ drm: raw.drm, error: raw.error, failures });
+      const key = mediaFaultKey(fault);
+      if (!fault || key === lastFaultKey) return;
+      lastFaultKey = key;
+      logDiagnostic(app.id, app.name, 'media-failed', fault.title, fault.detail);
+      setMediaFault(fault);
+    };
 
     const schedule = () => {
       if (stopped) return;
@@ -424,6 +536,10 @@ export default function WebView({ app, active, visible, flexLayout }) {
         if (p && typeof p.then === 'function') {
           p.then((info) => {
             if (stopped) return;
+            // Panne de lecture : traitée AVANT l'état de lecture, et quel que
+            // soit cet état — une vidéo en panne est justement une vidéo qui
+            // ne joue pas, donc celle qui ressort par « hasMedia: false ».
+            if (info && info.fault) reportFault(info.fault);
             if (info && info.hasMedia) {
               playing = !!(info.sessionPlaying || !info.paused);
               setMedia(app.id, {
@@ -460,18 +576,31 @@ export default function WebView({ app, active, visible, flexLayout }) {
       clearTimeout(timer);
       timer = setTimeout(tick, 100);
     };
+    // Nouvelle page : le guetteur est reposé, et la panne de la page
+    // précédente n'a plus cours (sinon la bannière suivrait l'utilisateur d'une
+    // vidéo à l'autre).
+    const onDomReady = () => {
+      lastFaultKey = '';
+      setMediaFault(null);
+      installWatch();
+    };
+    wv.addEventListener('dom-ready', onDomReady);
     wv.addEventListener('media-started-playing', onMediaEvent);
     wv.addEventListener('media-paused', onMediaEvent);
+    // Page déjà chargée au montage de cet effet (app réactivée, rendu rejoué) :
+    // on ne peut pas compter sur un prochain dom-ready.
+    if (domReadyRef.current) installWatch();
     schedule();
 
     return () => {
       stopped = true;
       clearTimeout(timer);
       clearMedia(app.id);
+      wv.removeEventListener('dom-ready', onDomReady);
       wv.removeEventListener('media-started-playing', onMediaEvent);
       wv.removeEventListener('media-paused', onMediaEvent);
     };
-  }, [app.id, setMedia, clearMedia]);
+  }, [app.id, app.name, setMedia, clearMedia]);
 
   // Quand on ouvre l'app (elle devient active), on la considère LUE : on réarme
   // le plafond de notifications → un prochain message re-notifiera.
@@ -622,9 +751,96 @@ export default function WebView({ app, active, visible, flexLayout }) {
         </div>
       )}
 
+      {/* Panne de lecture vidéo. Une bannière, pas un voile : la page marche,
+          c'est le lecteur qui ne démarre pas. Masquée pendant qu'une
+          interstitielle de chargement occupe déjà le cadre. */}
+      {mediaFault && visible && !failure && !crashed && (
+        <div className="absolute bottom-4 left-1/2 -translate-x-1/2 z-20 max-w-xl w-[calc(100%-2rem)] flex items-start gap-3 rounded-xl border border-warning/40 bg-bg-elevated/95 backdrop-blur-xs px-4 py-3 shadow-lg">
+          <AlertTriangle size={18} className="text-warning flex-shrink-0 mt-0.5" />
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium">{mediaFault.title}</p>
+            <p className="text-xs text-text-muted mt-0.5">{mediaFault.detail}</p>
+            {/* Un seul geste proposé, celui qui correspond à la cause. */}
+            {mediaFault.action === 'browser' && (
+              <button
+                onClick={() => window.open(app.url, '_blank')}
+                className="btn btn-sm mt-2"
+              >
+                <ExternalLink size={14} /> Ouvrir dans le navigateur
+              </button>
+            )}
+            {mediaFault.action === 'reload' && (
+              <button
+                onClick={() => {
+                  setMediaFault(null);
+                  try {
+                    ref.current?.reload();
+                  } catch {
+                    /* ignore */
+                  }
+                }}
+                className="btn btn-sm mt-2"
+              >
+                <RotateCw size={14} /> Recharger la page
+              </button>
+            )}
+          </div>
+          <button
+            onClick={() => setMediaFault(null)}
+            className="btn btn-ghost btn-sm flex-shrink-0"
+            aria-label="Fermer"
+          >
+            <X size={15} />
+          </button>
+        </div>
+      )}
+
+      {/* Échec de chargement : ce qui s'affichait avant, c'était un cadre vide.
+          Passe APRÈS la barre de progression et AVANT l'écran de crash : un
+          plantage est plus grave qu'un échec réseau et doit l'emporter. */}
+      {failure && visible && !crashed && (
+        <LoadFailure
+          app={app}
+          failure={failure}
+          onRetry={() => {
+            try {
+              // Même traitement que le bouton de l'écran de crash : on repart
+              // d'une URL nettoyée de ses jetons éphémères (CSRF Roundcube…),
+              // sinon « Réessayer » rejoue une adresse déjà périmée.
+              const clean = reloadUrlFor(app.url);
+              if (clean) ref.current?.loadURL(clean);
+              else ref.current?.reload();
+            } catch {
+              /* ignore */
+            }
+          }}
+          onLoadUrl={(url) => {
+            try {
+              ref.current?.loadURL(url);
+            } catch {
+              /* ignore */
+            }
+          }}
+          onAccepted={(kind, url) => {
+            // Trace volontairement visible dans Diagnostics : une connexion non
+            // chiffrée ou un certificat invalide accepté à la main doit laisser
+            // une trace consultable, pas seulement un souvenir.
+            logDiagnostic(
+              app.id,
+              app.name,
+              kind === 'http' ? 'insecure-http' : 'certificate-accepted',
+              kind === 'http'
+                ? 'Connexion non chiffrée acceptée par l’utilisateur'
+                : 'Certificat non valide accepté par l’utilisateur',
+              url
+            );
+          }}
+        />
+      )}
+
       {/* Récupération de crash : le processus de rendu de l'app a planté */}
       {crashed && visible && (
-        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-4 bg-bg-base/95 backdrop-blur-xs text-center p-6">
+        <div className="absolute inset-0 z-20 flex flex-col items-center justify-center gap-4 bg-bg-primary/95 backdrop-blur-xs text-center p-6">
           <div className="w-14 h-14 rounded-2xl bg-error/15 flex items-center justify-center">
             <AlertTriangle size={28} className="text-error" />
           </div>

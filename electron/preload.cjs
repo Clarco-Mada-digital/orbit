@@ -33,6 +33,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     ipcRenderer.invoke('extensions:ensureForPartition', partition),
   installWebStoreExtension: (idOrUrl) => ipcRenderer.invoke('extensions:installWebStore', { idOrUrl }),
   openExtensionOptions: (payload) => ipcRenderer.invoke('extensions:openOptions', payload),
+  // Panneau d'action d'une extension (ce qui s'ouvre sous son icône dans un
+  // navigateur). `activeTabId` = webContentsId du <webview> de l'app affichée :
+  // sans lui, le panneau s'ouvre en annonçant qu'aucune page n'est ouverte.
+  openExtensionPopup: (payload) => ipcRenderer.invoke('extensions:openPopup', payload),
+  closeExtensionPopup: () => ipcRenderer.invoke('extensions:closePopup'),
   getExtensionInfo: (payload) => ipcRenderer.invoke('extensions:getInfo', payload),
   pickExtensionFolder: () => ipcRenderer.invoke('extensions:pickFolder'),
   pickExtensionCrx: () => ipcRenderer.invoke('extensions:pickCrx'),
@@ -233,6 +238,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('shields:clearBlockedStats', webContentsId),
     // Applique un réglage qui ne prend effet qu'au chargement suivant.
     reload: (webContentsId) => ipcRenderer.invoke('shields:reload', webContentsId),
+    // La page affichée a-t-elle été réécrite en https par le bouclier ?
+    // { from, to } ou null. L'interstitielle d'échec s'en sert pour ne proposer
+    // « continuer en HTTP » que quand l'adresse demandée était bien en http.
+    lastHttpUpgrade: (webContentsId) =>
+      ipcRenderer.invoke('shields:lastHttpUpgrade', webContentsId),
+    // L'utilisateur accepte une connexion en clair pour cette origine, le temps
+    // de la session en cours.
+    allowHttp: (url) => ipcRenderer.invoke('shields:allowHttp', url),
+  },
+
+  // Lecture vidéo : pourquoi une vidéo n'a pas démarré
+  media: {
+    // Requêtes de média en échec sur cette page (statut du CDN, segment bloqué
+    // par le bloqueur, cookie retiré par le bouclier). Lu quand un <video>
+    // tombe en panne, pour remplacer l'écran noir par une explication.
+    failures: (webContentsId) => ipcRenderer.invoke('media:failures', webContentsId),
   },
 
   // Lecture vocale (moteur système / Piper hors ligne)
@@ -565,6 +586,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     lockProfile: (id) => ipcRenderer.invoke('security:lockProfile', id),
     dropProfile: (id) => ipcRenderer.invoke('security:dropProfile', id),
     setAutoLock: (minutes) => ipcRenderer.invoke('security:setAutoLock', minutes),
+    // Accepte un certificat TLS non valide pour cet hôte, jusqu'à la fermeture
+    // d'Orbit (jamais persisté). Déclenché par le bouton « Continuer quand
+    // même » de l'interstitielle d'échec de chargement.
+    trustCertificate: (url) => ipcRenderer.invoke('security:trustCertificate', url),
     onRelock: (callback) => {
       const listener = () => callback();
       ipcRenderer.on('orbit:relock', listener);

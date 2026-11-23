@@ -44,7 +44,14 @@ const SCRIPT_TYPES = new Set(['script', 'object']);
 // Renvoie `null` pour laisser passer, sinon une action à exécuter par main.js :
 //   { action: 'redirect', url, reason }
 //   { action: 'cancel', reason, domain }
-export function decideRequest(site, details) {
+//
+// `allowHttp` : l'utilisateur a explicitement accepté le HTTP non chiffré pour
+// cette origine (bouton « Continuer en HTTP » de l'interstitielle). On ne met
+// alors PAS à niveau — sinon son choix serait sans effet et il resterait devant
+// un cadre vide, ce que l'interstitielle est précisément là pour éviter. Les
+// autres protections (scripts, cookies, empreinte) continuent de s'appliquer :
+// accepter le http n'est pas baisser le bouclier.
+export function decideRequest(site, details, allowHttp = false) {
   if (!site || site.enabled === false) return null;
 
   const url = details.url;
@@ -53,7 +60,7 @@ export function decideRequest(site, details) {
   // les sous-ressources casserait tout site servant encore une image ou un
   // script en http, et le retour arrière vers http n'existe pas dans
   // onBeforeRequest (une redirection ratée = page morte, pas une page lente).
-  if (site.httpsUpgrade === true && details.resourceType === 'mainFrame') {
+  if (site.httpsUpgrade === true && !allowHttp && details.resourceType === 'mainFrame') {
     const up = upgradeToHttps(url);
     if (up) return { action: 'redirect', url: up, reason: 'https' };
   }

@@ -165,7 +165,7 @@ function ShieldsButton({ appId, webContentsId, url, menuAlign, menuPos, t }) {
 // navigateur). Les infos (nom, icône, page d'options) sont chargées une fois
 // via le main process, puis servies par le cache partagé : la barre, la liste
 // repliée et la page Extensions se partagent la même lecture de manifeste.
-function ExtensionIcon({ ext, onOpenMenu }) {
+function ExtensionIcon({ ext, onAction, onOpenMenu }) {
   const [info, setInfo] = useState(null);
 
   useEffect(() => {
@@ -180,9 +180,21 @@ function ExtensionIcon({ ext, onOpenMenu }) {
 
   return (
     <button
-      onClick={() => onOpenMenu(ext, info)}
+      // Clic gauche : le panneau de l'extension (son interface principale).
+      // Clic droit : le menu Options / Désactiver — comme dans un navigateur,
+      // où la gestion de l'extension est au clic droit et jamais au clic
+      // gauche, qui appartient à l'extension.
+      onClick={(e) => onAction(ext, info, e)}
+      onContextMenu={(e) => {
+        e.preventDefault();
+        onOpenMenu(ext, info);
+      }}
       className="w-9 h-9 flex items-center justify-center rounded-lg transition-colors hover:bg-bg-hover"
-      title={info?.name || ext.name}
+      title={
+        info?.hasPopup
+          ? `${info?.name || ext.name} — clic droit pour les options`
+          : info?.name || ext.name
+      }
     >
       {info?.iconUrl ? (
         <img
@@ -279,6 +291,11 @@ export function useTopbarModules({ onOpenQuickSwitcher, onOpenVault, placement =
   const phoneAvailable = Array.isArray(nativeApps) && nativeApps.includes('phone');
   const notifRef = useRef(null);
   const [extMenu, setExtMenu] = useState(null); // { ext, info } | null
+  // Un panneau d'extension est-il ouvert ? Il vit dans une FENÊTRE séparée,
+  // affichée sans prendre le focus (sinon il deviendrait lui-même l'onglet
+  // actif — voir extensions:openPopup). N'ayant pas le focus, il ne peut pas
+  // se refermer tout seul au clic ailleurs : c'est l'interface qui s'en charge.
+  const [extPopupOpen, setExtPopupOpen] = useState(false);
   const extMenuRef = useRef(null);
   const [showExtsPopover, setShowExtsPopover] = useState(false);
   const [showSplitMenu, setShowSplitMenu] = useState(false);
@@ -445,6 +462,83 @@ const app = apps.find((a) => a.id === activeApp)
       if (info) setExtMenu((cur) => (cur?.ext.id === ext.id ? { ext, info } : cur));
     });
   };
+
+  // Clic sur l'icône d'une extension — le geste qu'on attend d'un navigateur.
+  //
+  // Si l'extension a un PANNEAU d'action, c'est lui qu'on ouvre : c'est son
+  // interface principale (analyser la page, lancer un rapport…). Avant, le clic
+  // n'offrait que « Options » et « Désactiver », ce qui rendait inutilisables
+  // les extensions dont tout se passe dans ce panneau.
+  //
+  // Sans panneau, on garde le menu : c'est alors le seul geste disponible.
+  const openExtAction = (ext, info, event) => {
+    // L'ancrage se lit TOUT DE SUITE : `currentTarget` est remis à null dès
+    // que le gestionnaire rend la main, donc après le moindre `await`.
+    let anchor;
+    try {
+      const r = event?.currentTarget?.getBoundingClientRect?.();
+      if (r) anchor = { x: Math.round(r.left + r.width / 2), y: Math.round(r.bottom + 6) };
+    } catch {
+      /* ancrage optionnel : le panneau se centrera */
+    }
+    // Le panneau doit savoir quelle page est affichée, sinon il s'ouvre pour
+    // annoncer qu'aucune page ne l'est (voir extension-popup-preload.cjs).
+    const activeTabId = activeApp ? getWebContentsIdFor(activeApp) : null;
+    // …et son ADRESSE : Electron n'accorde pas `activeTab`, donc l'extension
+    // reçoit une URL vide et beaucoup de panneaux abandonnent en silence.
+    // L'URL VIVE du webview d'abord (l'utilisateur a pu naviguer dans l'app),
+    // l'URL enregistrée en repli.
+    let activeTabUrl = app?.url || '';
+    try {
+      activeTabUrl = getWebview(activeApp)?.getURL?.() || activeTabUrl;
+    } catch {
+      /* webview pas prêt : l'URL enregistrée fera l'affaire */
+    }
+    const activeTabTitle = app?.title || app?.name || '';
+
+    const lancer = (resolu) => {
+      // Pas de panneau : le menu reste le seul geste utile.
+      if (!resolu?.hasPopup) return openExtMenu(ext);
+      setShowExtsPopover(false);
+      setExtMenu(null);
+      setExtPopupOpen(true);
+      window.electronAPI?.openExtensionPopup?.({
+        id: ext.id,
+        path: ext.path,
+        partition: activeAppPartition,
+        activeTabId,
+        activeTabUrl,
+        activeTabTitle,
+        anchor,
+      });
+    };
+
+    // Infos déjà connues (icône de la barre) : on part sans attendre. Sinon on
+    // passe par le cache partagé — une lecture de manifeste, pas un aller-retour.
+    if (info) lancer(info);
+    else loadExtensionInfo(ext).then(lancer).catch(() => openExtMenu(ext));
+  };
+
+  // Fermer le panneau d'une extension : un clic N'IMPORTE OÙ dans Orbit, ou
+  // Échap. Il est dans une autre fenêtre, sans focus — il ne recevra donc
+  // jamais l'événement lui-même, et resterait affiché indéfiniment.
+  useEffect(() => {
+    if (!extPopupOpen) return undefined;
+    const fermer = () => {
+      setExtPopupOpen(false);
+      window.electronAPI?.closeExtensionPopup?.();
+    };
+    const surTouche = (e) => {
+      if (e.key === 'Escape') fermer();
+    };
+    // `mousedown` et non `click` : on ferme dès l'appui, comme un menu natif.
+    document.addEventListener('mousedown', fermer);
+    document.addEventListener('keydown', surTouche);
+    return () => {
+      document.removeEventListener('mousedown', fermer);
+      document.removeEventListener('keydown', surTouche);
+    };
+  }, [extPopupOpen]);
 
   // Fermer les menus (extension + partage) en cliquant à l'extérieur
   useEffect(() => {
@@ -659,6 +753,7 @@ const app = apps.find((a) => a.id === activeApp)
                     <ExtensionIcon
                       key={ext.id}
                       ext={ext}
+                      onAction={openExtAction}
                       onOpenMenu={openExtMenu}
                     />
                   ))}
@@ -710,7 +805,13 @@ const app = apps.find((a) => a.id === activeApp)
                             className="flex items-center gap-2 px-2 py-1.5 hover:bg-bg-hover transition-colors group"
                           >
                             <button
-                              onClick={() => openExtMenu(ext)}
+                              // Même règle que pour une icône épinglée : clic
+                              // gauche = l'extension, clic droit = sa gestion.
+                              onClick={(e) => openExtAction(ext, null, e)}
+                              onContextMenu={(e) => {
+                                e.preventDefault();
+                                openExtMenu(ext);
+                              }}
                               className="flex-1 flex items-center gap-3 px-2 py-1 text-sm text-left truncate"
                             >
                               <ExtPopoverIcon ext={ext} />

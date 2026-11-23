@@ -17,7 +17,20 @@ import reactHooks from 'eslint-plugin-react-hooks';
 
 export default [
   {
-    ignores: ['dist/**', 'dist-electron/**', 'build/**', 'extensions-dist/**', 'node_modules/**'],
+    ignores: [
+      'dist/**',
+      'dist-electron/**',
+      'build/**',
+      'extensions-dist/**',
+      'node_modules/**',
+      // Profils Electron de développement (`npm run dev:fresh`). Ce ne sont pas
+      // des sources : on y trouve les caches, les bases de session et surtout
+      // le code des extensions Chrome installées pour essai. Les analyser
+      // faisait échouer `npm run lint` sur du code tiers qu'on ne corrigera
+      // jamais — et le dossier est déjà ignoré par git.
+      '.dev-profile/**',
+      '*-profile/**',
+    ],
   },
 
   js.configs.recommended,

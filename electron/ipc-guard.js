@@ -22,7 +22,23 @@ const GUEST_CHANNELS = new Set([
   'orbit-dialog:open',
   'orbit-dialog:poll',
   'orbit-dialog:drop',
+  // Réglage d'affichage du bouton de téléchargement posé sur les vidéos,
+  // demandé par media-button-preload.cjs au début de chaque page. Sans cette
+  // entrée, l'invoke était refusé : le preload retombait sur son défaut, et le
+  // choix « jamais sur la vidéo » restait sans effet.
+  'media:buttonSurface',
+  // Données de test personnalisées, lues par credentials-preload.cjs pour
+  // l'extension Fake Data. Même symptôme : refusé, donc le formulaire se
+  // remplissait de valeurs génériques au lieu de celles de l'utilisateur.
+  'fakedata:get',
 ]);
+
+// Ces deux canaux sont en LECTURE SEULE et ne portent aucun secret : l'un
+// renvoie un mot-clé d'affichage, l'autre les données de test que
+// l'utilisateur a lui-même saisies pour les injecter dans des pages. Les
+// ajouter n'élargit pas la surface sensible — c'est tout l'objet d'une liste
+// blanche nominative plutôt que d'un préfixe `media:` ou `fakedata:`, qui
+// aurait aussi ouvert les canaux voisins (`media:failures`…).
 
 export function isGuestChannel(channel) {
   const name = String(channel || '');
