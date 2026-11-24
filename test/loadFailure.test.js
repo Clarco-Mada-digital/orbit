@@ -125,3 +125,16 @@ test('hostLabel garde le port et ne jette jamais', () => {
   assert.equal(hostLabel('pas une url'), '');
   assert.equal(hostLabel(undefined), '');
 });
+
+test('réseau privé : .onion hors de Tor et tunnel non connecté sont des protections expliquées', async () => {
+  const { describeLoadFailure } = await import('../src/lib/loadFailure.js');
+  const onion = 'http://duckduckgogg42xjoc72x3sjasowoarfbgcmvfimaftt6twagswzczad.onion/';
+  assert.equal(describeLoadFailure(-20, '', { url: onion }).kind, 'onion');
+  assert.equal(describeLoadFailure(-20, '', { url: onion, network: 'vpn' }).kind, 'onion');
+  const p = describeLoadFailure(-130, '', { url: 'https://example.com/', network: 'tor' });
+  assert.equal(p.kind, 'privnet');
+  assert.equal(p.title, 'Tor n’est pas connecté');
+  assert.equal(describeLoadFailure(-130, '', { url: 'https://example.com/', network: 'vpn' }).title, 'Le VPN n’est pas connecté');
+  assert.equal(describeLoadFailure(-120, '', { url: onion, network: 'tor' }).title, 'Ce site .onion ne répond pas');
+  assert.equal(describeLoadFailure(-130, '', { url: 'https://example.com/' }).kind, 'proxy');
+});

@@ -4,6 +4,7 @@ import { useStore } from '../stores/useStore';
 import { EMOJI_CHOICES, COLOR_CHOICES, faviconServiceUrl } from '../lib/appIcons';
 import { homeUrlFor } from '../lib/urls';
 import AppIcon from './AppIcon';
+import NetworkChoice from './NetworkChoice';
 import { useT } from '../lib/i18n';
 
 function normalizeUrl(url) {
@@ -251,13 +252,7 @@ export default function EditAppModal({ app, onClose }) {
             <label className="text-xs text-text-muted block mb-1.5">
               {t('edit.proxyLabel')}
             </label>
-            <input
-              type="text"
-              value={proxy}
-              onChange={(e) => setProxy(e.target.value)}
-              placeholder="socks5://host:port"
-              className="input"
-            />
+            <NetworkChoice value={proxy} onChange={setProxy} inheritLabel="Comme le profil" />
           </div>
         </div>
 

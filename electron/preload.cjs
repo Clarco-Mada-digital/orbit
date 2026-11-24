@@ -540,6 +540,32 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setTranslateConfig: (cfg) => ipcRenderer.invoke('translate:setConfig', cfg),
   // Proxy / VPN par partition
   applyProxy: (payload) => ipcRenderer.invoke('proxy:apply', payload),
+  // Mode panique : tout cacher, couper le son, verrouiller
+  panic: {
+    configure: (cfg) => ipcRenderer.invoke('panic:configure', cfg),
+    trigger: () => ipcRenderer.invoke('panic:trigger'),
+  },
+  // Réseau privé intégré (Tor / VPN WireGuard)
+  privateNet: {
+    state: () => ipcRenderer.invoke('privateNet:state'),
+    install: (engine) => ipcRenderer.invoke('privateNet:install', { engine }),
+    startTor: () => ipcRenderer.invoke('privateNet:startTor'),
+    stopTor: () => ipcRenderer.invoke('privateNet:stopTor'),
+    startVpn: () => ipcRenderer.invoke('privateNet:startVpn'),
+    stopVpn: () => ipcRenderer.invoke('privateNet:stopVpn'),
+    setBridges: (payload) => ipcRenderer.invoke('privateNet:setBridges', payload),
+    setAutoStart: (on) => ipcRenderer.invoke('privateNet:setAutoStart', { on }),
+    setWarnings: (on) => ipcRenderer.invoke('privateNet:setWarnings', { on }),
+    importVpn: () => ipcRenderer.invoke('privateNet:importVpn'),
+    removeVpn: () => ipcRenderer.invoke('privateNet:removeVpn'),
+    check: (network) => ipcRenderer.invoke('privateNet:check', { network }),
+    newIdentity: () => ipcRenderer.invoke('privateNet:newIdentity'),
+    onChanged: (callback) => {
+      const listener = (_e, st) => callback(st);
+      ipcRenderer.on('privateNet:changed', listener);
+      return () => ipcRenderer.removeListener('privateNet:changed', listener);
+    },
+  },
   // Portail captif (Wi-Fi public)
   checkCaptivePortal: () => ipcRenderer.invoke('captive:check'),
   openCaptivePortal: () => ipcRenderer.invoke('captive:open'),

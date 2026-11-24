@@ -8,15 +8,65 @@ Format : une section `## [X.Y.Z] — AAAA-MM-JJ` par version, puis des
 sous-sections `### Ajouté` / `### Modifié` / `### Corrigé` / `### Sécurité`.
 La plus récente en premier.
 
-## [Non publié]
+## [1.21.3] — 2026-11-24
 
 ### Ajouté
+- **Réseau privé : Tor et VPN intégrés**, activables pour tout Orbit, un profil
+  ou une seule app (choix « Normale / Tor / VPN / Proxy… »). Tor : paquet
+  officiel du Tor Project téléchargé à la demande et vérifié par empreinte
+  (signature des empreintes contrôlée à la publication), ponts Snowflake /
+  obfs4 / meek / personnalisés, nouvelle identité, vérification de
+  l'adresse de sortie. VPN : configuration WireGuard de votre fournisseur
+  (Proton VPN Free recommandé), chiffrée par le trousseau du système, portée
+  par wireproxy — sans droits administrateur. Fermé par défaut : moteur
+  arrêté = aucune requête en direct. `.onion` bloqué hors de Tor.
+- **Annuaire de 14 sites .onion officiels** (DuckDuckGo, Ahmia, BBC, Proton
+  Mail, SecureDrop…) : chaque adresse publiée par l'organisation elle-même
+  (en-tête Onion-Location ou page officielle) et ouverte par Tor ; « Ajouter »
+  crée l'app déjà réglée sur Tor.
+- **Repère visuel du tunnel** : liseré violet (Tor) ou turquoise (VPN) autour
+  des apps en tunnel, pastille d'état (protégé / connexion / coupé).
+- **Assistant de sortie de tunnel** : un lien, une recherche ou « ouvrir dans le
+  navigateur » qui ferait sortir une app de Tor/VPN déclenche un avertissement
+  local — rester protégé, continuer ou annuler. Les fenêtres ouvertes par une
+  app en tunnel y restent. Repère et avertissements désactivables.
+- **Mode panique** : un raccourci global (Ctrl+Alt+H) cache toutes les fenêtres,
+  coupe le son, ferme les coffres et verrouille Orbit ; en option, arrête
+  Tor/VPN et efface les données des apps Tor. Aussi dans la palette.
+- Page bloquée par protection (`.onion` hors de Tor, tunnel non connecté) :
+  écran explicatif avec le bon geste (« Ouvrir cette app avec Tor », « Se
+  connecter »), rechargement automatique dès que le tunnel est prêt.
+- **Icônes de la boutique embarquées** : les 166 apps ont leur vraie icône,
+  affichée instantanément et hors ligne, sans requête à un service tiers.
+  Icônes monochromes posées sur une tuile contrastée, lisibles dans les deux
+  thèmes.
+- Boutique : recherche sans accents ni majuscules, aussi par catégorie
+  (« vpn », « musique », « ia »…).
+- Téléphone : un téléphone qui affiche « Associer avec un code » est détecté
+  sur le réseau — seul le code à 6 chiffres reste à taper ; badge Wi-Fi / USB.
 - **Téléphone sans câble.** Association par **QR code** (Android 11+, format
   d’Android Studio), bouton **Passer en sans fil** pour un téléphone branché
   (tout Android), liste des téléphones **à proximité** sur le réseau, et
   **reconnexion automatique** des téléphones mémorisés — retrouvés par leur nom
   même quand le port du débogage sans fil change. Testé sur un Samsung A71
   (Android 13) : passage en Wi-Fi en 2 s, reconnexion en 0,3 s.
+
+### Corrigé
+- Boutique : des icônes manquaient ou étaient fausses — icon.horse refusait près
+  de la moitié des demandes (429), Google renvoyait un globe générique pour
+  WhatsApp, Proton, AWS…, et toutes les apps Google montraient le même « G ».
+
+### Sécurité
+- Apps passées par Tor : ni historique, ni favicon chargé hors du tunnel (il
+  révélait la vraie adresse IP au site), ni service d'icônes tiers ; jamais
+  d'adresse `.onion` envoyée à un service d'icônes. « Ouvrir dans le
+  navigateur » masqué pour ces pages (il sortait du tunnel).
+- Le bouclier HTTPS ne « met plus à niveau » les adresses `.onion` (déjà
+  chiffrées par Tor ; cela cassait Ahmia, le Tor Project…).
+- **Fuite WebRTC derrière un proxy** : la protection qui confine le WebRTC au
+  proxy ne s'appliquait jamais (méthode appelée sur la session au lieu de la
+  page) — une page pouvait révéler la vraie adresse IP. Corrigé pour toutes
+  les pages, existantes et futures.
 
 ## [1.21.2] — 2026-11-24
 

@@ -778,6 +778,12 @@ export async function discoverWireless() {
       return { name: mdnsBaseName(x.name), address: x.address, label: mem?.label || '', known: Boolean(mem), legacy: x.type === MDNS_LEGACY };
     }),
     remembered: known,
+    // Téléphones en train d'afficher « Associer avec un code » : leur adresse
+    // d'association est connue, il ne manque que le code à 6 chiffres.
+    // (Les annonces de NOTRE QR code en cours sont exclues.)
+    pairing: all
+      .filter((x) => x.type === MDNS_PAIRING && !(qrSession && mdnsBaseName(x.name) === qrSession.name))
+      .map((x) => ({ name: mdnsBaseName(x.name), address: x.address, host: x.host })),
   };
 }
 
@@ -897,7 +903,26 @@ export async function pairDevice({ address, code } = {}) {
   const out = await adb(null, ['pair', value, pairing], { timeout: 30000 });
   const text = `${out.stdout}${out.stderr}`.trim();
   const ok = out.ok && /successfully paired/i.test(text);
-  return { success: ok, output: text };
+  if (!ok) return { success: false, output: text };
+  // Associé : on se connecte tout de suite au service de connexion du même
+  // hôte (son port diffère de celui de l'association).
+  const host = value.replace(/:\d+$/, '');
+  for (let i = 0; i < 10; i++) {
+    const devices = parseAdbDevices((await adb(null, ['devices'], { timeout: 10000 })).stdout);
+    const auto = devices.find((d) => d.state === 'device' && d.wireless && d.serial.startsWith(`${host}:`));
+    if (auto) {
+      setSettings({ serial: auto.serial });
+      await rememberConnected(auto.serial, auto.serial);
+      return { success: true, connected: true, serial: auto.serial, output: text };
+    }
+    const service = (await mdnsServices()).find((x) => x.type === MDNS_CONNECT && x.host === host);
+    if (service) {
+      const res = await connectDevice(service.address, { name: service.name });
+      if (res.success) return { ...res, connected: true };
+    }
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  return { success: true, connected: false, output: text };
 }
 
 export async function disconnectDevice(serial) {

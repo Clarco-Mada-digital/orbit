@@ -875,6 +875,79 @@ laquelle installer.
 
 ## 9. Confidentialité et sécurité
 
+### Mode panique
+
+Réglages → Sécurité → **Mode panique**. Un raccourci global — `Ctrl+Alt+H`
+par défaut, modifiable — agit même quand Orbit n’est pas au premier plan :
+toutes ses fenêtres disparaissent (barre des tâches comprise), le son est
+coupé, les coffres se ferment et Orbit se verrouille si un code est défini.
+En option : arrêter Tor et le VPN, effacer les données des apps passées par
+Tor. Aussi dans la palette de commandes : « Mode panique ». Pour revenir :
+le raccourci d’invocation ou l’icône de la zone de notification.
+
+### Réseau privé : Tor et VPN intégrés
+
+Réglages → Confidentialité → **Réseau privé**. Pour tout Orbit, un profil
+(Profils) ou une seule app (Modifier l’app → **Réseau**), choisissez :
+**Normale**, **Tor**, **VPN** ou **Proxy…** (proxy SOCKS5/HTTP personnalisé).
+Le choix de l’app prime sur celui du profil, qui prime sur celui d’Orbit.
+
+**Tor** cache votre adresse IP derrière trois relais et ouvre les sites en
+`.onion`. **Installer Tor** télécharge le paquet officiel du Tor Project
+(20 à 35 Mo), dont l’empreinte est vérifiée avant toute exécution. Dans un
+pays où Tor est bloqué, choisissez un **pont** : Snowflake d’abord, sinon
+obfs4, meek en dernier recours, ou vos propres ponts — obfs4, WebTunnel… —
+obtenus sur bridges.torproject.org.
+**Nouvelle identité** change de circuit ; **Vérifier** affiche l’adresse vue
+par les sites, confirmée par le Tor Project.
+
+> Orbit n’est pas Tor Browser : il cache votre adresse, mais votre navigateur
+> reste reconnaissable. Pour un anonymat fort, utilisez Tor Browser. Un compte
+> connecté vous identifie, Tor ou pas.
+
+**Sites .onion officiels.** Sous les réglages de Tor, un annuaire propose
+14 sites : rechercher (DuckDuckGo ; Ahmia, le moteur des sites `.onion`),
+s’informer (BBC, Deutsche Welle, ProPublica, Internet Archive, Amnesty),
+outils (Proton Mail, Tor Project, Riseup, Mullvad, Whonix) et alerter en
+sécurité (SecureDrop, Freedom of the Press). **Ajouter** crée l’app, déjà
+réglée sur Tor. Chaque adresse est publiée par l’organisation elle-même :
+méfiez-vous des « annuaires » trouvés ailleurs, les fausses adresses `.onion`
+servent à voler des identifiants. Si vous ouvrez une adresse `.onion` dans
+une app qui n’est pas sur Tor, Orbit la bloque et propose **Ouvrir cette app
+avec Tor**.
+
+Pour une app passée par Tor, Orbit n’enregistre **aucun historique** et ne
+charge **aucune icône** hors du tunnel (un favicon chargé directement
+révélerait votre adresse au site).
+
+**Savoir où l’on est.** Une app en tunnel est encadrée d’un liseré — violet
+pour Tor, turquoise pour le VPN — avec une pastille en bas à gauche :
+*protégé*, *connexion…* ou *coupé*. Les autres apps ne changent pas.
+
+**Ne pas sortir par accident.** Les fenêtres qu’ouvre une app en tunnel
+restent dans le tunnel. Si une action devait vous en faire sortir — règle
+« ouvrir dans le navigateur », « Rechercher sur Google », « Ouvrir dans le
+navigateur » du clic droit —, Orbit vous prévient : **Rester protégé** (la
+page s’ouvre dans Orbit, par le même tunnel), **Continuer hors du tunnel** ou
+**Annuler**. Repère et avertissements se désactivent dans Réseau privé.
+
+**VPN** : importez le fichier WireGuard (`.conf`) de votre fournisseur. Option
+gratuite fiable : **Proton VPN Free** (données illimitées, sans publicité,
+quelques pays) — compte Proton VPN → Téléchargements → Configuration WireGuard.
+Mullvad, IVPN, Windscribe ou votre propre serveur conviennent aussi. Le fichier
+contient une clé privée : Orbit le chiffre avec le trousseau du système. Le
+moteur (wireproxy, ≈ 4 Mo) s’installe à la première connexion, sans droits
+administrateur ni carte réseau virtuelle — seules les apps choisies passent par
+le VPN, le reste de l’ordinateur n’est pas touché.
+
+**Garanties.** Tant que Tor ou le VPN n’est pas connecté, les apps réglées
+dessus **ne chargent rien** : jamais de repli silencieux sur la connexion
+normale. Les noms de domaine sont résolus dans le tunnel (pas de fuite DNS) et
+le WebRTC y est confiné — certains appels audio/vidéo peuvent alors échouer.
+Hors de Tor, les adresses `.onion` sont bloquées pour ne pas être révélées à
+votre fournisseur d’accès. **Connexion automatique** démarre le moteur dès
+qu’une app réglée dessus s’ouvre.
+
 - Les profils et applications utilisent des sessions web isolées selon la
   configuration ; le SSO est facultatif.
 - Le stockage des cookies dans les versions empaquetées utilise le mécanisme de

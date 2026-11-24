@@ -11,7 +11,7 @@
     "icons": "node scripts/generate-icons.js",
     "electron:dev": "concurrently \"npm run dev\" \"wait-on http://localhost:5173 && electron .\"",
     "test": "node --test test/*.test.js",
-    "lint": "eslint . --max-warnings 41",
+    "lint": "eslint . --max-warnings 40",
     "lint:fix": "eslint . --fix",
     "electron:build": "npm run icons && npm run build && electron-builder",
     "release": "node scripts/release.js",
@@ -22,7 +22,9 @@
     "export:extensions": "node scripts/export-extensions.cjs",
     "export:fake-data": "node scripts/export-fake-data.cjs",
     "dev:fresh": "concurrently \"npm run dev\" \"wait-on http://localhost:5173 && electron . --user-data-dir=.dev-profile\"",
-    "drivers": "node scripts/bundle-db-drivers.mjs"
+    "drivers": "node scripts/bundle-db-drivers.mjs",
+    "icons:recipes": "node scripts/fetch-recipe-icons.mjs",
+    "net-engines": "node scripts/update-net-engines.mjs"
   },
   "keywords": [
     "electron",
@@ -135,6 +137,7 @@
       "src/lib/aiProviders.js",
       "src/lib/loadFailure.js",
       "src/lib/backupCategories.js",
+      "src/lib/privateNetwork.js",
       "build/icon.png",
       "package.json"
     ],

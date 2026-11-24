@@ -44,7 +44,8 @@ export function getHostname(url) {
 // Google s2 reste en repli pour les domaines qu'icon.horse ne connaît pas.
 export function faviconServiceUrl(url, useFallback = false) {
   const host = getHostname(url);
-  if (!host) return '';
+  // .onion : ne JAMAIS confier l'adresse à un service d'icônes tiers.
+  if (!host || /\.onion\.?$/i.test(host)) return '';
   return useFallback
     ? `https://www.google.com/s2/favicons?domain=${host}&sz=64`
     : `https://icon.horse/icon/${host}`;

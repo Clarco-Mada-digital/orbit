@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  EyeOff,
   Search,
   X,
   ArrowRight,
@@ -295,6 +296,15 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
         color: '#ec4899',
         keywords: ['enregistrer', 'record', 'video', 'vidéo', 'ecran', 'écran', 'camera', 'caméra', 'studio', 'capture', 'demo', 'tuto'],
         run: () => window.dispatchEvent(new Event('orbit:studio-open')),
+      },
+      {
+        id: 'panic',
+        name: 'Mode panique',
+        subtitle: 'Tout cacher, couper le son, verrouiller — tout de suite',
+        icon: <EyeOff size={22} />,
+        color: '#ef4444',
+        keywords: ['panique', 'panic', 'cacher', 'masquer', 'urgence', 'boss', 'discret', 'fermer tout'],
+        run: () => window.electronAPI?.panic?.trigger?.(),
       },
       {
         id: 'readall',

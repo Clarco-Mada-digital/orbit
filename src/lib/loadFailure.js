@@ -36,6 +36,8 @@ export const ERR_TOO_MANY_REDIRECTS = -310;
 //   unknown — tout le reste
 const FAILURES = {
   '-2': { kind: 'unknown', name: 'ERR_FAILED', title: 'Le chargement a échoué' },
+  '-20': { kind: 'unknown', name: 'ERR_BLOCKED_BY_CLIENT', title: 'Page bloquée par Orbit' },
+  '-120': { kind: 'refused', name: 'ERR_SOCKS_CONNECTION_FAILED', title: 'Connexion impossible par le tunnel' },
   '-6': { kind: 'server', name: 'ERR_FILE_NOT_FOUND', title: 'Fichier introuvable' },
   '-7': { kind: 'timeout', name: 'ERR_TIMED_OUT', title: 'Le site ne répond pas' },
   '-15': { kind: 'server', name: 'ERR_SOCKET_NOT_CONNECTED', title: 'Connexion interrompue' },
@@ -100,10 +102,55 @@ const DETAILS = {
 // Les échecs de CERTIFICAT gardent leur message propre même après mise à
 // niveau : le serveur parle bien TLS, il présente simplement un certificat
 // qu'on refuse — « ce site ne gère pas HTTPS » serait faux dans l'autre sens.
-export function describeLoadFailure(code, description = '', { upgraded = false } = {}) {
+//
+// `network` : réseau privé de l'app ('tor' | 'vpn' | null) et `url` : adresse
+// demandée. Ils expliquent deux échecs qui sont des PROTECTIONS, pas des pannes :
+//   - une adresse .onion hors de Tor (bloquée pour ne pas la révéler au FAI) ;
+//   - une app réglée sur Tor ou VPN alors que le moteur n'est pas connecté
+//     (rien ne part en direct, par conception).
+const NETWORK_NAMES = { tor: 'Tor', vpn: 'Le VPN' };
+
+function isOnion(url) {
+  try {
+    return /\.onion\.?$/i.test(new URL(url).hostname);
+  } catch {
+    return false;
+  }
+}
+
+export function describeLoadFailure(code, description = '', { upgraded = false, url = '', network = null } = {}) {
   const num = Number(code);
   const known = FAILURES[String(num)];
   const kind = known ? known.kind : 'unknown';
+  if (isOnion(url) && network !== 'tor') {
+    return {
+      code: num,
+      name: known ? known.name : `ERR_${num}`,
+      kind: 'onion',
+      title: 'Adresse .onion : il faut Tor',
+      detail:
+        'Les sites en .onion ne sont joignables que par le réseau Tor. Orbit a bloqué la page sans rien envoyer : une tentative normale aurait révélé l’adresse à votre fournisseur d’accès.',
+    };
+  }
+  if (NETWORK_NAMES[network] && (num === -130 || num === -20 || (num === -120 && !isOnion(url)))) {
+    return {
+      code: num,
+      name: known ? known.name : `ERR_${num}`,
+      kind: 'privnet',
+      network,
+      title: `${NETWORK_NAMES[network]} n’est pas connecté`,
+      detail: `Cette app passe par ${network === 'tor' ? 'Tor' : 'le VPN'}. Tant qu’il n’est pas connecté, rien ne part par la connexion normale — c’est voulu, pour ne jamais exposer votre adresse.`,
+    };
+  }
+  if (network === 'tor' && num === -120 && isOnion(url)) {
+    return {
+      code: num,
+      name: 'ERR_SOCKS_CONNECTION_FAILED',
+      kind: 'timeout',
+      title: 'Ce site .onion ne répond pas',
+      detail: 'Tor est connecté, mais ce service caché est injoignable : il est peut-être hors ligne, ou l’adresse est erronée. Les sites .onion changent souvent.',
+    };
+  }
   if (upgraded && kind !== 'cert' && HTTP_FALLBACK_KINDS.has(kind)) {
     return {
       code: num,

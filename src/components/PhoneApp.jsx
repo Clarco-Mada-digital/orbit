@@ -926,11 +926,15 @@ export default function PhoneApp({ visible, onClose }) {
     setPairCode('');
     setPairOpen(false);
     setConnectError('');
+    if (res.connected) {
+      await refreshStatus();
+      return;
+    }
     // Le port d'appairage est différent du port de connexion : on ne garde que
     // l'hôte et l'utilisateur lit le port « IP et port » dans Android.
     setConnectAddress(`${pairAddress.replace(/:\d+$/, '')}:`);
     setConnectOpen(true);
-  }, [pairAddress, pairCode]);
+  }, [pairAddress, pairCode, refreshStatus]);
 
   const [wirelessBusy, setWirelessBusy] = useState(false);
   const [wirelessMsg, setWirelessMsg] = useState('');
@@ -1862,6 +1866,15 @@ export default function PhoneApp({ visible, onClose }) {
                     {device.model}
                     {device.android ? ` · Android ${device.android}` : ''} ·{' '}
                     <span className="font-mono">{device.serial}</span>
+                    {/:\d+$|_adb-tls-connect/.test(device.serial || '') ? (
+                      <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2 py-0.5 text-[10px] font-medium text-emerald-500">
+                        <Wifi size={10} /> Wi-Fi
+                      </span>
+                    ) : (
+                      <span className="ml-2 inline-flex items-center gap-1 rounded-full bg-bg-hover px-2 py-0.5 text-[10px] font-medium text-text-secondary">
+                        <Usb size={10} /> USB
+                      </span>
+                    )}
                   </p>
                   <div className="mt-2 flex flex-wrap gap-2">
                     <button

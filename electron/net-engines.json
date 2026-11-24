@@ -1,0 +1,64 @@
+{
+  "comment": "Moteurs du réseau privé. Empreintes Tor tirées de sha256sums-signed-build.txt, signature vérifiée (clé Tor Browser Developers EF6E286DDA85EA2A4BA7DE684E2C6E8793298290). Mise à jour : node scripts/update-net-engines.mjs",
+  "tor": {
+    "version": "16.0.1",
+    "torVersion": "0.4.9.16",
+    "verifiedAt": "2026-11-24",
+    "files": {
+      "linux-x86_64": {
+        "url": "https://dist.torproject.org/torbrowser/16.0.1/tor-expert-bundle-linux-x86_64-16.0.1.tar.gz",
+        "sha256": "7039cb16060ab22e669852e55774d894b55f25ea8bd0ab7194d3478429a58725"
+      },
+      "linux-aarch64": {
+        "url": "https://dist.torproject.org/torbrowser/16.0.1/tor-expert-bundle-linux-aarch64-16.0.1.tar.gz",
+        "sha256": "67040520d44c87ccaaf5aa7df0dc1ff122eb938dbb600ae7722e8b6b75282a4b"
+      },
+      "macos-x86_64": {
+        "url": "https://dist.torproject.org/torbrowser/16.0.1/tor-expert-bundle-macos-x86_64-16.0.1.tar.gz",
+        "sha256": "15464d99adc3bb4de1308260d79878336b04a1ac1aeff83e10f192de7d235946"
+      },
+      "macos-aarch64": {
+        "url": "https://dist.torproject.org/torbrowser/16.0.1/tor-expert-bundle-macos-aarch64-16.0.1.tar.gz",
+        "sha256": "0b7d022017c31e3f972d06465bcd7ac50feb66ac825547419a934914fe4bb156"
+      },
+      "windows-x86_64": {
+        "url": "https://dist.torproject.org/torbrowser/16.0.1/tor-expert-bundle-windows-x86_64-16.0.1.tar.gz",
+        "sha256": "9eed3c3ff1fe43df034ce360196c9ec95472560d77ff55614d0cd5120edea27b"
+      },
+      "windows-i686": {
+        "url": "https://dist.torproject.org/torbrowser/16.0.1/tor-expert-bundle-windows-i686-16.0.1.tar.gz",
+        "sha256": "4aa4bed8397349612c7dda0e13697b92f40059763a7158d037be7bed5429232c"
+      }
+    }
+  },
+  "wireproxy": {
+    "version": "1.1.3",
+    "verifiedAt": "2026-11-24",
+    "files": {
+      "linux-x86_64": {
+        "url": "https://github.com/windtf/wireproxy/releases/download/v1.1.3/wireproxy_linux_amd64.tar.gz",
+        "sha256": "e88c1d090740373fc606c1bafd81d9a5eadc642cce5667616e20e9d7a444f51c"
+      },
+      "linux-aarch64": {
+        "url": "https://github.com/windtf/wireproxy/releases/download/v1.1.3/wireproxy_linux_arm64.tar.gz",
+        "sha256": "370e00bd2167960d1ecd1c3c1439715bbaa94a0a110a2040468670c9af6021b6"
+      },
+      "macos-x86_64": {
+        "url": "https://github.com/windtf/wireproxy/releases/download/v1.1.3/wireproxy_darwin_amd64.tar.gz",
+        "sha256": "5d89742a0f381d9508d3ad828a0d300dceee24fa49015427eaff42a23f7a50bd"
+      },
+      "macos-aarch64": {
+        "url": "https://github.com/windtf/wireproxy/releases/download/v1.1.3/wireproxy_darwin_arm64.tar.gz",
+        "sha256": "28d34342c48c309b628d9c06ab4efc05b82fba49821f360605c02139c02547a5"
+      },
+      "windows-x86_64": {
+        "url": "https://github.com/windtf/wireproxy/releases/download/v1.1.3/wireproxy_windows_amd64.tar.gz",
+        "sha256": "bce041ea9fe0f8a3351301dcbe29cdf6a523bb25cf9c62f17ebb5699a8051d0f"
+      },
+      "windows-i686": {
+        "url": "https://github.com/windtf/wireproxy/releases/download/v1.1.3/wireproxy_windows_386.tar.gz",
+        "sha256": "512bd0b724ef50125f00b6d7e978009caa359066ab7f777ae473f734278f326e"
+      }
+    }
+  }
+}

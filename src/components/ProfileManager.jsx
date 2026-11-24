@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { X, Plus, Edit2, Trash2 } from 'lucide-react';
 import { useStore } from '../stores/useStore';
 import { useShallow } from 'zustand/react/shallow';
+import NetworkChoice from './NetworkChoice';
 import { useT } from '../lib/i18n';
 
 export default function ProfileManager({ onClose }) {
@@ -123,13 +124,7 @@ export default function ProfileManager({ onClose }) {
                     <label className="text-xs text-text-muted block mb-1.5">
                       {t('pm.proxyLabel')}
                     </label>
-                    <input
-                      type="text"
-                      value={formData.proxy}
-                      onChange={(e) => setFormData({ ...formData, proxy: e.target.value })}
-                      placeholder="socks5://host:port"
-                      className="input text-sm"
-                    />
+                    <NetworkChoice value={formData.proxy} onChange={(proxy) => setFormData({ ...formData, proxy })} inheritLabel="Comme Orbit" />
                   </div>
                   <div className="flex gap-2">
                     <button onClick={handleSave} className="btn btn-primary">

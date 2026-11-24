@@ -5,17 +5,18 @@ import { useShallow } from 'zustand/react/shallow';
 import { recipes, categories } from '../lib/recipes';
 import { homeUrlFor } from '../lib/urls';
 import { EMOJI_CHOICES, COLOR_CHOICES, getHostname, faviconServiceUrl } from '../lib/appIcons';
-import AppIcon from './AppIcon';
+import AppIcon, { bundledRecipeIcon } from './AppIcon';
 import { useT } from '../lib/i18n';
 
 // Aperçu du favicon avec repli automatique (Google s2 → icon.horse)
 function FaviconPreview({ url, className = '' }) {
   const [useFallback, setUseFallback] = useState(false);
   const host = getHostname(url);
-  if (!host) return null;
+  const src = faviconServiceUrl(url, useFallback);
+  if (!host || !src) return null;
   return (
     <img
-      src={faviconServiceUrl(url, useFallback)}
+      src={src}
       alt=""
       className={`w-10 h-10 rounded-lg bg-bg-secondary border border-border object-contain p-1 ${className}`}
       draggable={false}
@@ -79,10 +80,15 @@ export default function AppStore({ onClose, prefill = null }) {
   const getInstances = (recipeId) => installedApps.filter((a) => a.recipeId === recipeId);
 
   // Filtrer les recettes
+  // Recherche tolérante : sans accents ni majuscules, sur le nom, l'adresse
+  // et la catégorie (« vpn », « musique », « ia » trouvent leurs apps).
+  const fold = (v) => String(v || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  const needle = fold(search.trim());
   const filteredRecipes = Object.values(recipes).filter((recipe) => {
+    const cat = categories[recipe.category];
     const matchSearch =
-      recipe.name.toLowerCase().includes(search.toLowerCase()) ||
-      recipe.url.toLowerCase().includes(search.toLowerCase());
+      !needle ||
+      [recipe.name, recipe.url, recipe.category, cat?.name].some((v) => fold(v).includes(needle));
     const matchCategory =
       selectedCategory === 'all' || recipe.category === selectedCategory;
     return matchSearch && matchCategory;
@@ -105,7 +111,9 @@ export default function AppStore({ onClose, prefill = null }) {
       // Icône de marque réelle dès l'installation : icône officielle de la
       // recette si elle existe (ex. Google Drive ≠ Gmail — les favicons
       // .google.com sont tous le même « G »), sinon favicon du site
-      favicon: recipe.brandIcon || faviconServiceUrl(recipe.url),
+      // Icône embarquée (AppIcon la trouve via recipeId) ; le favicon ne sert
+      // que de repli pour les rares recettes sans icône embarquée.
+      favicon: bundledRecipeIcon(recipe.id) ? '' : recipe.brandIcon || faviconServiceUrl(recipe.url),
       unread: 0,
       sleeping: false,
     });
@@ -475,7 +483,7 @@ export default function AppStore({ onClose, prefill = null }) {
                   >
                     {/* Vrai favicon du site (logo de marque), emoji en repli */}
                     <AppIcon
-                      app={{ url: recipe.url, icon: recipe.icon, favicon: faviconServiceUrl(recipe.url) }}
+                      app={{ url: recipe.url, icon: recipe.icon, recipeId: recipe.id }}
                       className="w-9 h-9 rounded-lg"
                     />
                   </div>

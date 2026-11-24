@@ -94,10 +94,12 @@ import { computeStartUrl, reloadUrlFor, isLoginPageUrl } from '../lib/urls';
 import { isDisplayableFailure, describeLoadFailure } from '../lib/loadFailure';
 import { describeMediaFault, mediaFaultKey } from '../lib/mediaFault';
 import LoadFailure from './LoadFailure';
+import TunnelBadge from './TunnelBadge';
 import { logDiagnostic } from '../lib/diagnosticsStore';
 import { recipes } from '../lib/recipes';
 import { CHROME_UA } from '../lib/userAgent';
-import { appPartition } from '../lib/session';
+import { appPartition, resolveProxy } from '../lib/session';
+import { networkOfRule, isOnionUrl } from '../lib/privateNetwork';
 import { notificationsSilenced } from '../lib/dnd';
 import { getBuiltinSound, playSound } from '../lib/sounds';
 
@@ -123,6 +125,15 @@ export default function WebView({ app, active, visible, flexLayout }) {
   // boucle PLUS TARDIVE (ex. rechargement manuel après reconnexion).
   const redirectLoopRef = useRef(0);
   const updateApp = useStore((s) => s.updateApp);
+  // Réseau privé effectif (app → profil → Orbit), lu par les écouteurs.
+  const appNetwork = useStore((s) =>
+    networkOfRule(resolveProxy(app, s.profiles.find((p) => p.id === app.profileId), s.settings?.globalProxy))
+  );
+  const showTunnelBadge = useStore((s) => s.settings?.privateNetIndicator !== false);
+  const networkRef = useRef(appNetwork);
+  useEffect(() => {
+    networkRef.current = appNetwork;
+  }, [appNetwork]);
   const setAppLoading = useLoadingStore((s) => s.setAppLoading);
   const setMedia = useMediaStore((s) => s.setMedia);
   const clearMedia = useMediaStore((s) => s.clearMedia);
@@ -214,7 +225,8 @@ export default function WebView({ app, active, visible, flexLayout }) {
       // Historique transverse (palette Alt+K) : le titre n'est pas encore
       // connu à cet instant, il arrivera par `page-title-updated` et viendra
       // compléter l'entrée. Une page privée n'y laisse aucune trace.
-      if (url && !app.private) {
+      // Tor : aucune trace locale non plus (ce qu'on attend de Tor Browser).
+      if (url && !app.private && networkRef.current !== 'tor') {
         recordHistory({ url, appId: app.id, appName: app.name, title: '' });
       }
 
@@ -255,7 +267,7 @@ export default function WebView({ app, active, visible, flexLayout }) {
       // Complète l'entrée d'historique créée à la navigation (le titre arrive
       // toujours après l'URL).
       try {
-        if (!app.private) setHistoryTitle(wv.getURL(), e.title);
+        if (!app.private && networkRef.current !== 'tor') setHistoryTitle(wv.getURL(), e.title);
       } catch {
         /* webview détruit entre-temps */
       }
@@ -306,7 +318,9 @@ export default function WebView({ app, active, visible, flexLayout }) {
     // (déjà visible) et les lunettes restent affichées en pastille.
     const handleFavicon = (e) => {
       const icon = e.favicons && e.favicons.length > 0 ? e.favicons[0] : undefined;
-      if (icon) updateApp(app.id, { favicon: icon });
+      // Tor / VPN : l'icône serait chargée par la fenêtre d'Orbit, HORS du
+      // tunnel — elle révélerait la vraie adresse IP au site. On ne la garde pas.
+      if (icon && !networkRef.current) updateApp(app.id, { favicon: icon });
     };
 
     const handleDidFailLoad = (e) => {
@@ -441,6 +455,13 @@ export default function WebView({ app, active, visible, flexLayout }) {
     // l'icône retombait sur le service de favicons par domaine.
     wv.addEventListener('page-favicon-updated', handleFavicon);
     wv.addEventListener('did-fail-load', handleDidFailLoad);
+    // .onion hors de Tor : la navigation est annulée avant même de commencer
+    // (aucun did-fail-load), le cadre resterait vide. On l'explique ici.
+    const handleStartNavigation = (e) => {
+      if (!e.isMainFrame || !isOnionUrl(e.url) || networkRef.current === 'tor') return;
+      setFailure({ code: -20, description: 'ERR_BLOCKED_BY_CLIENT', url: e.url, webContentsId: null });
+    };
+    wv.addEventListener('did-start-navigation', handleStartNavigation);
     wv.addEventListener('render-process-gone', handleRenderGone);
     wv.addEventListener('crashed', handleRenderGone); // héritage (Electron ancien)
     wv.addEventListener('did-start-loading', startLoading);
@@ -459,6 +480,7 @@ export default function WebView({ app, active, visible, flexLayout }) {
       wv.removeEventListener('page-title-updated', handleTitle);
       wv.removeEventListener('page-favicon-updated', handleFavicon);
       wv.removeEventListener('did-fail-load', handleDidFailLoad);
+      wv.removeEventListener('did-start-navigation', handleStartNavigation);
       wv.removeEventListener('render-process-gone', handleRenderGone);
       wv.removeEventListener('crashed', handleRenderGone);
       wv.removeEventListener('did-start-loading', startLoading);
@@ -742,6 +764,8 @@ export default function WebView({ app, active, visible, flexLayout }) {
         // NB : le preload KeePassXC (détection/remplissage) est injecté par le
         // main process dans 'will-attach-webview' — pas d'attribut ici.
       />
+      {/* Repère Tor / VPN : seulement pour une app en tunnel (désactivable). */}
+      {appNetwork && showTunnelBadge ? <TunnelBadge network={appNetwork} /> : null}
       {/* Indicateur de chargement : fine barre de progression EN HAUT, discrète,
           dans la couleur d'accent du thème (aucun voile plein cadre → on garde
           la page visible pendant le rechargement, comme un vrai navigateur). */}

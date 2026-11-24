@@ -640,6 +640,11 @@ const [editUrlFor, setEditUrlFor] = useState(null); // { id, url } — boîte «
     );
   }, [settings.globalHotkeyEnabled, settings.globalHotkey]);
 
+  // Mode panique : raccourci global et actions choisies dans Réglages → Sécurité.
+  useEffect(() => {
+    window.electronAPI?.panic?.configure?.({ ...(settings.panic || {}) });
+  }, [settings.panic]);
+
   useEffect(() => {
     const off = window.electronAPI?.onMediaKey?.((action) => {
       const pick = pickNowPlaying(useMediaStore.getState().media, useStore.getState().activeApp);

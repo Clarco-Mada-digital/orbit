@@ -502,3 +502,7 @@ test('boucliers coupés : ni cookie, ni empreinte, même si les réglages le dis
   assert.deepEqual(rules.headersToStrip(s, { 'sec-ch-ua-arch': 'x' }), []);
   assert.deepEqual(rules.headersToAdd(s), {});
 });
+test('upgradeToHttps : jamais pour un .onion (déjà chiffré par Tor, souvent http seulement)', () => {
+  assert.equal(rules.upgradeToHttps('http://juhanurmihxlp77nkq76byazcldy2hlmovfu2epvl5ankdibsot4csyd.onion/'), null);
+  assert.equal(rules.upgradeToHttps('http://www.dwnewsgngmhlplxy6o2twtfgjnrnjxbegbwqx6wnotdhkzt562tszfid.onion/'), null);
+});

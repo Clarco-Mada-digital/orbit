@@ -1,5 +1,8 @@
-import { useEffect, useState } from 'react';
-import { AlertTriangle, RotateCw, ShieldAlert, ExternalLink, Unlock } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { AlertTriangle, RotateCw, ShieldAlert, ExternalLink, Unlock, Lock } from 'lucide-react';
+import { useStore } from '../stores/useStore';
+import { resolveProxy } from '../lib/session';
+import { networkOfRule, NETWORK_RULES } from '../lib/privateNetwork';
 import {
   describeLoadFailure,
   isCertificateFailure,
@@ -39,8 +42,16 @@ export default function LoadFailure({ app, failure, onRetry, onLoadUrl, onAccept
   // n'est pas revenue, on décrit l'échec brut ; dès qu'elle arrive, on dit que
   // c'est NOTRE passage en https qui n'aboutit pas, et pas le site qui est en
   // panne. Un rendu de plus, un message juste.
+  // Réseau privé effectif de l'app (app → profil → Orbit) : il explique les
+  // pages volontairement bloquées (Tor/VPN non connecté, .onion hors de Tor).
+  const profile = useStore((st) => st.profiles.find((p) => p.id === app.profileId));
+  const globalProxy = useStore((st) => st.settings.globalProxy);
+  const updateApp = useStore((st) => st.updateApp);
+  const network = networkOfRule(resolveProxy(app, profile, globalProxy));
   const describe = describeLoadFailure(failure.code, failure.description, {
     upgraded: !!upgrade,
+    url: failure.url || app.url,
+    network,
   });
   // L'hôte à montrer est celui que l'utilisateur a DEMANDÉ, pas celui qu'on a
   // réécrit : afficher « https://… » alors qu'il a tapé « http://… » rendrait
@@ -106,7 +117,64 @@ export default function LoadFailure({ app, failure, onRetry, onLoadUrl, onAccept
     setBusy(false);
   };
 
-  const Icon = offerTrust || offerHttp ? ShieldAlert : AlertTriangle;
+  // Réseau privé : la page est bloquée PAR PROTECTION. Le geste utile est de
+  // connecter le tunnel (ou d'y passer l'app), jamais d'ouvrir ailleurs.
+  const privacyBlock = describe.kind === 'onion' || describe.kind === 'privnet';
+  const [netError, setNetError] = useState('');
+  const connectThenRetry = async (target) => {
+    if (busy) return;
+    setBusy(true);
+    setNetError('');
+    try {
+      if (target === 'tor' && network !== 'tor') updateApp(app.id, { proxy: NETWORK_RULES.tor });
+      const pn = window.electronAPI?.privateNet;
+      const r = target === 'vpn' ? await pn?.startVpn() : await pn?.startTor();
+      if (r && !r.success) {
+        setNetError(r.error || 'Connexion impossible.');
+        setBusy(false);
+        return;
+      }
+      // Le temps que la nouvelle règle de proxy soit appliquée à la session.
+      setTimeout(() => {
+        setBusy(false);
+        onRetry();
+      }, 800);
+    } catch {
+      setBusy(false);
+    }
+  };
+
+  // Tunnel en cours de connexion (démarrage d'Orbit, « Connexion
+  // automatique ») : dès qu'il est prêt, la page se recharge d'elle-même.
+  const waitingFor = describe.kind === 'privnet' ? describe.network : network && privacyBlock ? network : null;
+  const [tunnel, setTunnel] = useState(null);
+  const retryRef = useRef(onRetry);
+  useEffect(() => {
+    retryRef.current = onRetry;
+  }, [onRetry]);
+  useEffect(() => {
+    const pn = window.electronAPI?.privateNet;
+    if (!waitingFor || !pn) return undefined;
+    let retried = false;
+    let timer = null;
+    const seen = (st) => {
+      const engine = st?.[waitingFor];
+      if (!engine) return;
+      setTunnel({ status: engine.status, progress: engine.progress || 0 });
+      if (engine.status === 'ready' && !retried) {
+        retried = true;
+        timer = setTimeout(() => retryRef.current?.(), 700);
+      }
+    };
+    pn.state().then(seen);
+    const off = pn.onChanged(seen);
+    return () => {
+      off?.();
+      clearTimeout(timer);
+    };
+  }, [waitingFor]);
+
+  const Icon = privacyBlock ? Lock : offerTrust || offerHttp ? ShieldAlert : AlertTriangle;
 
   return (
     // `bg-bg-primary` et pas `bg-bg-base` : seul le premier est défini dans le
@@ -147,7 +215,17 @@ export default function LoadFailure({ app, failure, onRetry, onLoadUrl, onAccept
       )}
 
       <div className="flex flex-wrap items-center justify-center gap-2">
-        <button onClick={onRetry} className="btn btn-primary btn-sm" disabled={busy}>
+        {describe.kind === 'onion' && (
+          <button onClick={() => connectThenRetry('tor')} className="btn btn-primary btn-sm" disabled={busy}>
+            <Lock size={15} /> {busy ? 'Connexion à Tor…' : 'Ouvrir cette app avec Tor'}
+          </button>
+        )}
+        {describe.kind === 'privnet' && (
+          <button onClick={() => connectThenRetry(describe.network)} className="btn btn-primary btn-sm" disabled={busy}>
+            <Lock size={15} /> {busy ? 'Connexion…' : describe.network === 'vpn' ? 'Se connecter au VPN' : 'Se connecter à Tor'}
+          </button>
+        )}
+        <button onClick={onRetry} className={`btn ${privacyBlock ? '' : 'btn-primary'} btn-sm`} disabled={busy}>
           <RotateCw size={15} /> Réessayer
         </button>
 
@@ -165,14 +243,25 @@ export default function LoadFailure({ app, failure, onRetry, onLoadUrl, onAccept
 
         {/* Dernier recours, et parfois le bon : laisser le navigateur du système
             s'en charger. `window.open` est redirigé vers lui par le main process. */}
-        <button
-          onClick={() => window.open(upgrade?.from || failure.url || app.url, '_blank')}
-          className="btn btn-ghost btn-sm"
-          disabled={busy}
-        >
-          <ExternalLink size={15} /> Ouvrir dans le navigateur
-        </button>
+        {/* Jamais pour une page protégée : le navigateur du système la
+            chargerait HORS du tunnel. */}
+        {!privacyBlock && !network && (
+          <button
+            onClick={() => window.open(upgrade?.from || failure.url || app.url, '_blank')}
+            className="btn btn-ghost btn-sm"
+            disabled={busy}
+          >
+            <ExternalLink size={15} /> Ouvrir dans le navigateur
+          </button>
+        )}
       </div>
+      {tunnel?.status === 'starting' ? (
+        <p className="text-sm text-text-muted text-center">
+          Connexion à {waitingFor === 'tor' ? 'Tor' : 'au VPN'} en cours{tunnel.progress ? ` (${tunnel.progress} %)` : ''}… la page
+          s’ouvrira toute seule.
+        </p>
+      ) : null}
+      {netError ? <p className="text-sm text-error text-center max-w-prose">{netError}</p> : null}
 
       {/* Le code brut : inutile au quotidien, décisif pour un rapport de bug. */}
       <p className="text-xs text-text-muted font-mono">{describe.name}</p>

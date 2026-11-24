@@ -60,10 +60,11 @@ Récupérez la dernière version sur la page des **[Releases](https://github.com
 - 💬 **Discussion IA dédiée** — `Alt + Maj + A` (ou `⌘ + Maj + A` sur macOS)
   ouvre une fenêtre de conversation indépendante du correcteur ; activation,
   raccourci et touche personnalisables dans Paramètres → Assistant IA
-- 🤖 **Assistant IA local facultatif** — modèles Qwen3 0,6B ou 1,7B téléchargeables
-  ou SmolLM2 360M téléchargeables depuis les paramètres, pour corriger, reformuler,
-  résumer ou discuter ; le texte reste sur l’appareil. Orbit estime les modèles
-  adaptés selon la mémoire détectée et WebGPU ; le 1,7B nécessite un GPU compatible.
+- 🤖 **Assistant IA local facultatif** — modèles téléchargeables et vérifiés par
+  empreinte : SmolLM2 (Hugging Face), Gemma 3 270M / 1B (Google), LFM2 700M
+  (Liquid AI), Qwen (Alibaba), pour corriger, reformuler, résumer ou discuter ;
+  le texte reste sur l’appareil. Orbit recommande les modèles adaptés à la
+  mémoire détectée et à WebGPU.
 - 🌐 **Fournisseurs IA au choix** — Ollama, LM Studio, OpenRouter, Groq, Gemini,
   xAI, OpenAI, Anthropic, Mistral, DeepSeek et d’autres services compatibles OpenAI.
   Orbit local reste le choix par défaut ; les clés sont chiffrées par le stockage
@@ -72,8 +73,27 @@ Récupérez la dernière version sur la page des **[Releases](https://github.com
   choisi ; pour les serveurs compatibles OpenAI, un identifiant de modèle peut être saisi
   manuellement si l’endpoint de découverte n’est pas disponible.
 - 🔎 **Zoom par app**, **veille** des apps inactives, **favoris**
+- 🧅 **Réseau privé : Tor et VPN intégrés** — pour tout Orbit, un profil ou une
+  seule app. Tor officiel (vérifié par empreinte, ponts Snowflake/obfs4/meek,
+  nouvelle identité, sites `.onion`) et VPN WireGuard (Proton VPN Free, Mullvad…)
+  sans droits administrateur. Fermé par défaut : tunnel coupé = rien ne part en
+  direct ; DNS et WebRTC confinés ; aucune trace d’historique ni favicon hors
+  tunnel pour les apps Tor ; liseré de couleur et avertissement avant toute
+  sortie du tunnel. **Annuaire de 14 sites `.onion` officiels**
+  (DuckDuckGo, BBC, Proton Mail…), chacun vérifié à la source
+- 🚨 **Mode panique** — un raccourci global (`Ctrl+Alt+H` par défaut) cache toutes
+  les fenêtres, coupe le son, ferme les coffres et verrouille Orbit ; en option,
+  coupe Tor/VPN et efface les données des apps Tor
 - 🔐 **Verrouillage** (global + par profil) et **verrouillage auto** après inactivité
-- 💾 **Sauvegarde/restauration chiffrée** de la configuration
+- 💾 **Sauvegarde/restauration chiffrée** de la configuration, catégorie par
+  catégorie (espace de travail, automatisations, API, bases de données,
+  historique, autorisations…), et **synchronisation** entre ordinateurs
+- 🗄️ **Base de données** — SQLite, MySQL/MariaDB, PostgreSQL, SQL Server et
+  **Oracle** (sans Instant Client) : tables, édition, requêtes, analyse, diagramme
+- 📱 **Téléphone Android** — miroir, notifications, apps ; **sans câble** par QR
+  code (Android 11+) ou « Passer en sans fil », avec reconnexion automatique
+- 🏪 **Boutique de 166 apps** aux icônes embarquées (affichage instantané, hors
+  ligne, sans service tiers)
 - 🎬 **Téléchargement vidéo/audio** (yt-dlp) depuis n'importe quel site
 - 🛡️ **Bloqueur de pub** intégré et **remplissage KeePassXC**
 - 🔑 **Coffre-fort de mots de passe** — trousseaux chiffrés (AES-256-GCM + scrypt),

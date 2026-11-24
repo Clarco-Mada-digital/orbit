@@ -387,7 +387,7 @@ export const fr = {
   'pm.namePlaceholder': 'Nom du profil',
   'pm.emoji': 'Emoji',
   'pm.color': 'Couleur',
-  'pm.proxyLabel': 'Proxy / VPN de ce profil (vide = réglage global)',
+  'pm.proxyLabel': 'Réseau de ce profil (Tor, VPN ou proxy)',
   'pm.active': '✓ Actif',
   'pm.shareLabel': 'Partager les connexions (SSO navigateur)',
   'pm.accentLabel':
@@ -411,7 +411,7 @@ export const fr = {
   'edit.uploadTitle': 'Téléverser votre propre image',
   'edit.faviconTitle': 'Utiliser le favicon du site',
   'edit.removeImage': 'Retirer l’image téléversée',
-  'edit.proxyLabel': 'Proxy / VPN (vide = suit le profil / le global)',
+  'edit.proxyLabel': 'Réseau de cette app (Tor, VPN ou proxy)',
 
   // Boutique d'applications
   'store.available': '{n} applications disponibles',
@@ -1039,7 +1039,7 @@ export const en = {
   'pm.namePlaceholder': 'Profile name',
   'pm.emoji': 'Emoji',
   'pm.color': 'Color',
-  'pm.proxyLabel': 'Proxy / VPN for this profile (empty = global setting)',
+  'pm.proxyLabel': 'Network for this profile (Tor, VPN or proxy)',
   'pm.active': '✓ Active',
   'pm.shareLabel': 'Share logins (browser SSO)',
   'pm.accentLabel':
@@ -1063,7 +1063,7 @@ export const en = {
   'edit.uploadTitle': 'Upload your own image',
   'edit.faviconTitle': 'Use the site favicon',
   'edit.removeImage': 'Remove uploaded image',
-  'edit.proxyLabel': 'Proxy / VPN (empty = follows profile / global)',
+  'edit.proxyLabel': 'Network for this app (Tor, VPN or proxy)',
 
   // App store
   'store.available': '{n} apps available',

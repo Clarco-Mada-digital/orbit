@@ -30,6 +30,8 @@ import * as mediaFailures from './media-failures.js';
 import { extensionWarnings } from './extension-warnings.js';
 import * as vault from './vault.js';
 import * as secureStore from './secure-store.js';
+import * as privateNet from './private-network.js';
+import { networkOfRule, isOnionUrl } from '../src/lib/privateNetwork.js';
 import * as vaultBackup from './vault-backup.js';
 import { readDatabase as readKdbx } from './kdbx.js';
 import * as studio from './studio.js';
@@ -121,6 +123,112 @@ function showMainWindow() {
   if (mainWindow.isMinimized()) mainWindow.restore();
   mainWindow.show();
   mainWindow.focus();
+  endPanic();
+}
+
+// --- Mode panique ------------------------------------------------------------
+// Un raccourci GLOBAL (il marche même quand Orbit n'a pas le focus) qui, en
+// un instant : cache toutes les fenêtres d'Orbit (et de la barre des tâches),
+// coupe le son de toutes les pages, ferme les coffres, et verrouille Orbit si
+// un code est défini. En option : arrête Tor et le VPN, efface les données des
+// apps passées par Tor. On revient par le raccourci d'invocation ou l'icône de
+// la zone de notification — derrière l'écran de verrouillage.
+const PANIC_DEFAULTS = { enabled: true, accelerator: 'CommandOrControl+Alt+H', lock: true, stopNetworks: false, clearTor: false };
+let panicConfig = { ...PANIC_DEFAULTS };
+let panicAccel = null;
+let panicActive = false;
+const panicMuted = new Set(); // webContents coupés PAR la panique (à rétablir)
+const panicHidden = new Set(); // fenêtres secondaires cachées par la panique
+
+async function triggerPanic() {
+  panicActive = true;
+  for (const win of BrowserWindow.getAllWindows()) {
+    try {
+      if (win.isDestroyed() || !win.isVisible()) continue;
+      if (win !== mainWindow) panicHidden.add(win.id);
+      win.hide();
+    } catch {
+      /* fenêtre en cours de fermeture */
+    }
+  }
+  for (const wc of webContents.getAllWebContents()) {
+    try {
+      if (!wc.isDestroyed() && !wc.isAudioMuted()) {
+        wc.setAudioMuted(true);
+        panicMuted.add(wc.id);
+      }
+    } catch {
+      /* ignore */
+    }
+  }
+  try {
+    vault.lockAll();
+  } catch {
+    /* aucun coffre ouvert */
+  }
+  if (panicConfig.lock) {
+    const st = security.getState();
+    if (st.appLockEnabled && st.appUnlocked) {
+      security.lockApp();
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('orbit:relock');
+    }
+  }
+  if (panicConfig.stopNetworks) {
+    privateNet.stopTor({ byUser: true });
+    privateNet.stopVpn({ byUser: true });
+  }
+  if (panicConfig.clearTor) {
+    for (const ses of torSessions) {
+      await ses.clearStorageData().catch(() => {});
+      await ses.clearCache().catch(() => {});
+    }
+  }
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('panic:triggered');
+}
+
+function endPanic() {
+  if (!panicActive) return;
+  panicActive = false;
+  for (const id of panicMuted) {
+    try {
+      webContents.fromId(id)?.setAudioMuted(false);
+    } catch {
+      /* page fermée depuis */
+    }
+  }
+  panicMuted.clear();
+  for (const id of panicHidden) {
+    try {
+      BrowserWindow.fromId(id)?.showInactive();
+    } catch {
+      /* fenêtre fermée depuis */
+    }
+  }
+  panicHidden.clear();
+}
+
+function configurePanic(cfg = {}) {
+  const next = { ...PANIC_DEFAULTS, ...panicConfig };
+  for (const k of ['enabled', 'lock', 'stopNetworks', 'clearTor']) if (typeof cfg[k] === 'boolean') next[k] = cfg[k];
+  if (typeof cfg.accelerator === 'string' && cfg.accelerator.length < 60) next.accelerator = cfg.accelerator;
+  panicConfig = next;
+  try {
+    if (panicAccel) globalShortcut.unregister(panicAccel);
+  } catch {
+    /* ignore */
+  }
+  panicAccel = null;
+  if (!next.enabled || !next.accelerator) return { success: true, registered: false };
+  try {
+    const ok = globalShortcut.register(next.accelerator, () => {
+      triggerPanic().catch((err) => console.error('[orbit] panique :', err));
+    });
+    if (ok) panicAccel = next.accelerator;
+    // Raccourci déjà pris par une autre application : on le dit.
+    return { success: ok, registered: ok, error: ok ? undefined : 'Raccourci déjà utilisé par une autre application.' };
+  } catch (err) {
+    return { success: false, registered: false, error: String(err.message || err) };
+  }
 }
 
 function toggleMainWindow() {
@@ -652,6 +760,12 @@ const GOOGLE_UA = `Mozilla/5.0 (${UA_PLATFORM}) AppleWebKit/537.36 (KHTML, like 
 app.userAgentFallback = CHROME_UA;
 
 app.on('web-contents-created', (event, contents) => {
+  // WebRTC dans le tunnel dès la création, si la session passe par un proxy.
+  try {
+    contents.setWebRTCIPHandlingPolicy(webRtcPolicyFor(contents.session));
+  } catch (_) {
+    /* ignore */
+  }
   const contentsType = contents.getType();
   // Fenêtres SANS <webview> : fenêtres détachées et pop-ups d'applications.
   // Elles doivent avoir les mêmes boucliers que les apps embarquées — sans
@@ -1133,6 +1247,12 @@ function setupHeaderBypass(ses) {
   try {
     // Blocage réseau des pubs/traceurs (no-op si l'adblock est désactivé)
     ses.webRequest.onBeforeRequest((details, callback) => {
+      // .onion hors de Tor : la résolution DNS normale révélerait l'adresse
+      // au fournisseur d'accès — et n'aboutirait de toute façon pas.
+      if (isOnionUrl(details.url) && sessionNetwork.get(ses) !== 'tor') {
+        callback({ cancel: true });
+        return;
+      }
       // Boucliers avancés d'abord : une redirection HTTPS ou un script bloqué
       // n'a pas à passer par le moteur de listes.
       if (shieldsBeforeRequest(details, callback)) return;
@@ -1216,10 +1336,23 @@ const proxiedSessions = new WeakSet();
 // le callback plusieurs fois.
 const fsRestrictedSessions = new WeakSet();
 
+// La politique WebRTC se règle par PAGE (webContents), pas par session :
+// l'ancien appel `ses.setWebRTCIPHandlingPolicy` n'existait pas et échouait en
+// silence — une page derrière un proxy pouvait révéler la vraie adresse IP
+// par WebRTC. On l'applique aux pages ouvertes de la session, et chaque
+// nouvelle page la reçoit à sa création (voir 'web-contents-created').
+function webRtcPolicyFor(ses) {
+  return proxiedSessions.has(ses) ? 'disable_non_proxied_udp' : 'default';
+}
 function applyWebRtcPolicy(ses, viaProxy) {
-  try {
-    ses.setWebRTCIPHandlingPolicy(viaProxy ? 'disable_non_proxied_udp' : 'default');
-  } catch (_) { /* Electron < 15 */ }
+  if (viaProxy) proxiedSessions.add(ses);
+  for (const wc of webContents.getAllWebContents()) {
+    try {
+      if (!wc.isDestroyed() && wc.session === ses) wc.setWebRTCIPHandlingPolicy(webRtcPolicyFor(ses));
+    } catch (_) {
+      /* page en cours de fermeture */
+    }
+  }
 }
 
 function setupPermissions(ses) {
@@ -2766,11 +2899,11 @@ function buildGuestContextMenu(wc, params) {
     if (isWebUrl(params.linkURL)) {
       t.push({
         label: 'Ouvrir le lien dans Orbit',
-        click: () => openUrlInOrbitWindow(params.linkURL),
+        click: () => (tunnelOf(wc) ? createOrbitPopup(params.linkURL, guestPartitions.get(wc.id)) : openUrlInOrbitWindow(params.linkURL)),
       });
       t.push({
         label: 'Ouvrir le lien dans le navigateur',
-        click: () => shell.openExternal(params.linkURL),
+        click: () => openOutsideGuarded(wc, params.linkURL, 'Ouvrir le lien dans le navigateur'),
       });
     }
     t.push({ label: "Copier l'adresse du lien", click: () => copyTextToClipboard(params.linkURL) });
@@ -2808,7 +2941,7 @@ function buildGuestContextMenu(wc, params) {
     if (isWebUrl(params.srcURL)) {
       t.push({
         label: "Ouvrir l'image dans le navigateur",
-        click: () => shell.openExternal(params.srcURL),
+        click: () => openOutsideGuarded(wc, params.srcURL, 'Ouvrir l’image dans le navigateur'),
       });
     }
     t.push({ type: 'separator' });
@@ -2911,7 +3044,7 @@ function buildGuestContextMenu(wc, params) {
     }
     t.push({
       label: `Rechercher « ${sel.length > 40 ? sel.slice(0, 40) + '…' : sel} »`,
-      click: () => shell.openExternal('https://www.google.com/search?q=' + encodeURIComponent(sel)),
+      click: () => openOutsideGuarded(wc, 'https://www.google.com/search?q=' + encodeURIComponent(sel), 'Rechercher sur Google'),
     });
   }
 
@@ -2973,10 +3106,10 @@ function buildGuestContextMenu(wc, params) {
   t.push({ label: "Copier l'adresse de la page", click: () => copyTextToClipboard(wc.getURL()) });
   const pageUrl = params.pageURL || wc.getURL();
   if (isWebUrl(pageUrl)) {
-    t.push({ label: 'Ouvrir la page dans Orbit', click: () => openUrlInOrbitWindow(pageUrl) });
+    t.push({ label: 'Ouvrir la page dans Orbit', click: () => (tunnelOf(wc) ? createOrbitPopup(pageUrl, guestPartitions.get(wc.id)) : openUrlInOrbitWindow(pageUrl)) });
     t.push({
       label: 'Ouvrir la page dans le navigateur',
-      click: () => shell.openExternal(pageUrl),
+      click: () => openOutsideGuarded(wc, pageUrl, 'Ouvrir la page dans le navigateur'),
     });
   }
   if (isDev) {
@@ -3625,6 +3758,56 @@ ipcMain.handle('popup:setBounds', (e, bounds) => {
 // Fenêtre secondaire habillée par Orbit : cadre sans décoration système, coins
 // arrondis, en-tête maison, et à l'intérieur un <webview> branché sur la MÊME
 // partition que l'app d'origine (sans quoi la connexion échoue).
+// --- Sortie du tunnel (Tor / VPN) : l'assistant local prévient -------------
+// Une app passée par Tor ou un VPN peut, sur un clic, faire ouvrir une page
+// HORS du tunnel : navigateur du système, autre app, recherche Google… Le site
+// verrait alors la vraie adresse IP. Avant de le faire, Orbit le dit et laisse
+// choisir : rester protégé (la page s'ouvre dans Orbit, par le même tunnel),
+// continuer quand même, ou annuler. Désactivable (Réglages → Confidentialité).
+function tunnelOf(wc) {
+  try {
+    return wc && !wc.isDestroyed() ? sessionNetwork.get(wc.session) || null : null;
+  } catch {
+    return null;
+  }
+}
+
+async function confirmTunnelExit(wc, url, what) {
+  const network = tunnelOf(wc);
+  if (!network || !privateNet.warningsEnabled()) return 'leave';
+  const name = network === 'tor' ? 'Tor' : 'le VPN';
+  let host = '';
+  try {
+    host = new URL(url).host;
+  } catch {
+    /* ignore */
+  }
+  const parent = BrowserWindow.fromWebContents(wc.hostWebContents || wc) || mainWindow;
+  const { response, checkboxChecked } = await dialog.showMessageBox(parent, {
+    type: 'warning',
+    title: 'Vous allez sortir du tunnel',
+    message: `${what} : la page s’ouvrirait hors de ${name}.`,
+    detail:
+      `${host || 'Le site'} verrait votre vraie adresse IP${network === 'tor' ? ', et pourrait relier cette visite à votre identité' : ''}.\n\n` +
+      `« Rester protégé » ouvre la page dans une fenêtre Orbit, toujours par ${name}.`,
+    buttons: ['Rester protégé', 'Continuer hors du tunnel', 'Annuler'],
+    defaultId: 0,
+    cancelId: 2,
+    noLink: true,
+    checkboxLabel: 'Ne plus me prévenir (réactivable dans Réglages → Confidentialité)',
+  });
+  if (checkboxChecked) privateNet.setWarnings(false);
+  return ['stay', 'leave', 'cancel'][response] || 'cancel';
+}
+
+// Remplace shell.openExternal pour tout ce qui part d'une page d'app.
+async function openOutsideGuarded(wc, url, what) {
+  if (!isWebUrl(url)) return;
+  const choice = await confirmTunnelExit(wc, url, what);
+  if (choice === 'leave') shell.openExternal(url);
+  else if (choice === 'stay') createOrbitPopup(url, guestPartitions.get(wc.id));
+}
+
 function createOrbitPopup(url, partition) {
   const parentBounds = mainWindow && !mainWindow.isDestroyed() ? mainWindow.getBounds() : null;
   const width = 920;
@@ -3791,6 +3974,24 @@ function openInAppPopup(guestContents, url, disposition = 'default') {
   // Automatisations : une règle peut décider du sort de ce lien avant tout
   // le reste (voir src/lib/rules.js).
   const rule = matchLinkRule(linkRules, url);
+  // App passée par Tor / un VPN : un lien qui partirait HORS du tunnel (règle
+  // « navigateur » / « autre app » / « page volante », style « externe »)
+  // passe d'abord par l'assistant ; sinon la fenêtre reste dans le tunnel.
+  const inTunnel = Boolean(tunnelOf(guestContents));
+  const leaves =
+    (rule && ['external', 'openInApp', 'flyPage'].includes(rule.action)) || popupStyle === 'external';
+  if (inTunnel && leaves) {
+    const partition = guestPartitions.get(guestContents.id);
+    confirmTunnelExit(guestContents, url, 'Ce lien').then((choice) => {
+      if (choice === 'stay') createOrbitPopup(url, partition);
+      else if (choice === 'leave') {
+        if (rule && rule.action !== 'external' && mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send('rules:linkRouted', { url, rule });
+        } else shell.openExternal(url);
+      }
+    });
+    return { action: 'deny' };
+  }
   // Depuis une page privée, on ne renvoie jamais un lien vers une app ou une
   // page volante : il y retrouverait les cookies d'un compte connecté. Bloquer
   // ou ouvrir dans le navigateur, en revanche, ne trahit rien.
@@ -3818,7 +4019,8 @@ function openInAppPopup(guestContents, url, disposition = 'default') {
   }
 
   // Lien ouvert « dans un nouvel onglet » : aperçu dans Orbit d'abord.
-  if (peekLink(guestContents, url, disposition)) return { action: 'deny' };
+  // L'aperçu s'ouvre dans une autre session : pas pour une app en tunnel.
+  if (!inTunnel && peekLink(guestContents, url, disposition)) return { action: 'deny' };
 
   if (popupStyle === 'external') {
     permLog(`fenêtre ${hostOf(url)} demandée par ${from} — navigateur externe`);
@@ -5038,7 +5240,7 @@ handleFromUi('ctx:action', async (_event, { wcId, action, value } = {}) => {
       break;
     }
     case 'openLink':
-      if (isWebUrl(params.linkURL)) shell.openExternal(params.linkURL);
+      if (isWebUrl(params.linkURL)) openOutsideGuarded(wc, params.linkURL, 'Ouvrir le lien dans le navigateur');
       break;
     case 'copyLink':
       if (params.linkURL) copyTextToClipboard(params.linkURL);
@@ -5057,7 +5259,7 @@ handleFromUi('ctx:action', async (_event, { wcId, action, value } = {}) => {
       if (isDownloadableUrl(params.srcURL)) wc.downloadURL(params.srcURL);
       break;
     case 'openImage':
-      if (isWebUrl(params.srcURL)) shell.openExternal(params.srcURL);
+      if (isWebUrl(params.srcURL)) openOutsideGuarded(wc, params.srcURL, 'Ouvrir l’image dans le navigateur');
       break;
     case 'translate':
       if (params.selectionText) translateSelection(wc, params.selectionText.trim());
@@ -5073,8 +5275,10 @@ handleFromUi('ctx:action', async (_event, { wcId, action, value } = {}) => {
       break;
     case 'search':
       if (params.selectionText) {
-        shell.openExternal(
-          'https://www.google.com/search?q=' + encodeURIComponent(params.selectionText.trim())
+        openOutsideGuarded(
+          wc,
+          'https://www.google.com/search?q=' + encodeURIComponent(params.selectionText.trim()),
+          'Rechercher sur Google'
         );
       }
       break;
@@ -6119,12 +6323,57 @@ function splitProxyAuth(rules) {
   return { clean: scheme + hostport, username: user || null, password: pass || null };
 }
 
+// Réseau privé : règle demandée par partition (`orbit:tor`, `orbit:vpn` ou
+// proxy classique), pour la réappliquer quand un moteur démarre ou s'arrête.
+const partitionRules = new Map(); // partition -> règle brute
+const sessionNetwork = new WeakMap(); // session -> 'tor' | 'vpn'
+const torSessions = new Set();
+
+function sessionFor(partition) {
+  return !partition || partition === 'default' ? session.defaultSession : session.fromPartition(partition);
+}
+
+async function applyProxyRule(partition, rules) {
+  const ses = sessionFor(partition);
+  const network = networkOfRule(rules);
+  if (network) {
+    partitionRules.set(partition || 'default', rules);
+    sessionNetwork.set(ses, network);
+    if (network === 'tor') torSessions.add(ses);
+    else torSessions.delete(ses);
+    privateNet.ensure(network);
+    // Moteur pas encore prêt : port fermé → aucune requête ne part en direct.
+    await ses.setProxy({ proxyRules: privateNet.resolveRule(rules) });
+    proxyCreds.delete(ses);
+    applyWebRtcPolicy(ses, true);
+    // Les connexions ouvertes avant le changement ne doivent pas resservir.
+    await ses.closeAllConnections();
+    return;
+  }
+  partitionRules.delete(partition || 'default');
+  sessionNetwork.delete(ses);
+  torSessions.delete(ses);
+  return null;
+}
+
+privateNet.onPortsChange(async () => {
+  for (const [partition, rules] of partitionRules) {
+    try {
+      await applyProxyRule(partition, rules);
+    } catch (err) {
+      console.error('[réseau privé] règle non réappliquée :', err.message);
+    }
+  }
+});
+
 ipcMain.handle('proxy:apply', async (_e, { partition, rules } = {}) => {
   try {
-    const ses =
-      !partition || partition === 'default'
-        ? session.defaultSession
-        : session.fromPartition(partition);
+    const ses = sessionFor(partition);
+    if (networkOfRule(rules)) {
+      await applyProxyRule(partition, rules);
+      return { success: true };
+    }
+    await applyProxyRule(partition, '');
     if (rules && rules.trim()) {
       const { clean, username, password } = splitProxyAuth(rules);
       if (username) proxyCreds.set(ses, { username, password: password || '' });
@@ -6143,6 +6392,51 @@ ipcMain.handle('proxy:apply', async (_e, { partition, rules } = {}) => {
     return { success: false, error: String(err.message || err) };
   }
 });
+
+ipcMain.handle('panic:configure', (_e, cfg = {}) => configurePanic(cfg));
+ipcMain.handle('panic:trigger', async () => {
+  await triggerPanic();
+  return { success: true };
+});
+
+// Réseau privé (Tor / VPN WireGuard) -----------------------------------------
+const pnet = (fn) => async (_e, payload = {}) => {
+  try {
+    return (await fn(payload || {})) ?? { success: true };
+  } catch (err) {
+    return { success: false, error: String(err?.message || err) };
+  }
+};
+ipcMain.handle('privateNet:state', pnet(() => ({ success: true, ...privateNet.getState() })));
+ipcMain.handle('privateNet:install', pnet((p) => privateNet.installEngine(p.engine === 'wireproxy' ? 'wireproxy' : 'tor')));
+ipcMain.handle('privateNet:startTor', pnet(() => privateNet.startTor({ byUser: true })));
+ipcMain.handle('privateNet:stopTor', pnet(() => privateNet.stopTor({ byUser: true })));
+ipcMain.handle('privateNet:startVpn', pnet(() => privateNet.startVpn({ byUser: true })));
+ipcMain.handle('privateNet:stopVpn', pnet(() => privateNet.stopVpn({ byUser: true })));
+ipcMain.handle('privateNet:setBridges', pnet((p) => privateNet.setTorBridges(p)));
+ipcMain.handle('privateNet:setAutoStart', pnet((p) => privateNet.setAutoStart(p.on)));
+ipcMain.handle('privateNet:setWarnings', pnet((p) => privateNet.setWarnings(p.on)));
+ipcMain.handle('privateNet:removeVpn', pnet(() => privateNet.removeVpn()));
+ipcMain.handle('privateNet:check', pnet((p) => privateNet.check(p.network === 'vpn' ? 'vpn' : 'tor')));
+ipcMain.handle('privateNet:newIdentity', pnet(async () => {
+  const res = await privateNet.newIdentity();
+  // Les connexions déjà ouvertes garderaient l'ancien circuit.
+  if (res.success) for (const ses of torSessions) await ses.closeAllConnections().catch(() => {});
+  return res;
+}));
+// Import : le fichier est choisi par l'utilisateur dans une boîte de dialogue
+// du processus principal — l'interface ne transmet jamais de chemin.
+ipcMain.handle('privateNet:importVpn', pnet(async () => {
+  const res = await dialog.showOpenDialog(mainWindow, {
+    title: 'Configuration WireGuard',
+    filters: [{ name: 'WireGuard', extensions: ['conf'] }],
+    properties: ['openFile'],
+  });
+  if (res.canceled || !res.filePaths[0]) return { success: false, canceled: true };
+  const file = res.filePaths[0];
+  if (fs.statSync(file).size > 20000) return { success: false, error: 'Fichier trop volumineux.' };
+  return privateNet.importVpn({ text: fs.readFileSync(file, 'utf8'), name: path.basename(file) });
+}));
 
 // Fournit les identifiants du proxy quand il en demande (407). N'intervient
 // PAS pour l'authentification des sites eux-mêmes (laissée au comportement natif).
@@ -9385,6 +9679,13 @@ app.whenReady().then(async () => {
     security.init(app.getPath('userData')),
   ]);
 
+  // Réseau privé : réglages chargés ; les moteurs ne démarrent qu'à la demande.
+  privateNet.init(app.getPath('userData'), {
+    onChange: (st) => {
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('privateNet:changed', st);
+    },
+  });
+
   // Coffre-fort intégré : prépare le dossier des trousseaux (rien n'est
   // déverrouillé au démarrage — il faut toujours saisir le mot de passe maître)
   vault.init(app.getPath('userData'));
@@ -9555,6 +9856,7 @@ function forgetShieldSites() {
 }
 
 app.on('will-quit', () => {
+  privateNet.stopAll();
   try {
     forgetShieldSites();
   } catch {

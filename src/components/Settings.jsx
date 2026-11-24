@@ -15,7 +15,6 @@ import {
   Archive,
   Stethoscope,
   Volume2,
-  Globe,
   Workflow,
   Home,
   Upload,
@@ -31,6 +30,8 @@ import Extensions from './Extensions';
 import KeepassSettings from './KeepassSettings';
 import SecuritySettings from './SecuritySettings';
 import BackupSettings from './BackupSettings';
+import PrivateNetworkSettings from './PrivateNetworkSettings';
+import PanicSettings from './PanicSettings';
 import RulesSettings from './RulesSettings';
 import Diagnostics from './Diagnostics';
 import PasswordVault from './PasswordVault';
@@ -1332,7 +1333,12 @@ export default function Settings({ onClose }) {
 
               {activeTab === 'keepass' && <KeepassSettings />}
 
-              {activeTab === 'security' && <SecuritySettings />}
+              {activeTab === 'security' && (
+                <div className="space-y-4">
+                  <SecuritySettings />
+                  <PanicSettings />
+                </div>
+              )}
 
               {activeTab === 'rules' && <RulesSettings />}
               {activeTab === 'backup' && <BackupSettings />}
@@ -1385,21 +1391,10 @@ export default function Settings({ onClose }) {
                     <p className="text-xs text-text-muted mt-3">{t('st.adblockHint')}</p>
                   </div>
 
-                  <div className="card">
-                    <div className="flex items-center gap-2 mb-2">
-                      <Globe size={18} className="text-accent-primary" />
-                      <h4 className="font-semibold">{t('st.proxyTitle')}</h4>
-                    </div>
-                    <p className="text-sm text-text-muted mb-3">{t('st.proxyDesc')}</p>
-                    <input
-                      type="text"
-                      value={settings.globalProxy || ''}
-                      onChange={(e) => updateSettings({ globalProxy: e.target.value })}
-                      placeholder="socks5://127.0.0.1:1080"
-                      className="input"
-                    />
-                    <p className="text-xs text-text-muted mt-2">{t('st.proxyHint')}</p>
-                  </div>
+                  {/* Réseau privé : Tor, VPN intégré ou proxy personnalisé (remplace
+                      l'ancien champ « Proxy / VPN » global, toujours accessible
+                      via « Proxy… »). */}
+                  <PrivateNetworkSettings />
 
                   <div className="card">
                     <h4 className="font-semibold mb-2">{t('st.translateTitle')}</h4>

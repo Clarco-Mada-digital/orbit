@@ -41,6 +41,8 @@ export default function WirelessConnect({ api, onConnected }) {
   const [qr, setQr] = useState(null);
   const [nearby, setNearby] = useState([]);
   const [remembered, setRemembered] = useState([]);
+  const [pairing, setPairing] = useState([]);
+  const [codes, setCodes] = useState({});
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const alive = useRef(true);
@@ -53,6 +55,7 @@ export default function WirelessConnect({ api, onConnected }) {
       if (!alive.current || !r?.success) return;
       setNearby(r.devices || []);
       setRemembered(r.remembered || []);
+      setPairing(r.pairing || []);
     };
     tick();
     const t = setInterval(tick, 4000);
@@ -91,6 +94,22 @@ export default function WirelessConnect({ api, onConnected }) {
     setBusy('');
     if (r?.success) onConnected?.();
     else setError(r?.error || r?.output || 'Connexion refusée.');
+  };
+
+  const pairWithCode = async (d) => {
+    const code = String(codes[d.address] || '').trim();
+    if (!/^\d{6}$/.test(code)) {
+      setError('Le code d’association fait 6 chiffres.');
+      return;
+    }
+    setBusy(d.address);
+    setError('');
+    const r = await api.pair({ address: d.address, code });
+    if (!alive.current) return;
+    setBusy('');
+    if (r?.success && r.connected) onConnected?.();
+    else if (r?.success) setError('Associé ! Le téléphone apparaîtra dans « À proximité » dans quelques secondes.');
+    else setError(r?.error || r?.output || 'Code refusé : vérifiez-le sur le téléphone.');
   };
 
   const forget = async (d) => {
@@ -134,6 +153,35 @@ export default function WirelessConnect({ api, onConnected }) {
           <QrCode size={13} /> Associer sans fil (QR code)
         </button>
       )}
+
+      {pairing.length > 0 ? (
+        <div className="rounded-xl border border-accent-primary/40 bg-accent-primary/5 p-2.5">
+          <div className="mb-1.5 text-xs font-medium text-text-primary">Un téléphone attend un code d’association</div>
+          {pairing.map((d) => (
+            <div key={d.address} className="flex items-center gap-2 text-xs">
+              <Smartphone size={13} className="shrink-0 text-text-muted" />
+              <span className="font-mono text-text-muted">{d.host}</span>
+              <input
+                value={codes[d.address] || ''}
+                onChange={(e) => setCodes((c) => ({ ...c, [d.address]: e.target.value.replace(/\D/g, '').slice(0, 6) }))}
+                onKeyDown={(e) => e.key === 'Enter' && pairWithCode(d)}
+                placeholder="Code à 6 chiffres"
+                inputMode="numeric"
+                autoComplete="one-time-code"
+                className="w-28 rounded-lg border border-border bg-bg-primary px-2 py-1 font-mono tracking-widest outline-none focus:border-accent-primary"
+              />
+              <button
+                type="button"
+                onClick={() => pairWithCode(d)}
+                disabled={Boolean(busy)}
+                className="rounded-md bg-accent-primary px-2.5 py-1 text-[11px] font-medium text-white disabled:opacity-50"
+              >
+                {busy === d.address ? <Loader2 size={11} className="animate-spin" /> : 'Associer'}
+              </button>
+            </div>
+          ))}
+        </div>
+      ) : null}
 
       {nearby.length > 0 ? (
         <div>

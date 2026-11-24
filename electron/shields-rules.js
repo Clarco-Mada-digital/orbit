@@ -90,6 +90,11 @@ export function upgradeToHttps(url) {
   // Hôtes locaux ET IP littérales : pas de TLS à attendre → ne pas casser la
   // navigation en la redirigeant vers un port qui ne parle pas https.
   if (LOCAL_HOSTS.test(u.hostname) || isIpLiteral(u.hostname)) return null;
+  // .onion : la connexion est DÉJÀ chiffrée de bout en bout par Tor, et la
+  // plupart des services cachés ne parlent que http (Ahmia, Tor Project…).
+  // Les « mettre à niveau » casserait la page — Tor Browser fait la même
+  // exception.
+  if (/\.onion\.?$/i.test(u.hostname)) return null;
   u.protocol = 'https:';
   return u.toString();
 }
