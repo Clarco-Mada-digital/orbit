@@ -1,4 +1,4 @@
-const { contextBridge, ipcRenderer } = require('electron');
+const { contextBridge, ipcRenderer, webUtils } = require('electron');
 
 // API exposée à l'interface React (fenêtre uniquement).
 // La navigation des apps passe par les <webview> côté DOM.
@@ -113,6 +113,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // Envoi de fichiers : le sélecteur est ouvert PAR le processus principal.
     // `folder: true` demande le sélecteur de dossiers (envoi récursif).
     sendFiles: (payload) => ipcRenderer.invoke('phone:sendFiles', payload),
+    listDir: (payload) => ipcRenderer.invoke('phone:listDir', payload),
+    // Glisser-déposer : chemins des fichiers lâchés (webUtils, Electron 32+).
+    pushDropped: (files, payload) =>
+      ipcRenderer.invoke('phone:pushDropped', {
+        ...payload,
+        paths: [...(files || [])].map((f) => {
+          try {
+            return webUtils.getPathForFile(f);
+          } catch {
+            return '';
+          }
+        }),
+      }),
+    pullFiles: (payload) => ipcRenderer.invoke('phone:pullFiles', payload),
+    showReceived: (file) => ipcRenderer.invoke('phone:showReceived', { file }),
     onNotifications: (callback) => {
       const listener = (_event, payload) => callback(payload);
       ipcRenderer.on('phone:notifications', listener);

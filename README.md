@@ -90,7 +90,8 @@ Récupérez la dernière version sur la page des **[Releases](https://github.com
   historique, autorisations…), et **synchronisation** entre ordinateurs
 - 🗄️ **Base de données** — SQLite, MySQL/MariaDB, PostgreSQL, SQL Server et
   **Oracle** (sans Instant Client) : tables, édition, requêtes, analyse, diagramme
-- 📱 **Téléphone Android** — miroir, notifications, apps ; **sans câble** par QR
+- 📱 **Téléphone Android** — miroir, notifications, apps, **fichiers dans les deux
+  sens** (explorateur, récupération, glisser-déposer) ; **sans câble** par QR
   code (Android 11+) ou « Passer en sans fil », avec reconnexion automatique
 - 🏪 **Boutique de 166 apps** aux icônes embarquées (affichage instantané, hors
   ligne, sans service tiers)

@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generatedAt": "2026-11-24T10:05:07.726Z",
+  "generatedAt": "2026-11-24T12:41:54.078Z",
   "extensions": [
     {
       "file": "color-picker.zip",
@@ -45,22 +45,22 @@
     {
       "file": "orbit-database.zip",
       "name": "Orbit Base de données",
-      "version": "1.0.0",
-      "description": "Client SQL intégré : SQLite, MySQL/MariaDB, PostgreSQL et SQL Server. Connexions épinglées (mot de passe chiffré) ou jetables, fichiers .sql exécutables requête par requête, édition des données, analyse des colonnes, export CSV/JSON/SQL.",
+      "version": "1.0.1",
+      "description": "Client SQL intégré : SQLite, MySQL/MariaDB, PostgreSQL, SQL Server et Oracle. Connexions épinglées (mot de passe chiffré) ou jetables, fichiers .sql exécutables requête par requête, édition des données, analyse des colonnes, export CSV/JSON/SQL.",
       "nativeApp": "database",
       "minOrbitVersion": "1.21.0",
-      "size": 10936,
-      "sha256": "90ed9ae9f7d6cd5ea09572dbfb7cf06fd111db5cc67d1ccafb07e2d95cf4f1a3"
+      "size": 10945,
+      "sha256": "21f225e04e38dab75396cbe3c333c2ad67f3fcad79715cb10f4fff3287a5e393"
     },
     {
       "file": "orbit-phone.zip",
       "name": "Téléphone Orbit",
-      "version": "1.4.1",
-      "description": "Ajoute le Téléphone à Orbit : fenêtres de bureau indépendantes pour les applications Android, miroir séparé, notifications du mobile et pilotage via adb/scrcpy.",
+      "version": "1.5.0",
+      "description": "Ajoute le Téléphone à Orbit : fenêtres de bureau indépendantes pour les applications Android, miroir séparé, notifications du mobile, fichiers du téléphone (récupération sur l’ordinateur), connexion sans câble et pilotage via adb/scrcpy.",
       "nativeApp": "phone",
       "minOrbitVersion": "1.14.0",
-      "size": 11826,
-      "sha256": "a7ae7ac56225949a515f0efeb990552e8fa55bbadd46bacf219b2e583cfc675e"
+      "size": 11882,
+      "sha256": "4dff14e1221e857b0b3a650597a3af2999d6fb36135e047ca81eee0a3efe9554"
     },
     {
       "file": "page-to-markdown.zip",

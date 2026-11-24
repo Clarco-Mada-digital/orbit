@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Orbit — guide utilisateur</title>
 <meta name="author" content="Clarco RAHERINANDRASANA" />
-<meta name="description" content="Guide utilisateur complet d'Orbit — 1.21.2" />
+<meta name="description" content="Guide utilisateur complet d'Orbit — 1.21.3" />
 <!-- Fichier GÉNÉRÉ par scripts/build-docs.js à partir de docs/guide-utilisateur.md.
      Toute modification faite ici serait perdue à la prochaine génération. -->
 <style>
@@ -191,7 +191,7 @@
   <div class="cover-rule" aria-hidden="true"></div>
   <dl class="cover-meta">
     <div><dt>Auteur</dt><dd>Clarco RAHERINANDRASANA</dd></div>
-    <div><dt>Version</dt><dd>Orbit 1.21.2</dd></div>
+    <div><dt>Version</dt><dd>Orbit 1.21.3</dd></div>
     <div><dt>Édition</dt><dd>novembre 2026</dd></div>
   </dl>
 </section>
@@ -552,11 +552,22 @@ version plus récente est livrée avec une mise à jour d’Orbit, le bouton
 <strong>Mettre à jour</strong> apparaît en face de l’extension, avec la version installée.</p>
 <ul><li><strong>Text Snippets</strong> : remplace les abréviations configurées (par défaut, par exemple <code>;email</code>) par leur texte complet dans les champs compatibles. L’abréviation se termine par <strong>Tab</strong>, <strong>Entrée</strong>, une espace ou une ponctuation ; rien ne se transforme pendant la frappe, si bien que deux abréviations proches (<code>;tel</code> et <code>;telpro</code>) ne se marchent plus dessus. Les champs de mot de passe et de confirmation de mot de passe sont ignorés par défaut, alors que les champs email et identifiant fonctionnent normalement. Les snippets enregistrés restent en place quand l’extension est mise à jour depuis Extensions.</li><li><strong>Fake Data Filler (Orbit)</strong> : 🎲 ou <code>Alt+F</code> remplit le champ focalisé ; <code>Alt+Maj+F</code> remplit les champs visibles du formulaire actif. Les champs de connexion sont ignorés. Les valeurs sont générées localement ; les champs personnalisés se règlent dans Extensions. Un champ qui attend une image (avatar, couverture, photo de produit) reçoit un fichier PNG dessiné sur l’appareil, sans aucun envoi réseau. Les champs d’adresse de photo reçoivent un portrait ou une photo aléatoire, ce qui peut être coupé par « Photos et images de test » dans les réglages de l’extension. Les types reconnus couvrent aussi le sexe, la date de naissance, l’âge, l’IBAN (clé valide) et les cartes de test (numéro valide au sens de Luhn, expiration et cryptogramme).</li><li><strong>Web Clipper</strong> : conserve localement une sélection ou le contenu principal d’une page, puis permet de rechercher et d’exporter les captures en Markdown.</li><li><strong>Souris &amp; Défilement</strong> : défilement <strong>lissé</strong> et réglable (souplesse, pixels par cran, vitesse, sens inversé, <code>Maj</code>+molette pour l’axe horizontal, défilement rapide avec <code>Alt</code>), <strong>défilement automatique</strong> au clic du milieu maintenu, et une <strong>palette de présentation</strong> (<code>Alt+Maj+D</code>) : pointeur laser, stylo, surligneur, flèche, rectangle, ellipse, couleurs, épaisseurs, spot lumineux, halo de clic, curseur mis en évidence. Le pavé tactile est laissé tranquille (il défile déjà en continu) et les applications qui pilotent la molette elles-mêmes — cartes, Figma, éditeurs de code — ne sont jamais touchées. Une règle par site permet de couper le lissage là où il gêne.</li><li><strong>Color Picker</strong> : pipette de couleur intégrée, bouton flottant 🎨 ou <code>Alt+C</code>.</li><li><strong>QR Code Generator</strong> : QR code de la page ou d’un texte, <code>Alt+Q</code>. Entièrement local, aucune requête réseau.</li><li><strong>Sticky Notes</strong> : un bloc-notes attaché au domaine courant (<code>Alt+N</code>), qui se rouvre à chaque visite du site.</li><li><strong>Page to Markdown</strong> : convertit la page en Markdown et la télécharge (<code>Alt+M</code>, ou le menu contextuel).</li><li><strong>Téléphone Orbit</strong> : extension optionnelle pour piloter un Android compatible. Voir la section suivante.</li><li><strong>Orbit Base de données</strong> : client SQL intégré (SQLite, MySQL/MariaDB, PostgreSQL, SQL Server, Oracle). Voir plus bas.</li><li><strong>Orbit API</strong> : client API façon Postman et REST Client, fichiers <code>.http</code> compris. Voir plus bas.</li></ul>
 <h3 id="telephone-orbit">Téléphone Orbit</h3>
-<p>Une fois l’extension <strong>Téléphone Orbit</strong> installée, un bouton <strong>Téléphone</strong>
-apparaît dans la barre du haut, avec le nombre de notifications du mobile.
+<p>Une fois l’extension <strong>Téléphone Orbit</strong> installée, ouvrez le Téléphone depuis
+le menu des extensions (icône de puzzle de la barre du haut). Pour un accès
+direct avec le nombre de notifications du mobile, ajoutez son bouton dans
+<strong>Personnaliser → En-tête</strong>.
 Branchez l’appareil en USB avec le <strong>débogage USB</strong> activé (ou en sans-fil,
 Android 11+), puis installez le moteur scrcpy embarqué depuis le panneau :
 Orbit le télécharge dans ses propres données, sans toucher au système.</p>
+<p><strong>Fichiers du téléphone.</strong> L’onglet <strong>Fichiers</strong> parcourt le stockage du
+téléphone (raccourcis : Téléchargements, Photos et vidéos, Images,
+Documents, Vidéos, Musique, WhatsApp). Cochez des fichiers ou des dossiers
+puis <strong>Récupérer sur l’ordinateur</strong> — ou double-cliquez un fichier — et
+choisissez le dossier de destination ; un nom déjà pris devient « nom (2) ».
+Fonctionne en USB comme sans fil. Dans l’autre sens, <strong>glissez-déposez</strong>
+des fichiers ou des dossiers de l’ordinateur sur l’onglet Fichiers : ils
+arrivent dans le dossier affiché. Le bouton <strong>Envoyer</strong> de l’accueil les
+dépose dans les téléchargements du téléphone.</p>
 <p><strong>Sans câble.</strong> Le téléphone et l’ordinateur doivent être sur le <strong>même
 réseau Wi-Fi</strong> (Android ne permet pas ce pilotage par Bluetooth). Deux façons :</p>
 <ul><li><strong>Associer par QR code</strong> (Android 11+) : dans Options pour les développeurs, activez <strong>Débogage sans fil</strong>, puis <strong>Associer l’appareil avec un code QR</strong> et visez le code affiché par Orbit. À faire une seule fois.</li><li><strong>Passer en sans fil</strong> (tout Android) : téléphone branché, section <strong>Appareil</strong> → <strong>Passer en sans fil</strong>, puis débranchez. Ce mode dure jusqu’au redémarrage du téléphone.</li></ul>
@@ -717,7 +728,7 @@ joignez pas de mots de passe, cookies ou données privées.</p>
 <ul><li><a href="https://github.com/Clarco-Mada-digital/orbit/releases/latest">Télécharger Orbit</a></li><li><a href="https://github.com/Clarco-Mada-digital/orbit">Code source</a></li><li><a href="./guide-utilisateur.pdf">Guide PDF</a></li><li><a href="./guide-developpeur.md">Guide développeur</a></li><li><a href="./index.html">Page de présentation</a></li></ul>
 <hr />
 <p><strong>Orbit</strong> · Développé par <strong>Clarco RAHERINANDRASANA</strong> · Licence MIT.</p>
-<p class="built">Orbit 1.21.2 · Clarco RAHERINANDRASANA · document généré le 2026-11-24 à partir de
+<p class="built">Orbit 1.21.3 · Clarco RAHERINANDRASANA · document généré le 2026-11-24 à partir de
 <code>docs/guide-utilisateur.md</code> (<code>npm run docs</code>).</p>
 </main>
 </body>

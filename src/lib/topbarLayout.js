@@ -13,9 +13,10 @@ export const TOPBAR_ZONES = ['left', 'center', 'right'];
 export const DEFAULT_TOPBAR = {
   left: ['logo', 'nav', 'appTitle', 'zoom'],
   center: ['search'],
-  // `phone` ne s'affiche que si l'extension Téléphone est installée ; les
-  // installations sans extension n'ont donc aucun trou dans la barre.
-  right: ['shields', 'permissions', 'extensions', 'split', 'workspaces', 'favorite', 'nowPlaying', 'media', 'downloads', 'phone', 'notifications'],
+  // Pas de `phone` ici : la barre est « au choix ». Le Téléphone s'ouvre
+  // depuis le menu des extensions ; son bouton (avec le compteur de
+  // notifications) s'ajoute dans Personnaliser → En-tête pour qui le veut.
+  right: ['shields', 'permissions', 'extensions', 'split', 'workspaces', 'favorite', 'nowPlaying', 'media', 'downloads', 'notifications'],
 };
 
 // Disposition par défaut de la barre du bas (désactivée par défaut).

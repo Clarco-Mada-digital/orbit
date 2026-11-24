@@ -43,6 +43,10 @@ import {
   MDNS_PAIRING,
   MDNS_CONNECT,
   MDNS_LEGACY,
+  phoneFsPathValid,
+  shQuote,
+  parsePhoneListing,
+  PHONE_FS_ROOT,
   packageValid,
   encodeInputText,
   buildMirrorArgs,
@@ -1286,8 +1290,12 @@ function collectPushEntries(paths) {
 // locaux viennent d'un sélecteur de fichiers du système (jamais d'une page),
 // et chaque segment du nom distant est assaini : il sert de chemin sur
 // l'appareil.
-export async function pushFiles({ serial, paths } = {}) {
+export async function pushFiles({ serial, paths, remoteDir } = {}) {
   if (!serial) return { success: false, error: 'aucun appareil', sent: [] };
+  // Dossier d'arrivée : celui affiché dans l'onglet Fichiers (glisser-déposer),
+  // sinon les téléchargements du téléphone. Toujours dans le stockage partagé.
+  const baseDir = remoteDir ? String(remoteDir).replace(/\/+$/, '') : PHONE_PUSH_DIR;
+  if (!phoneFsPathValid(baseDir)) return { success: false, error: 'dossier du téléphone non autorisé', sent: [] };
   const list = (Array.isArray(paths) ? paths : []).filter((p) => typeof p === 'string' && p);
   if (!list.length) return { success: false, error: 'aucun fichier', sent: [] };
 
@@ -1309,19 +1317,19 @@ export async function pushFiles({ serial, paths } = {}) {
   const remoteDirs = [
     ...new Set(
       entries
-        .map((entry) => path.posix.dirname(`${PHONE_PUSH_DIR}/${entry.remote}`))
-        .filter((dir) => dir !== PHONE_PUSH_DIR)
+        .map((entry) => path.posix.dirname(`${baseDir}/${entry.remote}`))
+        .filter((dir) => dir !== baseDir)
     ),
   ];
   if (remoteDirs.length) {
-    const quoted = remoteDirs.map((dir) => `'${dir}'`).join(' ');
+    const quoted = remoteDirs.map((dir) => shQuote(dir)).join(' ');
     await deviceShell(serial, `mkdir -p ${quoted}`, { timeout: 60000 });
   }
 
   const sent = [];
   const failed = [...skipped];
   for (const entry of entries) {
-    const target = `${PHONE_PUSH_DIR}/${entry.remote}`;
+    const target = `${baseDir}/${entry.remote}`;
     const out = await adb(serial, ['push', entry.local, target], { timeout: 10 * 60 * 1000 });
     const text = `${out.stdout}${out.stderr}`;
     if (out.ok && !/error|failed|no such file|permission denied/i.test(text)) {
@@ -1343,7 +1351,7 @@ export async function pushFiles({ serial, paths } = {}) {
     sent,
     failed,
     truncated,
-    directory: PHONE_PUSH_DIR,
+    directory: baseDir,
     ...(error ? { error } : {}),
   };
 }
@@ -1843,4 +1851,55 @@ export async function readStorage({ serial } = {}) {
   if (!out.ok) return { success: false, error: 'stockage illisible', storage: null };
   const storage = parseStorage(out.stdout);
   return storage ? { success: true, storage } : { success: false, error: 'stockage illisible', storage: null };
+}
+
+
+// --- Fichiers : téléphone → ordinateur -----------------------------------------
+
+// Contenu d'un dossier du stockage partagé. `find … -exec stat` plutôt que
+// `ls` : sortie stable, noms avec espaces/accents intacts, fichiers cachés
+// inclus, et pas de « * » littéral dans un dossier vide.
+export async function listPhoneDir({ serial, path: dir = PHONE_FS_ROOT } = {}) {
+  if (!serial) return { success: false, error: 'aucun appareil' };
+  const target = String(dir || PHONE_FS_ROOT).replace(/\/+$/, '') || PHONE_FS_ROOT;
+  if (!phoneFsPathValid(target)) return { success: false, error: 'dossier non autorisé' };
+  const cmd = `find ${shQuote(target)}/ -mindepth 1 -maxdepth 1 -exec stat -c '%F|%s|%Y|%n' {} + 2>/dev/null`;
+  const out = await deviceShell(serial, cmd, { timeout: 30000 });
+  if (!out.ok && !out.stdout) return { success: false, error: (out.stderr || 'lecture impossible').slice(0, 200) };
+  // `find` sur « dossier/ » renvoie « dossier//nom » sur certaines versions.
+  const listing = out.stdout.replace(/\/\/+/g, '/');
+  return { success: true, path: target, entries: parsePhoneListing(listing, target) };
+}
+
+// `adb pull` : le chemin distant est un ARGUMENT d'adb (aucun shell), validé
+// quand même. Un dossier est copié avec son contenu. Les noms existants ne
+// sont pas écrasés : « nom (2).ext ».
+export async function pullFromPhone({ serial, paths, dest } = {}) {
+  if (!serial) return { success: false, error: 'aucun appareil' };
+  const list = (Array.isArray(paths) ? paths : []).filter(phoneFsPathValid).slice(0, 500);
+  if (!list.length) return { success: false, error: 'aucun fichier valide' };
+  if (!dest || !fs.existsSync(dest)) return { success: false, error: 'dossier de destination introuvable' };
+  const received = [];
+  const failed = [];
+  for (const remote of list) {
+    // Nom sûr pour tous les systèmes (Windows refuse : \\ / : * ? " < > |).
+    const base =
+      [...path.posix.basename(remote)].map((ch) => (ch.charCodeAt(0) < 32 || '\\/:*?"<>|'.includes(ch) ? '_' : ch)).join('') ||
+      'fichier';
+    let local = path.join(dest, base);
+    for (let i = 2; fs.existsSync(local) && i < 1000; i++) {
+      const ext = path.extname(base);
+      local = path.join(dest, `${path.basename(base, ext)} (${i})${ext}`);
+    }
+    const out = await adb(serial, ['pull', '-a', remote, local], { timeout: 60 * 60 * 1000 });
+    const text = `${out.stdout}${out.stderr}`;
+    if (out.ok && fs.existsSync(local) && !/error|failed|does not exist|permission denied/i.test(text)) received.push(local);
+    else failed.push(path.posix.basename(remote));
+  }
+  return {
+    success: received.length > 0 && failed.length === 0,
+    received,
+    failed,
+    error: failed.length ? `Non récupéré${failed.length > 1 ? 's' : ''} : ${failed.slice(0, 5).join(', ')}` : undefined,
+  };
 }

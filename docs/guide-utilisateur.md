@@ -675,11 +675,23 @@ version plus récente est livrée avec une mise à jour d’Orbit, le bouton
 
 ### Téléphone Orbit
 
-Une fois l’extension **Téléphone Orbit** installée, un bouton **Téléphone**
-apparaît dans la barre du haut, avec le nombre de notifications du mobile.
+Une fois l’extension **Téléphone Orbit** installée, ouvrez le Téléphone depuis
+le menu des extensions (icône de puzzle de la barre du haut). Pour un accès
+direct avec le nombre de notifications du mobile, ajoutez son bouton dans
+**Personnaliser → En-tête**.
 Branchez l’appareil en USB avec le **débogage USB** activé (ou en sans-fil,
 Android 11+), puis installez le moteur scrcpy embarqué depuis le panneau :
 Orbit le télécharge dans ses propres données, sans toucher au système.
+
+**Fichiers du téléphone.** L’onglet **Fichiers** parcourt le stockage du
+téléphone (raccourcis : Téléchargements, Photos et vidéos, Images,
+Documents, Vidéos, Musique, WhatsApp). Cochez des fichiers ou des dossiers
+puis **Récupérer sur l’ordinateur** — ou double-cliquez un fichier — et
+choisissez le dossier de destination ; un nom déjà pris devient « nom (2) ».
+Fonctionne en USB comme sans fil. Dans l’autre sens, **glissez-déposez**
+des fichiers ou des dossiers de l’ordinateur sur l’onglet Fichiers : ils
+arrivent dans le dossier affiché. Le bouton **Envoyer** de l’accueil les
+dépose dans les téléchargements du téléphone.
 
 **Sans câble.** Le téléphone et l’ordinateur doivent être sur le **même
 réseau Wi-Fi** (Android ne permet pas ce pilotage par Bluetooth). Deux façons :

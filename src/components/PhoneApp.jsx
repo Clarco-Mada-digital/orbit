@@ -26,6 +26,7 @@ import { detectUrl } from '../lib/urls';
 import { neededSources, normalizeDesktopLayout, presetLayout } from '../lib/phoneDesktop';
 import PhoneDesktop from './phone/PhoneDesktop';
 import WirelessConnect from './phone/WirelessConnect';
+import PhoneFiles from './phone/PhoneFiles';
 import { usePhoneStore } from '../lib/phoneStore';
 import {
   compareVersions,
@@ -1354,6 +1355,7 @@ export default function PhoneApp({ visible, onClose }) {
         {[
           ['home', 'Accueil'],
           ['screen', 'Écran'],
+          ['files', 'Fichiers'],
           ['settings', 'Réglages'],
         ].map(([id, label]) => (
           <button
@@ -1839,6 +1841,15 @@ export default function PhoneApp({ visible, onClose }) {
             </>
           )}
         </div>
+      ) : null}
+
+      {/* ------------------------------- FICHIERS ----------------------------- */}
+      {tab === 'files' ? (
+        device ? (
+          <PhoneFiles api={api} serial={serial} />
+        ) : (
+          <p className="p-6 text-center text-sm text-text-muted">Connectez un téléphone pour parcourir ses fichiers.</p>
+        )
       ) : null}
 
       {/* ------------------------------- RÉGLAGES ----------------------------- */}

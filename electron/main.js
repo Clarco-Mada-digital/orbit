@@ -8781,6 +8781,41 @@ ipcMain.handle(
   })
 );
 
+// Glisser-déposer ordinateur → téléphone : les chemins viennent des fichiers
+// que l'utilisateur a lâchés sur l'interface d'Orbit (jamais d'une page web :
+// handleFromUi refuse tout autre émetteur), vers le dossier affiché.
+handleFromUi('phone:pushDropped', async (_e, { serial, paths, remoteDir } = {}) => {
+  try {
+    const phone = await loadPhone();
+    const list = (Array.isArray(paths) ? paths : []).filter((p) => typeof p === 'string' && path.isAbsolute(p) && fs.existsSync(p));
+    return await phone.pushFiles({ serial, paths: list, remoteDir });
+  } catch (err) {
+    return { success: false, error: String(err?.message || err) };
+  }
+});
+
+// Téléphone → ordinateur : parcourir le stockage, récupérer des fichiers.
+ipcMain.handle('phone:listDir', phoneGuard((p, phone) => phone.listPhoneDir(p)));
+ipcMain.handle(
+  'phone:pullFiles',
+  phoneGuard(async ({ serial, paths } = {}, phone) => {
+    const result = await dialog.showOpenDialog(mainWindow, {
+      title: 'Récupérer depuis le téléphone',
+      buttonLabel: 'Enregistrer ici',
+      defaultPath: app.getPath('downloads'),
+      properties: ['openDirectory', 'createDirectory', 'dontAddToRecent'],
+    });
+    if (result.canceled || !result.filePaths?.[0]) return { success: false, cancelled: true };
+    return phone.pullFromPhone({ serial, paths, dest: result.filePaths[0] });
+  })
+);
+// Le chemin vient d'une récupération qu'on vient de faire (dossier choisi par
+// l'utilisateur) : on ne montre qu'un fichier qui existe.
+ipcMain.handle('phone:showReceived', (_e, { file } = {}) => {
+  if (typeof file === 'string' && path.isAbsolute(file) && fs.existsSync(file)) shell.showItemInFolder(file);
+  return { success: true };
+});
+
 // --- Widgets du bureau ------------------------------------------------------
 ipcMain.handle('phone:calendar', phoneGuard((p, phone) => phone.listCalendarEvents(p)));
 ipcMain.handle('phone:media', phoneGuard((p, phone) => phone.readMediaSession(p)));

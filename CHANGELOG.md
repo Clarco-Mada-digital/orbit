@@ -8,6 +8,24 @@ Format : une section `## [X.Y.Z] — AAAA-MM-JJ` par version, puis des
 sous-sections `### Ajouté` / `### Modifié` / `### Corrigé` / `### Sécurité`.
 La plus récente en premier.
 
+## [1.21.4] — 2026-11-24
+
+### Ajouté
+- **Téléphone → ordinateur** : nouvel onglet **Fichiers** du Téléphone pour
+  parcourir le stockage du mobile (raccourcis Téléchargements, Photos,
+  Documents, WhatsApp…, fichiers cachés à la demande) et **récupérer** fichiers
+  ou dossiers sur l'ordinateur, en USB comme sans fil. Chemins limités au
+  stockage partagé et protégés contre toute injection de commande. Extension
+  Téléphone 1.5.0.
+- **Glisser-déposer ordinateur → téléphone** : fichiers et dossiers lâchés sur
+  l'onglet Fichiers arrivent dans le dossier affiché.
+
+### Modifié
+- Le bouton Téléphone n'est plus ajouté d'office à la barre du haut : le
+  Téléphone s'ouvre depuis le menu des extensions, et son bouton s'ajoute au
+  choix (Personnaliser → En-tête). Les barres déjà personnalisées ne changent pas.
+- Fiche « Orbit Base de données » du catalogue : Oracle mentionné.
+
 ## [1.21.3] — 2026-11-24
 
 ### Ajouté

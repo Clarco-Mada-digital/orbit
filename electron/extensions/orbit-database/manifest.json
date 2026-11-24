@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Orbit Base de données",
-  "version": "1.0.0",
-  "description": "Client SQL intégré : SQLite, MySQL/MariaDB, PostgreSQL et SQL Server. Connexions épinglées (mot de passe chiffré) ou jetables, fichiers .sql exécutables requête par requête, édition des données, analyse des colonnes, export CSV/JSON/SQL.",
+  "version": "1.0.1",
+  "description": "Client SQL intégré : SQLite, MySQL/MariaDB, PostgreSQL, SQL Server et Oracle. Connexions épinglées (mot de passe chiffré) ou jetables, fichiers .sql exécutables requête par requête, édition des données, analyse des colonnes, export CSV/JSON/SQL.",
   "author": "Orbit",
   "homepage_url": "https://orbit.app",
   "icons": {

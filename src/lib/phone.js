@@ -1208,3 +1208,76 @@ export function rememberWirelessDevice(list, entry) {
 export function mdnsBaseName(value) {
   return String(value || '').replace(/\._adb(?:-tls-(?:connect|pairing))?\._tcp\.?$/, '');
 }
+
+// ---------------------------------------------------------------------------
+// Fichiers du téléphone (téléphone → ordinateur).
+//
+// On ne parcourt QUE le stockage partagé (/sdcard = /storage/emulated/0) : le
+// reste de l'appareil est soit illisible sans root, soit sans intérêt. Les
+// chemins voyagent jusqu'à `adb shell` : ils sont validés (pas de « .. », pas
+// de caractère de contrôle) PUIS mis entre apostrophes.
+// ---------------------------------------------------------------------------
+export const PHONE_FS_ROOT = '/sdcard';
+
+export const PHONE_FS_SHORTCUTS = [
+  { id: 'download', label: 'Téléchargements', path: '/sdcard/Download' },
+  { id: 'camera', label: 'Photos et vidéos', path: '/sdcard/DCIM' },
+  { id: 'pictures', label: 'Images', path: '/sdcard/Pictures' },
+  { id: 'documents', label: 'Documents', path: '/sdcard/Documents' },
+  { id: 'movies', label: 'Vidéos', path: '/sdcard/Movies' },
+  { id: 'music', label: 'Musique', path: '/sdcard/Music' },
+  { id: 'whatsapp', label: 'WhatsApp', path: '/sdcard/Android/media/com.whatsapp/WhatsApp/Media' },
+];
+
+export function phoneFsPathValid(p) {
+  const s = String(p || '');
+  if (!/^\/(sdcard|storage\/emulated\/0)(\/|$)/.test(s)) return false;
+  if (s.length > 1024 || [...s].some((ch) => ch.charCodeAt(0) < 32)) return false;
+  return !s.split('/').some((seg) => seg === '..' || seg === '.');
+}
+
+// Apostrophes POSIX : 'l'\''été' — rien n'est interprété par le shell.
+export function shQuote(s) {
+  return `'${String(s).replace(/'/g, `'\\''`)}'`;
+}
+
+export function phoneParentPath(p) {
+  const s = String(p || '').replace(/\/+$/, '');
+  if (s === PHONE_FS_ROOT || !s.includes('/')) return null;
+  const parent = s.slice(0, s.lastIndexOf('/'));
+  return phoneFsPathValid(parent) ? parent : null;
+}
+
+// Sortie de « stat -c '%F|%s|%Y|%n' » → entrées triées (dossiers d'abord).
+// Le nom est tout ce qui suit le 3e « | » (il peut en contenir).
+export function parsePhoneListing(output, dir) {
+  const base = String(dir || '').replace(/\/+$/, '');
+  const out = [];
+  for (const raw of String(output || '').split('\n')) {
+    const line = raw.replace(/\r$/, '');
+    const parts = line.split('|');
+    if (parts.length < 4) continue;
+    const [kind, size, mtime] = parts;
+    const full = parts.slice(3).join('|');
+    if (!full.startsWith(`${base}/`)) continue;
+    const name = full.slice(base.length + 1);
+    if (!name || name.includes('/')) continue;
+    const isDir = /directory/i.test(kind);
+    if (!isDir && !/regular/i.test(kind)) continue; // liens, sockets… ignorés
+    out.push({ name, path: full, dir: isDir, size: isDir ? 0 : Number(size) || 0, mtime: (Number(mtime) || 0) * 1000, hidden: name.startsWith('.') });
+  }
+  return out.sort((a, b) => (a.dir === b.dir ? a.name.localeCompare(b.name, 'fr', { sensitivity: 'base' }) : a.dir ? -1 : 1));
+}
+
+export function formatPhoneSize(bytes) {
+  const n = Number(bytes) || 0;
+  if (n < 1024) return `${n} o`;
+  const units = ['Ko', 'Mo', 'Go', 'To'];
+  let v = n / 1024;
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i++;
+  }
+  return `${v.toLocaleString('fr-FR', { maximumFractionDigits: v < 10 ? 1 : 0 })} ${units[i]}`;
+}
