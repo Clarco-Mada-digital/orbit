@@ -171,6 +171,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     read: (payload) => ipcRenderer.invoke('documents:read', payload),
     fetch: (payload) => ipcRenderer.invoke('documents:fetch', payload),
     reveal: (payload) => ipcRenderer.invoke('documents:reveal', payload),
+    // Image locale référencée par le document (data: URL), lien vers un autre
+    // fichier local, réenregistrement du document ouvert.
+    asset: (payload) => ipcRenderer.invoke('documents:asset', payload),
+    openRelative: (payload) => ipcRenderer.invoke('documents:openRelative', payload),
+    write: (payload) => ipcRenderer.invoke('documents:write', payload),
   },
   // JAMAIS SILENCIEUX : un document qu'Orbit ne sait pas afficher (bureautique,
   // archive…) est confié au navigateur du système, qui le téléchargera. Le

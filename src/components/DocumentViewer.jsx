@@ -1,31 +1,27 @@
-import { createContext, useCallback, useContext, useEffect, useId, useMemo, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  AlertTriangle,
   Check,
   ClipboardCopy,
+  Database,
   ExternalLink,
   FileWarning,
   FolderOpen,
-  Info,
-  Lightbulb,
+  Globe,
   Loader2,
-  Music,
-  ShieldAlert,
-  Play,
   RefreshCw,
-  Video,
   WrapText,
 } from 'lucide-react';
 import { appPartition } from '../lib/session';
 import { KIND, languageLabel } from '../lib/fileTypes';
-import { parseMarkdown, parseInline, footnoteLabels } from '../lib/markdown';
-import {
-  formatBytes,
-  hasBinaryContent,
-  parseDelimited,
-  prettyJson,
-  textStats,
-} from '../lib/documents';
+import { formatBytes, hasBinaryContent, parseDelimited, textStats } from '../lib/documents';
+import { useStore } from '../stores/useStore';
+import { openNativeApp } from '../lib/nativeApps';
+import { useDevToolsStore } from '../lib/devToolsStore';
+
+// Rendus riches chargés À LA DEMANDE : un .txt n'a pas à télécharger le moteur
+// markdown, KaTeX, la coloration syntaxique ni l'explorateur JSON.
+const MarkdownView = lazy(() => import('./docviewer/MarkdownView'));
+const JsonExplorer = lazy(() => import('./docviewer/JsonExplorer'));
 import { useT } from '../lib/i18n';
 
 // ---------------------------------------------------------------------------
@@ -46,17 +42,11 @@ import { useT } from '../lib/i18n';
 // session jetable de la page) et le met en forme ici — indépendamment de ce que
 // le serveur annonce.
 //
-// SÛRETÉ DU RENDU : aucun HTML VENANT DU DOCUMENT n'est injecté. Le markdown
-// devient des structures de données (lib/markdown.js) rendues en JSX, donc
-// échappées par React. Les liens partent dans le navigateur du système (jamais
-// dans cette fenêtre) ; ni les images ni les médias ne sont chargés sans un
-// clic : un document reçu ne peut ni exécuter de code ni signaler sa lecture.
-//
-// Une seule exception, documentée au composant `MathFormula` : KaTeX met en
-// forme les formules et produit du HTML. Son ENTRÉE est du TeX extrait par
-// notre parseur,
-// jamais du balisage trouvé dans le document — c'est le même mécanisme que
-// l'assistant (rehype-katex).
+// SÛRETÉ DU RENDU : voir docviewer/MarkdownView.jsx — le HTML d'un README est
+// analysé en arbre et NETTOYÉ (schéma GitHub) avant de devenir des éléments
+// React ; aucun innerHTML venu du document. Les liens web partent dans le
+// navigateur du système ; les images distantes attendent l'accord du lecteur.
+// Le JSON est exploré, analysé et modifiable (docviewer/JsonExplorer.jsx).
 // ---------------------------------------------------------------------------
 
 // Ouvrir un lien du document dans le NAVIGATEUR : `window.open` est redirigé
@@ -70,6 +60,9 @@ function openExternally(href) {
 // décide quand publier, ce qui évite les mises à jour pendant le rendu et les
 // réponses arrivées après le démontage).
 async function readDocument(app) {
+  // Base SQLite : un fichier binaire, jamais lu comme du texte — l'app Base de
+  // données s'en charge (voir DatabaseFile).
+  if (app.kind === KIND.database) return { status: 'database' };
   const api = window.electronAPI?.documents;
   if (!api) return { status: 'error', reason: 'no-bridge' };
   let res;
@@ -92,472 +85,6 @@ async function readDocument(app) {
   };
 }
 
-function DocumentLink({ href, children }) {
-  if (!href) return <span>{children}</span>; // lien neutralisé : texte simple
-  return (
-    <a
-      href={href}
-      onClick={(e) => {
-        e.preventDefault();
-        openExternally(href);
-      }}
-      className="text-accent-primary underline decoration-dotted underline-offset-2 hover:text-accent-hover break-all"
-    >
-      {children}
-    </a>
-  );
-}
-
-// --- Formules mathématiques ------------------------------------------------
-// KaTeX produit du HTML, qu'on injecte donc ici — seule exception au « aucun
-// HTML » de cette visionneuse, et elle est circonscrite :
-//   • l'entrée est du TeX extrait par notre parseur, PAS du HTML trouvé dans le
-//     document. KaTeX ne recopie jamais son entrée telle quelle en balisage ;
-//   • `trust: false` (le défaut) désactive les commandes capables d'émettre du
-//     balisage ou des liens arbitraires (\href, \url, \htmlClass, \includegraphics) ;
-//   • `throwOnError: false` + `strict: false` : une formule bancale s'affiche
-//     en rouge au lieu de faire tomber tout le document.
-// C'est exactement le mécanisme que l'assistant utilise déjà (rehype-katex).
-// En cas d'échec, on retombe sur le TeX en texte brut, échappé par React.
-// NE PAS renommer en `Math` : ce nom masquerait l'objet global `Math` dans
-// tout le module, et `Math.min` plus bas deviendrait un appel de composant.
-// KaTeX À LA DEMANDE.
-//
-// Il était importé en haut de ce fichier, donc chargé dès l'ouverture de
-// N'IMPORTE QUEL document : un .txt, un .json, un .csv, un fichier de code,
-// un markdown sans la moindre formule. Cela représente 268 ko de JavaScript
-// et 28 ko de CSS (lequel déclare 59 fichiers de polices) à télécharger,
-// analyser et appliquer avant le premier affichage — pour une fonctionnalité
-// que la plupart des documents n'utilisent jamais.
-//
-// Désormais on ne le charge que si une formule est réellement rencontrée. La
-// promesse est mémorisée au niveau du module : les formules suivantes du même
-// document ne rechargent rien, et le rendu reste synchrone une fois l'outil
-// arrivé.
-let katexModule = null;
-let katexLoading = null;
-
-function loadKatex() {
-  if (katexModule) return Promise.resolve(katexModule);
-  if (!katexLoading) {
-    katexLoading = Promise.all([import('katex'), import('katex/dist/katex.min.css')])
-      .then(([mod]) => {
-        katexModule = mod.default || mod;
-        return katexModule;
-      })
-      .catch(() => {
-        // Échec de chargement : on laisse `katexModule` à null, la formule
-        // reste affichée en TeX brut. Un document ne doit pas devenir
-        // illisible parce qu'une mise en forme n'a pas pu être chargée.
-        katexLoading = null;
-        return null;
-      });
-  }
-  return katexLoading;
-}
-
-function MathFormula({ tex, display }) {
-  // Déjà chargé (autre formule, autre document) : rendu immédiat, sans
-  // clignotement du TeX brut.
-  const [katex, setKatex] = useState(katexModule);
-
-  useEffect(() => {
-    if (katex) return undefined;
-    let alive = true;
-    loadKatex().then((mod) => {
-      if (alive && mod) setKatex(mod);
-    });
-    return () => {
-      alive = false;
-    };
-  }, [katex]);
-
-  const html = useMemo(() => {
-    if (!katex) return null;
-    try {
-      return katex.renderToString(String(tex || ''), {
-        displayMode: Boolean(display),
-        throwOnError: false,
-        strict: false,
-        trust: false,
-        output: 'html',
-      });
-    } catch {
-      return null;
-    }
-  }, [katex, tex, display]);
-
-  if (!html) {
-    return (
-      <code className={`font-mono text-[0.85em] text-text-muted ${display ? 'block my-2' : ''}`}>
-        {tex}
-      </code>
-    );
-  }
-  const Tag = display ? 'div' : 'span';
-  return (
-    <Tag
-      className={display ? 'my-3 overflow-x-auto text-center' : ''}
-      // Sortie de KaTeX, pas du document : voir le commentaire du composant —
-      // l'entrée est du TeX extrait par notre parseur, et `trust: false`
-      // interdit les commandes qui émettraient du balisage arbitraire.
-      // argus-ignore SEC-DANGEROUS-HTML
-      dangerouslySetInnerHTML={{ __html: html }}
-    />
-  );
-}
-
-// --- Médias (audio / vidéo) ------------------------------------------------
-// Rien n'est chargé tant que le lecteur n'a pas cliqué : une URL unique dans
-// un document reçu suffirait sinon à signaler qu'on l'a ouvert, à qui et
-// quand. Le clic est le consentement, comme pour les images.
-function Media({ kind, alt, href }) {
-  const t = useT();
-  const [playing, setPlaying] = useState(false);
-
-  if (!href) return <span className="text-text-muted">{alt || t('doc.media.blocked')}</span>;
-
-  if (!playing) {
-    return (
-      <span
-        role="button"
-        tabIndex={0}
-        onClick={() => setPlaying(true)}
-        onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && setPlaying(true)}
-        title={href}
-        className="my-2 inline-flex items-center gap-2 rounded-lg border border-border bg-bg-elevated px-3 py-2 text-xs text-text-secondary cursor-pointer hover:border-accent-primary hover:text-text-primary"
-      >
-        {kind === 'video' ? <Video size={14} /> : <Music size={14} />}
-        <span className="font-medium">{alt || t(`doc.media.${kind}`)}</span>
-        <span className="flex items-center gap-1 text-accent-primary">
-          <Play size={12} /> {t('doc.media.play')}
-        </span>
-      </span>
-    );
-  }
-
-  const common = { src: href, controls: true, autoPlay: true, className: 'my-2 max-w-full rounded-lg' };
-  return kind === 'video' ? (
-    <video {...common} style={{ maxHeight: '24rem' }} />
-  ) : (
-    <audio {...common} className="my-2 w-full max-w-md" />
-  );
-}
-
-// Contexte du document en cours de rendu : table des notes de bas de page et
-// préfixe d'identifiants. Passer ces deux valeurs en props aurait voulu dire
-// les traverser à la main dans chaque cellule de tableau et chaque puce de
-// liste imbriquée — le contexte les met à disposition là où elles servent.
-const MarkdownContext = createContext({ footnotes: new Map(), scope: 'md' });
-
-function scrollToAnchor(id) {
-  document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-}
-
-// --- Rendu inline (markdown) ----------------------------------------------
-function Inline({ nodes }) {
-  const { footnotes, scope } = useContext(MarkdownContext);
-  return (nodes || []).map((node, i) => {
-    const key = `${node.type}-${i}`;
-    if (node.type === 'math') return <MathFormula key={key} tex={node.tex} display={node.display} />;
-    if (node.type === 'media')
-      return <Media key={key} kind={node.kind} alt={node.alt} href={node.href} />;
-    // Renvoi de note : exposant cliquable qui défile jusqu'à la note. Les
-    // identifiants sont préfixés par `scope` car plusieurs documents restent
-    // montés en même temps (écran partagé) : sans ça, le renvoi d'un document
-    // sauterait dans un autre.
-    if (node.type === 'fnref') {
-      const label = footnotes?.get(node.id);
-      return (
-        <sup key={key} className="ml-0.5">
-          <span
-            role="button"
-            tabIndex={0}
-            onClick={() => scrollToAnchor(`${scope}-fn-${node.id}`)}
-            onKeyDown={(e) =>
-              (e.key === 'Enter' || e.key === ' ') && scrollToAnchor(`${scope}-fn-${node.id}`)
-            }
-            id={`${scope}-fnref-${node.id}`}
-            className="px-0.5 text-accent-primary cursor-pointer hover:underline"
-          >
-            [{label || node.id}]
-          </span>
-        </sup>
-      );
-    }
-    if (node.type === 'text') return <span key={key}>{node.text}</span>;
-    if (node.type === 'code')
-      return (
-        <code key={key} className="px-1 py-0.5 rounded bg-bg-hover font-mono text-[0.85em]">
-          {node.text}
-        </code>
-      );
-    if (node.type === 'strong')
-      return (
-        <strong key={key} className="font-semibold text-text-primary">
-          <Inline nodes={node.children} />
-        </strong>
-      );
-    if (node.type === 'em')
-      return (
-        <em key={key}>
-          <Inline nodes={node.children} />
-        </em>
-      );
-    if (node.type === 'del')
-      return (
-        <del key={key} className="text-text-muted">
-          <Inline nodes={node.children} />
-        </del>
-      );
-    if (node.type === 'link')
-      return (
-        <DocumentLink key={key} href={node.href}>
-          {node.text}
-        </DocumentLink>
-      );
-    if (node.type === 'image')
-      return (
-        <span
-          key={key}
-          role="button"
-          tabIndex={0}
-          onClick={() => openExternally(node.href)}
-          title={node.href || ''}
-          className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded border border-border bg-bg-elevated text-xs text-text-muted cursor-pointer hover:text-text-secondary"
-        >
-          🖼 {node.alt}
-        </span>
-      );
-    return <span key={key}>{node.text}</span>;
-  });
-}
-
-function Heading({ level, children }) {
-  const sizes = [
-    'text-2xl font-bold',
-    'text-xl font-bold',
-    'text-lg font-semibold',
-    'text-base font-semibold',
-    'text-sm font-semibold uppercase tracking-wide',
-    'text-sm font-semibold text-text-muted',
-  ];
-  const cls = sizes[Math.min(level, 6) - 1] || sizes[5];
-  // h1 du document → h2 dans l'interface : la page a déjà son propre titre.
-  const Tag = `h${Math.min(level + 1, 6)}`;
-  return <Tag className={`${cls} text-text-primary mt-2`}>{children}</Tag>;
-}
-
-function ListItem({ item }) {
-  if (item.checked !== null && item.checked !== undefined) {
-    return (
-      <li className="flex items-start gap-2 list-none -ml-6">
-        <span className="mt-0.5 w-4 h-4 rounded border border-border flex items-center justify-center flex-shrink-0 bg-bg-elevated">
-          {item.checked ? <Check size={11} className="text-accent-primary" /> : null}
-        </span>
-        <span>
-          <Inline nodes={parseInline(item.text)} />
-          {item.children?.length ? <NestedLists items={item.children} /> : null}
-        </span>
-      </li>
-    );
-  }
-  return (
-    <li>
-      <Inline nodes={parseInline(item.text)} />
-      {item.children?.length ? <NestedLists items={item.children} /> : null}
-    </li>
-  );
-}
-
-function NestedLists({ items }) {
-  return (
-    <div className="mt-1 space-y-1">
-      {items.map((child, i) => (
-        <MarkdownBlock key={`nested-${i}`} block={child} keyPrefix={`nested-${i}-`} />
-      ))}
-    </div>
-  );
-}
-
-// Alignement des colonnes d'un tableau, tel que le document le demande.
-const ALIGN_CLASS = { left: 'text-left', center: 'text-center', right: 'text-right' };
-
-// Couleurs des alertes GFM. Clés = variantes rendues par le parseur.
-const ALERT_STYLES = {
-  note: { icon: Info, border: 'border-accent-primary', bg: 'bg-accent-primary/5', text: 'text-accent-primary' },
-  tip: { icon: Lightbulb, border: 'border-success', bg: 'bg-success/5', text: 'text-success' },
-  important: { icon: Info, border: 'border-accent-primary', bg: 'bg-accent-primary/5', text: 'text-accent-primary' },
-  warning: { icon: AlertTriangle, border: 'border-warning', bg: 'bg-warning/5', text: 'text-warning' },
-  caution: { icon: ShieldAlert, border: 'border-error', bg: 'bg-error/5', text: 'text-error' },
-};
-
-function AlertLabel({ variant }) {
-  const t = useT();
-  return <>{t(`doc.alert.${variant}`)}</>;
-}
-
-// Notes de bas de page : regroupées en fin de document, numérotées, avec un
-// retour vers l'endroit du texte qui les appelle — c'est tout l'intérêt d'une
-// note, pouvoir y aller ET revenir.
-function Footnotes({ items }) {
-  const t = useT();
-  const { scope } = useContext(MarkdownContext);
-  if (!items?.length) return null;
-  return (
-    <section className="mt-6 border-t border-border pt-3">
-      <h3 className="text-xs font-semibold uppercase tracking-wide text-text-muted mb-2">
-        {t('doc.footnotes')}
-      </h3>
-      <ol className="space-y-1.5 text-xs text-text-secondary">
-        {items.map((item) => (
-          <li key={item.id} id={`${scope}-fn-${item.id}`} className="flex gap-2">
-            <span className="text-accent-primary tabular-nums flex-shrink-0">{item.label}.</span>
-            <span className="min-w-0">
-              <Inline nodes={parseInline(item.text)} />{' '}
-              <span
-                role="button"
-                tabIndex={0}
-                aria-label={t('doc.footnoteBack')}
-                title={t('doc.footnoteBack')}
-                onClick={() => scrollToAnchor(`${scope}-fnref-${item.id}`)}
-                onKeyDown={(e) =>
-                  (e.key === 'Enter' || e.key === ' ') &&
-                  scrollToAnchor(`${scope}-fnref-${item.id}`)
-                }
-                className="text-accent-primary cursor-pointer hover:underline"
-              >
-                ↩
-              </span>
-            </span>
-          </li>
-        ))}
-      </ol>
-    </section>
-  );
-}
-
-function MarkdownBlock({ block, keyPrefix = '' }) {
-  const key = `${keyPrefix}${block.type}`;
-  switch (block.type) {
-    case 'heading':
-      return (
-        <Heading key={key} level={block.level}>
-          <Inline nodes={parseInline(block.text)} />
-        </Heading>
-      );
-    case 'paragraph':
-      return (
-        <p key={key} className="text-text-secondary leading-relaxed">
-          <Inline nodes={parseInline(block.text)} />
-        </p>
-      );
-    case 'code':
-      return (
-        <pre
-          key={key}
-          className="rounded-lg border border-border bg-bg-elevated p-3 overflow-x-auto text-xs font-mono text-text-secondary"
-        >
-          <code>{block.text}</code>
-        </pre>
-      );
-    case 'math':
-      return <MathFormula key={key} tex={block.tex} display />;
-    case 'quote': {
-      // Alerte GFM (« > [!WARNING] ») : encadré coloré et titré, comme sur
-      // GitHub. Une citation ordinaire garde son filet discret.
-      const alert = ALERT_STYLES[block.variant];
-      if (alert) {
-        const Icon = alert.icon;
-        return (
-          <div
-            key={key}
-            className={`rounded-lg border-l-4 px-3 py-2 ${alert.border} ${alert.bg}`}
-          >
-            <div className={`flex items-center gap-2 text-xs font-semibold uppercase tracking-wide ${alert.text}`}>
-              <Icon size={14} /> <AlertLabel variant={block.variant} />
-            </div>
-            <div className="mt-1 space-y-2">
-              {(block.blocks || []).map((b, i) => (
-                <MarkdownBlock key={`${key}-${i}`} block={b} keyPrefix={`${key}-${i}-`} />
-              ))}
-            </div>
-          </div>
-        );
-      }
-      return (
-        <blockquote
-          key={key}
-          className="border-l-2 border-accent-primary/50 pl-3 text-text-muted italic"
-        >
-          {(block.blocks || []).map((b, i) => (
-            <MarkdownBlock key={`${key}-${i}`} block={b} keyPrefix={`${key}-${i}-`} />
-          ))}
-        </blockquote>
-      );
-    }
-    case 'footnotes':
-      return <Footnotes key={key} items={block.items} />;
-    case 'list': {
-      const List = block.ordered ? 'ol' : 'ul';
-      return (
-        <List
-          key={key}
-          start={block.ordered ? block.start || 1 : undefined}
-          className={`${block.ordered ? 'list-decimal' : 'list-disc'} pl-6 space-y-1 text-text-secondary`}
-        >
-          {(block.items || []).map((item, i) => (
-            <ListItem key={`${key}-${i}`} item={item} />
-          ))}
-        </List>
-      );
-    }
-    case 'table':
-      return (
-        <div key={key} className="overflow-x-auto rounded-lg border border-border">
-          <table className="w-full text-xs">
-            <thead className="bg-bg-elevated">
-              <tr>
-                {(block.header || []).map((cell, i) => (
-                  <th
-                    key={`${key}-h-${i}`}
-                    // L'alignement demandé par le document (`|---:|`) était
-                    // analysé mais jamais appliqué : une colonne de nombres
-                    // restait collée à gauche.
-                    className={`px-2.5 py-1.5 font-semibold text-text-primary whitespace-nowrap ${
-                      ALIGN_CLASS[block.align?.[i]] || 'text-left'
-                    }`}
-                  >
-                    <Inline nodes={parseInline(cell)} />
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {(block.rows || []).map((row, r) => (
-                <tr key={`${key}-r-${r}`} className="border-t border-border">
-                  {row.map((cell, c) => (
-                    <td
-                      key={`${key}-r-${r}-${c}`}
-                      className={`px-2.5 py-1.5 text-text-secondary ${
-                        ALIGN_CLASS[block.align?.[c]] || ''
-                      }`}
-                    >
-                      <Inline nodes={parseInline(cell)} />
-                    </td>
-                  ))}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      );
-    case 'hr':
-      return <hr key={key} className="border-border" />;
-    default:
-      return null;
-  }
-}
 
 // --- Code / texte : numéros de ligne --------------------------------------
 function CodeBody({ text, wrap }) {
@@ -628,46 +155,98 @@ function CsvBody({ text, t }) {
   );
 }
 
-// --- Corps markdown --------------------------------------------------------
-// L'analyse est mémorisée : sans ça, chaque re-rendu (retour à la ligne,
-// bascule source, défilement qui change un état parent) relirait tout le
-// document et recalculerait toutes ses formules.
-function MarkdownBody({ text, scope }) {
-  const blocks = useMemo(() => parseMarkdown(text), [text]);
-  const context = useMemo(
-    () => ({ footnotes: footnoteLabels(blocks), scope }),
-    [blocks, scope]
-  );
-  return (
-    <MarkdownContext.Provider value={context}>
-      <article className="max-w-3xl space-y-3">
-        {blocks.map((block, i) => (
-          <MarkdownBlock key={i} block={block} keyPrefix={`b${i}-`} />
-        ))}
-      </article>
-    </MarkdownContext.Provider>
-  );
-}
-
 // --- Corps du document -----------------------------------------------------
-function DocumentBody({ kind, text, showSource, wrap, jsonResult, t, scope }) {
-  if (kind === KIND.markdown && !showSource) {
-    return <MarkdownBody text={text} scope={scope} />;
-  }
-  if (kind === KIND.json && !showSource) {
-    if (jsonResult.ok) return <CodeBody text={jsonResult.text} wrap={wrap} />;
-    return (
-      <div className="space-y-3">
-        <div className="flex items-start gap-2 rounded-lg border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning">
-          <AlertTriangle size={14} className="mt-0.5 flex-shrink-0" />
-          <span>{t('doc.jsonError', { error: jsonResult.error })}</span>
-        </div>
-        <CodeBody text={text} wrap={wrap} />
+const Lazy = ({ children }) => (
+  <Suspense
+    fallback={
+      <div className="flex items-center gap-2 text-sm text-text-muted">
+        <Loader2 size={15} className="animate-spin" /> Mise en forme…
       </div>
+    }
+  >
+    {children}
+  </Suspense>
+);
+
+function DocumentBody({ kind, text, showSource, wrap, t, app }) {
+  if (kind === KIND.markdown && !showSource) {
+    return (
+      <Lazy>
+        <MarkdownView text={text} doc={app} />
+      </Lazy>
     );
   }
   if (kind === KIND.csv && !showSource) return <CsvBody text={text} t={t} />;
   return <CodeBody text={text} wrap={wrap} />;
+}
+
+// Base SQLite ouverte depuis le système : on la confie à l'app Base de
+// données, ou on dit quelle extension le permet.
+function DatabaseFile({ app }) {
+  const available = useStore((s) => Array.isArray(s.nativeApps) && s.nativeApps.includes('database'));
+  const open = () => {
+    useDevToolsStore.getState().openFile({ kind: 'sqlite', path: app.filePath, name: app.name });
+    openNativeApp('database');
+  };
+  return (
+    <div className="mx-auto mt-10 max-w-md space-y-3 text-center">
+      <div className="mx-auto flex h-12 w-12 items-center justify-center rounded-2xl bg-accent-primary/15">
+        <Database size={22} className="text-accent-primary" />
+      </div>
+      <p className="text-sm font-medium text-text-primary">Base de données SQLite</p>
+      {available && app.filePath ? (
+        <>
+          <p className="text-sm text-text-muted">Tables, données, requêtes SQL et diagramme des relations dans l’app Base de données.</p>
+          <button className="btn btn-primary btn-sm" onClick={open}>
+            <Database size={13} /> Ouvrir dans Base de données
+          </button>
+        </>
+      ) : (
+        <p className="text-sm text-text-muted">
+          Installez l’extension <strong>Orbit Base de données</strong> (Réglages → Extensions) pour explorer cette base : tables, données, requêtes et diagramme des relations.
+        </p>
+      )}
+    </div>
+  );
+}
+
+// Un fichier qu'une app d'Orbit sait EXÉCUTER (.http → API, .sql → Base de
+// données) : on le propose, ou on dit quelle extension l'ajoute.
+const RUNNABLE = {
+  http: { app: 'api', label: 'API', icon: Globe, verb: 'Exécuter ces requêtes dans l’app API', missing: 'Orbit API' },
+  rest: { app: 'api', label: 'API', icon: Globe, verb: 'Exécuter ces requêtes dans l’app API', missing: 'Orbit API' },
+  sql: { app: 'database', label: 'Base de données', icon: Database, verb: 'Ouvrir ce script dans l’app Base de données', missing: 'Orbit Base de données' },
+};
+
+function RunnableBanner({ app, text }) {
+  const ext = String(app.name || app.url || '').toLowerCase().split('.').pop();
+  const spec = RUNNABLE[ext];
+  const available = useStore((s) => Array.isArray(s.nativeApps) && spec && s.nativeApps.includes(spec.app));
+  if (!spec) return null;
+  const Icon = spec.icon;
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-border bg-bg-elevated px-3 py-2 text-xs text-text-secondary">
+      <Icon size={14} className="text-accent-primary" />
+      {available ? (
+        <>
+          <span className="flex-1">Ce fichier s’exécute dans l’app {spec.label}.</span>
+          <button
+            className="btn btn-primary btn-sm"
+            onClick={() => {
+              useDevToolsStore.getState().openFile({ kind: ext === 'sql' ? 'sql' : 'http', path: app.filePath || null, name: app.name, text });
+              openNativeApp(spec.app);
+            }}
+          >
+            {spec.verb}
+          </button>
+        </>
+      ) : (
+        <span className="flex-1">
+          Installez l’extension <strong>{spec.missing}</strong> (Réglages → Extensions) pour exécuter ce fichier directement dans Orbit.
+        </span>
+      )}
+    </div>
+  );
 }
 
 // Message d'erreur : la cause exacte du refus, jamais un texte générique muet.
@@ -689,10 +268,6 @@ const ERROR_KEYS = new Set([
 
 export default function DocumentViewer({ app, visible = true, flexLayout = false }) {
   const t = useT();
-  // Préfixe des ancres (notes de bas de page) : plusieurs documents restent
-  // montés simultanément en écran partagé, leurs ancres ne doivent pas se
-  // télescoper.
-  const scope = useId().replace(/[^\w-]/g, '');
   const [state, setState] = useState({ status: 'loading' });
   const [showSource, setShowSource] = useState(false);
   const [wrap, setWrap] = useState(true);
@@ -715,14 +290,6 @@ export default function DocumentViewer({ app, visible = true, flexLayout = false
     setState({ status: 'loading' });
     readDocument(app).then(setState);
   }, [app]);
-
-  const jsonResult = useMemo(
-    () =>
-      state.status === 'ready' && app.kind === KIND.json
-        ? prettyJson(state.text)
-        : { ok: false, text: '', error: '' },
-    [app.kind, state.status, state.text]
-  );
 
   const stats = useMemo(
     () => (state.status === 'ready' ? textStats(state.text) : { lines: 0, words: 0, chars: 0 }),
@@ -822,14 +389,29 @@ export default function DocumentViewer({ app, visible = true, flexLayout = false
         </button>
       </div>
 
-      {/* Corps */}
-      <div className="flex-1 overflow-auto px-5 py-4 min-h-0">
+      {/* JSON : l'explorateur occupe tout le corps (barres d'outils, arbre
+          virtualisé, inspecteur) — il gère lui-même son défilement. */}
+      {state.status === 'ready' && app.kind === KIND.json ? (
+        <div className="flex min-h-0 flex-1 flex-col">
+          {state.truncated && (
+            <p className="border-b border-border bg-bg-elevated px-3 py-2 text-xs text-text-muted">
+              {t('doc.truncated', { size: formatBytes(4 * 1024 * 1024) })}
+            </p>
+          )}
+          <Lazy>
+            <JsonExplorer text={state.text} doc={app} wrap={wrap} />
+          </Lazy>
+        </div>
+      ) : (
+      <div className="flex-1 overflow-auto px-5 py-4 min-h-0" data-doc-scroll>
         {state.status === 'loading' && (
           <div className="flex items-center gap-2 text-sm text-text-muted">
             <Loader2 size={15} className="animate-spin" />
             {t('doc.loading')}
           </div>
         )}
+
+        {state.status === 'database' && <DatabaseFile app={app} />}
 
         {state.status === 'error' && (
           <div className="max-w-md mx-auto mt-10 text-center space-y-3">
@@ -859,18 +441,12 @@ export default function DocumentViewer({ app, visible = true, flexLayout = false
                 {t('doc.truncated', { size: formatBytes(4 * 1024 * 1024) })}
               </p>
             )}
-            <DocumentBody
-              kind={app.kind}
-              text={state.text}
-              showSource={showSource}
-              wrap={wrap}
-              jsonResult={jsonResult}
-              t={t}
-              scope={scope}
-            />
+            <RunnableBanner app={app} text={state.text} />
+            <DocumentBody kind={app.kind} text={state.text} showSource={showSource} wrap={wrap} t={t} app={app} />
           </div>
         )}
       </div>
+      )}
     </div>
   );
 }

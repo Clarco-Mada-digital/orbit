@@ -1,7 +1,7 @@
 import { Fragment, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Moon, Play, X, Columns2, Rows2, Wifi, KeyRound, Plus, Copy, ExternalLink, Globe, EyeOff } from 'lucide-react';
 import Sidebar from './components/Sidebar';
-import { isViewerKind } from './lib/fileTypes';
+import { basenameOf, isViewerKind, toolForFile } from './lib/fileTypes';
 import Topbar from './components/Topbar';
 import Bottombar from './components/Bottombar';
 import { useAutoHide, RevealStrip, REVEALED_BAR_Z, useAutoHideStore } from './lib/autoHide';
@@ -56,6 +56,7 @@ import { mediaToggle, mediaPrev, mediaNext, mediaSeek, pickNowPlaying } from './
 import { appViewKey, appPartition, resolveProxy } from './lib/session';
 import { matchShortcut, normalizeAssistantChatShortcutKey } from './lib/shortcuts';
 import { useDevToolsStore } from './lib/devToolsStore';
+import { openNativeApp } from './lib/nativeApps';
 import { createAutomationRunner } from './lib/automationRunner';
 import { useAutomationLog, setActiveRunner } from './lib/automationLog';
 import { layoutFor, areaLetter, parseTracks } from './lib/splitLayouts';
@@ -352,7 +353,23 @@ const [editUrlFor, setEditUrlFor] = useState(null); // { id, url } — boîte «
   // par la visionneuse (le processus principal ne lit que les fichiers ouverts
   // ainsi — voir documents:read).
   useEffect(() => {
-    const off = window.electronAPI?.onOpenLink?.(({ url, path: filePath } = {}) => {
+    const off = window.electronAPI?.onOpenLink?.(async ({ url, path: filePath } = {}) => {
+      // Un fichier qu'un outil d'Orbit sait EXÉCUTER s'ouvre directement
+      // dedans (.http → API, .sql / .sqlite → Base de données), si son
+      // extension est installée. Sinon : la visionneuse, qui le propose.
+      const tool = filePath ? toolForFile(filePath, useStore.getState().nativeApps) : null;
+      if (tool) {
+        let text = null;
+        if (tool.kind !== 'sqlite') {
+          const res = await window.electronAPI?.documents?.read({ path: filePath });
+          if (res?.ok) text = res.text;
+        }
+        if (tool.kind === 'sqlite' || text !== null) {
+          useDevToolsStore.getState().openFile({ kind: tool.kind, path: filePath, name: basenameOf(filePath), text });
+          openNativeApp(tool.app);
+          return;
+        }
+      }
       if (url) useStore.getState().openFlyPage(url, { filePath });
     });
     // On prévient le processus principal qu'on écoute : il livre alors ce qui

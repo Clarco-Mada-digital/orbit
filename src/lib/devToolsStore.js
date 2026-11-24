@@ -20,9 +20,22 @@ export const useDevToolsStore = create(
   persist(
     (set) => ({
       open: null, // null | 'database' | 'api'
+      // Fichier à ouvrir dans un outil (double-clic sur un .http, un .sql, une
+      // base .sqlite) : déposé ici, consommé par l'outil dès qu'il est monté.
+      pendingFile: null, // { kind: 'http'|'sql'|'sqlite', path, name, text }
       // Zoom de l'affichage, propre à chaque outil (comme le zoom par app).
       zoom: { database: 1, api: 1 },
       setOpen: (open) => set({ open: open || null }),
+      openFile: (file) => set({ pendingFile: { ...file, at: Date.now() } }),
+      takePendingFile: (kinds) => {
+        let taken = null;
+        set((s) => {
+          if (!s.pendingFile || !kinds.includes(s.pendingFile.kind)) return s;
+          taken = s.pendingFile;
+          return { pendingFile: null };
+        });
+        return taken;
+      },
       toggle: (kind) => set((s) => ({ open: s.open === kind ? null : kind })),
       // action : 'zoom-in' | 'zoom-out' | 'zoom-reset', ou un facteur absolu.
       setZoom: (kind, action) =>

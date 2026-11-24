@@ -757,17 +757,50 @@ les en-têtes sont permis.
 ### Visionneuse de documents
 
 Un fichier `.md`, `.txt`, `.json`, `.csv` ou un fichier de code ouvert dans
-Orbit s’affiche dans une visionneuse plutôt que d’être téléchargé. Pour le
-Markdown, le rendu couvre les titres (dièses ou soulignés), les listes et cases
-à cocher, les tableaux, le code, les citations et les **alertes GitHub**
-(`> [!NOTE]`, `> [!WARNING]`…), les **formules mathématiques** TeX (`$x^2$`,
-`$$…$$`, `\(…\)`, `\[…\]`), les **notes de bas de page** numérotées — cliquez le
-renvoi pour y aller, la flèche ↩ pour revenir — et les **lecteurs audio et
-vidéo**.
+Orbit s’affiche dans une visionneuse plutôt que d’être téléchargé.
 
-Pour protéger votre lecture, ni les images ni les médias d’un document distant
-ne sont chargés d’office : un média s’ouvre au clic, une image reste une
-pastille qui mène au navigateur. Le bouton **Source** affiche le fichier brut.
+**Markdown** — rendu fidèle à GitHub : titres, listes et cases à cocher,
+tableaux, **code coloré** (avec bouton Copier), citations et **alertes**
+(`> [!NOTE]`, `> [!WARNING]`…), **formules** TeX (`$x^2$`, `$$…$$`), **notes
+de bas de page**, **diagrammes Mermaid** (blocs ` ```mermaid `) et en-tête YAML
+présenté en fiche. Le **HTML des README** est pris en charge — blocs centrés,
+`<details>` dépliables, `<kbd>`, tableaux et images — après un nettoyage qui
+retire tout ce qui pourrait s’exécuter (scripts, styles, liens `javascript:`).
+Un **sommaire** suit votre lecture ; un lien vers un autre fichier
+(`docs/guide.md`) l’ouvre dans Orbit.
+
+Les **images locales** d’un README ouvert depuis le disque s’affichent
+directement. Les **images distantes** (badges, captures hébergées) attendent
+votre accord — leur serveur saurait sinon que vous lisez le document : un
+bandeau propose **Afficher** ou **Toujours afficher**. Le bouton **Voir la
+source** affiche le fichier brut.
+
+**JSON** — un explorateur complet :
+
+- **Arbre** dépliable (même pour des fichiers de plusieurs Mo), **recherche**
+  dans les clés et les valeurs avec navigation (Entrée / Maj+Entrée), et un
+  **inspecteur** qui donne le chemin de l’élément (`$.commandes[3].total` ou
+  `data.commandes[3].total`) à copier.
+- **Requêtes JSONPath** : `$.commandes[?(@.total > 400 && @.statut == 'livrée')]`,
+  `$..email`, `$.items[0:10]` — les résultats s’ouvrent dans l’arbre ou en
+  tableau.
+- **Tableau** d’une liste d’objets (objets imbriqués aplatis en colonnes), tri,
+  filtre, export CSV.
+- **Analyse** : structure du document et profil de chaque champ (remplissage,
+  valeurs distinctes, minimum, maximum, moyenne, valeurs les plus fréquentes).
+- **Graphique** : un champ regroupé (ville, statut…) et une mesure (nombre,
+  somme, moyenne…), en barres ou en courbe.
+- **Schéma** : le JSON Schema déduit du document.
+- **Modifier** : double-clic sur une valeur ou une clé, ajout et suppression,
+  annuler / rétablir (`Ctrl+Z`), formater, minifier, trier les clés, puis
+  **Enregistrer** (`Ctrl+S`) dans le fichier ou sous un autre nom.
+
+**Ouverture intelligente** — un fichier qu’un outil d’Orbit sait exécuter
+s’ouvre directement dedans, si l’extension est installée : un `.http` dans
+l’app **API**, un script `.sql` dans **Base de données** (vous choisissez la
+connexion), une base `.sqlite` dans **Base de données** sur son diagramme des
+relations. Sans l’extension, la visionneuse affiche le fichier et indique
+laquelle installer.
 
 ## 9. Confidentialité et sécurité
 

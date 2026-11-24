@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Orbit — guide utilisateur</title>
 <meta name="author" content="Clarco RAHERINANDRASANA" />
-<meta name="description" content="Guide utilisateur complet d'Orbit — 1.20.0" />
+<meta name="description" content="Guide utilisateur complet d'Orbit — 1.21.0" />
 <!-- Fichier GÉNÉRÉ par scripts/build-docs.js à partir de docs/guide-utilisateur.md.
      Toute modification faite ici serait perdue à la prochaine génération. -->
 <style>
@@ -191,7 +191,7 @@
   <div class="cover-rule" aria-hidden="true"></div>
   <dl class="cover-meta">
     <div><dt>Auteur</dt><dd>Clarco RAHERINANDRASANA</dd></div>
-    <div><dt>Version</dt><dd>Orbit 1.20.0</dd></div>
+    <div><dt>Version</dt><dd>Orbit 1.21.0</dd></div>
     <div><dt>Édition</dt><dd>novembre 2026</dd></div>
   </dl>
 </section>
@@ -549,16 +549,29 @@ les en-têtes sont permis.</p>
 <ul><li><strong>Formulaire</strong> : méthode, URL, paramètres, en-têtes, corps (JSON, texte, XML, formulaire, multipart avec fichiers, GraphQL, fichier), authentification (Bearer, Basic, clé d’API). Coller une commande <strong>cURL</strong> dans la barre d’URL la convertit en requête.</li><li><strong>Fichiers <code>.http</code></strong> au format de l’extension REST Client de VS Code : <code>###</code> sépare les requêtes, <code>@nom = valeur</code> déclare une variable, et un <strong>▶</strong> dans la marge envoie chaque requête. <code># @name login</code> nomme une réponse réutilisable plus bas : <code>{{login.response.body.$.token}}</code>.</li><li><strong>Collections</strong> (dossiers compris), exportables en <code>.http</code>, et <strong>environnements</strong> (Local, Recette, Production…) pour changer <code>{{baseUrl}}</code> ou <code>{{token}}</code> en un clic. Variables système : <code>{{$guid}}</code>, <code>{{$timestamp}}</code>, <code>{{$datetime iso8601}}</code>, <code>{{$randomInt 1 100}}</code>.</li><li><strong>Import</strong> : cURL, <code>.http</code>, OpenAPI 3 / Swagger 2 (JSON) et collections Postman.</li><li><strong>Réponse</strong> : statut, durée, taille, corps formaté, aperçu HTML et images, en-têtes, commande cURL équivalente. Historique des 100 dernières requêtes.</li></ul>
 <h3 id="visionneuse-de-documents">Visionneuse de documents</h3>
 <p>Un fichier <code>.md</code>, <code>.txt</code>, <code>.json</code>, <code>.csv</code> ou un fichier de code ouvert dans
-Orbit s’affiche dans une visionneuse plutôt que d’être téléchargé. Pour le
-Markdown, le rendu couvre les titres (dièses ou soulignés), les listes et cases
-à cocher, les tableaux, le code, les citations et les <strong>alertes GitHub</strong>
-(<code>&gt; [!NOTE]</code>, <code>&gt; [!WARNING]</code>…), les <strong>formules mathématiques</strong> TeX (<code>$x^2$</code>,
-<code>$$…$$</code>, <code>\(…\)</code>, <code>\[…\]</code>), les <strong>notes de bas de page</strong> numérotées — cliquez le
-renvoi pour y aller, la flèche ↩ pour revenir — et les <strong>lecteurs audio et
-vidéo</strong>.</p>
-<p>Pour protéger votre lecture, ni les images ni les médias d’un document distant
-ne sont chargés d’office : un média s’ouvre au clic, une image reste une
-pastille qui mène au navigateur. Le bouton <strong>Source</strong> affiche le fichier brut.</p>
+Orbit s’affiche dans une visionneuse plutôt que d’être téléchargé.</p>
+<p><strong>Markdown</strong> — rendu fidèle à GitHub : titres, listes et cases à cocher,
+tableaux, <strong>code coloré</strong> (avec bouton Copier), citations et <strong>alertes</strong>
+(<code>&gt; [!NOTE]</code>, <code>&gt; [!WARNING]</code>…), <strong>formules</strong> TeX (<code>$x^2$</code>, <code>$$…$$</code>), <strong>notes
+de bas de page</strong>, <strong>diagrammes Mermaid</strong> (blocs <code> </code>`<code>mermaid </code>) et en-tête YAML
+présenté en fiche. Le <strong>HTML des README</strong> est pris en charge — blocs centrés,
+<code>&lt;details&gt;</code> dépliables, <code>&lt;kbd&gt;</code>, tableaux et images — après un nettoyage qui
+retire tout ce qui pourrait s’exécuter (scripts, styles, liens <code>javascript:</code>).
+Un <strong>sommaire</strong> suit votre lecture ; un lien vers un autre fichier
+(<code>docs/guide.md</code>) l’ouvre dans Orbit.</p>
+<p>Les <strong>images locales</strong> d’un README ouvert depuis le disque s’affichent
+directement. Les <strong>images distantes</strong> (badges, captures hébergées) attendent
+votre accord — leur serveur saurait sinon que vous lisez le document : un
+bandeau propose <strong>Afficher</strong> ou <strong>Toujours afficher</strong>. Le bouton <strong>Voir la
+source</strong> affiche le fichier brut.</p>
+<p><strong>JSON</strong> — un explorateur complet :</p>
+<ul><li><strong>Arbre</strong> dépliable (même pour des fichiers de plusieurs Mo), <strong>recherche</strong> dans les clés et les valeurs avec navigation (Entrée / Maj+Entrée), et un <strong>inspecteur</strong> qui donne le chemin de l’élément (<code>$.commandes[3].total</code> ou <code>data.commandes[3].total</code>) à copier.</li><li><strong>Requêtes JSONPath</strong> : <code>$.commandes[?(@.total &gt; 400 &amp;&amp; @.statut == 'livrée')]</code>, <code>$..email</code>, <code>$.items[0:10]</code> — les résultats s’ouvrent dans l’arbre ou en tableau.</li><li><strong>Tableau</strong> d’une liste d’objets (objets imbriqués aplatis en colonnes), tri, filtre, export CSV.</li><li><strong>Analyse</strong> : structure du document et profil de chaque champ (remplissage, valeurs distinctes, minimum, maximum, moyenne, valeurs les plus fréquentes).</li><li><strong>Graphique</strong> : un champ regroupé (ville, statut…) et une mesure (nombre, somme, moyenne…), en barres ou en courbe.</li><li><strong>Schéma</strong> : le JSON Schema déduit du document.</li><li><strong>Modifier</strong> : double-clic sur une valeur ou une clé, ajout et suppression, annuler / rétablir (<code>Ctrl+Z</code>), formater, minifier, trier les clés, puis <strong>Enregistrer</strong> (<code>Ctrl+S</code>) dans le fichier ou sous un autre nom.</li></ul>
+<p><strong>Ouverture intelligente</strong> — un fichier qu’un outil d’Orbit sait exécuter
+s’ouvre directement dedans, si l’extension est installée : un <code>.http</code> dans
+l’app <strong>API</strong>, un script <code>.sql</code> dans <strong>Base de données</strong> (vous choisissez la
+connexion), une base <code>.sqlite</code> dans <strong>Base de données</strong> sur son diagramme des
+relations. Sans l’extension, la visionneuse affiche le fichier et indique
+laquelle installer.</p>
 <h2 id="9-confidentialite-et-securite">9. Confidentialité et sécurité</h2>
 <ul><li>Les profils et applications utilisent des sessions web isolées selon la configuration ; le SSO est facultatif.</li><li>Le stockage des cookies dans les versions empaquetées utilise le mécanisme de chiffrement d’Electron et le trousseau du système lorsqu’il est disponible.</li><li>Les données de l’assistant local et de la relecture rapide restent sur l’appareil. Les fonctions connectées envoient les données nécessaires au fournisseur choisi.</li><li>Fake Data et Text Snippets n’ont pas besoin de services externes pour fonctionner. Seule exception, facultative et désactivable : les adresses de photo de test (portraits de stock et photos aléatoires), qui ne sont que des liens insérés dans le champ — aucune donnée de la page n’est envoyée.</li><li>Le <strong>bloqueur de publicités et de traceurs</strong> agit au niveau réseau, sans extension, sur toutes les apps et tous les profils. Trois étages : les requêtes des régies sont annulées, les emplacements construits en JavaScript sont masqués (avec les scriptlets que les listes prévoient), et une <strong>fenêtre publicitaire</strong> ouverte par un script est refusée quand son adresse figure dans les listes. Le panneau <strong>Boucliers</strong> compte séparément publicités, traceurs, scripts, passages en HTTPS et fenêtres bloquées.</li><li><strong>Deux jeux de listes</strong> dans <strong>Réglages → Confidentialité</strong> : <em>Standard</em> (publicités et pistage) ou <em>Complet</em>, qui ajoute les nuisances — bandeaux de cookies, widgets sociaux. Repassez en standard si un site perd un élément qui lui servait de contenu. Un réglage ne s’applique qu’au chargement suivant : le panneau propose alors de recharger la page.</li><li><strong>Autorisations des sites</strong> (caméra, micro, notifications, position…) : la première demande d’un site ouvre une question. Un bouton <strong>Autorisations</strong> apparaît alors dans la barre du haut — en rouge si un accès a été bloqué — et permet de passer chaque accès sur <em>Demander</em>, <em>Autoriser</em> ou <em>Bloquer</em> sans quitter la page. Il n’apparaît que lorsqu’un site a demandé quelque chose ; la liste de tous les sites reste dans <strong>Réglages → Confidentialité</strong>.</li><li>Les services web intégrés continuent de recevoir les données que vous saisissez directement sur leurs pages.</li></ul>
 <p>Protégez votre compte système, votre mot de passe maître et vos fichiers de
@@ -593,7 +606,7 @@ joignez pas de mots de passe, cookies ou données privées.</p>
 <ul><li><a href="https://github.com/Clarco-Mada-digital/orbit/releases/latest">Télécharger Orbit</a></li><li><a href="https://github.com/Clarco-Mada-digital/orbit">Code source</a></li><li><a href="./guide-utilisateur.pdf">Guide PDF</a></li><li><a href="./guide-developpeur.md">Guide développeur</a></li><li><a href="./index.html">Page de présentation</a></li></ul>
 <hr />
 <p><strong>Orbit</strong> · Développé par <strong>Clarco RAHERINANDRASANA</strong> · Licence MIT.</p>
-<p class="built">Orbit 1.20.0 · Clarco RAHERINANDRASANA · document généré le 2026-11-23 à partir de
+<p class="built">Orbit 1.21.0 · Clarco RAHERINANDRASANA · document généré le 2026-11-24 à partir de
 <code>docs/guide-utilisateur.md</code> (<code>npm run docs</code>).</p>
 </main>
 </body>

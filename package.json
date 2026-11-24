@@ -51,6 +51,7 @@
     "globals": "^17.12.0",
     "mssql": "^12.8.1",
     "postcss": "^8.4.49",
+    "rehype-stringify": "^10.0.1",
     "tailwindcss": "^4.3.3",
     "vite": "^6.0.7",
     "wait-on": "^8.0.1"
@@ -61,17 +62,23 @@
     "clsx": "^2.1.1",
     "electron-updater": "^6.8.9",
     "framer-motion": "^11.15.0",
+    "github-slugger": "^2.0.0",
     "hash-wasm": "^4.12.0",
     "katex": "0.19.1",
     "kdbxweb": "^2.1.1",
     "lucide-react": "^0.468.0",
+    "mermaid": "^12.3.0",
     "mysql2": "^3.24.6",
     "onnxruntime-node": "^1.29.0",
     "pg": "^8.23.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-markdown": "^10.1.0",
+    "rehype-highlight": "^7.0.2",
     "rehype-katex": "^7.0.1",
+    "rehype-raw": "^7.0.0",
+    "rehype-sanitize": "^6.0.0",
+    "rehype-slug": "^6.0.0",
     "remark-gfm": "^4.0.1",
     "remark-math": "^6.0.0",
     "tldts-experimental": "^7.4.10",
@@ -155,6 +162,9 @@
         "text/csv",
         "text/xml",
         "application/json",
+        "application/sql",
+        "application/vnd.sqlite3",
+        "application/x-sqlite3",
         "application/pdf",
         "image/png",
         "image/jpeg",
@@ -213,6 +223,31 @@
             "patch"
           ],
           "name": "Text document",
+          "role": "Viewer"
+        },
+        {
+          "ext": [
+            "http",
+            "rest"
+          ],
+          "name": "HTTP request file",
+          "role": "Editor"
+        },
+        {
+          "ext": [
+            "sql"
+          ],
+          "name": "SQL script",
+          "role": "Editor"
+        },
+        {
+          "ext": [
+            "sqlite",
+            "sqlite3",
+            "db3",
+            "s3db"
+          ],
+          "name": "SQLite database",
           "role": "Viewer"
         }
       ],

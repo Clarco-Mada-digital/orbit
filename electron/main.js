@@ -284,6 +284,100 @@ ipcMain.handle('documents:read', async (_event, payload = {}) => {
   return { ok: true, text, bytes: stat.size, truncated, name: path.basename(resolved) };
 });
 
+// --- Ressources d'un document local --------------------------------------
+//
+// Un README local montre ses captures (`docs/images/hero.png`) et renvoie vers
+// d'autres pages (`docs/guide.md`). Le document lui-même a été ouvert par
+// l'utilisateur (`openedLocalFiles`) ; ce qu'il référence est résolu PAR
+// RAPPORT À LUI.
+//
+// Images : seulement des images, en lecture seule, renvoyées en data: URL —
+// rien ne quitte la machine, et un chemin vers autre chose qu'une image est
+// refusé (un document ne peut pas se servir de ce canal pour lire un fichier
+// quelconque).
+const DOC_IMAGE_TYPES = {
+  png: 'image/png',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  gif: 'image/gif',
+  webp: 'image/webp',
+  avif: 'image/avif',
+  bmp: 'image/bmp',
+  ico: 'image/x-icon',
+  svg: 'image/svg+xml',
+};
+const MAX_DOC_IMAGE_BYTES = 15 * 1024 * 1024;
+
+function resolveFromDocument(base, href) {
+  const doc = normalizeLocalPath(base);
+  if (!doc || !openedLocalFiles.has(doc)) return { error: 'not-allowed' };
+  let rel = String(href || '').trim();
+  if (!rel || /^[a-z][a-z0-9+.-]*:/i.test(rel) || rel.startsWith('//')) return { error: 'bad-path' };
+  rel = rel.replace(/[?#].*$/, '');
+  try {
+    rel = decodeURIComponent(rel);
+  } catch {
+    /* chemin non encodé : tel quel */
+  }
+  return { doc, target: path.resolve(path.dirname(doc), rel) };
+}
+
+handleFromUi('documents:asset', async (_event, { base, src } = {}) => {
+  const r = resolveFromDocument(base, src);
+  if (r.error) return { ok: false, reason: r.error };
+  const type = DOC_IMAGE_TYPES[path.extname(r.target).slice(1).toLowerCase()];
+  if (!type) return { ok: false, reason: 'not-an-image' };
+  try {
+    const stat = await fs.promises.stat(r.target);
+    if (!stat.isFile()) return { ok: false, reason: 'not-a-file' };
+    if (stat.size > MAX_DOC_IMAGE_BYTES) return { ok: false, reason: 'too-big' };
+    const buf = await fs.promises.readFile(r.target);
+    return { ok: true, dataUrl: `data:${type};base64,${buf.toString('base64')}` };
+  } catch {
+    return { ok: false, reason: 'missing' };
+  }
+});
+
+// Lien vers un autre fichier (« voir docs/guide.md ») : ouvert dans Orbit
+// comme s'il avait été ouvert depuis le système — même tri, mêmes règles.
+handleFromUi('documents:openRelative', async (_event, { base, href } = {}) => {
+  const r = resolveFromDocument(base, href);
+  if (r.error) return { ok: false, reason: r.error };
+  try {
+    const stat = await fs.promises.stat(r.target);
+    if (stat.isDirectory()) {
+      shell.openPath(r.target);
+      return { ok: true, folder: true };
+    }
+  } catch {
+    return { ok: false, reason: 'missing' };
+  }
+  const items = extractOpenables([r.target]);
+  if (!items.length) {
+    // Format qu'Orbit ne sait pas montrer : l'application du système.
+    shell.openPath(r.target);
+    return { ok: true, external: true };
+  }
+  deliverOpenLinks(items);
+  return { ok: true };
+});
+
+// Réenregistrer un document ouvert (édition JSON). Seulement le fichier que
+// l'utilisateur a ouvert, et seulement du texte : jamais un autre chemin.
+handleFromUi('documents:write', async (_event, { path: filePath, text } = {}) => {
+  const resolved = normalizeLocalPath(filePath);
+  if (!resolved || !openedLocalFiles.has(resolved)) return { ok: false, reason: 'not-allowed' };
+  if (typeof text !== 'string' || text.length > MAX_DOCUMENT_BYTES * 4) return { ok: false, reason: 'bad-content' };
+  try {
+    const tmp = `${resolved}.orbit-${process.pid}.tmp`;
+    await fs.promises.writeFile(tmp, text, 'utf8');
+    await fs.promises.rename(tmp, resolved);
+    return { ok: true, bytes: Buffer.byteLength(text) };
+  } catch (err) {
+    return { ok: false, reason: 'write-failed', detail: String(err?.message || err) };
+  }
+});
+
 ipcMain.handle('documents:fetch', async (_event, payload = {}) => {
   const url = String(payload.url || '');
   const partition = String(payload.partition || '');
@@ -8030,7 +8124,9 @@ handleFromUi('devfiles:pick', async (_e, { title } = {}) => {
 handleFromUi('devfiles:save', async (_e, { path: target, defaultPath, content, filters } = {}) => {
   // Réécrire un fichier sans redemander : seulement s'il a été ouvert ou
   // enregistré par une boîte de dialogue. Sinon, on la propose.
-  let file = target && isGrantedDevFile(target) ? target : null;
+  // …ou s'il a été ouvert depuis le système (double-clic sur un .http).
+  const openedFromSystem = target && openedLocalFiles.has(normalizeLocalPath(target));
+  let file = target && (isGrantedDevFile(target) || openedFromSystem) ? target : null;
   if (!file) {
     const res = await dialog.showSaveDialog(mainWindow, {
       defaultPath: defaultPath || undefined,

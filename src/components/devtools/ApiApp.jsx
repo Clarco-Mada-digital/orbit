@@ -35,7 +35,7 @@ import {
   toHttpFile,
   unresolvedVariables,
 } from '../../lib/httpRequests';
-import { useApiStore } from '../../lib/devToolsStore';
+import { useApiStore, useDevToolsStore } from '../../lib/devToolsStore';
 
 // ---------------------------------------------------------------------------
 // API — app native d'Orbit (extension « Orbit API »).
@@ -676,7 +676,19 @@ export default function ApiApp({ onClose }) {
     if (r?.success) openTab({ type: 'http', title: r.name, file: r.path, text: r.content });
   };
 
+  // Fichier .http confié par le système (double-clic) ou la visionneuse.
+  const pendingFile = useDevToolsStore((s) => s.pendingFile);
   useEffect(() => {
+    if (pendingFile?.kind !== 'http') return undefined;
+    const t = setTimeout(() => {
+      const file = useDevToolsStore.getState().takePendingFile(['http']);
+      if (file) openTab({ type: 'http', title: file.name || 'requetes.http', file: file.path || undefined, text: file.text || '' });
+    }, 0);
+    return () => clearTimeout(t);
+  }, [pendingFile, openTab]);
+
+  useEffect(() => {
+    if (useDevToolsStore.getState().pendingFile?.kind === 'http') return undefined;
     if (tabs.length === 0) {
       const t = setTimeout(() => {
         if (useApiStore.getState().collections.length === 0) newHttpFile();

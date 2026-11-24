@@ -32,7 +32,7 @@ import CodeEditor from './CodeEditor';
 import ResultGrid from './ResultGrid';
 import SchemaDiagram from './SchemaDiagram';
 import { splitSql, statementAt, toCsv, toInsertSql, toJsonRows } from '../../lib/sqlStatements';
-import { useDbUiStore } from '../../lib/devToolsStore';
+import { useDbUiStore, useDevToolsStore } from '../../lib/devToolsStore';
 
 // ---------------------------------------------------------------------------
 // Base de données — app native d'Orbit (extension « Orbit Base de données »).
@@ -711,14 +711,6 @@ export default function DatabaseApp({ onClose }) {
 
   const conn = connections.find((c) => c.id === activeId);
 
-  const select = async (c) => {
-    setActiveId(c.id);
-    setExpanded((x) => ({ ...x, [c.id]: true }));
-    if (!tables[c.id]) {
-      const ok = await loadTables(c.id);
-      if (ok && !tabs.some((t) => t.connId === c.id)) openQuery(c.id);
-    }
-  };
 
   const openQuery = (connId, patch = {}) => {
     const id = newTabId();
@@ -737,6 +729,57 @@ export default function DatabaseApp({ onClose }) {
     setTabs((list) => [...list, { id, type: 'diagram', connId, title: 'Diagramme' }]);
     setActiveTab(id);
   };
+
+  // Script .sql ouvert depuis le système : il attend qu'on choisisse sur
+  // quelle connexion l'exécuter (un script ne dit pas à quelle base il parle).
+  const [pendingScript, setPendingScript] = useState(null); // { sql, path, name }
+
+  const select = async (c) => {
+    setActiveId(c.id);
+    setExpanded((x) => ({ ...x, [c.id]: true }));
+    let ok = Boolean(tables[c.id]);
+    if (!ok) ok = await loadTables(c.id);
+    if (ok && pendingScript) {
+      openQuery(c.id, { sql: pendingScript.sql, file: pendingScript.path || undefined, title: pendingScript.name || 'Script' });
+      setPendingScript(null);
+      return;
+    }
+    if (ok && !tabs.some((t) => t.connId === c.id)) openQuery(c.id);
+  };
+
+  // Fichiers confiés par le système ou la visionneuse.
+  const pendingFile = useDevToolsStore((st) => st.pendingFile);
+  useEffect(() => {
+    if (pendingFile?.kind !== 'sql' && pendingFile?.kind !== 'sqlite') return undefined;
+    const t = setTimeout(async () => {
+      const file = useDevToolsStore.getState().takePendingFile(['sql', 'sqlite']);
+      if (!file) return;
+      if (file.kind === 'sql') {
+        // Une seule connexion ouverte (ou sélectionnée) : c'est elle. Sinon on
+        // demande, sans rien exécuter.
+        const target = connections.find((c) => c.id === activeId) || (connections.length === 1 ? connections[0] : null);
+        if (target) {
+          await select(target);
+          openQuery(target.id, { sql: file.text || '', file: file.path || undefined, title: file.name || 'Script' });
+        } else setPendingScript({ sql: file.text || '', path: file.path, name: file.name });
+        return;
+      }
+      // Base SQLite : connexion jetable au fichier (ou celle qui existe déjà),
+      // puis le diagramme des relations, la vue d'ensemble la plus parlante.
+      const list = (await api()?.list())?.connections || [];
+      let conn = list.find((c) => c.driver === 'sqlite' && c.file === file.path);
+      if (!conn) {
+        const res = await api()?.save({ driver: 'sqlite', file: file.path, name: file.name, pinned: false });
+        if (!res?.success) return;
+        conn = res.connection;
+      }
+      await refreshList();
+      await select(conn);
+      openDiagram(conn.id);
+    }, 0);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pendingFile]);
 
   const openTable = (connId, t) => {
     const existing = tabs.find((x) => (x.type === 'table' || x.type === 'view') && x.connId === connId && x.table === t.name && x.schema === t.schema);
@@ -796,6 +839,15 @@ export default function DatabaseApp({ onClose }) {
             <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filtrer les tables" className="min-w-0 flex-1 bg-transparent py-1 text-xs outline-none" />
           </div>
         </div>
+        {pendingScript ? (
+          <div className="mx-2 mb-2 rounded-lg border border-accent-primary/40 bg-accent-primary/10 px-2.5 py-2 text-[11px] text-text-secondary">
+            <div className="font-medium text-text-primary">« {pendingScript.name || 'Script SQL'} »</div>
+            Choisissez la connexion sur laquelle l’ouvrir (rien n’est exécuté sans vous).
+            <button className="mt-1 block text-text-muted hover:text-error" onClick={() => setPendingScript(null)}>
+              Annuler
+            </button>
+          </div>
+        ) : null}
         <div className="min-h-0 flex-1 space-y-0.5 overflow-auto px-1.5 pb-2">
           {connections.length === 0 ? <p className="px-2 text-xs text-text-muted">Aucune connexion. Cliquez sur + pour en créer une.</p> : null}
           {connections.map((c) => (

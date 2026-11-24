@@ -25,6 +25,7 @@ export const FLY_PAGE_LOOKS = {
   csv: { icon: '📊', color: '#10b981' },
   code: { icon: '💻', color: '#06b6d4' },
   text: { icon: '📄', color: '#64748b' },
+  database: { icon: '🗄️', color: '#0ea5e9' },
   pdf: { icon: '📕', color: '#ef4444' },
   image: { icon: '🖼️', color: '#0ea5e9' },
   media: { icon: '🎬', color: '#f97316' },

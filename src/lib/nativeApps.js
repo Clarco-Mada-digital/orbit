@@ -23,3 +23,4 @@ export function openNativeApp(kind) {
   }
   return false;
 }
+

@@ -34,11 +34,12 @@ export const KIND = {
   csv: 'csv', // → visionneuse Orbit (tableau)
   code: 'code', // → visionneuse Orbit (monospace + numéros de ligne)
   text: 'text', // → visionneuse Orbit (monospace)
+  database: 'database', // base SQLite → app Base de données (si installée)
   unknown: 'unknown', // ni affichable, ni lisible → on propose, on ne devine pas
 };
 
 // Types qu'Orbit met en forme lui-même (texte). Le reste est « natif ».
-const VIEWER_KINDS = new Set([KIND.markdown, KIND.json, KIND.csv, KIND.code, KIND.text]);
+const VIEWER_KINDS = new Set([KIND.markdown, KIND.json, KIND.csv, KIND.code, KIND.text, KIND.database]);
 const NATIVE_KINDS = new Set([KIND.page, KIND.pdf, KIND.image, KIND.media]);
 
 const byExtension = (kinds) => {
@@ -65,10 +66,13 @@ const EXTENSION_KIND = byExtension({
     'py pyw rb php go rs java kt kts scala clj cljs c h cpp cxx cc hpp hh cs ' +
     'swift dart lua pl pm r sql sh bash zsh fish ps1 bat cmd ini toml cfg conf ' +
     'properties env gradle xml xsl xslt yaml yml tex latex rst adoc org reg ' +
-    'proto graphql gql tf hcl nix vim el vhdl asm s',
+    'proto graphql gql tf hcl nix vim el vhdl asm s http rest',
   [KIND.text]:
     'txt text log nfo readme license copying authors news diff patch srt vtt ' +
     'sub asc pem pub crt csr gitignore gitattributes editorconfig mail',
+  // Fichier binaire : jamais lu par la visionneuse, confié à l'app Base de
+  // données (extension « Orbit Base de données »).
+  [KIND.database]: 'sqlite sqlite3 db db3 s3db',
 });
 
 // Fichiers sans extension qu'on sait lire comme du texte (les plus courants
@@ -231,3 +235,16 @@ export const OPENABLE_MIME_TYPES = [
   'application/json',
   'application/pdf',
 ];
+
+// Quel outil ouvre ce fichier, s'il est installé ? (null → visionneuse)
+//   .http / .rest           → API (fichier de requêtes, un ▶ par requête)
+//   .sql                    → Base de données (script, à lancer sur une connexion)
+//   .sqlite .db .sqlite3…   → Base de données (connexion jetable au fichier)
+export function toolForFile(filePath, nativeApps = []) {
+  const ext = extensionOf(filePath);
+  const has = (kind) => Array.isArray(nativeApps) && nativeApps.includes(kind);
+  if ((ext === 'http' || ext === 'rest') && has('api')) return { app: 'api', kind: 'http' };
+  if (ext === 'sql' && has('database')) return { app: 'database', kind: 'sql' };
+  if (kindForPath(filePath) === KIND.database && has('database')) return { app: 'database', kind: 'sqlite' };
+  return null;
+}

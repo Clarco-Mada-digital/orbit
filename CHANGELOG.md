@@ -8,6 +8,29 @@ Format : une section `## [X.Y.Z] — AAAA-MM-JJ` par version, puis des
 sous-sections `### Ajouté` / `### Modifié` / `### Corrigé` / `### Sécurité`.
 La plus récente en premier.
 
+## [1.21.1] — 2026-11-24
+
+### Ajouté
+- **Visionneuse markdown refaite, fidèle à GitHub.** Le HTML des README est
+  enfin pris en charge — blocs centrés, `<details>` dépliables, `<kbd>`,
+  tableaux de captures, images — après un nettoyage strict (schéma GitHub :
+  scripts, styles et liens `javascript:` retirés). Code coloré avec bouton
+  Copier, diagrammes **Mermaid**, formules, alertes, notes, en-tête YAML,
+  **sommaire** qui suit la lecture, liens entre fichiers `.md` ouverts dans
+  Orbit. Les images locales s'affichent ; les images distantes attendent votre
+  accord (« Afficher » / « Toujours afficher »).
+- **Explorateur JSON.** Arbre virtualisé, recherche, inspecteur avec chemins
+  JSONPath / JavaScript, **requêtes JSONPath** avec filtres, vue **tableau**
+  (tri, filtre, export CSV), **analyse** des champs, **graphiques**, **schéma**
+  déduit, **édition** (valeurs, clés, ajout, suppression, annuler / rétablir) et
+  **enregistrement**. Prise en charge du JSON Lines ; une erreur de syntaxe est
+  située à la ligne et à la colonne.
+- **Ouverture intelligente.** Un `.http` s'ouvre directement dans l'app API, un
+  `.sql` dans Base de données (choix de la connexion), une base `.sqlite` dans
+  Base de données sur son diagramme — si l'extension est installée ; sinon la
+  visionneuse indique laquelle installer. Orbit se propose aussi pour ces
+  formats dans « Ouvrir avec » (Linux, macOS).
+
 ## [1.21.0] — 2026-11-23
 
 ### Ajouté
