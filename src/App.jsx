@@ -35,6 +35,7 @@ import ScreenshotPreview from './components/ScreenshotPreview';
 import WebDialogHost from './components/WebDialogHost';
 import EditUrlDialog from './components/EditUrlDialog';
 import { migrateThemeSetting, resolveTheme, themeVars } from './lib/themes';
+import { ensureWebFont } from './lib/webFonts';
 import LockScreen from './components/LockScreen';
 import FindBar from './components/FindBar';
 import UpdateBanner from './components/UpdateBanner';
@@ -720,10 +721,21 @@ const [editUrlFor, setEditUrlFor] = useState(null); // { id, url } — boîte «
   // ne la recharge plus (fini le rechargement complet à chaque bascule). La
   // mise en veille reste le moyen explicite de la fermer pour libérer la RAM.
   const [mountedIds, setMountedIds] = useState(() => new Set());
+  // Les apps de l'écran partagé sont AFFICHÉES sans être l'app active : elles
+  // rejoignent donc la liste au même titre, sinon la moitié de l'écran
+  // resterait vide au retour d'un partage enregistré. Un seul effet pour les
+  // deux : deux `setMountedIds` dans la même passe enchaîneraient les rendus.
+  const splitIds = splitView?.appIds;
   useEffect(() => {
-    if (!activeApp) return;
-    setMountedIds((prev) => (prev.has(activeApp) ? prev : new Set(prev).add(activeApp)));
-  }, [activeApp]);
+    const aMonter = [activeApp, ...(splitIds || [])].filter(Boolean);
+    if (aMonter.length === 0) return;
+    setMountedIds((prev) => {
+      if (aMonter.every((id) => prev.has(id))) return prev;
+      const next = new Set(prev);
+      for (const id of aMonter) next.add(id);
+      return next;
+    });
+  }, [activeApp, splitIds]);
 
   // Liste UNIQUE des webviews à monter (tous profils confondus) : apps du
   // profil actif + apps déjà ouvertes ailleurs. Une seule liste keyée par
@@ -742,7 +754,18 @@ const [editUrlFor, setEditUrlFor] = useState(null); // { id, url } — boîte «
           // Verrou de profil : les apps d'un profil verrouillé (non déverrouillé)
           // ne sont pas montées → page fermée, non peinte, aucun accès.
           profileAccessible(a.profileId) &&
-          (a.profileId === activeProfile || a.scope === 'all' || mountedIds.has(a.id))
+          // CHARGEMENT À LA DEMANDE : une app n'est montée qu'une fois OUVERTE
+          // (ou placée dans l'écran partagé). Avant, toute app du profil actif
+          // était montée au lancement : ouvrir Orbit téléchargeait la page
+          // complète de CHAQUE app, y compris celles qu'on ne regardait pas de
+          // la journée — mesuré à 4,3 Mo pour trois apps dont deux jamais
+          // consultées. Une fois ouverte, l'app reste chargée (changer de
+          // profil puis revenir ne la recharge pas).
+          //
+          // Contrepartie assumée : une app jamais ouverte depuis le lancement
+          // ne remonte pas ses non-lus — sa page n'est pas chargée, donc son
+          // titre n'existe pas. C'est le prix de ne rien télécharger pour elle.
+          mountedIds.has(a.id)
       ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
@@ -1201,6 +1224,10 @@ const [editUrlFor, setEditUrlFor] = useState(null); // { id, url } — boîte «
     const chosenFont = settings.fontFamily && settings.fontFamily !== 'Inter'
       ? settings.fontFamily
       : appliedTheme.traits.font;
+    // Charge la feuille de style de cette police si ce n'est pas l'une des deux
+    // embarquées dans index.html. Les seize familles ne partent plus au
+    // démarrage : seule celle qu'on affiche est demandée.
+    ensureWebFont(chosenFont);
     document.body.style.fontFamily = chosenFont;
     document.body.style.letterSpacing = appliedTheme.traits.tracking || '';
 

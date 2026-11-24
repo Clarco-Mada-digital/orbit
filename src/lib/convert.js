@@ -288,10 +288,18 @@ export function convertTime(input, locale = 'fr-FR', now = new Date()) {
 // ---------------------------------------------------------------------------
 const RATE_CACHE_KEY = 'orbit.fx.rates';
 // Durée pendant laquelle un relevé est considéré comme frais.
-export const RATE_TTL = 12 * 3600 * 1000;
+//
+// Un jour, et non douze heures : la source ne publie qu'un relevé quotidien, et
+// l'instantané embarqué — régénéré chaque jour par la CI — couvre déjà le cas
+// hors ligne. Deux lectures par jour pour une valeur qui ne change qu'une fois
+// était une requête sur deux pour rien.
+//
+// À noter : rien n'interroge cette API en arrière-plan. Elle n'est sollicitée
+// que lorsqu'on tape une conversion dans la palette de recherche.
+export const RATE_TTL = 24 * 3600 * 1000;
 // Au-delà de cette fraction du TTL, on rafraîchit en tâche de fond : le cache
 // reste servi tout de suite, mais la prochaine ouverture sera plus fraîche.
-const RATE_BACKGROUND_AFTER = RATE_TTL / 4;
+const RATE_BACKGROUND_AFTER = RATE_TTL / 2;
 const RATE_TIMEOUT = 8000;
 
 // Codes proposés même quand aucun taux n'est encore chargé (saisie hors ligne

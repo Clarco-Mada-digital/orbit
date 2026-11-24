@@ -9522,7 +9522,16 @@ let lastUpdateError = '';
 function initAutoUpdate() {
   if (updateInitDone || !updateSupported()) return;
   updateInitDone = true;
-  autoUpdater.autoDownload = true;
+  // Le téléchargement ne part PAS tout seul.
+  //
+  // Une version d'Orbit pèse une centaine de mégaoctets. Les télécharger sans
+  // prévenir, c'est vider un forfait mobile ou un partage de connexion sans que
+  // personne ne l'ait demandé — et sans que rien ne l'indique à l'écran, le
+  // transfert étant invisible. On annonce donc la version disponible, et le
+  // téléchargement attend un clic (voir `update:download` et UpdateBanner).
+  autoUpdater.autoDownload = false;
+  // En revanche, une mise à jour DÉJÀ téléchargée s'installe à la fermeture :
+  // à ce stade les octets sont dépensés, rien ne sert de les laisser dormir.
   autoUpdater.autoInstallOnAppQuit = true;
   // Les journaux d'electron-updater passent par la console : c'est la seule
   // trace disponible dans les journaux d'Orbit quand le flux échoue.
@@ -9565,6 +9574,23 @@ ipcMain.handle('update:check', async () => {
     return { success: false, reason: 'error', detail };
   }
 });
+// Téléchargement de la mise à jour, déclenché par le bouton de la bannière.
+// C'est le seul chemin : `autoDownload` est à false pour qu'une centaine de
+// mégaoctets ne parte jamais sans accord (voir initAutoUpdate).
+ipcMain.handle('update:download', async () => {
+  if (!updateSupported()) return { success: false, reason: 'unsupported' };
+  initAutoUpdate();
+  try {
+    await autoUpdater.downloadUpdate();
+    return { success: true };
+  } catch (e) {
+    const detail = String(e?.message || e);
+    lastUpdateError = detail;
+    console.error('[orbit] téléchargement de la mise à jour échoué :', detail);
+    return { success: false, reason: 'error', detail };
+  }
+});
+
 ipcMain.handle('update:install', () => {
   isQuitting = true;
   try {

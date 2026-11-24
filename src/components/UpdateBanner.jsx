@@ -118,6 +118,30 @@ export default function UpdateBanner() {
                 />
               </div>
             )}
+            {/* Le téléchargement ne part plus tout seul : une version pèse une
+                centaine de mégaoctets, et partait sans prévenir — y compris en
+                partage de connexion. On annonce la taille du geste, et on
+                attend le clic. */}
+            {status === 'available' && (
+              <div className="flex gap-2 mt-2.5">
+                <button
+                  onClick={() => {
+                    // Le passage à 'progress' vient de l'événement de
+                    // progression ; on l'anticipe pour que le bouton ne
+                    // paraisse pas sans effet pendant la négociation.
+                    setStatus('progress');
+                    setPercent(0);
+                    window.electronAPI?.downloadUpdate?.();
+                  }}
+                  className="btn btn-primary btn-sm"
+                >
+                  <Download size={15} /> {t('update.download')}
+                </button>
+                <button onClick={() => setDismissed(true)} className="btn btn-ghost btn-sm">
+                  {t('update.later')}
+                </button>
+              </div>
+            )}
           </div>
           <button onClick={() => setDismissed(true)} className="btn-icon w-7 h-7" title={t('common.hide')}>
             <X size={15} />

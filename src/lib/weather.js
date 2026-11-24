@@ -7,7 +7,22 @@
 // ---------------------------------------------------------------------------
 
 export const WEATHER_CACHE_KEY = 'orbit.weather.cache';
-export const WEATHER_REFRESH_MS = 15 * 60 * 1000;
+
+// Durée de validité du relevé — et donc le rythme réel des appels à l'API.
+//
+// C'était 15 minutes, DOUBLÉES d'un minuteur qui rappelait l'API en forçant le
+// cache : 96 requêtes par jour tant qu'Orbit restait ouvert, pour un widget que
+// personne ne regarde en continu. Le minuteur a disparu (voir WeatherWidget) ;
+// il ne reste qu'une lecture quand le cache est périmé, plus le bouton
+// « Actualiser ».
+//
+// Pourquoi 12 heures et pas une semaine : la même requête ramène les 7 jours de
+// prévision ET la température du moment, et c'est cette dernière qui s'affiche
+// en grand. Un relevé vieux d'une semaine afficherait une température fausse
+// présentée comme actuelle. À 12 heures, on passe de 96 appels par jour à 2 —
+// l'économie est déjà faite, et descendre plus bas ne gagnerait que quelques
+// kilo-octets par semaine au prix d'un chiffre erroné.
+export const WEATHER_REFRESH_MS = 12 * 60 * 60 * 1000;
 
 // Codes météo WMO → emoji + libellé
 export const WMO = {

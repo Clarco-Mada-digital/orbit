@@ -85,7 +85,11 @@ export const MAX_EXTENSION_BYTES = 32 * 1024 * 1024;
 // Durée au bout de laquelle le catalogue en cache est considéré comme vieux.
 // Il reste AFFICHÉ passé ce délai (hors ligne, on préfère une liste datée à
 // une liste vide), avec la date de la copie.
-export const CATALOG_TTL_MS = 6 * 60 * 60 * 1000;
+// Un jour, et non six heures : le catalogue n'est relu que lorsqu'on OUVRE la
+// page Extensions (rien ne le télécharge en arrière-plan), et il change au
+// rythme des publications, pas des heures. Le bouton « Actualiser » de la page
+// force la lecture quand on attend une nouveauté.
+export const CATALOG_TTL_MS = 24 * 60 * 60 * 1000;
 
 // Nom d'archive acceptable. Il sert à construire une URL ET un chemin de
 // fichier local : ni séparateur, ni remontée de dossier, ni caractère exotique

@@ -5,7 +5,6 @@ import { useT } from '../../lib/i18n';
 import { useZoneHold } from '../../lib/autoHide';
 import { useDismiss } from '../../lib/useDismiss';
 import {
-  WEATHER_REFRESH_MS as REFRESH_MS,
   describeWeather as describe,
   readWeatherCache,
   writeWeatherCache,
@@ -67,11 +66,15 @@ export default function WeatherWidget({ placement = 'top', align = 'right-0' }) 
       }
     };
 
+    // Une seule lecture, et seulement si le cache est périmé (voir
+    // WEATHER_REFRESH_MS). Le minuteur qui rappelait l'API toutes les
+    // 15 minutes EN FORÇANT le cache a été retiré : il annulait le cache et
+    // produisait 96 requêtes par jour tant qu'Orbit restait ouvert. Pour un
+    // relevé immédiat, le bouton « Actualiser » est là — c'est lui qui
+    // incrémente `reload`.
     load(reload > 0);
-    const id = setInterval(() => load(true), REFRESH_MS);
     return () => {
       alive = false;
-      clearInterval(id);
     };
   }, [city, units, reload]);
 

@@ -222,6 +222,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getVersion: () => ipcRenderer.invoke('app:getVersion'),
   getEngineVersions: () => ipcRenderer.invoke('app:engineVersions'),
   checkForUpdate: () => ipcRenderer.invoke('update:check'),
+  // Lance le téléchargement : il n'est plus automatique, pour qu'une centaine
+  // de mégaoctets ne parte pas sans accord.
+  downloadUpdate: () => ipcRenderer.invoke('update:download'),
   installUpdate: () => ipcRenderer.invoke('update:install'),
   // Zoom appliqué dans une page (Ctrl + molette) : l'interface met à jour le
   // zoom mémorisé de l'app correspondante.
