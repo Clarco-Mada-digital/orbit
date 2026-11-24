@@ -25,6 +25,7 @@ import {
 import { detectUrl } from '../lib/urls';
 import { neededSources, normalizeDesktopLayout, presetLayout } from '../lib/phoneDesktop';
 import PhoneDesktop from './phone/PhoneDesktop';
+import WirelessConnect from './phone/WirelessConnect';
 import { usePhoneStore } from '../lib/phoneStore';
 import {
   compareVersions,
@@ -931,6 +932,22 @@ export default function PhoneApp({ visible, onClose }) {
     setConnectOpen(true);
   }, [pairAddress, pairCode]);
 
+  const [wirelessBusy, setWirelessBusy] = useState(false);
+  const [wirelessMsg, setWirelessMsg] = useState('');
+  const goWireless = useCallback(async () => {
+    if (!serial) return;
+    setWirelessBusy(true);
+    setWirelessMsg('');
+    const res = await apiRef.current?.switchToWireless(serial);
+    setWirelessBusy(false);
+    setWirelessMsg(
+      res?.success
+        ? `Connecté en Wi-Fi (${res.address}) : vous pouvez débrancher le câble.`
+        : res?.error || 'Passage en sans fil impossible.'
+    );
+    if (res?.success) await refreshStatus();
+  }, [serial, refreshStatus]);
+
   const disconnect = useCallback(async () => {
     if (!serial) return;
     await apiRef.current?.disconnect(serial);
@@ -1390,10 +1407,14 @@ export default function PhoneApp({ visible, onClose }) {
                   <Usb size={17} className="text-accent-primary" /> Connecter un téléphone
                 </div>
                 <p className="text-xs leading-relaxed text-text-muted">
-                  Activez le <strong className="text-text-secondary">débogage USB</strong> dans les
-                  options de développement, branchez le câble, puis acceptez l'empreinte sur le
-                  téléphone. La connexion sans fil (débogage sans fil Android 11+) marche aussi.
+                  <strong className="text-text-secondary">Sans câble</strong> (Android 11+) : associez
+                  le téléphone une fois par QR code, sur le même Wi-Fi ; Orbit le retrouvera ensuite
+                  tout seul. <strong className="text-text-secondary">Avec câble</strong> : activez le
+                  débogage USB, branchez, acceptez l'empreinte — puis « Passer en sans fil » pour
+                  débrancher.
                 </p>
+
+                <WirelessConnect api={api} onConnected={refreshStatus} />
 
                 <div className="mt-4 flex flex-wrap gap-2">
                   <button
@@ -1408,14 +1429,14 @@ export default function PhoneApp({ visible, onClose }) {
                     onClick={() => setConnectOpen((v) => !v)}
                     className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs hover:bg-bg-hover"
                   >
-                    <Wifi size={13} /> Sans fil
+                    <Wifi size={13} /> Adresse IP
                   </button>
                   <button
                     type="button"
                     onClick={() => setPairOpen((v) => !v)}
                     className="rounded-lg border border-border px-3 py-1.5 text-xs hover:bg-bg-hover"
                   >
-                    Associer un code
+                    Code d'association
                   </button>
                 </div>
 
@@ -1857,6 +1878,26 @@ export default function PhoneApp({ visible, onClose }) {
                     >
                       Changer d'appareil
                     </button>
+                    {!/:\d+$|_adb-tls-connect/.test(device.serial || '') ? (
+                      <button
+                        type="button"
+                        onClick={goWireless}
+                        disabled={wirelessBusy}
+                        title="Le téléphone passe sur le Wi-Fi : vous pourrez débrancher le câble (jusqu'à son redémarrage)."
+                        className="flex items-center gap-1.5 rounded-lg border border-border px-3 py-1.5 text-xs hover:bg-bg-hover disabled:opacity-50"
+                      >
+                        {wirelessBusy ? <Loader2 size={13} className="animate-spin" /> : <Wifi size={13} />} Passer en sans fil
+                      </button>
+                    ) : null}
+                  </div>
+                  {wirelessMsg ? <p className="mt-2 text-xs text-text-muted">{wirelessMsg}</p> : null}
+                  <div className="mt-2">
+                    <Toggle
+                      label="Reconnexion automatique sans fil"
+                      hint="Orbit retrouve sur le réseau les téléphones déjà associés, même si leur port a changé."
+                      checked={settings.wirelessAutoReconnect !== false}
+                      onChange={(v) => saveSettings({ wirelessAutoReconnect: v })}
+                    />
                   </div>
                   {connectOpen ? (
                     <div className="mt-2 flex gap-2">

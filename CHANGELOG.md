@@ -8,6 +8,16 @@ Format : une section `## [X.Y.Z] — AAAA-MM-JJ` par version, puis des
 sous-sections `### Ajouté` / `### Modifié` / `### Corrigé` / `### Sécurité`.
 La plus récente en premier.
 
+## [Non publié]
+
+### Ajouté
+- **Téléphone sans câble.** Association par **QR code** (Android 11+, format
+  d’Android Studio), bouton **Passer en sans fil** pour un téléphone branché
+  (tout Android), liste des téléphones **à proximité** sur le réseau, et
+  **reconnexion automatique** des téléphones mémorisés — retrouvés par leur nom
+  même quand le port du débogage sans fil change. Testé sur un Samsung A71
+  (Android 13) : passage en Wi-Fi en 2 s, reconnexion en 0,3 s.
+
 ## [1.21.2] — 2026-11-24
 
 ### Ajouté

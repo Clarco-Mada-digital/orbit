@@ -83,7 +83,10 @@ export function parseAdbDevices(output) {
     const key = `${serial}:${state}`;
     if (seen.has(key)) continue;
     seen.add(key);
-    devices.push({ serial, state, wireless: /:\d+$/.test(serial) });
+    // Sans fil : « 192.168.1.42:5555 », ou le nom de service mDNS que les
+    // adb récents utilisent quand ils se connectent tout seuls
+    // (« adb-R58M…-AbCd._adb-tls-connect._tcp »).
+    devices.push({ serial, state, wireless: /:\d+$/.test(serial) || /\._adb-tls-connect\._tcp\.?$/.test(serial) });
   }
   return devices;
 }
@@ -183,6 +186,9 @@ export const MAX_PINNED_PHONE_APPS = 8;
 // d'où une validation stricte, avec des bornes, plutôt que la confiance.
 export const DEFAULT_PHONE_SETTINGS = {
   serial: null,
+  // Sans fil : téléphones associés et reconnexion automatique.
+  wirelessDevices: [],
+  wirelessAutoReconnect: true,
   favoritePackages: [],
   pinnedPackages: [],
   recentPackages: [],
@@ -274,6 +280,8 @@ export function normalizePhoneSettings(raw) {
   return {
     ...DEFAULT_PHONE_SETTINGS,
     serial: current && deviceAddressValid(current) ? current : null,
+    wirelessDevices: normalizeWirelessDevices(s.wirelessDevices),
+    wirelessAutoReconnect: bool(s.wirelessAutoReconnect, DEFAULT_PHONE_SETTINGS.wirelessAutoReconnect),
     favoritePackages: PACKAGE_LIST(s.favoritePackages),
     pinnedPackages: PACKAGE_LIST(s.pinnedPackages).slice(0, MAX_PINNED_PHONE_APPS),
     recentPackages: PACKAGE_LIST(s.recentPackages),
@@ -1100,4 +1108,103 @@ export function parseStorage(output) {
     return { total, used, free, percent: Number(match[4]) };
   }
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// Débogage sans fil (Android 11+) — découverte mDNS et appairage par QR code.
+//
+// Le QR code suit le format d'Android Studio : WIFI:T:ADB;S:<nom>;P:<code>;;
+// Le téléphone qui le scanne (Options pour les développeurs → Débogage sans
+// fil → Associer avec un code QR) annonce alors un service
+// « _adb-tls-pairing._tcp » portant CE nom : on le reconnaît, on associe, puis
+// on se connecte à son service « _adb-tls-connect._tcp ».
+// ---------------------------------------------------------------------------
+export const MDNS_PAIRING = '_adb-tls-pairing._tcp';
+export const MDNS_CONNECT = '_adb-tls-connect._tcp';
+// Téléphone passé en mode réseau (« adb tcpip ») : connectable sans association.
+export const MDNS_LEGACY = '_adb._tcp';
+
+// Sortie de « adb mdns services » →
+//   [{ name, type: '_adb-tls-connect._tcp', host, port, address }]
+export function parseMdnsServices(output) {
+  const out = [];
+  for (const raw of String(output || '').split('\n')) {
+    const line = raw.trim();
+    if (!line || /^List of/i.test(line)) continue;
+    const parts = line.split(/\s+/);
+    const type = parts.find((p) => /^_adb[\w-]*\._tcp\.?$/.test(p));
+    const address = parts.find((p) => /^\[?[0-9a-fA-F.:]+\]?:\d{1,5}$/.test(p) && /\d/.test(p));
+    if (!type || !address) continue;
+    const m = /^\[?(.+?)\]?:(\d{1,5})$/.exec(address);
+    out.push({ name: parts[0], type: type.replace(/\.$/, ''), host: m[1], port: Number(m[2]), address: `${m[1].includes(':') ? `[${m[1]}]` : m[1]}:${m[2]}` });
+  }
+  return out;
+}
+
+// Contenu du QR code d'appairage. Le nom et le code ne contiennent que des
+// caractères sûrs : aucun échappement nécessaire dans la syntaxe WIFI:.
+export function qrPairingPayload(name, password) {
+  if (!/^[A-Za-z0-9-]{4,40}$/.test(String(name)) || !/^[A-Za-z0-9]{6,32}$/.test(String(password))) {
+    throw new Error('nom ou code d’appairage invalide');
+  }
+  return `WIFI:T:ADB;S:${name};P:${password};;`;
+}
+
+// Adresse IPv4 du téléphone sur le réseau local, lue dans
+// « ip -f inet addr show ». Priorité au Wi-Fi (wlan*), puis au point d'accès
+// du téléphone (ap*, swlan*) ; jamais les données mobiles (rmnet*, ccmni*) ni
+// la boucle locale, injoignables depuis l'ordinateur.
+export function parseWlanIp(output) {
+  const found = [];
+  let iface = '';
+  for (const line of String(output || '').split('\n')) {
+    const head = /^\d+:\s*([\w.@-]+?)(?:@\w+)?:/.exec(line);
+    if (head) iface = head[1];
+    const m = /inet (\d{1,3}(?:\.\d{1,3}){3})\//.exec(line);
+    if (m) found.push({ iface, ip: m[1] });
+  }
+  const rank = ({ iface: i, ip }) => {
+    if (ip.startsWith('127.') || /^(lo|rmnet|ccmni|dummy|tun)/.test(i)) return 99;
+    if (/^wlan/.test(i)) return 0;
+    if (/^(ap|swlan|softap)/.test(i)) return 1;
+    return i ? 2 : 3;
+  };
+  const best = found.sort((a, b) => rank(a) - rank(b))[0];
+  return best && rank(best) < 99 ? best.ip : null;
+}
+
+// Téléphones déjà associés sans fil, pour se reconnecter tout seul.
+// `name` : nom mDNS (« adb-R58M12AB-xYz9 ») — le port du débogage sans fil
+// change à chaque activation, le nom reste ; `address` : dernière adresse
+// connue (seule piste pour le mode « adb tcpip 5555 », sans mDNS).
+export const MAX_WIRELESS_DEVICES = 8;
+export function normalizeWirelessDevices(list) {
+  if (!Array.isArray(list)) return [];
+  const out = [];
+  for (const d of list) {
+    if (!d || typeof d !== 'object') continue;
+    const address = typeof d.address === 'string' && deviceAddressValid(d.address) ? d.address : '';
+    const name = typeof d.name === 'string' && /^[A-Za-z0-9._-]{1,80}$/.test(d.name) ? d.name : '';
+    if (!address && !name) continue;
+    out.push({ name, address, label: String(d.label || '').slice(0, 60), at: Number(d.at) || 0 });
+  }
+  return out.slice(0, MAX_WIRELESS_DEVICES);
+}
+
+// Ajoute (ou rafraîchit) un téléphone en tête de liste. Même nom mDNS ou même
+// hôte = même téléphone.
+export function rememberWirelessDevice(list, entry) {
+  const host = (a) => String(a || '').replace(/:\d+$/, '');
+  const next = normalizeWirelessDevices([{ ...entry, at: entry.at || Date.now() }])[0];
+  if (!next) return normalizeWirelessDevices(list);
+  const rest = normalizeWirelessDevices(list).filter(
+    (d) => !((next.name && d.name === next.name) || (next.address && d.address && host(d.address) === host(next.address)))
+  );
+  const prev = normalizeWirelessDevices(list).find((d) => (next.name && d.name === next.name) || (next.address && host(d.address) === host(next.address)));
+  return [{ ...prev, ...next, name: next.name || prev?.name || '', label: next.label || prev?.label || '' }, ...rest].slice(0, MAX_WIRELESS_DEVICES);
+}
+
+// Nom mDNS d'un service ou d'un numéro de série sans fil, sans le suffixe.
+export function mdnsBaseName(value) {
+  return String(value || '').replace(/\._adb(?:-tls-(?:connect|pairing))?\._tcp\.?$/, '');
 }

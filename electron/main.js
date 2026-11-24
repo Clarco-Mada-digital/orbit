@@ -8381,8 +8381,14 @@ ipcMain.handle('phone:refreshDevices', phoneGuard(async (_p, phone) => ({
   success: true,
   devices: await phone.listDevices(),
 })));
-ipcMain.handle('phone:connect', phoneGuard((p, phone) => phone.connectDevice(p.address)));
+ipcMain.handle('phone:connect', phoneGuard((p, phone) => phone.connectDevice(p.address, { name: typeof p.name === 'string' ? p.name : '' })));
 ipcMain.handle('phone:pair', phoneGuard((p, phone) => phone.pairDevice(p)));
+ipcMain.handle('phone:discoverWireless', phoneGuard((_p, phone) => phone.discoverWireless()));
+ipcMain.handle('phone:qrStart', phoneGuard((_p, phone) => phone.startQrPairing()));
+ipcMain.handle('phone:qrWait', phoneGuard((_p, phone) => phone.waitQrPairing()));
+ipcMain.handle('phone:qrCancel', phoneGuard((_p, phone) => phone.cancelQrPairing()));
+ipcMain.handle('phone:switchToWireless', phoneGuard((p, phone) => phone.switchToWireless(p.serial)));
+ipcMain.handle('phone:forgetWireless', phoneGuard((p, phone) => phone.forgetWireless(p)));
 ipcMain.handle('phone:disconnect', phoneGuard((p, phone) => phone.disconnectDevice(p.serial)));
 ipcMain.handle('phone:listApps', phoneGuard((p, phone) => phone.listApps(p)));
 ipcMain.handle('phone:getIcon', phoneGuard((p, phone) => phone.getIcon(p)));

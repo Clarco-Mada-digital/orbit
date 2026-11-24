@@ -72,6 +72,7 @@
     "mysql2": "^3.24.6",
     "onnxruntime-node": "^1.29.0",
     "pg": "^8.23.1",
+    "qrcode-generator": "^2.0.4",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-markdown": "^10.1.0",

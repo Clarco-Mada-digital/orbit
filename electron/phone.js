@@ -35,6 +35,14 @@ import {
   compareVersions,
   scrcpyCapabilities,
   deviceAddressValid,
+  parseMdnsServices,
+  qrPairingPayload,
+  parseWlanIp,
+  rememberWirelessDevice,
+  mdnsBaseName,
+  MDNS_PAIRING,
+  MDNS_CONNECT,
+  MDNS_LEGACY,
   packageValid,
   encodeInputText,
   buildMirrorArgs,
@@ -507,8 +515,16 @@ async function deviceShell(serial, command, opts) {
 
 export async function listDevices() {
   await adbStartServer();
-  const out = await adb(null, ['devices'], { timeout: 20000 });
-  const devices = parseAdbDevices(out.stdout);
+  let out = await adb(null, ['devices'], { timeout: 20000 });
+  let devices = parseAdbDevices(out.stdout);
+  // Aucun téléphone prêt, ou le téléphone choisi (sans fil) a disparu — Wi-Fi
+  // coupé, veille : on tente les téléphones déjà associés sans fil.
+  const wanted = getSettings().serial;
+  const wantedLost = wanted && /:\d+$|_adb-tls-connect/.test(wanted) && !devices.some((d) => d.serial === wanted && d.state === 'device');
+  if ((wantedLost || !devices.some((d) => d.state === 'device')) && (await reconnectWireless())) {
+    out = await adb(null, ['devices'], { timeout: 20000 });
+    devices = parseAdbDevices(out.stdout);
+  }
   const enriched = await Promise.all(
     devices.map(async (d) => {
       if (d.state !== 'device') return d;
@@ -689,7 +705,7 @@ export async function foregroundPackage({ serial } = {}) {
   };
 }
 
-export async function connectDevice(address) {
+export async function connectDevice(address, { name = '', quiet = false } = {}) {
   const value = String(address || '').trim();
   if (!deviceAddressValid(value)) return { success: false, error: 'adresse invalide (hôte ou hôte:port)' };
   const out = await adb(null, ['connect', value], { timeout: 20000 });
@@ -707,8 +723,170 @@ export async function connectDevice(address) {
       error: "Appareil détecté mais non autorisé : acceptez « Autoriser le débogage USB » sur le téléphone.",
     };
   }
-  setSettings({ serial: entry?.serial || value });
-  return { success: true, output: text };
+  const serial = entry?.serial || value;
+  if (!quiet) reconnectPaused = false;
+  setSettings({ serial });
+  rememberConnected(serial, value, name);
+  return { success: true, output: text, serial };
+}
+
+// Mémorise un téléphone connecté sans fil (nom du modèle en prime) pour la
+// reconnexion automatique.
+async function rememberConnected(serial, address, name = '') {
+  const model = await deviceShell(serial, 'getprop ro.product.model', { timeout: 6000 }).catch(() => null);
+  const s = getSettings();
+  setSettings({
+    wirelessDevices: rememberWirelessDevice(s.wirelessDevices, {
+      name: mdnsBaseName(name || (/\._adb-tls-connect\._tcp/.test(serial) ? serial : '')),
+      address: /:\d+$/.test(address) ? address : '',
+      label: (model?.stdout || '').trim(),
+    }),
+  });
+}
+
+// --- Sans fil : découverte, QR code, passage USB → Wi-Fi, reconnexion --------
+//
+// Pas de Bluetooth : Android n'offre le débogage (ADB) qu'en USB et en réseau
+// IP. Le « sans câble » passe donc par le Wi-Fi, téléphone et ordinateur sur le
+// même réseau. Deux voies :
+//  - Android 11+ : « Débogage sans fil », associé une fois par QR code. Le
+//    téléphone s'annonce ensuite sur le réseau (mDNS) : on le retrouve même si
+//    son port a changé.
+//  - Tout Android, branché UNE fois : « adb tcpip 5555 », puis plus de câble
+//    jusqu'au redémarrage du téléphone.
+
+async function mdnsServices() {
+  const out = await adb(null, ['mdns', 'services'], { timeout: 8000 });
+  return out.ok ? parseMdnsServices(out.stdout) : [];
+}
+
+export async function discoverWireless() {
+  await adbStartServer();
+  const known = getSettings().wirelessDevices;
+  const all = await mdnsServices();
+  // Un même téléphone peut s'annoncer deux fois (débogage sans fil ET mode
+  // réseau) : on garde le débogage sans fil.
+  const services = [
+    ...all.filter((x) => x.type === MDNS_CONNECT),
+    ...all.filter((x) => x.type === MDNS_LEGACY && !all.some((y) => y.type === MDNS_CONNECT && y.host === x.host)),
+  ];
+  return {
+    success: true,
+    devices: services.map((x) => {
+      const host = (a) => String(a || '').replace(/:\d+$/, '');
+      const mem = known.find((d) => (d.name && d.name === mdnsBaseName(x.name)) || (d.address && host(d.address) === x.host));
+      return { name: mdnsBaseName(x.name), address: x.address, label: mem?.label || '', known: Boolean(mem), legacy: x.type === MDNS_LEGACY };
+    }),
+    remembered: known,
+  };
+}
+
+let qrSession = null;
+
+export function startQrPairing() {
+  const name = `orbit-${crypto.randomBytes(4).toString('hex')}`;
+  const password = crypto.randomBytes(5).toString('hex');
+  qrSession = { name, password, cancelled: false };
+  return { success: true, payload: qrPairingPayload(name, password), name };
+}
+
+export function cancelQrPairing() {
+  if (qrSession) qrSession.cancelled = true;
+  qrSession = null;
+  return { success: true };
+}
+
+// Attend que le téléphone ait scanné le QR code (il annonce alors un service
+// d'appairage portant notre nom), associe, puis se connecte.
+export async function waitQrPairing({ timeoutMs = 180000 } = {}) {
+  const session = qrSession;
+  if (!session) return { success: false, error: 'aucun QR code en cours' };
+  await adbStartServer();
+  const deadline = Date.now() + Math.min(timeoutMs, 300000);
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  let pairing = null;
+  while (!pairing) {
+    if (session.cancelled) return { success: false, cancelled: true };
+    if (Date.now() > deadline) return { success: false, error: 'Le téléphone n’a pas scanné le QR code à temps.' };
+    pairing = (await mdnsServices()).find((x) => x.type === MDNS_PAIRING && mdnsBaseName(x.name) === session.name);
+    if (!pairing) await sleep(1000);
+  }
+  const out = await adb(null, ['pair', pairing.address, session.password], { timeout: 30000 });
+  const text = `${out.stdout}${out.stderr}`.trim();
+  if (!/successfully paired/i.test(text)) return { success: false, error: 'Association refusée.', output: text };
+  // Après l'association, le téléphone annonce son service de connexion
+  // (même hôte). Les adb récents s'y connectent d'eux-mêmes.
+  for (let i = 0; i < 15 && !session.cancelled; i++) {
+    const devices = parseAdbDevices((await adb(null, ['devices'], { timeout: 10000 })).stdout);
+    const auto = devices.find((d) => d.state === 'device' && d.wireless && (d.serial.startsWith(`${pairing.host}:`) || /_adb-tls-connect/.test(d.serial)));
+    const service = (await mdnsServices()).find((x) => x.type === MDNS_CONNECT && x.host === pairing.host);
+    if (auto) {
+      qrSession = null;
+      reconnectPaused = false;
+      setSettings({ serial: auto.serial });
+      await rememberConnected(auto.serial, service?.address || auto.serial, service?.name || '');
+      return { success: true, serial: auto.serial };
+    }
+    if (service) {
+      const res = await connectDevice(service.address, { name: service.name });
+      if (res.success) {
+        qrSession = null;
+        return res;
+      }
+    }
+    await sleep(1000);
+  }
+  qrSession = null;
+  return { success: false, error: 'Associé, mais la connexion n’a pas abouti : réessayez « Téléphones à proximité ».' };
+}
+
+// Téléphone branché en USB → bascule en Wi-Fi (tout Android). Le câble peut
+// ensuite être retiré ; le mode dure jusqu'au redémarrage du téléphone.
+export async function switchToWireless(serial) {
+  const value = String(serial || '').trim();
+  if (!value || /:\d+$/.test(value)) return { success: false, error: 'Branchez d’abord le téléphone en USB.' };
+  const ipOut = await deviceShell(value, 'ip -f inet addr show', { timeout: 8000 });
+  const ip = parseWlanIp(ipOut.stdout);
+  if (!ip) return { success: false, error: 'Le téléphone n’est connecté à aucun réseau Wi-Fi.' };
+  const t = await adb(value, ['tcpip', '5555'], { timeout: 15000 });
+  if (!t.ok) return { success: false, error: 'Le téléphone a refusé le mode réseau.', output: `${t.stdout}${t.stderr}` };
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  let res = null;
+  for (let i = 0; i < 6; i++) {
+    await sleep(i ? 1200 : 1800);
+    res = await connectDevice(`${ip}:5555`);
+    if (res.success) return { ...res, address: `${ip}:5555` };
+  }
+  return { success: false, error: `Mode réseau activé, mais ${ip}:5555 ne répond pas (pare-feu, réseau invité ?).`, output: res?.output };
+}
+
+export function forgetWireless({ name = '', address = '' } = {}) {
+  const host = (a) => String(a || '').replace(/:\d+$/, '');
+  setSettings({
+    wirelessDevices: getSettings().wirelessDevices.filter((d) => !((name && d.name === name) || (address && host(d.address) === host(address)))),
+  });
+  return { success: true, settings: getSettings() };
+}
+
+// Reconnexion automatique : retrouve un téléphone associé par son nom mDNS
+// (son port change), sinon par sa dernière adresse. Limitée à une tentative
+// toutes les 20 s, et suspendue après une déconnexion volontaire.
+let reconnectPaused = false;
+let lastReconnect = 0;
+async function reconnectWireless() {
+  const s = getSettings();
+  if (reconnectPaused || !s.wirelessAutoReconnect || s.wirelessDevices.length === 0) return false;
+  if (Date.now() - lastReconnect < 20000) return false;
+  lastReconnect = Date.now();
+  const services = (await mdnsServices().catch(() => [])).filter((x) => x.type === MDNS_CONNECT || x.type === MDNS_LEGACY);
+  for (const d of s.wirelessDevices) {
+    const service = d.name && services.find((x) => mdnsBaseName(x.name) === d.name);
+    const target = service?.address || d.address;
+    if (!target) continue;
+    const res = await connectDevice(target, { name: d.name, quiet: true }).catch(() => null);
+    if (res?.success) return true;
+  }
+  return false;
 }
 
 export async function pairDevice({ address, code } = {}) {
@@ -725,7 +903,9 @@ export async function pairDevice({ address, code } = {}) {
 export async function disconnectDevice(serial) {
   const value = String(serial || '').trim();
   if (!value) return { success: false, error: 'aucun appareil' };
-  if (/:\d+$/.test(value)) await adb(null, ['disconnect', value], { timeout: 15000 });
+  // Déconnexion voulue : pas de reconnexion automatique dans la foulée.
+  reconnectPaused = true;
+  if (/:\d+$/.test(value) || /\._adb-tls-connect\._tcp/.test(value)) await adb(null, ['disconnect', value], { timeout: 15000 });
   else await deviceShell(value, 'echo disconnect', { timeout: 8000 });
   if (getSettings().serial === value) setSettings({ serial: null });
   return { success: true };

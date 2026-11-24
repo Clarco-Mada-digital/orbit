@@ -681,6 +681,24 @@ Branchez l’appareil en USB avec le **débogage USB** activé (ou en sans-fil,
 Android 11+), puis installez le moteur scrcpy embarqué depuis le panneau :
 Orbit le télécharge dans ses propres données, sans toucher au système.
 
+**Sans câble.** Le téléphone et l’ordinateur doivent être sur le **même
+réseau Wi-Fi** (Android ne permet pas ce pilotage par Bluetooth). Deux façons :
+
+- **Associer par QR code** (Android 11+) : dans Options pour les développeurs,
+  activez **Débogage sans fil**, puis **Associer l’appareil avec un code QR**
+  et visez le code affiché par Orbit. À faire une seule fois.
+- **Passer en sans fil** (tout Android) : téléphone branché, section
+  **Appareil** → **Passer en sans fil**, puis débranchez. Ce mode dure jusqu’au
+  redémarrage du téléphone.
+
+Les téléphones associés sont **mémorisés** : quand le Wi-Fi revient ou au
+démarrage d’Orbit, la connexion se rétablit seule, même si le port du débogage
+sans fil a changé. La liste **À proximité** montre les téléphones visibles sur
+le réseau ; **Déconnecter** suspend la reconnexion automatique, qui se règle
+aussi dans la section Appareil. Un réseau invité ou « isolé » (fréquent en
+entreprise et dans les hôtels) bloque la connexion entre appareils : utilisez
+alors le point d’accès du téléphone avec « Passer en sans fil ».
+
 L’accueil du Téléphone se compose de **widgets** que l’on ajoute ou retire
 (bouton **Ajouter un widget**) :
 

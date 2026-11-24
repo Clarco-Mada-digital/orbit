@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>Orbit — guide utilisateur</title>
 <meta name="author" content="Clarco RAHERINANDRASANA" />
-<meta name="description" content="Guide utilisateur complet d'Orbit — 1.21.1" />
+<meta name="description" content="Guide utilisateur complet d'Orbit — 1.21.2" />
 <!-- Fichier GÉNÉRÉ par scripts/build-docs.js à partir de docs/guide-utilisateur.md.
      Toute modification faite ici serait perdue à la prochaine génération. -->
 <style>
@@ -191,7 +191,7 @@
   <div class="cover-rule" aria-hidden="true"></div>
   <dl class="cover-meta">
     <div><dt>Auteur</dt><dd>Clarco RAHERINANDRASANA</dd></div>
-    <div><dt>Version</dt><dd>Orbit 1.21.1</dd></div>
+    <div><dt>Version</dt><dd>Orbit 1.21.2</dd></div>
     <div><dt>Édition</dt><dd>novembre 2026</dd></div>
   </dl>
 </section>
@@ -557,6 +557,16 @@ apparaît dans la barre du haut, avec le nombre de notifications du mobile.
 Branchez l’appareil en USB avec le <strong>débogage USB</strong> activé (ou en sans-fil,
 Android 11+), puis installez le moteur scrcpy embarqué depuis le panneau :
 Orbit le télécharge dans ses propres données, sans toucher au système.</p>
+<p><strong>Sans câble.</strong> Le téléphone et l’ordinateur doivent être sur le <strong>même
+réseau Wi-Fi</strong> (Android ne permet pas ce pilotage par Bluetooth). Deux façons :</p>
+<ul><li><strong>Associer par QR code</strong> (Android 11+) : dans Options pour les développeurs, activez <strong>Débogage sans fil</strong>, puis <strong>Associer l’appareil avec un code QR</strong> et visez le code affiché par Orbit. À faire une seule fois.</li><li><strong>Passer en sans fil</strong> (tout Android) : téléphone branché, section <strong>Appareil</strong> → <strong>Passer en sans fil</strong>, puis débranchez. Ce mode dure jusqu’au redémarrage du téléphone.</li></ul>
+<p>Les téléphones associés sont <strong>mémorisés</strong> : quand le Wi-Fi revient ou au
+démarrage d’Orbit, la connexion se rétablit seule, même si le port du débogage
+sans fil a changé. La liste <strong>À proximité</strong> montre les téléphones visibles sur
+le réseau ; <strong>Déconnecter</strong> suspend la reconnexion automatique, qui se règle
+aussi dans la section Appareil. Un réseau invité ou « isolé » (fréquent en
+entreprise et dans les hôtels) bloque la connexion entre appareils : utilisez
+alors le point d’accès du téléphone avec « Passer en sans fil ».</p>
 <p>L’accueil du Téléphone se compose de <strong>widgets</strong> que l’on ajoute ou retire
 (bouton <strong>Ajouter un widget</strong>) :</p>
 <table><thead><tr><th>Widget</th><th>Ce qu’il montre</th></tr></thead><tbody><tr><td><strong>Horloge</strong></td><td>Heure et date de l’appareil</td></tr><tr><td><strong>Appareil et batterie</strong></td><td>Modèle, charge, état de la connexion</td></tr><tr><td><strong>Applications favorites</strong></td><td>Les apps épinglées en tête</td></tr><tr><td><strong>Applications récentes</strong></td><td>Les dernières ouvertes depuis Orbit</td></tr><tr><td><strong>Notifications</strong></td><td>Les alertes du mobile, avec « Tout effacer »</td></tr><tr><td><strong>Contrôles rapides</strong></td><td>Volume, Wi-Fi, Bluetooth, réglages Android, envoi de fichier</td></tr><tr><td><strong>Appels récents</strong></td><td>Le journal d’appels, avec rappel en un clic</td></tr></tbody></table>
@@ -646,7 +656,7 @@ joignez pas de mots de passe, cookies ou données privées.</p>
 <ul><li><a href="https://github.com/Clarco-Mada-digital/orbit/releases/latest">Télécharger Orbit</a></li><li><a href="https://github.com/Clarco-Mada-digital/orbit">Code source</a></li><li><a href="./guide-utilisateur.pdf">Guide PDF</a></li><li><a href="./guide-developpeur.md">Guide développeur</a></li><li><a href="./index.html">Page de présentation</a></li></ul>
 <hr />
 <p><strong>Orbit</strong> · Développé par <strong>Clarco RAHERINANDRASANA</strong> · Licence MIT.</p>
-<p class="built">Orbit 1.21.1 · Clarco RAHERINANDRASANA · document généré le 2026-11-24 à partir de
+<p class="built">Orbit 1.21.2 · Clarco RAHERINANDRASANA · document généré le 2026-11-24 à partir de
 <code>docs/guide-utilisateur.md</code> (<code>npm run docs</code>).</p>
 </main>
 </body>
