@@ -549,6 +549,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Restauration complète : étage les fichiers de session, puis redémarre
   // (voir electron/backup-files.js pour le pourquoi).
   backupStageRestore: (payload) => ipcRenderer.invoke('backup:stage', payload),
+  backupRestoreMain: (payload) => ipcRenderer.invoke('backup:restoreMain', payload),
   backupRelaunch: () => ipcRenderer.invoke('backup:relaunch'),
 
   // Automatisations : le main garde une copie des règles de liens pour pouvoir

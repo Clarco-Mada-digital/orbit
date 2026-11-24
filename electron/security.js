@@ -16,7 +16,7 @@
 //   • tout vit dans le process principal : le renderer ne voit jamais les
 //     empreintes, seulement « déverrouillé ou non ».
 // ---------------------------------------------------------------------------
-import { safeStorage } from 'electron';
+import * as secureStore from './secure-store.js';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
@@ -52,30 +52,33 @@ function verifyEntry(entry, pin) {
   }
 }
 
+// Écritures en FILE : le chiffrement est asynchrone, deux changements
+// rapprochés ne doivent jamais s'écrire dans le désordre. La mémoire (`data`)
+// fait foi ; le fichier la suit.
+let writeChain = Promise.resolve();
 function persist() {
-  if (!configFile) return;
-  try {
-    const json = JSON.stringify(data);
-    if (safeStorage.isEncryptionAvailable()) {
-      fs.writeFileSync(configFile, safeStorage.encryptString(json));
-    } else {
-      fs.writeFileSync(configFile, json, 'utf8');
-    }
-  } catch (err) {
-    console.error('[security] sauvegarde échouée:', err.message);
-  }
+  if (!configFile) return writeChain;
+  const json = JSON.stringify(data);
+  const file = configFile;
+  writeChain = writeChain
+    .then(async () => {
+      if (await secureStore.isAvailable()) fs.writeFileSync(file, await secureStore.encrypt(json));
+      else fs.writeFileSync(file, json, 'utf8');
+    })
+    .catch((err) => console.error('[security] sauvegarde échouée:', err.message));
+  return writeChain;
 }
 
-function load() {
+async function load() {
   try {
     const buf = fs.readFileSync(configFile);
     // Ancien fichier en clair (ou safeStorage indisponible) : JSON direct
     try {
       return JSON.parse(buf.toString('utf8'));
     } catch {
-      // Sinon : blob chiffré par safeStorage
-      if (safeStorage.isEncryptionAvailable()) {
-        return JSON.parse(safeStorage.decryptString(buf));
+      // Sinon : blob chiffré par le trousseau du système
+      if (await secureStore.isAvailable()) {
+        return JSON.parse(await secureStore.decrypt(buf));
       }
     }
   } catch {
@@ -84,9 +87,11 @@ function load() {
   return { appLock: null, profileLocks: {} };
 }
 
-export function init(userDataPath) {
+// À ATTENDRE avant d'ouvrir la fenêtre : sans la configuration, Orbit ne
+// saurait pas qu'il doit démarrer verrouillé.
+export async function init(userDataPath) {
   configFile = path.join(userDataPath, 'security.json');
-  data = load();
+  data = await load();
   if (!data || typeof data !== 'object') data = { appLock: null, profileLocks: {} };
   if (!data.profileLocks) data.profileLocks = {};
   // Au lancement : « déverrouillé » d'emblée seulement s'il n'y a pas de verrou.

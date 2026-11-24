@@ -1,4 +1,5 @@
-import { app, net, safeStorage } from 'electron';
+import { app, net } from 'electron';
+import * as secureStore from './secure-store.js';
 import fs from 'node:fs';
 import path from 'node:path';
 import {
@@ -17,15 +18,15 @@ function credentialPath() {
   return configPath;
 }
 
-function loadConfig() {
+async function loadConfig() {
   if (providerConfig) return providerConfig;
   const file = credentialPath();
   try {
     const encrypted = fs.readFileSync(file);
-    if (!safeStorage.isEncryptionAvailable()) {
+    if (!(await secureStore.isAvailable())) {
       throw new Error('OS credential encryption is unavailable');
     }
-    const parsed = JSON.parse(safeStorage.decryptString(encrypted));
+    const parsed = JSON.parse(await secureStore.decrypt(encrypted));
     if (!parsed || parsed.version !== 1 || typeof parsed.providers !== 'object') {
       throw new Error('Invalid AI provider credential file');
     }
@@ -40,15 +41,15 @@ function loadConfig() {
   return providerConfig;
 }
 
-function saveConfig(next) {
-  if (!safeStorage.isEncryptionAvailable()) {
+async function saveConfig(next) {
+  if (!(await secureStore.isAvailable())) {
     return { success: false, error: 'secure-storage-unavailable' };
   }
   const file = credentialPath();
   const temporary = `${file}.tmp`;
   try {
     fs.mkdirSync(path.dirname(file), { recursive: true });
-    fs.writeFileSync(temporary, safeStorage.encryptString(JSON.stringify(next)), { mode: 0o600 });
+    fs.writeFileSync(temporary, await secureStore.encrypt(JSON.stringify(next)), { mode: 0o600 });
     fs.renameSync(temporary, file);
     providerConfig = next;
     return { success: true };
@@ -65,10 +66,10 @@ function saveConfig(next) {
   }
 }
 
-function providerSettings(providerId, draft = {}) {
+async function providerSettings(providerId, draft = {}) {
   const provider = getAiProvider(providerId);
   if (!provider || provider.kind === 'local') return null;
-  const stored = loadConfig().providers[providerId] || {};
+  const stored = (await loadConfig()).providers[providerId] || {};
   const baseUrl = draft.baseUrl?.trim() || stored.baseUrl || provider.baseUrl || '';
   const validation = validateAiProviderUrl(providerId, baseUrl);
   if (!validation.success) throw new Error('Stored AI provider endpoint is invalid');
@@ -78,9 +79,9 @@ function providerSettings(providerId, draft = {}) {
   return { provider, baseUrl: validation.baseUrl, apiKey };
 }
 
-export function getAiProvidersState() {
-  const config = loadConfig();
-  const secureStorageAvailable = safeStorage.isEncryptionAvailable();
+export async function getAiProvidersState() {
+  const config = await loadConfig();
+  const secureStorageAvailable = await secureStore.isAvailable();
   return {
     success: true,
     secureStorageAvailable,
@@ -97,13 +98,13 @@ export function getAiProvidersState() {
   };
 }
 
-export function configureAiProvider(providerId, { apiKey = '', baseUrl = '' } = {}) {
+export async function configureAiProvider(providerId, { apiKey = '', baseUrl = '' } = {}) {
   const provider = getAiProvider(providerId);
   if (!provider || provider.kind === 'local') return { success: false, error: 'unknown-provider' };
   if (typeof apiKey !== 'string' || apiKey.length > MAX_KEY_LENGTH) {
     return { success: false, error: 'invalid-api-key' };
   }
-  const prior = loadConfig();
+  const prior = await loadConfig();
   const current = prior.providers[providerId] || {};
   const resolvedUrl = provider.custom || provider.local
     ? baseUrl || current.baseUrl || ''
@@ -113,7 +114,7 @@ export function configureAiProvider(providerId, { apiKey = '', baseUrl = '' } = 
 
   const nextKey = apiKey.trim() || current.apiKey || '';
   if (provider.keyRequired && !nextKey) return { success: false, error: 'api-key-required' };
-  if (nextKey && !safeStorage.isEncryptionAvailable()) {
+  if (nextKey && !(await secureStore.isAvailable())) {
     return { success: false, error: 'secure-storage-unavailable' };
   }
   const next = {
@@ -126,10 +127,10 @@ export function configureAiProvider(providerId, { apiKey = '', baseUrl = '' } = 
   return saveConfig(next);
 }
 
-export function clearAiProviderKey(providerId) {
+export async function clearAiProviderKey(providerId) {
   const provider = getAiProvider(providerId);
   if (!provider || provider.kind === 'local') return { success: false, error: 'unknown-provider' };
-  const prior = loadConfig();
+  const prior = await loadConfig();
   const current = prior.providers[providerId] || {};
   if (!current.apiKey) return { success: true };
   const next = {
@@ -145,7 +146,7 @@ export function clearAiProviderKey(providerId) {
 export async function listAiProviderModels(providerId, draft) {
   let configured;
   try {
-    configured = providerSettings(providerId, draft);
+    configured = await providerSettings(providerId, draft);
   } catch (error) {
     console.error('[orbit] configuration de fournisseur IA invalide:', error);
     return { success: false, error: 'invalid-provider-config' };
@@ -164,7 +165,7 @@ export async function listAiProviderModels(providerId, draft) {
 export async function testAiProviderKey(providerId, draft) {
   let configured;
   try {
-    configured = providerSettings(providerId, draft);
+    configured = await providerSettings(providerId, draft);
   } catch (error) {
     console.error('[orbit] configuration de fournisseur IA invalide:', error);
     return { success: false, error: 'invalid-provider-config' };
@@ -184,7 +185,7 @@ export async function testAiProviderKey(providerId, draft) {
 export async function testAiProviderModel(providerId, model, draft) {
   let configured;
   try {
-    configured = providerSettings(providerId, draft);
+    configured = await providerSettings(providerId, draft);
   } catch (error) {
     console.error('[orbit] configuration de fournisseur IA invalide:', error);
     return { success: false, error: 'invalid-provider-config' };
@@ -213,7 +214,7 @@ export async function completeWithAiProvider({
 } = {}) {
   let configured;
   try {
-    configured = providerSettings(providerId);
+    configured = await providerSettings(providerId);
   } catch (error) {
     console.error('[orbit] configuration de fournisseur IA invalide:', error);
     return { success: false, error: 'invalid-provider-config' };

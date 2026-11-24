@@ -608,10 +608,13 @@ export default function SchemaDiagram({ conn, onOpenTable, onQuery }) {
               onClick={() => {
                 const q = (n) => (conn.driver === 'mysql' ? `\`${n}\`` : conn.driver === 'mssql' ? `[${n}]` : `"${n}"`);
                 const target = sel.schema && conn.driver !== 'sqlite' ? `${q(sel.schema)}.${q(sel.name)}` : q(sel.name);
+                const cols = sel.columns.map((c) => q(c.name)).join(', ');
                 onQuery(
                   conn.driver === 'mssql'
-                    ? `SELECT TOP 100 ${sel.columns.map((c) => q(c.name)).join(', ')}\nFROM ${target};`
-                    : `SELECT ${sel.columns.map((c) => q(c.name)).join(', ')}\nFROM ${target}\nLIMIT 100;`
+                    ? `SELECT TOP 100 ${cols}\nFROM ${target};`
+                    : conn.driver === 'oracle'
+                      ? `SELECT ${cols}\nFROM ${target}\nFETCH FIRST 100 ROWS ONLY;`
+                      : `SELECT ${cols}\nFROM ${target}\nLIMIT 100;`
                 );
               }}
             >

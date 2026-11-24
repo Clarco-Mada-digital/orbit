@@ -127,7 +127,7 @@ function sanitize(input) {
 
 // Enregistre (épinglée) ou garde en mémoire (jetable) une connexion.
 // `password` : undefined = garder l'ancien, '' = aucun.
-export function upsert(input) {
+export async function upsert(input) {
   const conn = sanitize(input);
   const pinned = input.pinned !== false;
   const previousSaved = saved.find((c) => c.id === conn.id);
@@ -136,7 +136,7 @@ export function upsert(input) {
   if (password === undefined) {
     password =
       previousTemp?.password ??
-      (previousSaved?.passwordEnc ? decryptPassword(previousSaved) : unsavedPasswords.get(conn.id) || '');
+      (previousSaved?.passwordEnc ? await decryptPassword(previousSaved) : unsavedPasswords.get(conn.id) || '');
   }
   saved = saved.filter((c) => c.id !== conn.id);
   temporary.delete(conn.id);
@@ -152,7 +152,7 @@ export function upsert(input) {
         entry.passwordUnsaved = true;
         unsavedPasswords.set(conn.id, password);
       } else {
-        entry.passwordEnc = crypt.encrypt(password);
+        entry.passwordEnc = await crypt.encrypt(password);
       }
     }
     saved.push(entry);
@@ -163,20 +163,20 @@ export function upsert(input) {
   return { success: true, connection: publicView(conn, pinned) };
 }
 
-function decryptPassword(conn) {
+async function decryptPassword(conn) {
   try {
-    return conn.passwordEnc ? crypt.decrypt(conn.passwordEnc) : '';
+    return conn.passwordEnc ? await crypt.decrypt(conn.passwordEnc) : '';
   } catch {
     return '';
   }
 }
 
-function fullConfig(id) {
+async function fullConfig(id) {
   const temp = temporary.get(id);
   if (temp) return temp;
   const conn = saved.find((c) => c.id === id);
   if (!conn) return null;
-  const password = conn.passwordEnc ? decryptPassword(conn) : unsavedPasswords.get(id) || '';
+  const password = conn.passwordEnc ? await decryptPassword(conn) : unsavedPasswords.get(id) || '';
   return { ...conn, password };
 }
 
@@ -478,6 +478,79 @@ const drivers = {
       }));
     },
   },
+
+  // Oracle : pilote officiel `oracledb` en mode « Thin » (JavaScript pur,
+  // aucun Oracle Instant Client à installer). Téléchargé à la première
+  // connexion, comme SQL Server. Le schéma affiché est celui de l'utilisateur
+  // connecté (les schémas système d'Oracle se comptent par dizaines).
+  oracle: {
+    async connect(cfg) {
+      const oracledb = await loadDriver('oracledb');
+      // Textes longs (CLOB) lus comme du texte, pas comme des flux.
+      oracledb.fetchAsString = [oracledb.CLOB];
+      const conn = await oracledb.getConnection({
+        user: cfg.user,
+        password: cfg.password || undefined,
+        // `database` = nom de SERVICE (FREEPDB1, ORCLPDB1, XEPDB1…).
+        connectString: `${cfg.host}:${cfg.port}/${cfg.database || 'FREEPDB1'}`,
+        connectTimeout: 10,
+      });
+      conn._orbit = oracledb;
+      return conn;
+    },
+    async close(conn) {
+      await conn.close();
+    },
+    async query(conn, sql, params = []) {
+      const oracledb = conn._orbit;
+      // Oracle refuse le « ; » final d'une requête SQL (pas d'un bloc PL/SQL).
+      const text = /^\s*(begin|declare)\b/i.test(sql) ? sql : sql.replace(/;\s*$/, '');
+      const res = await conn.execute(text, params, {
+        outFormat: oracledb.OUT_FORMAT_ARRAY,
+        maxRows: MAX_ROWS + 1,
+        autoCommit: true,
+      });
+      if (res.metaData) {
+        const rows = res.rows || [];
+        return {
+          columns: res.metaData.map((m) => m.name),
+          rows: rows.slice(0, MAX_ROWS).map((r) => r.map(toCell)),
+          truncated: rows.length > MAX_ROWS,
+        };
+      }
+      return { columns: [], rows: [], affected: res.rowsAffected ?? 0 };
+    },
+    async tables(conn) {
+      const r = await this.query(
+        conn,
+        `SELECT USER, TABLE_NAME, 'table' FROM USER_TABLES
+         UNION ALL SELECT USER, VIEW_NAME, 'view' FROM USER_VIEWS
+         ORDER BY 3, 2`
+      );
+      return r.rows.map(([schema, name, type]) => ({ schema, name, type }));
+    },
+    async columns(conn, schema, table) {
+      const r = await this.query(
+        conn,
+        `SELECT c.COLUMN_NAME, c.DATA_TYPE, c.NULLABLE, c.DATA_DEFAULT,
+                CASE WHEN EXISTS (
+                  SELECT 1 FROM ALL_CONSTRAINTS k JOIN ALL_CONS_COLUMNS kc
+                    ON kc.OWNER = k.OWNER AND kc.CONSTRAINT_NAME = k.CONSTRAINT_NAME
+                  WHERE k.CONSTRAINT_TYPE = 'P' AND k.OWNER = c.OWNER AND k.TABLE_NAME = c.TABLE_NAME AND kc.COLUMN_NAME = c.COLUMN_NAME
+                ) THEN 1 ELSE 0 END
+         FROM ALL_TAB_COLUMNS c
+         WHERE c.OWNER = COALESCE(:1, USER) AND c.TABLE_NAME = :2 ORDER BY c.COLUMN_ID`,
+        [schema || null, table]
+      );
+      return r.rows.map(([name, type, nullable, dflt, pk]) => ({
+        name,
+        type,
+        nullable: nullable === 'Y',
+        default: typeof dflt === 'string' ? dflt.trim() : dflt,
+        pk: Boolean(Number(pk)),
+      }));
+    },
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -490,6 +563,20 @@ const drivers = {
 const MAX_SCHEMA_TABLES = 400;
 
 const SCHEMA_SQL = {
+  oracle: {
+    columns: `SELECT OWNER, TABLE_NAME, COLUMN_NAME, DATA_TYPE, DECODE(NULLABLE, 'Y', 'YES', 'NO'), NULL, 0
+              FROM ALL_TAB_COLUMNS WHERE OWNER = USER ORDER BY TABLE_NAME, COLUMN_ID`,
+    pks: `SELECT cc.OWNER, cc.TABLE_NAME, cc.COLUMN_NAME
+          FROM ALL_CONSTRAINTS c JOIN ALL_CONS_COLUMNS cc ON cc.OWNER = c.OWNER AND cc.CONSTRAINT_NAME = c.CONSTRAINT_NAME
+          WHERE c.CONSTRAINT_TYPE = 'P' AND c.OWNER = USER`,
+    fks: `SELECT c.CONSTRAINT_NAME, c.OWNER, c.TABLE_NAME, cc.COLUMN_NAME, r.OWNER, r.TABLE_NAME, rc.COLUMN_NAME
+          FROM ALL_CONSTRAINTS c
+          JOIN ALL_CONS_COLUMNS cc ON cc.OWNER = c.OWNER AND cc.CONSTRAINT_NAME = c.CONSTRAINT_NAME
+          JOIN ALL_CONSTRAINTS r ON r.OWNER = c.R_OWNER AND r.CONSTRAINT_NAME = c.R_CONSTRAINT_NAME
+          JOIN ALL_CONS_COLUMNS rc ON rc.OWNER = r.OWNER AND rc.CONSTRAINT_NAME = r.CONSTRAINT_NAME AND rc.POSITION = cc.POSITION
+          WHERE c.CONSTRAINT_TYPE = 'R' AND c.OWNER = USER
+          ORDER BY c.CONSTRAINT_NAME, cc.POSITION`,
+  },
   mysql: {
     filter: `(DATABASE() IS NOT NULL AND TABLE_SCHEMA = DATABASE())
              OR (DATABASE() IS NULL AND TABLE_SCHEMA NOT IN ('mysql','information_schema','performance_schema','sys'))`,
@@ -639,7 +726,7 @@ async function openClient(cfg) {
 export async function test(input) {
   const cfg = {
     ...sanitize(input),
-    password: input.password ?? fullConfig(input.id)?.password ?? '',
+    password: input.password ?? (await fullConfig(input.id))?.password ?? '',
   };
   const started = Date.now();
   const client = await openClient(cfg);
@@ -653,7 +740,7 @@ export async function test(input) {
 
 export async function connect(id) {
   if (sessions.has(id)) return { success: true };
-  const cfg = fullConfig(id);
+  const cfg = await fullConfig(id);
   if (!cfg) throw new Error('Connexion introuvable.');
   const client = await openClient(cfg);
   sessions.set(id, { driver: cfg.driver, client, config: cfg });

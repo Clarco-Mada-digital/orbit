@@ -10,9 +10,9 @@
 // dialecte, guillemets internes doublés.
 // ---------------------------------------------------------------------------
 
-export const DRIVERS = ['sqlite', 'mysql', 'postgres', 'mssql'];
+export const DRIVERS = ['sqlite', 'mysql', 'postgres', 'mssql', 'oracle'];
 
-export const DEFAULT_PORTS = { mysql: 3306, postgres: 5432, mssql: 1433 };
+export const DEFAULT_PORTS = { mysql: 3306, postgres: 5432, mssql: 1433, oracle: 1521 };
 
 export function quoteIdent(driver, name) {
   const s = String(name);
@@ -29,6 +29,7 @@ export function qualified(driver, schema, table) {
 // Marqueur du n-ième paramètre (1-based) selon le dialecte.
 export function placeholder(driver, i) {
   if (driver === 'postgres') return `$${i}`;
+  if (driver === 'oracle') return `:${i}`;
   if (driver === 'mssql') return `@p${i}`;
   return '?';
 }
@@ -62,6 +63,8 @@ export function buildInsert(driver, { schema, table, values }) {
   const cols = Object.keys(values || {});
   const target = qualified(driver, schema, table);
   if (cols.length === 0) {
+    // Oracle n'a ni `DEFAULT VALUES` ni `VALUES ()`.
+    if (driver === 'oracle') throw new Error('Oracle : renseignez au moins une colonne pour ajouter une ligne.');
     return {
       sql: driver === 'mysql' ? `INSERT INTO ${target} () VALUES ()` : `INSERT INTO ${target} DEFAULT VALUES`,
       params: [],
@@ -89,7 +92,10 @@ export function buildBrowse(driver, { schema, table, where, orderBy, desc, limit
   const filter = where && String(where).trim() ? ` WHERE ${where}` : '';
   let order = orderBy ? ` ORDER BY ${quoteIdent(driver, orderBy)}${desc ? ' DESC' : ''}` : '';
   let page;
-  if (driver === 'mssql') {
+  if (driver === 'oracle') {
+    // Oracle 12c+ : pagination normalisée, sans LIMIT.
+    page = ` OFFSET ${off} ROWS FETCH NEXT ${lim} ROWS ONLY`;
+  } else if (driver === 'mssql') {
     // OFFSET/FETCH exige un ORDER BY.
     if (!order) order = ' ORDER BY (SELECT NULL)';
     page = ` OFFSET ${off} ROWS FETCH NEXT ${lim} ROWS ONLY`;
@@ -112,7 +118,9 @@ export function buildColumnStats(driver, { schema, table, column }) {
     topSql:
       driver === 'mssql'
         ? `SELECT TOP 5 ${c} AS value, COUNT(*) AS n FROM ${target} GROUP BY ${c} ORDER BY COUNT(*) DESC`
-        : `SELECT ${c} AS value, COUNT(*) AS n FROM ${target} GROUP BY ${c} ORDER BY COUNT(*) DESC LIMIT 5`,
+        : driver === 'oracle'
+          ? `SELECT ${c} AS value, COUNT(*) AS n FROM ${target} GROUP BY ${c} ORDER BY COUNT(*) DESC FETCH FIRST 5 ROWS ONLY`
+          : `SELECT ${c} AS value, COUNT(*) AS n FROM ${target} GROUP BY ${c} ORDER BY COUNT(*) DESC LIMIT 5`,
   };
 }
 

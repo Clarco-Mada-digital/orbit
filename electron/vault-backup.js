@@ -21,7 +21,8 @@
 //     synchronisés. Sans trousseau système disponible, la fonction se refuse
 //     plutôt que d'écrire une phrase de passe en clair.
 // ---------------------------------------------------------------------------
-import { app, safeStorage } from 'electron';
+import { app } from 'electron';
+import * as secureStore from './secure-store.js';
 import fs from 'fs';
 import path from 'path';
 import { sealArchive, MIN_PASSPHRASE_LENGTH } from './vault-archive.js';
@@ -69,6 +70,10 @@ export function init(userDataPath, vault) {
   state.file = path.join(userDataPath, CONFIG_FILE);
   state.vault = vault;
   state.config = load();
+  // Disponibilité du trousseau : connue une fois pour toutes (asynchrone).
+  secureStore.isAvailable().then((ok) => {
+    keychainAvailable = ok;
+  });
   schedule();
 }
 
@@ -89,12 +94,9 @@ export function getState() {
   };
 }
 
+let keychainAvailable = false;
 function isKeychainAvailable() {
-  try {
-    return safeStorage.isEncryptionAvailable();
-  } catch {
-    return false;
-  }
+  return keychainAvailable;
 }
 
 function nextRunAt() {
@@ -103,7 +105,7 @@ function nextRunAt() {
   return nextRunDate(c.lastRunAt, c.everyHours);
 }
 
-export function configure({ enabled, dir, everyHours, keep, passphrase } = {}) {
+export async function configure({ enabled, dir, everyHours, keep, passphrase } = {}) {
   const c = state.config;
   if (typeof enabled === 'boolean') c.enabled = enabled;
   if (typeof dir === 'string' && dir) c.dir = dir;
@@ -114,12 +116,13 @@ export function configure({ enabled, dir, everyHours, keep, passphrase } = {}) {
     if (passphrase.length < MIN_PASSPHRASE_LENGTH) {
       return { success: false, error: 'weak-passphrase' };
     }
+    keychainAvailable = await secureStore.isAvailable();
     if (!isKeychainAvailable()) {
       // Mieux vaut refuser que d'écrire la phrase de passe en clair à côté des
       // archives qu'elle protège.
       return { success: false, error: 'no-keychain' };
     }
-    c.passphrase = safeStorage.encryptString(passphrase).toString('base64');
+    c.passphrase = await secureStore.encryptToBase64(passphrase);
   }
 
   // Activer sans dossier ni phrase de passe ne produirait qu'un réglage qui
@@ -140,11 +143,11 @@ export function forgetPassphrase() {
   return { success: true, ...getState() };
 }
 
-function readPassphrase() {
+async function readPassphrase() {
   const stored = state.config?.passphrase;
   if (!stored) return null;
   try {
-    return safeStorage.decryptString(Buffer.from(stored, 'base64'));
+    return await secureStore.decryptFromBase64(stored);
   } catch {
     // Trousseau de l'OS changé (autre session, autre machine) : la phrase est
     // irrécupérable. On désarme plutôt que d'échouer en boucle.
@@ -181,7 +184,7 @@ export async function runNow({ manual = false } = {}) {
   if (!manual && !c.enabled) return { success: false, error: 'disabled' };
   if (!c.dir) return { success: false, error: 'dir-required' };
 
-  const passphrase = readPassphrase();
+  const passphrase = await readPassphrase();
   if (!passphrase) return { success: false, error: 'passphrase-required' };
 
   // Seuls les trousseaux déverrouillés peuvent être lus (voir l'en-tête).

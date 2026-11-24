@@ -65,9 +65,12 @@ export default function DevToolsOverlay() {
   // Indicateur bref à chaque changement de zoom.
   useEffect(() => {
     if (!open) return undefined;
-    setFlash(true);
-    const t = setTimeout(() => setFlash(false), 1200);
-    return () => clearTimeout(t);
+    const on = setTimeout(() => setFlash(true), 0);
+    const off = setTimeout(() => setFlash(false), 1200);
+    return () => {
+      clearTimeout(on);
+      clearTimeout(off);
+    };
   }, [zoom, open]);
 
   if (!available) return null;

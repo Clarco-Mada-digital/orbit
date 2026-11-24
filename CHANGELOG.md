@@ -8,6 +8,55 @@ Format : une section `## [X.Y.Z] — AAAA-MM-JJ` par version, puis des
 sous-sections `### Ajouté` / `### Modifié` / `### Corrigé` / `### Sécurité`.
 La plus récente en premier.
 
+## [1.21.2] — 2026-11-24
+
+### Ajouté
+- **Oracle** dans l'extension Base de données : tables, données, édition,
+  requêtes, analyse et diagramme des relations, **sans Oracle Instant Client**
+  (pilote officiel en mode « Thin », téléchargé et vérifié à la première
+  connexion). Testé, comme SQL Server, sur un vrai serveur.
+- **Assistant local : modèles non chinois.** Gemma 3 270M et Gemma 3 1B
+  (Google), LFM2 700M (Liquid AI), recommandés avant Qwen sur une machine qui
+  le permet. Les modèles dont les poids tiennent en deux fichiers sont désormais
+  pris en charge, chacun vérifié par empreinte.
+- **Boutique : 166 applications** (55 de plus), adresses vérifiées une à une :
+  Lumo (Proton), Duck.ai, Google AI Studio, Kagi, Midjourney, Suno, ElevenLabs,
+  Runway, v0, Bolt, Lovable, Proton Mail / Drive / Calendar, Element, Bluesky,
+  Threads, Microsoft 365, Word, Excel, Excalidraw, AWS, Azure, Google Cloud,
+  Cloudflare, Supabase, Firebase, Docker Hub, Postman, DeepL, Penpot, Duolingo,
+  Coursera, ARTE, france.tv… Nouvelle catégorie Éducation.
+- **Changement de profil visible** : une carte 3D aux couleurs du profil
+  pivote comme la face d'un cube, puis une pastille rappelle le profil actif —
+  et signale quand l'app affichée est partagée entre profils. Nouveaux styles
+  d'animation : retournement 3D, iris, rideau, lueur.
+- **Export personnalisable** : on coche ce que contient la sauvegarde (espace de
+  travail, automatisations, réglages, extensions, conversations de
+  l'assistant, historique, API, Base de données, autorisations et boucliers),
+  et ce qu'on restaure. Les connexions de base de données et les autorisations
+  s'ajoutent à celles de l'ordinateur.
+- Orbit se propose pour ouvrir `.md`, `.json`, `.csv`, `.http`, `.sql` et
+  `.sqlite` sous **Windows** aussi. Fichiers `.jsonl` / `.ndjson` reconnus.
+
+### Modifié
+- Assistants IA de la boutique : versions **internationales** des services
+  chinois (Kimi, Qwen, Z.ai à la place de ChatGLM, Dola à la place de Doubao),
+  regroupées après les autres ; Yiyan et Yuanbao (réservés à la Chine
+  continentale) retirés. Adresses à jour (ChatGPT → chatgpt.com…).
+- Extension Téléphone 1.4.1 (Manifest V3).
+
+### Corrigé
+- **Synchronisation** : les automatisations « Quand / Si / Alors » arrivaient
+  sur l'autre ordinateur sans leurs conditions ni leurs actions.
+- Boutique : CLOVA X (service arrêté par Naver en avril 2026) retiré ; lien du
+  compte PIA réparé.
+
+### Sécurité
+- Chiffrement par le trousseau du système migré vers l'API asynchrone
+  d'Electron (l'ancienne est supprimée dans Electron 46) : coffre-fort,
+  verrouillage, KeePassXC, clés d'IA, connexions SQL, phrase de
+  synchronisation. Les secrets existants restent lisibles ; Orbit attend la
+  lecture du verrouillage avant d'ouvrir sa fenêtre.
+
 ## [1.21.1] — 2026-11-24
 
 ### Ajouté

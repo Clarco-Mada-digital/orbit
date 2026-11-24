@@ -11,7 +11,7 @@
     "icons": "node scripts/generate-icons.js",
     "electron:dev": "concurrently \"npm run dev\" \"wait-on http://localhost:5173 && electron .\"",
     "test": "node --test test/*.test.js",
-    "lint": "eslint . --max-warnings 45",
+    "lint": "eslint . --max-warnings 41",
     "lint:fix": "eslint . --fix",
     "electron:build": "npm run icons && npm run build && electron-builder",
     "release": "node scripts/release.js",
@@ -50,6 +50,7 @@
     "eslint-plugin-react-hooks": "^7.1.1",
     "globals": "^17.12.0",
     "mssql": "^12.8.1",
+    "oracledb": "^26.0.0",
     "postcss": "^8.4.49",
     "rehype-stringify": "^10.0.1",
     "tailwindcss": "^4.3.3",
@@ -132,6 +133,7 @@
       "src/lib/sensitive.js",
       "src/lib/aiProviders.js",
       "src/lib/loadFailure.js",
+      "src/lib/backupCategories.js",
       "build/icon.png",
       "package.json"
     ],
@@ -261,7 +263,63 @@
           "role": "Viewer"
         }
       ]
-    }
+    },
+    "fileAssociations": [
+      {
+        "ext": [
+          "md",
+          "markdown"
+        ],
+        "name": "Markdown",
+        "description": "Document Markdown",
+        "role": "Viewer"
+      },
+      {
+        "ext": [
+          "json",
+          "jsonl"
+        ],
+        "name": "JSON",
+        "description": "Données JSON",
+        "role": "Editor"
+      },
+      {
+        "ext": [
+          "csv",
+          "tsv"
+        ],
+        "name": "CSV",
+        "description": "Tableau CSV",
+        "role": "Viewer"
+      },
+      {
+        "ext": [
+          "http",
+          "rest"
+        ],
+        "name": "HTTP request file",
+        "description": "Requêtes HTTP (Orbit API)",
+        "role": "Editor"
+      },
+      {
+        "ext": [
+          "sql"
+        ],
+        "name": "SQL script",
+        "description": "Script SQL (Orbit Base de données)",
+        "role": "Editor"
+      },
+      {
+        "ext": [
+          "sqlite",
+          "sqlite3",
+          "db3"
+        ],
+        "name": "SQLite database",
+        "description": "Base SQLite (Orbit Base de données)",
+        "role": "Viewer"
+      }
+    ]
   },
   "allowScripts": {
     "electron@43.8.3": true,

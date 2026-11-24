@@ -763,6 +763,8 @@ export default function OrbitAssistant({ onReady }) {
         generator = await pipeline('text-generation', modelState.models[modelKey].id, {
           dtype,
           device,
+          // Gemma 3, LFM2… : poids dans un second fichier (`model_q4.onnx_data`).
+          ...(modelState.models[modelKey].externalData ? { use_external_data_format: true } : {}),
           local_files_only: true,
           progress_callback: setModelProgress,
         });

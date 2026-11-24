@@ -26,7 +26,8 @@
 // entrées est envoyée SANS les mots de passe, qui ne sortent que sur demande
 // explicite (afficher / copier / remplir).
 // ---------------------------------------------------------------------------
-import { dialog, safeStorage } from 'electron';
+import { dialog } from 'electron';
+import * as secureStore from './secure-store.js';
 import { copyText, readText, clear as clearClipboard } from './clipboard-compat.js';
 import fs from 'fs';
 import path from 'path';
@@ -1292,18 +1293,12 @@ function saveRemembered() {
   }
 }
 
-function keychainAvailable() {
-  try {
-    return safeStorage.isEncryptionAvailable();
-  } catch {
-    return false;
-  }
-}
+const keychainAvailable = () => secureStore.isAvailable();
 
-export function rememberMaster(id, password) {
+export async function rememberMaster(id, password) {
   const header = readHeader(id);
   if (!header) return { success: false, error: 'not-found' };
-  if (!keychainAvailable()) return { success: false, error: 'no-keychain' };
+  if (!(await keychainAvailable())) return { success: false, error: 'no-keychain' };
   // Vérification : un mot de passe faux mémorisé ne se verrait qu'au prochain
   // déverrouillage, bien trop tard pour comprendre pourquoi.
   let key;
@@ -1316,7 +1311,7 @@ export function rememberMaster(id, password) {
     key?.fill(0);
   }
   try {
-    remembered[id] = safeStorage.encryptString(String(password)).toString('base64');
+    remembered[id] = await secureStore.encryptToBase64(String(password));
   } catch {
     return { success: false, error: 'no-keychain' };
   }
@@ -1332,13 +1327,13 @@ export function forgetMaster(id) {
 }
 
 // Déverrouillage sans saisie, à partir du trousseau de l'OS.
-export function unlockRemembered(id) {
+export async function unlockRemembered(id) {
   const stored = remembered[id];
   if (!stored) return { success: false, error: 'not-remembered' };
-  if (!keychainAvailable()) return { success: false, error: 'no-keychain' };
+  if (!(await keychainAvailable())) return { success: false, error: 'no-keychain' };
   let password;
   try {
-    password = safeStorage.decryptString(Buffer.from(stored, 'base64'));
+    password = await secureStore.decryptFromBase64(stored);
   } catch {
     // Trousseau de l'OS inaccessible ou changé : la mémorisation est caduque.
     delete remembered[id];

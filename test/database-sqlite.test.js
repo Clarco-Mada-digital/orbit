@@ -12,7 +12,7 @@ test('SQLite : connexion épinglée/jetable, lecture, édition, analyse, lecture
   db.init(dir, fake);
   const file = path.join(dir, 'a.sqlite');
 
-  const { connection } = db.upsert({ driver: 'sqlite', file, pinned: true });
+  const { connection } = await db.upsert({ driver: 'sqlite', file, pinned: true });
   assert.equal(connection.name, 'a.sqlite');
   await db.query(connection.id, 'CREATE TABLE t (id INTEGER PRIMARY KEY, name TEXT, n INT)');
   await db.insertRow(connection.id, { table: 't', values: { name: 'a', n: 1 } });
@@ -35,7 +35,7 @@ test('SQLite : connexion épinglée/jetable, lecture, édition, analyse, lecture
   assert.equal(stats.columns.find((c) => c.name === 'name').distinct, 1);
 
   // Jetable : jamais écrite sur disque.
-  const tmp = db.upsert({ driver: 'sqlite', file, pinned: false, readOnly: true });
+  const tmp = await db.upsert({ driver: 'sqlite', file, pinned: false, readOnly: true });
   const saved = JSON.parse(fs.readFileSync(path.join(dir, 'db-connections.json'), 'utf8'));
   assert.equal(saved.connections.length, 1);
   await assert.rejects(db.query(tmp.connection.id, 'DELETE FROM t'), /lecture seule/);

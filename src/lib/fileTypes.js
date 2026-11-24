@@ -59,7 +59,7 @@ const EXTENSION_KIND = byExtension({
   [KIND.media]:
     'mp3 wav ogg oga opus m4a flac aac weba mp4 m4v webm mkv mov ogv avi',
   [KIND.markdown]: 'md markdown mkd mdx',
-  [KIND.json]: 'json jsonc json5 geojson ipynb webmanifest',
+  [KIND.json]: 'json jsonc json5 jsonl ndjson geojson ipynb webmanifest',
   [KIND.csv]: 'csv tsv',
   [KIND.code]:
     'js mjs cjs jsx ts tsx mts cts vue svelte astro css scss sass less styl ' +

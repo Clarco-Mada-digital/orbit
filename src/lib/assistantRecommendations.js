@@ -31,6 +31,24 @@ const MODEL_SPECS = {
     quality: 'excellent',
   },
   // Modèles 1-2B : peuvent tourner sur WASM seul ou WebGPU optionnel
+  'gemma3-1b': {
+    minRamGb: 1.2,
+    recommendedRamGb: 2,
+    requiresWebGPU: false,
+    quality: 'bon',
+  },
+  'lfm2-700m': {
+    minRamGb: 0.8,
+    recommendedRamGb: 1.5,
+    requiresWebGPU: false,
+    quality: 'bon',
+  },
+  'gemma3-270m': {
+    minRamGb: 0.5,
+    recommendedRamGb: 1,
+    requiresWebGPU: false,
+    quality: 'basique',
+  },
   'qwen3-0.6b': {
     minRamGb: 0.8,
     recommendedRamGb: 1.5,
@@ -65,6 +83,9 @@ const MODEL_LABELS = {
   'llama3-8b': 'Llama 3 8B',
   'gemma2-9b': 'Gemma 2 9B',
   'qwen3-0.6b': 'Qwen3 0.6B',
+  'gemma3-1b': 'Gemma 3 1B',
+  'lfm2-700m': 'LFM2 700M',
+  'gemma3-270m': 'Gemma 3 270M',
   'smollm2-360m': 'SmolLM2 360M',
   'llama2-7b': 'Llama 2 7B',
   'gemma-2b': 'Gemma 2B',
@@ -77,8 +98,12 @@ const QUALITY_ORDER = [
   'llama3-8b',
   'gemma2-9b',
   'llama2-7b',
+  // À qualité voisine, les éditeurs non chinois passent devant.
+  'gemma3-1b',
+  'lfm2-700m',
   'qwen3-0.6b',
   'gemma-2b',
+  'gemma3-270m',
   'smollm2-360m',
 ];
 

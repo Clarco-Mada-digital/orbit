@@ -4,5 +4,11 @@
     "file": "mssql-12.8.1.cjs",
     "sha256": "05cf21c0af370fe2fab4d58be76a3e0da8d46e39b6eca762b022650d5daee927",
     "size": 1697078
+  },
+  "oracledb": {
+    "version": "26.0.0",
+    "file": "oracledb-26.0.0.cjs",
+    "sha256": "728b86e82fbf324d04bfe729be7dad81b14785d8aae2db93847469e5432f711f",
+    "size": 499475
   }
 }

@@ -427,3 +427,18 @@ test('summarize : agrège toutes les collections', () => {
   assert.equal(total.added, 2); // 1 app + 1 conteneur
   assert.equal(total.removed, 0);
 });
+
+test('les automatisations voyagent avec leurs conditions et leurs actions', async () => {
+  const { mergeSnapshots } = await import('../src/lib/syncMerge.js');
+  const auto = {
+    id: 'a1', name: 'Fin de journée', enabled: true, trigger: 'time', at: '18:00', updatedAt: 10,
+    conditions: { days: [1, 2, 3, 4, 5] },
+    actions: [{ type: 'switchProfile', profileId: 'perso' }, { type: 'sleepAll' }],
+  };
+  const remote = mergeSnapshots({ profiles: [], apps: [], containers: [], workspaces: [], rules: [auto], settings: {} }, null).snapshot;
+  const { snapshot } = mergeSnapshots({ profiles: [], apps: [], containers: [], workspaces: [], rules: [], settings: {} }, remote);
+  const got = snapshot.rules.find((r) => r.id === 'a1');
+  assert.equal(got.name, 'Fin de journée');
+  assert.deepEqual(got.conditions, { days: [1, 2, 3, 4, 5] });
+  assert.equal(got.actions.length, 2);
+});

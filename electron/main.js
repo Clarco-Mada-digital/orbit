@@ -1,4 +1,4 @@
-import { app, BrowserWindow, session, ipcMain, shell, Notification, dialog, net, screen, Menu, globalShortcut, Tray, nativeImage, powerMonitor, powerSaveBlocker, webContents, desktopCapturer, safeStorage } from 'electron';
+import { app, BrowserWindow, session, ipcMain, shell, Notification, dialog, net, screen, Menu, globalShortcut, Tray, nativeImage, powerMonitor, powerSaveBlocker, webContents, desktopCapturer } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import os from 'node:os';
@@ -29,6 +29,7 @@ import * as shieldRules from './shields-rules.js';
 import * as mediaFailures from './media-failures.js';
 import { extensionWarnings } from './extension-warnings.js';
 import * as vault from './vault.js';
+import * as secureStore from './secure-store.js';
 import * as vaultBackup from './vault-backup.js';
 import { readDatabase as readKdbx } from './kdbx.js';
 import * as studio from './studio.js';
@@ -42,6 +43,7 @@ import { matchShortcutInput } from '../src/lib/shortcuts.js';
 import { matchLinkRule } from '../src/lib/rules.js';
 import { hasBinaryContent } from '../src/lib/documents.js';
 import { isCompatibleWithOrbit } from '../src/lib/extensionCatalog.js';
+import { MAIN_FILE_NAMES, mergeDbConnections, mergePermissions, portableDbConnections } from '../src/lib/backupCategories.js';
 import {
   canFallBackToHttp,
   describeLoadFailure,
@@ -6267,15 +6269,77 @@ function decryptBackup(container, password) {
   return JSON.parse(dec.toString('utf8'));
 }
 
-ipcMain.handle('backup:export', async (_e, { data, password, full } = {}) => {
+// Fichiers du processus principal qu'une sauvegarde peut emporter. Noms
+// whitelistés : un fichier de sauvegarde ne désigne jamais un chemin.
+const BACKUP_MAIN_FILES = {
+  dbConnections: 'db-connections.json',
+  permissions: 'permissions.json',
+  shields: 'shields.json',
+};
+
+function readMainBackupFiles(names) {
+  const out = {};
+  for (const name of names || []) {
+    if (!MAIN_FILE_NAMES.includes(name) || !BACKUP_MAIN_FILES[name]) continue;
+    try {
+      const raw = JSON.parse(fs.readFileSync(path.join(app.getPath('userData'), BACKUP_MAIN_FILES[name]), 'utf8'));
+      // Mots de passe des bases : chiffrés par le trousseau de CETTE machine,
+      // illisibles ailleurs — on ne les emporte pas.
+      out[name] = name === 'dbConnections' ? portableDbConnections(raw) : raw;
+    } catch {
+      /* fichier absent : rien à exporter pour cette catégorie */
+    }
+  }
+  return out;
+}
+
+// Restauration des fichiers du processus principal : fusion (connexions,
+// autorisations) ou remplacement validé (boucliers), puis relecture par les
+// modules concernés, sans redémarrer.
+handleFromUi('backup:restoreMain', async (_e, { files } = {}) => {
+  const done = [];
+  const dir = app.getPath('userData');
+  const readJson = (file) => {
+    try {
+      return JSON.parse(fs.readFileSync(path.join(dir, file), 'utf8'));
+    } catch {
+      return null;
+    }
+  };
+  const write = (file, value) => fs.writeFileSync(path.join(dir, file), JSON.stringify(value, null, 2));
+  try {
+    if (files?.dbConnections) {
+      write(BACKUP_MAIN_FILES.dbConnections, mergeDbConnections(readJson(BACKUP_MAIN_FILES.dbConnections), files.dbConnections));
+      databaseRuntime = null; // relu au prochain usage
+      done.push('dbConnections');
+    }
+    if (files?.permissions) {
+      write(BACKUP_MAIN_FILES.permissions, mergePermissions(readJson(BACKUP_MAIN_FILES.permissions), files.permissions));
+      sitePermissions.init(dir);
+      done.push('permissions');
+    }
+    if (files?.shields && typeof files.shields === 'object') {
+      write(BACKUP_MAIN_FILES.shields, files.shields);
+      shields.init(dir); // nettoie les valeurs invalides à la relecture
+      done.push('shields');
+    }
+    return { success: true, restored: done };
+  } catch (err) {
+    return { success: false, error: String(err.message || err), restored: done };
+  }
+});
+
+ipcMain.handle('backup:export', async (_e, { data, password, full, mainFiles } = {}) => {
   try {
     let payload = data;
+    const extra = readMainBackupFiles(mainFiles);
+    if (Object.keys(extra).length) payload = { ...payload, mainFiles: extra };
     // Sauvegarde complète : on ajoute les fichiers de SESSION (cookies,
     // stockages) et les TROUSSEAUX — c'est ce qui retrouve les comptes
     // connectés sur un autre ordinateur. Collecté AVANT le dialogue : une
     // sauvegarde trop volumineuse échoue sans avoir ouvert la fenêtre.
     if (full) {
-      payload = { ...data, files: collectBackupFiles(app.getPath('userData')) };
+      payload = { ...payload, files: collectBackupFiles(app.getPath('userData')) };
     }
     const res = await dialog.showSaveDialog(mainWindow, {
       title: 'Exporter la configuration Orbit',
@@ -6386,7 +6450,7 @@ ipcMain.handle('sync:identity', () => deviceIdentity());
 // comme la clé KeePassXC (voir electron/keepass.js).
 const passFile = () => path.join(app.getPath('userData'), 'sync-pass.bin');
 
-ipcMain.handle('sync:savePassphrase', (_e, passphrase) => {
+ipcMain.handle('sync:savePassphrase', async (_e, passphrase) => {
   try {
     const file = passFile();
     if (!passphrase) {
@@ -6395,21 +6459,21 @@ ipcMain.handle('sync:savePassphrase', (_e, passphrase) => {
       if (fs.existsSync(file)) fs.unlinkSync(file);
       return { success: true, stored: false };
     }
-    if (!safeStorage.isEncryptionAvailable()) {
+    if (!(await secureStore.isAvailable())) {
       return { success: false, error: 'safeStorage indisponible' };
     }
-    fs.writeFileSync(file, safeStorage.encryptString(String(passphrase)));
+    fs.writeFileSync(file, await secureStore.encrypt(String(passphrase)));
     return { success: true, stored: true };
   } catch (err) {
     return { success: false, error: String(err.message || err) };
   }
 });
 
-ipcMain.handle('sync:loadPassphrase', () => {
+ipcMain.handle('sync:loadPassphrase', async () => {
   try {
     const file = passFile();
-    if (!fs.existsSync(file) || !safeStorage.isEncryptionAvailable()) return { passphrase: '' };
-    return { passphrase: safeStorage.decryptString(fs.readFileSync(file)) };
+    if (!fs.existsSync(file) || !(await secureStore.isAvailable())) return { passphrase: '' };
+    return { passphrase: await secureStore.decrypt(fs.readFileSync(file)) };
   } catch {
     // Trousseau changé (réinstallation de l'OS, autre session) : on repart de
     // zéro, l'utilisateur ressaisira sa phrase.
@@ -8005,9 +8069,9 @@ async function loadDatabase() {
     databaseRuntime.init(
       app.getPath('userData'),
       {
-        available: safeStorage.isEncryptionAvailable(),
-        encrypt: (text) => safeStorage.encryptString(String(text)).toString('base64'),
-        decrypt: (b64) => safeStorage.decryptString(Buffer.from(String(b64), 'base64')),
+        available: await secureStore.isAvailable(),
+        encrypt: (text) => secureStore.encryptToBase64(String(text)),
+        decrypt: (b64) => secureStore.decryptFromBase64(b64),
       },
       {
         // SQL Server n'est pas embarqué : téléchargé et vérifié à la première
@@ -8052,7 +8116,7 @@ function handleDevFromUi(channel, loader, fn) {
 
 handleDevFromUi('db:driverStatus', loadDatabase, (_db, p) => ({
   success: true,
-  ...databaseDrivers.driverStatus(p.driver === 'mssql' ? 'mssql' : '', { dir: path.join(app.getPath('userData'), 'db-drivers') }),
+  ...databaseDrivers.driverStatus({ mssql: 'mssql', oracle: 'oracledb' }[p.driver] || '', { dir: path.join(app.getPath('userData'), 'db-drivers') }),
 }));
 handleDevFromUi('db:list', loadDatabase, (db) => ({ success: true, connections: db.list() }));
 handleDevFromUi('db:save', loadDatabase, (db, p) => db.upsert(p));
@@ -9279,7 +9343,7 @@ function purgeStaleFlyPartitions(userData) {
   }
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   // Seconde instance : on a déjà quitté plus haut, on ne construit rien.
   if (!gotInstanceLock) return;
 
@@ -9305,11 +9369,15 @@ app.whenReady().then(() => {
 
   purgeStaleFlyPartitions(app.getPath('userData'));
 
-  // Pont KeePassXC : charge l'association persistée + génère les clés de session
-  initKeepass(app.getPath('userData'));
-
-  // Verrouillage (codes globaux / par profil) — chiffré au repos via safeStorage
-  security.init(app.getPath('userData'));
+  // Pont KeePassXC : charge l'association persistée + génère les clés de
+  // session. Verrouillage (codes globaux / par profil), chiffré au repos.
+  // Les deux sont ATTENDUS avant toute fenêtre : la lecture chiffrée est
+  // asynchrone, et Orbit doit savoir s'il démarre verrouillé avant que
+  // l'interface ne demande l'état de sécurité.
+  await Promise.all([
+    initKeepass(app.getPath('userData')).catch((err) => console.error('[orbit] KeePassXC :', err)),
+    security.init(app.getPath('userData')),
+  ]);
 
   // Coffre-fort intégré : prépare le dossier des trousseaux (rien n'est
   // déverrouillé au démarrage — il faut toujours saisir le mot de passe maître)

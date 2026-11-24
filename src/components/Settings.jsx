@@ -1251,8 +1251,41 @@ export default function Settings({ onClose }) {
                           <option value="fade">{t('st.animationFade')}</option>
                           <option value="slide">{t('st.animationSlide')}</option>
                           <option value="zoom">{t('st.animationZoom')}</option>
+                          <option value="flip">{t('st.animationFlip')}</option>
+                          <option value="iris">{t('st.animationIris')}</option>
+                          <option value="curtain">{t('st.animationCurtain')}</option>
+                          <option value="glow">{t('st.animationGlow')}</option>
                         </select>
                       </div>
+
+                      <div className="flex items-center justify-between gap-4">
+                        <div>
+                          <div className="font-medium">{t('st.profileTransition')}</div>
+                          <div className="text-sm text-text-muted">{t('st.profileTransitionDesc')}</div>
+                        </div>
+                        <select
+                          value={settings.profileTransition || 'cube'}
+                          onChange={(e) => updateSettings({ profileTransition: e.target.value })}
+                          className="input w-40 flex-shrink-0"
+                        >
+                          <option value="cube">{t('st.profileTransition.cube')}</option>
+                          <option value="flash">{t('st.profileTransition.flash')}</option>
+                          <option value="none">{t('st.animationNone')}</option>
+                        </select>
+                      </div>
+
+                      <label className="flex items-center justify-between">
+                        <div>
+                          <div className="font-medium">{t('st.profileHint')}</div>
+                          <div className="text-sm text-text-muted">{t('st.profileHintDesc')}</div>
+                        </div>
+                        <input
+                          type="checkbox"
+                          checked={settings.profileHint !== false}
+                          onChange={(e) => updateSettings({ profileHint: e.target.checked })}
+                          className="toggle"
+                        />
+                      </label>
 
                       <label className="flex items-center justify-between">
                         <div>

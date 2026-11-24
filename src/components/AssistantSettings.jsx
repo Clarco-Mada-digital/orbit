@@ -7,8 +7,12 @@ import { assessAssistantModel, getBestAssistantModel } from '../lib/assistantRec
 import { AI_PROVIDERS, getAiProvider } from '../lib/aiProviders';
 import { normalizeAssistantChatShortcutKey } from '../lib/shortcuts';
 
-const MODEL_ORDER = ['smollm2-135m', 'qwen2.5-0.5b', 'smollm2-360m', 'qwen3-0.6b'];
+// Du plus léger au plus capable ; éditeurs non chinois d'abord à taille égale.
+const MODEL_ORDER = ['smollm2-135m', 'gemma3-270m', 'smollm2-360m', 'qwen2.5-0.5b', 'lfm2-700m', 'qwen3-0.6b', 'gemma3-1b'];
 const MODEL_LABELS = {
+  'gemma3-270m': 'assistant.model.gemma3_270m',
+  'lfm2-700m': 'assistant.model.lfm2_700m',
+  'gemma3-1b': 'assistant.model.gemma3_1b',
   'smollm2-135m': 'assistant.model.smollm135',
   'smollm2-360m': 'assistant.model.smollm',
   'qwen2.5-0.5b': 'assistant.model.qwen25',

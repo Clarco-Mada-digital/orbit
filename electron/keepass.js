@@ -23,7 +23,7 @@
 // L'association et la clé d'identification sont persistées dans
 // <userData>/keepass.json (la clé secrète ne quitte jamais le main process).
 // ---------------------------------------------------------------------------
-import { safeStorage } from 'electron';
+import * as secureStore from './secure-store.js';
 import nacl from 'tweetnacl';
 import fs from 'fs';
 import path from 'path';
@@ -87,14 +87,14 @@ function localServerPath() {
 // Le fichier contient la clé secrète d'IDENTIFICATION : on le CHIFFRE au repos
 // via le trousseau de l'OS (safeStorage) quand c'est disponible. L'ancien
 // fichier en clair reste lisible (migration transparente : réécrit chiffré).
-function loadConfig(file) {
+async function loadConfig(file) {
   try {
     const buf = fs.readFileSync(file);
     try {
       return JSON.parse(buf.toString('utf8')); // ancien format en clair
     } catch {
-      if (safeStorage.isEncryptionAvailable()) {
-        return JSON.parse(safeStorage.decryptString(buf));
+      if (await secureStore.isAvailable()) {
+        return JSON.parse(await secureStore.decrypt(buf));
       }
       throw new Error('config illisible');
     }
@@ -103,23 +103,24 @@ function loadConfig(file) {
   }
 }
 
+// Écritures en file (chiffrement asynchrone) : jamais dans le désordre.
+let writeChain = Promise.resolve();
 function saveConfig() {
-  if (!state.configFile) return;
-  try {
-    const json = JSON.stringify(state.config, null, 2);
-    if (safeStorage.isEncryptionAvailable()) {
-      fs.writeFileSync(state.configFile, safeStorage.encryptString(json));
-    } else {
-      fs.writeFileSync(state.configFile, json);
-    }
-  } catch (err) {
-    console.error('[keepass] sauvegarde config échouée:', err.message);
-  }
+  if (!state.configFile) return writeChain;
+  const json = JSON.stringify(state.config, null, 2);
+  const file = state.configFile;
+  writeChain = writeChain
+    .then(async () => {
+      if (await secureStore.isAvailable()) fs.writeFileSync(file, await secureStore.encrypt(json));
+      else fs.writeFileSync(file, json);
+    })
+    .catch((err) => console.error('[keepass] sauvegarde config échouée:', err.message));
+  return writeChain;
 }
 
-export function init(userDataPath) {
+export async function init(userDataPath) {
   state.configFile = path.join(userDataPath, 'keepass.json');
-  state.config = loadConfig(state.configFile);
+  state.config = await loadConfig(state.configFile);
 
   // Clés de session : neuves à chaque lancement d'Orbit
   state.sessionKeys = nacl.box.keyPair();

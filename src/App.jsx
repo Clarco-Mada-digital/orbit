@@ -19,6 +19,7 @@ const AppStore = lazy(() => import('./components/AppStore'));
 // sont chargés qu'à la première ouverture, si l'extension est installée.
 const PhoneOverlay = lazy(() => import('./components/PhoneOverlay'));
 const DevToolsOverlay = lazy(() => import('./components/DevToolsOverlay'));
+import ProfileTransition from './components/ProfileTransition';
 const PhoneFloatingAccess = lazy(() => import('./components/PhoneFloatingAccess'));
 // Même raison pour ces quatre-là, et une de plus pour la visionneuse : elle
 // embarque KaTeX (~280 Ko) pour les formules des documents. Statique, elle le
@@ -256,13 +257,22 @@ const [editUrlFor, setEditUrlFor] = useState(null); // { id, url } — boîte «
     settings.animationStyle ?? (settings.animationsEnabled === false ? 'none' : 'fade');
   const [viewAnim, setViewAnim] = useState(0);
   const viewAnimFirst = useRef(true);
+  const viewAnimProfile = useRef(activeProfile);
   useEffect(() => {
     if (viewAnimFirst.current) {
       viewAnimFirst.current = false;
-      return;
+      return undefined;
     }
-    if (animStyle === 'none') return;
-    setViewAnim((n) => n + 1);
+    // Un changement de PROFIL a sa propre transition (ProfileTransition) :
+    // on n'empile pas les deux voiles.
+    const profileChanged = viewAnimProfile.current !== activeProfile;
+    viewAnimProfile.current = activeProfile;
+    if (profileChanged && (settings.profileTransition || 'cube') !== 'none') return undefined;
+    if (animStyle === 'none') return undefined;
+    // Différé d'une tâche : aucun setState pendant l'effet lui-même.
+    const t = setTimeout(() => setViewAnim((n) => n + 1), 0);
+    return () => clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeApp, activeProfile, animStyle]);
 
   // Zoom à la molette (Ctrl + molette) : le preload du <webview> applique le
@@ -1635,10 +1645,13 @@ const openEditUrl = useCallback((id) => {
               key={viewAnim}
               aria-hidden="true"
               className={`orbit-view-anim orbit-view-${
-                ['fade', 'slide', 'zoom'].includes(animStyle) ? animStyle : 'fade'
+                ['fade', 'slide', 'zoom', 'flip', 'iris', 'curtain', 'glow'].includes(animStyle) ? animStyle : 'fade'
               }`}
             />
           )}
+
+          {/* Changement de profil : carte 3D + pastille « où suis-je ». */}
+          <ProfileTransition />
 
           {/* Apps embarquées : un <webview> par app, reste vivant en arrière-plan.
               Écran partagé :

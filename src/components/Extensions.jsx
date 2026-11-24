@@ -9,7 +9,6 @@ import { useT } from '../lib/i18n';
 import { loadExtensionInfo, clearExtensionInfoCache } from '../lib/extensionInfo';
 import { bundledInstallState, isCompatibleWithOrbit } from '../lib/extensionCatalog';
 import { NATIVE_APP_KINDS, openNativeApp } from '../lib/nativeApps';
-import { usePhoneStore } from '../lib/phoneStore';
 
 // Recharge toutes les apps ouvertes : indispensable après un changement
 // d'extensions, car les content scripts ne s'injectent que sur une navigation

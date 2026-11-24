@@ -47,6 +47,10 @@ export function appVisibleIn(app, profileId) {
 
 // Paramètres par défaut — utilisés pour la migration des anciennes données
 export const defaultSettings = {
+  // Changement de profil : carte 3D (« cube »), simple fondu (« flash ») ou
+  // rien ; pastille qui rappelle le profil actif.
+  profileTransition: 'cube',
+  profileHint: true,
   // Fournisseur actif de l’assistant : l’IA locale reste le choix initial.
   assistantProvider: 'local',
   assistantProviderModels: {},

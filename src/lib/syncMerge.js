@@ -37,9 +37,13 @@ const CONTAINER_FIELDS = ['id', 'name', 'color'];
 // doit pas le plier sur le fixe.
 const FOLDER_FIELDS = ['id', 'name', 'profileId', 'emoji', 'color', 'order'];
 const WORKSPACE_FIELDS = ['id', 'name', 'profileId', 'activeApp', 'splitView'];
+// Règles de liens ET automatisations « Quand / Si / Alors » (1.20) : sans
+// `name`, `conditions`, `actions`… une automatisation arrivait sur l'autre
+// machine vidée de ce qu'elle fait.
 const RULE_FIELDS = [
   'id', 'enabled', 'trigger', 'pattern', 'action', 'targetAppId', 'fromAppId',
   'at', 'days', 'targetProfileId', 'order',
+  'name', 'every', 'appId', 'profileId', 'conditions', 'actions',
 ];
 
 export const SYNC_COLLECTIONS = {

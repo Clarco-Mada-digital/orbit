@@ -27,7 +27,8 @@ const OUT_DIR = path.join(ROOT, 'extensions-dist', 'drivers');
 const MANIFEST = path.join(ROOT, 'electron', 'db-drivers.json');
 const require = createRequire(import.meta.url);
 
-const DRIVERS = { mssql: 'mssql' };
+// Pilotes lourds ou rares : SQL Server (tedious + Azure) et Oracle (mode Thin).
+const DRIVERS = { mssql: 'mssql', oracledb: 'oracledb' };
 
 const sha256 = (buf) => crypto.createHash('sha256').update(buf).digest('hex');
 
@@ -44,6 +45,8 @@ async function bundle(name, entry) {
     legalComments: 'none',
     write: false,
     logLevel: 'warning',
+    // Mode « Thick » d'Oracle (binaire natif) : jamais utilisé par Orbit.
+    external: ['*.node'],
   });
   const code = Buffer.from(result.outputFiles[0].contents);
   return { name, version, file, code, sha256: sha256(code), size: code.length };

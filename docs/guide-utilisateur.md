@@ -115,6 +115,49 @@ Avant de changer le mode de partage, lisez l’avertissement affiché dans Orbit
 les apps peuvent être rechargées et certaines sessions nécessiter une nouvelle
 connexion.
 
+**Changer de profil** (menu des profils ou `Alt+Maj+Page ↑ / ↓`) se voit : une
+carte aux couleurs du profil pivote comme la face d’un cube, puis une pastille
+rappelle quelques secondes **dans quel profil vous êtes**. Si l’app affichée est
+partagée entre profils (épinglée), la pastille le précise — sans quoi rien ne
+changerait à l’écran. Réglages → Apparence : **Changement de profil** (cube 3D,
+carte simple ou rien) et **Rappeler le profil actif**. Le changement d’app a lui
+aussi plusieurs styles : fondu, glissement, zoom, retournement 3D, iris, rideau,
+lueur.
+
+### Synchroniser plusieurs ordinateurs
+
+Réglages → Sauvegarde → **Synchronisation** : choisissez un dossier partagé
+(Nextcloud, Dropbox, Syncthing, Google Drive…) et une **phrase secrète**. Orbit y
+dépose un fichier chiffré et le fusionne toutes les cinq minutes.
+
+Sur votre autre ordinateur : installez Orbit, choisissez **le même dossier** et
+**la même phrase secrète**, puis **Synchroniser**. Arrivent alors les profils,
+les applications (nom, adresse, icône, dossier, zoom, notifications), les
+dossiers, les conteneurs, les espaces de travail, les automatisations et les
+réglages. La fusion se fait élément par élément : ajouter une app sur le
+portable pendant qu’on en renomme une sur le fixe garde les deux changements ;
+une suppression se propage aux autres machines.
+
+**Ne voyagent pas** par la synchronisation : les **comptes connectés**
+(cookies), le **coffre-fort**, l’historique, les extensions installées et les
+données des apps API et Base de données. Pour emporter aussi tout cela, utilisez
+l’export ci-dessous.
+
+### Exporter et restaurer sa configuration
+
+Réglages → Sauvegarde → **Exporter** : cochez ce que le fichier doit contenir —
+espace de travail, automatisations, réglages, extensions, conversations de
+l’assistant, historique de navigation, collections et environnements **API**,
+connexions et requêtes favorites **Base de données** (sans les mots de passe,
+liés au trousseau de l’ordinateur), **autorisations des sites et boucliers**.
+L’option **sauvegarde complète** ajoute les comptes connectés et les coffres ;
+elle exige un mot de passe, car le fichier contient alors vos sessions.
+
+À la **restauration**, Orbit montre le contenu du fichier et vous cochez ce qu’il
+faut reprendre : on peut ne récupérer que ses collections d’API, ou tout sauf
+l’historique. Les connexions de base de données et les autorisations s’ajoutent
+à celles de l’ordinateur ; les autres catégories les remplacent.
+
 ### Espaces, fenêtres et apparence
 
 - Placez plusieurs apps côte à côte dans l’écran partagé et enregistrez une
@@ -202,6 +245,12 @@ Orbit propose un assistant de discussion, des outils de résumé et de rédactio
 ainsi qu’une relecture. Le mode local facultatif télécharge un modèle sur
 l’appareil ; il peut demander de l’espace disque, de la mémoire et un matériel
 compatible.
+
+Modèles locaux proposés, du plus léger au plus capable : **SmolLM2**
+(Hugging Face), **Gemma 3 270M** et **Gemma 3 1B** (Google), **LFM2 700M**
+(Liquid AI), et **Qwen** (Alibaba). Sur une machine qui le permet, Orbit
+recommande d’abord Gemma 3 1B puis LFM2 ; chaque fichier téléchargé est vérifié
+par empreinte avant usage.
 
 Des fournisseurs distants peuvent aussi être configurés. La connexion à ces
 services et le traitement des textes dépendent du fournisseur. Lisez la
@@ -620,7 +669,7 @@ version plus récente est livrée avec une mise à jour d’Orbit, le bouton
 - **Téléphone Orbit** : extension optionnelle pour piloter un Android
   compatible. Voir la section suivante.
 - **Orbit Base de données** : client SQL intégré (SQLite, MySQL/MariaDB,
-  PostgreSQL, SQL Server). Voir plus bas.
+  PostgreSQL, SQL Server, Oracle). Voir plus bas.
 - **Orbit API** : client API façon Postman et REST Client, fichiers `.http`
   compris. Voir plus bas.
 
@@ -692,7 +741,7 @@ sur Android.
 ### Orbit Base de données
 
 L’extension **Orbit Base de données** se connecte à **SQLite**, **MySQL /
-MariaDB**, **PostgreSQL** et **SQL Server**. Une fois installée, on l’ouvre en
+MariaDB**, **PostgreSQL**, **SQL Server** et **Oracle**. Une fois installée, on l’ouvre en
 cliquant sur elle dans le menu des extensions de la barre.
 
 - **Épinglée ou jetable** : une connexion épinglée est retrouvée au prochain
@@ -721,8 +770,12 @@ cliquant sur elle dans le menu des extensions de la barre.
   Survoler une table met ses relations en avant ; un clic ouvre son détail
   (colonnes, tables qu'elle référence et qui la référencent), d'où l'on ouvre
   ses données ou une requête `SELECT` prête.
-- **SQL Server** : son pilote n'est pas livré avec Orbit. Il est téléchargé
-  (≈ 1,6 Mo) et vérifié à la première connexion SQL Server, puis gardé.
+- **SQL Server** et **Oracle** : leurs pilotes ne sont pas livrés avec Orbit.
+  Ils sont téléchargés (≈ 1,6 Mo et 0,5 Mo) et vérifiés par empreinte à la
+  première connexion, puis gardés. Oracle fonctionne **sans Oracle Instant
+  Client** : indiquez l’hôte, le port (1521) et le **nom de service**
+  (`FREEPDB1`, `ORCLPDB1`, `XEPDB1`…). Le schéma affiché est celui de
+  l’utilisateur connecté.
 - **Zoom** de l'affichage : `Ctrl` + molette, ou `Alt` `+` / `−` / `0` (`⌘` sur
   macOS). Il est retenu séparément pour la Base de données et pour l'API.
 

@@ -15,9 +15,12 @@ export const DRIVER_INFO = {
   mysql: { label: 'MySQL / MariaDB', color: '#f59e0b', hint: 'Port 3306 par défaut' },
   postgres: { label: 'PostgreSQL', color: '#6366f1', hint: 'Port 5432 par défaut' },
   mssql: { label: 'SQL Server', color: '#ef4444', hint: 'Pilote téléchargé à la 1re connexion' },
+  oracle: { label: 'Oracle', color: '#C74634', hint: 'Port 1521 · sans Instant Client' },
 };
 
-const PORTS = { mysql: 3306, postgres: 5432, mssql: 1433 };
+const PORTS = { mysql: 3306, postgres: 5432, mssql: 1433, oracle: 1521 };
+// Pilotes téléchargés à la demande (voir electron/db-drivers.js).
+const ON_DEMAND = { mssql: 'SQL Server', oracle: 'Oracle' };
 
 export default function ConnectionForm({ initial, onClose, onSaved }) {
   const api = window.electronAPI?.database;
@@ -42,15 +45,15 @@ export default function ConnectionForm({ initial, onClose, onSaved }) {
   const editing = Boolean(initial?.id);
   useEffect(() => {
     let alive = true;
-    if (form.driver !== 'mssql') return undefined;
-    api?.driverStatus?.('mssql').then((r) => {
+    if (!ON_DEMAND[form.driver]) return undefined;
+    api?.driverStatus?.(form.driver).then((r) => {
       if (alive && r?.success) setDriver(r);
     });
     return () => {
       alive = false;
     };
   }, [form.driver, api]);
-  const needsDriver = form.driver === 'mssql' && driver && !driver.bundled && !driver.installed;
+  const needsDriver = Boolean(ON_DEMAND[form.driver]) && driver && !driver.bundled && !driver.installed;
   const set = (patch) => setForm((f) => ({ ...f, ...patch }));
   const isFile = form.driver === 'sqlite';
 
@@ -62,7 +65,7 @@ export default function ConnectionForm({ initial, onClose, onSaved }) {
   });
 
   const test = async () => {
-    setStatus({ kind: 'busy', text: needsDriver ? 'Téléchargement du pilote SQL Server, puis test…' : 'Test de la connexion…' });
+    setStatus({ kind: 'busy', text: needsDriver ? `Téléchargement du pilote ${ON_DEMAND[form.driver]}, puis test…` : 'Test de la connexion…' });
     const res = await api?.test(payload());
     setStatus(res?.success ? { kind: 'ok', text: `Connexion réussie (${res.ms} ms)` } : { kind: 'error', text: res?.error || 'Échec' });
   };
@@ -159,18 +162,25 @@ export default function ConnectionForm({ initial, onClose, onSaved }) {
                 </label>
               </div>
               <label className="block text-sm">
-                <span className="mb-1 block text-text-secondary">Base de données</span>
-                <input className="input w-full" value={form.database} onChange={(e) => set({ database: e.target.value })} placeholder={form.driver === 'postgres' ? 'postgres' : ''} />
+                <span className="mb-1 block text-text-secondary">{form.driver === 'oracle' ? 'Nom de service' : 'Base de données'}</span>
+                <input
+                  className="input w-full"
+                  value={form.database}
+                  onChange={(e) => set({ database: e.target.value })}
+                  placeholder={form.driver === 'postgres' ? 'postgres' : form.driver === 'oracle' ? 'FREEPDB1, ORCLPDB1, XEPDB1…' : ''}
+                />
               </label>
               {needsDriver ? (
                 <div className="rounded-lg bg-bg-hover px-3 py-2 text-xs text-text-muted">
-                  Le pilote SQL Server (≈ {Math.max(1, Math.round(driver.size / 1024 / 1024))} Mo) sera téléchargé et vérifié à la première connexion, puis gardé pour les suivantes.
+                  Le pilote {ON_DEMAND[form.driver]} (≈ {Math.max(1, Math.round(driver.size / 1024 / 1024))} Mo) sera téléchargé et vérifié à la première connexion, puis gardé pour les suivantes.
                 </div>
               ) : null}
-              <label className="flex items-center gap-2 text-sm">
-                <input type="checkbox" checked={form.ssl} onChange={(e) => set({ ssl: e.target.checked })} />
-                Connexion chiffrée (SSL/TLS)
-              </label>
+              {form.driver !== 'oracle' ? (
+                <label className="flex items-center gap-2 text-sm">
+                  <input type="checkbox" checked={form.ssl} onChange={(e) => set({ ssl: e.target.checked })} />
+                  Connexion chiffrée (SSL/TLS)
+                </label>
+              ) : null}
             </>
           )}
 

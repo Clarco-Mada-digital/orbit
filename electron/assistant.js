@@ -78,6 +78,61 @@ export const ASSISTANT_MODELS = {
     minFreeRamGb: 0.5,
     requiresWebGPU: false,
   },
+  // --- Modèles d'éditeurs non chinois, poids en DEUX fichiers -------------
+  // Le graphe ONNX (`model_q4.onnx`, quelques centaines de Ko) et ses poids
+  // (`model_q4.onnx_data`). Les deux sont vérifiés par empreinte SHA-256
+  // figée ici, exactement comme le poids unique des autres modèles.
+  'gemma3-270m': {
+    id: 'onnx-community/gemma-3-270m-it-ONNX',
+    revision: '2dbbfdb1b59bd034eb959428c6a7da9dd7ea27f0',
+    weight: 'onnx/model_q4.onnx',
+    size: 242522,
+    sha256: 'cb3615746a988839308507933d4e0501ff695e747a0a0ce15c0ef53083f8ec54',
+    externalData: {
+      file: 'onnx/model_q4.onnx_data',
+      size: 322933248,
+      sha256: '25c4a14af32fc1011a90504076024b0e1f65f915e9690b44a5484200d2e20851',
+    },
+    label: 'Gemma 3 270M',
+    minRamGb: 0.5,
+    recommendedRamGb: 1,
+    minFreeRamGb: 0.3,
+    requiresWebGPU: false,
+  },
+  'lfm2-700m': {
+    id: 'onnx-community/LFM2-700M-ONNX',
+    revision: 'bdfeecd9300145cc1696702b74234d73f683622f',
+    weight: 'onnx/model_q4.onnx',
+    size: 183625,
+    sha256: '496549029747546240c69a5d11221ef3edce8c6d6f41051c42244ba47aedcefb',
+    externalData: {
+      file: 'onnx/model_q4.onnx_data',
+      size: 559081472,
+      sha256: 'c063f8b36e0aa87cf659cd8c15ac23178fc90a2390f708d556d1d12d59cd2715',
+    },
+    label: 'LFM2 700M',
+    minRamGb: 0.8,
+    recommendedRamGb: 1.5,
+    minFreeRamGb: 0.5,
+    requiresWebGPU: false,
+  },
+  'gemma3-1b': {
+    id: 'onnx-community/gemma-3-1b-it-ONNX',
+    revision: 'a58439f40017d3b99c7d378ff525e54e0ba08ebf',
+    weight: 'onnx/model_q4.onnx',
+    size: 347363,
+    sha256: '69686023e5892376e38fcbcdd0c77af432c55b3bcd03aee6d561bd1f04507da0',
+    externalData: {
+      file: 'onnx/model_q4.onnx_data',
+      size: 859106816,
+      sha256: 'c2370070be257a98d50e17d81be13e18304c39e7e6d9d1416f8f883681d2a17b',
+    },
+    label: 'Gemma 3 1B',
+    minRamGb: 1.2,
+    recommendedRamGb: 2,
+    minFreeRamGb: 0.8,
+    requiresWebGPU: false,
+  },
   'qwen2.5-0.5b': {
     id: 'onnx-community/Qwen2.5-0.5B-Instruct-ONNX',
     revision: 'aaabb83c90b732de9a0b4408002d099d92969cd1',
@@ -169,13 +224,23 @@ function markerPath(modelKey) {
   return path.join(modelPath(modelKey), 'orbit-model.json');
 }
 
+// Fichiers de poids d'un modèle, chacun avec sa taille et son empreinte.
+function weightSpecs(model) {
+  const list = [{ file: model.weight, size: model.size, sha256: model.sha256 }];
+  if (model.externalData?.file) list.push(model.externalData);
+  return list;
+}
+const weightSpecFor = (model, file) => weightSpecs(model).find((w) => w.file === file) || null;
+const downloadSizeOf = (model) => weightSpecs(model).reduce((sum, w) => sum + (w.size || 0), 0);
+
 function isModelInstalled(modelKey, model) {
   try {
     const marker = JSON.parse(fs.readFileSync(markerPath(modelKey), 'utf8'));
     const weights = path.join(modelPath(modelKey), model.weight);
     return marker.revision === model.revision
       && (!marker.sha256 || marker.sha256 === model.sha256)
-      && fs.statSync(weights).size === model.size;
+      && fs.statSync(weights).size === model.size
+      && (!model.externalData || fs.statSync(path.join(modelPath(modelKey), model.externalData.file)).size === model.externalData.size);
   } catch {
     return false;
   }
@@ -192,7 +257,8 @@ export function getAssistantState() {
         return [key, {
           id: model.id,
           label: model.label,
-          size: model.size,
+          size: downloadSizeOf(model),
+          externalData: Boolean(model.externalData),
           installed,
           minRamGb: model.minRamGb,
           recommendedRamGb: model.recommendedRamGb,
@@ -258,7 +324,7 @@ function serveModelFile(request, response) {
     return;
   }
   const file = requested.slice(modelPrefix.length).join('/');
-  if (![...(model.files || MODEL_FILES), model.weight].includes(file) || !getAssistantState().models[modelKey].installed) {
+  if (![...(model.files || MODEL_FILES), ...weightSpecs(model).map((w) => w.file)].includes(file) || !getAssistantState().models[modelKey].installed) {
     response.writeHead(404, headers).end();
     return;
   }
@@ -405,22 +471,25 @@ async function downloadFile(modelKey, model, file, fileIndex, fileCount) {
   const response = await net.fetch(url, { redirect: 'follow' });
   if (!response.ok || !response.body) {
     // Pour les fichiers non-critiques, on ignore les erreurs 401/404
-    if (file !== model.weight && (response.status === 401 || response.status === 404)) {
+    if (!weightSpecFor(model, file) && (response.status === 401 || response.status === 404)) {
       if (fs.existsSync(temporary)) fs.unlinkSync(temporary);
       return;
     }
     throw new Error(`HTTP ${response.status} — ${file}`);
   }
   const contentLength = Number(response.headers.get('content-length')) || 0;
-  if (file === model.weight && contentLength && contentLength !== model.size) {
+  // Fichier de poids (graphe ou données externes) : taille et empreinte
+  // figées dans Orbit, vérifiées pendant et après le téléchargement.
+  const spec = weightSpecFor(model, file);
+  if (spec && contentLength && contentLength !== spec.size) {
     throw new Error(`Unexpected model size for ${model.label}`);
   }
-  if (file === model.weight && !hasValidAssistantModelIntegrityMetadata(model)) {
+  if (spec && !hasValidAssistantModelIntegrityMetadata(spec)) {
     throw new Error(`Invalid model integrity metadata for ${model.label}`);
   }
 
   const output = fs.createWriteStream(temporary);
-  const hash = file === model.weight ? crypto.createHash('sha256') : null;
+  const hash = spec ? crypto.createHash('sha256') : null;
   let received = 0;
   try {
     const reader = response.body.getReader();
@@ -429,7 +498,7 @@ async function downloadFile(modelKey, model, file, fileIndex, fileCount) {
       if (done) break;
       const chunk = Buffer.from(value);
       received += chunk.length;
-      if (file === model.weight && received > model.size) {
+      if (spec && received > spec.size) {
         throw new Error(`Unexpected model size for ${model.label}`);
       }
       hash?.update(chunk);
@@ -444,8 +513,8 @@ async function downloadFile(modelKey, model, file, fileIndex, fileCount) {
       output.end(resolve);
     });
 
-    if (file === model.weight) {
-      if (!assistantModelIntegrityMatches(model, received, hash.digest('hex'))) {
+    if (spec) {
+      if (!assistantModelIntegrityMatches(spec, received, hash.digest('hex'))) {
         throw new Error(`Model integrity check failed for ${model.label}`);
       }
     }
@@ -466,7 +535,7 @@ export async function installAssistantModel(modelKey) {
 
   installPromise = (async () => {
     try {
-      const files = [...(model.files || MODEL_FILES), model.weight];
+      const files = [...(model.files || MODEL_FILES), ...weightSpecs(model).map((w) => w.file)];
       for (let index = 0; index < files.length; index += 1) {
         await downloadFile(modelKey, model, files[index], index + 1, files.length);
       }
