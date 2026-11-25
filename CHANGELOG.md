@@ -8,6 +8,13 @@ Format : une section `## [X.Y.Z] — AAAA-MM-JJ` par version, puis des
 sous-sections `### Ajouté` / `### Modifié` / `### Corrigé` / `### Sécurité`.
 La plus récente en premier.
 
+## [1.21.7] — 2026-11-25
+
+Même contenu que la 1.21.6, dont la construction avait échoué (fichier de
+dépendances incompatible avec la chaîne de publication) : la 1.21.6 n'a
+jamais été publiée. Toutes les nouveautés ci-dessous arrivent avec cette
+version.
+
 ## [1.21.6] — 2026-11-25
 
 ### Ajouté
