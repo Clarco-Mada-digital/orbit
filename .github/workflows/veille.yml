@@ -23,7 +23,7 @@ permissions:
   issues: write
 
 env:
-  ARGUS: https://codeload.github.com/Clarco-Mada-digital/argus/tar.gz/490dcca3ac3624176b177c5f21442d4086952f4d
+  ARGUS: https://codeload.github.com/Clarco-Mada-digital/argus/tar.gz/e6bbb4e552dab63c3fc7508769f7719ee7603b65
 
 jobs:
   veille:

@@ -79,6 +79,7 @@ const PUBLIC_FIELDS = [
   'database',
   'file',
   'ssl',
+  'sslVerify',
   'readOnly',
   'color',
   'pinned',
@@ -118,6 +119,11 @@ function sanitize(input) {
     conn.user = String(input.user || '').trim();
     conn.database = String(input.database || '').trim();
     conn.ssl = Boolean(input.ssl);
+    // Certificat du serveur vérifié par défaut : sans cela, le chiffrement ne
+    // protège de rien (n'importe qui sur le chemin peut présenter le sien).
+    // Décocher reste possible pour un serveur à certificat auto-signé, mais
+    // c'est un choix explicite, visible dans le formulaire.
+    conn.sslVerify = input.sslVerify !== false;
   }
   if (!conn.name) {
     conn.name = driver === 'sqlite' ? path.basename(conn.file) : `${conn.database || conn.host}`;
@@ -261,7 +267,7 @@ const drivers = {
         user: cfg.user,
         password: cfg.password || undefined,
         database: cfg.database || undefined,
-        ssl: cfg.ssl ? { rejectUnauthorized: false } : undefined,
+        ssl: cfg.ssl ? { rejectUnauthorized: cfg.sslVerify !== false } : undefined,
         multipleStatements: false,
         dateStrings: true,
         supportBigNumbers: true,
@@ -339,7 +345,7 @@ const drivers = {
         user: cfg.user,
         password: cfg.password || undefined,
         database: cfg.database || undefined,
-        ssl: cfg.ssl ? { rejectUnauthorized: false } : undefined,
+        ssl: cfg.ssl ? { rejectUnauthorized: cfg.sslVerify !== false } : undefined,
         connectionTimeoutMillis: 10000,
       });
       await client.connect();
@@ -414,7 +420,7 @@ const drivers = {
         user: cfg.user,
         password: cfg.password || undefined,
         database: cfg.database || undefined,
-        options: { encrypt: Boolean(cfg.ssl), trustServerCertificate: true },
+        options: { encrypt: Boolean(cfg.ssl), trustServerCertificate: Boolean(cfg.ssl) && cfg.sslVerify === false },
         connectionTimeout: 10000,
         pool: { max: 2 },
       });
@@ -720,7 +726,19 @@ async function readSchema(driver, d, client) {
 async function openClient(cfg) {
   const driver = drivers[cfg.driver];
   if (!driver) throw new Error('Type de base inconnu.');
-  return driver.connect(cfg);
+  try {
+    return await driver.connect(cfg);
+  } catch (err) {
+    // Certificat refusé : on dit quoi faire, au lieu du code OpenSSL brut.
+    const code = String(err?.code || '');
+    const msg = String(err?.message || err);
+    if (cfg.ssl && /CERT|SELF_SIGNED|UNABLE_TO_VERIFY|certificate/i.test(`${code} ${msg}`)) {
+      throw new Error(
+        'Le certificat du serveur n’a pas pu être vérifié (certificat auto-signé ou inconnu). Si vous faites confiance à ce serveur, décochez « Vérifier le certificat » dans la connexion.'
+      );
+    }
+    throw err;
+  }
 }
 
 export async function test(input) {

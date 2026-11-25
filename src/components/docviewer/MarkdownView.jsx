@@ -326,7 +326,11 @@ export default function MarkdownView({ text, doc, showToc = true }) {
           <table {...props} />
         </div>
       ),
-      input: ({ node: _node, ...props }) => <input {...props} disabled />,
+      // Case d'une liste de tâches (`- [x]`) : lecture seule, avec un nom
+      // accessible — le lecteur d'écran annonce l'état, pas « case à cocher ».
+      input: ({ node: _node, ...props }) => (
+        <input {...props} disabled aria-label={props.checked ? 'Tâche faite' : 'Tâche à faire'} />
+      ),
     }),
     [doc, allowRemote, onLink]
   );

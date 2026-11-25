@@ -102,8 +102,14 @@ export function buildBrowse(driver, { schema, table, where, orderBy, desc, limit
   } else {
     page = ` LIMIT ${lim} OFFSET ${off}`;
   }
+  // argus-ignore SEC-SQL-CONCAT : client de base de données. `where` est le
+  // filtre que l'utilisateur tape lui-même sur SA base (il dispose aussi d'une
+  // console SQL libre) ; la table et la colonne passent par quoteIdent, la
+  // pagination par Number. Ce n'est pas une donnée tierce injectée.
   return {
+    // argus-ignore SEC-SQL-CONCAT (voir ci-dessus)
     sql: `SELECT * FROM ${target}${filter}${order}${page}`,
+    // argus-ignore SEC-SQL-CONCAT (voir ci-dessus)
     countSql: `SELECT COUNT(*) AS n FROM ${target}${filter}`,
   };
 }

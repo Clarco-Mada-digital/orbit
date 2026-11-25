@@ -8689,11 +8689,11 @@ ipcMain.handle(
           session: ses,
           nodeIntegration: false,
           contextIsolation: true,
-          // `sandbox: false` est nécessaire : le preload de la rustine utilise
-          // `require('electron')`, impossible dans un preload sandboxé. Il ne
-          // lit aucun fichier et n'expose rien à la page — il réécrit une
-          // fonction de l'API extensions, rien d'autre.
-          sandbox: false,
+          // Bac à sable ACTIF : le preload de la rustine n'utilise que
+          // `webFrame` et `process.argv`, tous deux disponibles dans un
+          // preload sandboxé (vérifié sous Electron 45). L'ancien
+          // `sandbox: false` n'était pas nécessaire.
+          sandbox: true,
           preload: path.join(__dirname, 'extension-popup-preload.cjs'),
           additionalArguments: [
             `--orbit-active-tab=${Number(activeTabId) || -1}`,

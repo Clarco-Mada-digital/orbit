@@ -33,6 +33,7 @@ export default function ConnectionForm({ initial, onClose, onSaved }) {
     database: '',
     file: '',
     ssl: false,
+    sslVerify: true,
     readOnly: false,
     pinned: true,
     ...(initial || {}),
@@ -176,10 +177,30 @@ export default function ConnectionForm({ initial, onClose, onSaved }) {
                 </div>
               ) : null}
               {form.driver !== 'oracle' ? (
-                <label className="flex items-center gap-2 text-sm">
-                  <input type="checkbox" checked={form.ssl} onChange={(e) => set({ ssl: e.target.checked })} />
-                  Connexion chiffrée (SSL/TLS)
-                </label>
+                <>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input type="checkbox" checked={form.ssl} onChange={(e) => set({ ssl: e.target.checked })} />
+                    Connexion chiffrée (SSL/TLS)
+                  </label>
+                  {form.ssl ? (
+                    <label className="ml-6 flex items-start gap-2 text-sm">
+                      <input
+                        type="checkbox"
+                        className="mt-0.5"
+                        checked={form.sslVerify !== false}
+                        onChange={(e) => set({ sslVerify: e.target.checked })}
+                      />
+                      <span>
+                        Vérifier le certificat du serveur
+                        <span className="block text-xs text-text-muted">
+                          {form.sslVerify !== false
+                            ? 'Recommandé : sans vérification, une connexion interceptée passerait inaperçue.'
+                            : 'Non vérifié : à réserver à un serveur de confiance au certificat auto-signé.'}
+                        </span>
+                      </span>
+                    </label>
+                  ) : null}
+                </>
               ) : null}
             </>
           )}
