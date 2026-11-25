@@ -197,18 +197,24 @@ test('raccourci de la palette : ne tombe pas sur ceux des autres extensions', ()
     const source = fs.readFileSync(file, 'utf8');
     // Formes rencontrées : `e.altKey && (e.key === 'c' || e.key === 'C')`,
     // avec ou sans `e.shiftKey`.
+    let found = 0;
     for (const match of source.matchAll(/altKey\s*&&\s*(e\.shiftKey\s*&&\s*)?\(?e\.key\s*===\s*'(\w)'/g)) {
       taken.add(`${match[1] ? 'alt+shift+' : 'alt+'}${match[2].toLowerCase()}`);
+      found += 1;
+    }
+    // Une source qui teste Alt doit livrer au moins un raccourci : sinon la
+    // détection a cessé de reconnaître sa forme et ce test ne garantit plus
+    // rien. (Un seuil global dépendait des extensions présentes sur le poste.)
+    if (/e\.altKey\s*&&\s*(e\.shiftKey\s*&&\s*)?\(?e\.key/.test(source)) {
+      assert.ok(found > 0, `détection cassée pour ${name}`);
     }
   }
   const ours = `alt+shift+${LIB.PALETTE_SHORTCUT.key}`;
   assert.equal(taken.has(ours), false, `${ours} est déjà pris par une autre extension`);
-  // Sur une copie de travail complète, la liste doit être fournie : si elle se
-  // vidait alors que les sources sont là, c'est que la détection a cessé de
-  // fonctionner et que ce test ne garantirait plus rien.
-  if (scanned >= 4) {
-    assert.ok(taken.size >= 4, `détection cassée : ${scanned} sources lues, ${taken.size} raccourcis trouvés`);
-  }
+  // Les extensions livrées dans le dépôt (Sticky Notes, Color Picker…)
+  // déclarent toujours des raccourcis Alt : une liste vide trahirait une
+  // détection cassée.
+  if (scanned > 0) assert.ok(taken.size > 0, `détection cassée : ${scanned} sources lues, aucun raccourci trouvé`);
 });
 
 test('ORBIT_ALT_SHIFT_KEYS : la liste documentée colle au vrai matcher d\'Orbit', () => {
