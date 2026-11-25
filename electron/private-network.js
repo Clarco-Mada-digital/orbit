@@ -30,6 +30,9 @@ import {
   guessVpnProvider,
   resolveNetworkRule,
   NETWORK_RULES,
+  orbitVpnLocationValid,
+  exitCountryCommands,
+  parseIpCountry,
 } from '../src/lib/privateNetwork.js';
 
 const require = createRequire(import.meta.url);
@@ -39,8 +42,10 @@ const CHECK_URL = 'https://check.torproject.org/api/ip';
 
 const state = {
   root: null,
-  config: { torBridges: 'none', customBridges: '', autoStart: true, warnings: true, vpn: null },
+  config: { torBridges: 'none', customBridges: '', autoStart: true, warnings: true, vpn: null, orbitVpnLocation: 'auto' },
   tor: { status: 'off', progress: 0, summary: '', port: 0, controlPort: 0, error: '', proc: null, log: [] },
+  // VPN Orbit : seconde instance Tor, à pays de sortie choisi (voir lib).
+  orbitvpn: { status: 'off', progress: 0, summary: '', port: 0, controlPort: 0, error: '', proc: null, log: [], endsAt: 0, expired: false },
   vpn: { status: 'off', port: 0, error: '', proc: null, log: [] },
   install: { tor: null, wireproxy: null },
   onChange: () => {},
@@ -59,6 +64,7 @@ function loadConfig() {
       autoStart: c.autoStart !== false,
       warnings: c.warnings !== false,
       vpn: c.vpn && typeof c.vpn.enc === 'string' ? c.vpn : null,
+      orbitVpnLocation: orbitVpnLocationValid(c.orbitVpnLocation) ? c.orbitVpnLocation : 'auto',
     };
   } catch {
     /* première utilisation */
@@ -117,6 +123,17 @@ export function getState() {
       summary: vpn?.summary || null,
       install: state.install.wireproxy,
     },
+    orbitvpn: {
+      installed: isInstalled('tor'),
+      status: state.orbitvpn.status,
+      progress: state.orbitvpn.progress,
+      summary: state.orbitvpn.summary,
+      error: state.orbitvpn.error,
+      location: state.config.orbitVpnLocation,
+      endsAt: state.orbitvpn.endsAt,
+      expired: state.orbitvpn.expired,
+      install: state.install.tor,
+    },
     autoStart: state.config.autoStart,
     warnings: state.config.warnings,
   };
@@ -138,6 +155,7 @@ export function getPorts() {
   return {
     tor: state.tor.status === 'ready' ? state.tor.port : 0,
     vpn: state.vpn.status === 'ready' ? state.vpn.port : 0,
+    orbitvpn: state.orbitvpn.status === 'ready' ? state.orbitvpn.port : 0,
   };
 }
 
@@ -306,14 +324,25 @@ function bridgeLinesFor(pt) {
   return pt.bridges[mode] || [];
 }
 
-export async function startTor({ byUser = false } = {}) {
-  if (byUser) pausedByUser.tor = false;
-  if (state.tor.proc) return { success: true };
+// Deux instances partagent le même exécutable : « tor » (réseau Tor des apps)
+// et « orbitvpn » (VPN Orbit, pays de sortie au choix). Chacune a son dossier
+// de données — Tor refuse qu'un même dossier serve deux fois — et garde son
+// annuaire du réseau d'une session à l'autre : la reconnexion est rapide.
+const TOR_INSTANCES = {
+  tor: { dir: 'tor', label: 'Tor' },
+  orbitvpn: { dir: 'tor-orbitvpn', label: 'Le VPN Orbit' },
+};
+
+async function startTorInstance(key, { byUser = false } = {}) {
+  const inst = state[key];
+  const { dir, label } = TOR_INSTANCES[key];
+  if (byUser) pausedByUser[key] = false;
+  if (inst.proc) return { success: true };
   if (!isInstalled('tor')) {
-    const inst = await installEngine('tor');
-    if (!inst.success) return inst;
+    const installed = await installEngine('tor');
+    if (!installed.success) return installed;
   }
-  const work = path.join(state.root, 'tor');
+  const work = path.join(state.root, dir);
   const dataDir = path.join(work, 'data');
   fs.mkdirSync(dataDir, { recursive: true, mode: 0o700 });
   try {
@@ -343,28 +372,29 @@ export async function startTor({ byUser = false } = {}) {
     bridges,
     plugins: bridges.length ? pt.plugins : [],
     ownerPid: process.pid,
+    exitCountry: key === 'orbitvpn' ? state.config.orbitVpnLocation : '',
   });
   const torrcPath = path.join(work, 'torrc');
   fs.writeFileSync(torrcPath, torrc, { mode: 0o600 });
 
-  Object.assign(state.tor, { status: 'starting', progress: 0, summary: 'Démarrage…', error: '', port: socksPort, controlPort, log: [] });
+  Object.assign(inst, { status: 'starting', progress: 0, summary: 'Démarrage…', error: '', port: socksPort, controlPort, log: [] });
   emit();
   const env = { ...process.env };
   // Bibliothèques livrées à côté de tor (libevent, OpenSSL).
   if (process.platform === 'linux') env.LD_LIBRARY_PATH = [torDir(), env.LD_LIBRARY_PATH].filter(Boolean).join(':');
   const proc = spawn(torBinary(), ['-f', torrcPath], { cwd: torDir(), env, windowsHide: true, stdio: ['ignore', 'pipe', 'pipe'] });
-  state.tor.proc = proc;
+  inst.proc = proc;
   const onData = (chunk) => {
-    pushLog(state.tor, chunk);
+    pushLog(inst, chunk);
     for (const line of String(chunk).split(/\r?\n/)) {
       const b = parseBootstrap(line);
       if (b) {
-        state.tor.progress = b.percent;
-        state.tor.summary = b.summary;
-        if (b.percent >= 100) state.tor.status = 'ready';
+        inst.progress = b.percent;
+        inst.summary = b.summary;
+        if (b.percent >= 100) inst.status = 'ready';
         emit();
       } else if (/\[err\]|\[warn\].*(Problem bootstrapping|Could not)/i.test(line)) {
-        state.tor.summary = line.replace(/^.*\[(?:err|warn)\]\s*/, '').slice(0, 160);
+        inst.summary = line.replace(/^.*\[(?:err|warn)\]\s*/, '').slice(0, 160);
         emit();
       }
     }
@@ -372,15 +402,15 @@ export async function startTor({ byUser = false } = {}) {
   proc.stdout.on('data', onData);
   proc.stderr.on('data', onData);
   proc.on('error', (err) => {
-    state.tor.error = err.message;
+    inst.error = err.message;
   });
   proc.on('exit', (code) => {
-    const wasReady = state.tor.status === 'ready';
-    state.tor.proc = null;
-    state.tor.status = state.tor.stopping ? 'off' : 'error';
-    if (!state.tor.stopping) state.tor.error = state.tor.error || `Tor s’est arrêté (code ${code}). ${state.tor.log.slice(-2).join(' ')}`.trim();
-    state.tor.stopping = false;
-    state.tor.progress = 0;
+    const wasReady = inst.status === 'ready';
+    inst.proc = null;
+    inst.status = inst.stopping ? 'off' : 'error';
+    if (!inst.stopping) inst.error = inst.error || `${label} s’est arrêté (code ${code}). ${inst.log.slice(-2).join(' ')}`.trim();
+    inst.stopping = false;
+    inst.progress = 0;
     emit();
     if (wasReady) state.onPorts?.();
   });
@@ -388,30 +418,34 @@ export async function startTor({ byUser = false } = {}) {
   const ready = await new Promise((resolve) => {
     const t0 = Date.now();
     const tick = setInterval(() => {
-      if (state.tor.status === 'ready') {
+      if (inst.status === 'ready') {
         clearInterval(tick);
         resolve(true);
-      } else if (!state.tor.proc || Date.now() - t0 > 120000) {
+      } else if (!inst.proc || Date.now() - t0 > 120000) {
         clearInterval(tick);
         resolve(false);
       }
     }, 300);
   });
   if (!ready) {
-    if (state.tor.proc) {
-      state.tor.error = `Tor n’a pas pu se connecter au réseau (${state.tor.progress} %). Essayez un pont (Snowflake).`;
-      stopTor();
+    if (inst.proc) {
+      inst.error = `${label} n’a pas pu se connecter au réseau (${inst.progress} %). Essayez un pont (Snowflake).`;
+      stopTorInstance(key);
     }
-    return { success: false, error: state.tor.error };
+    return { success: false, error: inst.error };
   }
   state.onPorts?.();
   return { success: true };
 }
 
+export function startTor(opts) {
+  return startTorInstance('tor', opts);
+}
+
 // `byUser` : arrêt demandé par l'utilisateur → la connexion automatique ne
 // relance PAS le moteur (sinon « Arrêter » ne tiendrait pas une seconde quand
 // une app réglée sur Tor est ouverte). Un démarrage manuel lève la pause.
-const pausedByUser = { tor: false, vpn: false };
+const pausedByUser = { tor: false, vpn: false, orbitvpn: false };
 
 function waitExit(proc) {
   return new Promise((resolve) => {
@@ -421,30 +455,112 @@ function waitExit(proc) {
   });
 }
 
-export function stopTor({ byUser = false } = {}) {
-  if (byUser) pausedByUser.tor = true;
-  if (!state.tor.proc) return { success: true };
-  state.tor.stopping = true;
-  state.tor.proc.kill();
+function stopTorInstance(key, { byUser = false } = {}) {
+  const inst = state[key];
+  if (byUser) pausedByUser[key] = true;
+  if (!inst.proc) return { success: true };
+  inst.stopping = true;
+  inst.proc.kill();
   return { success: true };
 }
 
-// Nouvelle identité : nouveaux circuits pour les connexions suivantes.
-export async function newIdentity() {
-  if (state.tor.status !== 'ready') return { success: false, error: 'Tor n’est pas connecté.' };
-  const cookie = fs.readFileSync(path.join(state.root, 'tor', 'data', 'control_auth_cookie')).toString('hex');
+export function stopTor(opts) {
+  return stopTorInstance('tor', opts);
+}
+
+// Port de contrôle d'une instance (authentification par cookie, local
+// seulement). Renvoie la réponse brute ; `ok` si chaque commande a répondu 250.
+async function torControl(key, commands) {
+  const inst = state[key];
+  if (inst.status !== 'ready' || !inst.controlPort) return { ok: false, reply: '' };
+  let cookie;
+  try {
+    cookie = fs.readFileSync(path.join(state.root, TOR_INSTANCES[key].dir, 'data', 'control_auth_cookie')).toString('hex');
+  } catch {
+    return { ok: false, reply: '' };
+  }
   const reply = await new Promise((resolve) => {
     let buf = '';
-    const s = netmod.connect({ host: '127.0.0.1', port: state.tor.controlPort }, () => {
-      s.write(`AUTHENTICATE ${cookie}\r\nSIGNAL NEWNYM\r\nQUIT\r\n`);
+    const s = netmod.connect({ host: '127.0.0.1', port: inst.controlPort }, () => {
+      s.write(`AUTHENTICATE ${cookie}\r\n${commands.map((c) => `${c}\r\n`).join('')}QUIT\r\n`);
     });
     s.on('data', (d) => (buf += d));
     s.on('close', () => resolve(buf));
     s.on('error', () => resolve(buf));
     s.setTimeout(5000, () => s.destroy());
   });
-  const ok = (reply.match(/^250 /gm) || []).length >= 2;
+  // AUTHENTICATE + chaque commande + QUIT répondent « 250 ».
+  const ok = (reply.match(/^250 /gm) || []).length >= commands.length + 1;
+  return { ok, reply };
+}
+
+// Nouvelle identité : nouveaux circuits pour les connexions suivantes.
+export async function newIdentity(key = 'tor') {
+  if (!TOR_INSTANCES[key] || state[key].status !== 'ready') return { success: false, error: 'Tor n’est pas connecté.' };
+  const { ok } = await torControl(key, ['SIGNAL NEWNYM']);
   return ok ? { success: true } : { success: false, error: 'Tor a refusé la demande.' };
+}
+
+// --- VPN Orbit ----------------------------------------------------------------
+
+let orbitVpnTimer = null;
+
+function armOrbitVpnTimer(minutes) {
+  clearTimeout(orbitVpnTimer);
+  orbitVpnTimer = null;
+  const m = Number(minutes);
+  state.orbitvpn.endsAt = Number.isFinite(m) && m > 0 ? Date.now() + Math.min(m, 24 * 60) * 60000 : 0;
+  if (!state.orbitvpn.endsAt) return;
+  orbitVpnTimer = setTimeout(() => {
+    orbitVpnTimer = null;
+    state.orbitvpn.endsAt = 0;
+    // `expired` : l'interface repasse les apps en connexion normale, sinon
+    // elles resteraient bloquées (fail-closed) sur un tunnel arrêté.
+    // Signal ponctuel : remis à faux aussitôt émis, pour qu'un état plus
+    // tardif ne défasse pas une réactivation.
+    state.orbitvpn.expired = true;
+    stopTorInstance('orbitvpn', { byUser: true });
+    emit();
+    state.orbitvpn.expired = false;
+  }, state.orbitvpn.endsAt - Date.now());
+  orbitVpnTimer.unref?.();
+}
+
+// `minutes` : arrêt automatique (0 ou absent = jusqu'à l'arrêt manuel).
+export async function startOrbitVpn({ byUser = false, minutes = 0 } = {}) {
+  state.orbitvpn.expired = false;
+  if (byUser) armOrbitVpnTimer(minutes);
+  emit();
+  const res = await startTorInstance('orbitvpn', { byUser });
+  // Échec : pas de minuterie orpheline qui « expirerait » plus tard.
+  if (!res.success && byUser) {
+    clearTimeout(orbitVpnTimer);
+    orbitVpnTimer = null;
+    state.orbitvpn.endsAt = 0;
+    emit();
+  }
+  return res;
+}
+
+export function stopOrbitVpn({ byUser = false } = {}) {
+  clearTimeout(orbitVpnTimer);
+  orbitVpnTimer = null;
+  state.orbitvpn.endsAt = 0;
+  emit();
+  return stopTorInstance('orbitvpn', { byUser });
+}
+
+// Changement de pays : appliqué À CHAUD par le port de contrôle (pas de
+// redémarrage, pas de nouvel amorçage), puis nouveaux circuits. Le pays est
+// aussi enregistré pour les prochains démarrages.
+export async function setOrbitVpnLocation(location) {
+  if (!orbitVpnLocationValid(location)) return { success: false, error: 'Pays inconnu.' };
+  state.config.orbitVpnLocation = location;
+  saveConfig();
+  emit();
+  if (state.orbitvpn.status !== 'ready') return { success: true, live: false };
+  const { ok } = await torControl('orbitvpn', [...exitCountryCommands(location), 'SIGNAL NEWNYM']);
+  return ok ? { success: true, live: true } : { success: false, error: 'Tor a refusé le changement de pays.' };
 }
 
 export async function setTorBridges({ mode, custom } = {}) {
@@ -454,12 +570,15 @@ export async function setTorBridges({ mode, custom } = {}) {
   saveConfig();
   emit();
   const valid = parseBridgeLines(state.config.customBridges).length;
-  // Tor connecté : on se reconnecte tout de suite avec les nouveaux ponts.
-  if (state.tor.proc && before !== `${state.config.torBridges}\n${state.config.customBridges}`) {
-    const proc = state.tor.proc;
-    stopTor();
-    await waitExit(proc);
-    startTor().catch(() => {});
+  // Instances connectées : reconnexion tout de suite avec les nouveaux ponts.
+  if (before !== `${state.config.torBridges}\n${state.config.customBridges}`) {
+    for (const key of Object.keys(TOR_INSTANCES)) {
+      const proc = state[key].proc;
+      if (!proc) continue;
+      stopTorInstance(key);
+      await waitExit(proc);
+      startTorInstance(key).catch(() => {});
+    }
   }
   return { success: true, valid };
 }
@@ -579,12 +698,14 @@ export function ensure(network) {
   if (!state.config.autoStart || pausedByUser[network]) return;
   if (network === 'tor' && !state.tor.proc && isInstalled('tor')) startTor().catch(() => {});
   if (network === 'vpn' && !state.vpn.proc && state.config.vpn && isInstalled('wireproxy')) startVpn().catch(() => {});
+  if (network === 'orbitvpn' && !state.orbitvpn.proc && isInstalled('tor')) startOrbitVpn().catch(() => {});
 }
 
 // Vérification : adresse vue par Internet À TRAVERS le moteur, demandée au
 // Tor Project (qui dit aussi si la connexion sort bien par Tor).
 export async function check(network) {
-  const rule = network === 'tor' ? NETWORK_RULES.tor : NETWORK_RULES.vpn;
+  const rule = NETWORK_RULES[network];
+  if (!rule) return { success: false, error: 'Réseau inconnu.' };
   const ses = session.fromPartition(`orbit-netcheck-${network}`);
   await ses.setProxy({ proxyRules: resolveRule(rule) });
   await ses.closeAllConnections();
@@ -592,7 +713,13 @@ export async function check(network) {
     const res = await ses.fetch(CHECK_URL, { cache: 'no-store' });
     const info = parseTorCheck(await res.json());
     if (!info) return { success: false, error: 'Réponse inattendue.' };
-    return { success: true, ...info };
+    // Pays de sortie : lu dans la base GeoIP locale de Tor — aucune requête
+    // supplémentaire vers un service de géolocalisation.
+    let country = '';
+    if (TOR_INSTANCES[network] && /^[0-9a-f.:]+$/i.test(info.ip)) {
+      country = parseIpCountry((await torControl(network, [`GETINFO ip-to-country/${info.ip}`])).reply);
+    }
+    return { success: true, ...info, country };
   } catch (err) {
     return { success: false, error: `Aucune connexion par ce moteur (${err.message}).` };
   }
@@ -601,4 +728,5 @@ export async function check(network) {
 export function stopAll() {
   stopTor();
   stopVpn();
+  stopOrbitVpn();
 }

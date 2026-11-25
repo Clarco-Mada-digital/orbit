@@ -128,7 +128,7 @@ export default function LoadFailure({ app, failure, onRetry, onLoadUrl, onAccept
     try {
       if (target === 'tor' && network !== 'tor') updateApp(app.id, { proxy: NETWORK_RULES.tor });
       const pn = window.electronAPI?.privateNet;
-      const r = target === 'vpn' ? await pn?.startVpn() : await pn?.startTor();
+      const r = target === 'vpn' ? await pn?.startVpn() : target === 'orbitvpn' ? await pn?.startOrbitVpn(0) : await pn?.startTor();
       if (r && !r.success) {
         setNetError(r.error || 'Connexion impossible.');
         setBusy(false);
@@ -222,7 +222,7 @@ export default function LoadFailure({ app, failure, onRetry, onLoadUrl, onAccept
         )}
         {describe.kind === 'privnet' && (
           <button onClick={() => connectThenRetry(describe.network)} className="btn btn-primary btn-sm" disabled={busy}>
-            <Lock size={15} /> {busy ? 'Connexion…' : describe.network === 'vpn' ? 'Se connecter au VPN' : 'Se connecter à Tor'}
+            <Lock size={15} /> {busy ? 'Connexion…' : describe.network === 'vpn' ? 'Se connecter au VPN' : describe.network === 'orbitvpn' ? 'Activer le VPN Orbit' : 'Se connecter à Tor'}
           </button>
         )}
         <button onClick={onRetry} className={`btn ${privacyBlock ? '' : 'btn-primary'} btn-sm`} disabled={busy}>
@@ -257,7 +257,7 @@ export default function LoadFailure({ app, failure, onRetry, onLoadUrl, onAccept
       </div>
       {tunnel?.status === 'starting' ? (
         <p className="text-sm text-text-muted text-center">
-          Connexion à {waitingFor === 'tor' ? 'Tor' : 'au VPN'} en cours{tunnel.progress ? ` (${tunnel.progress} %)` : ''}… la page
+          Connexion {waitingFor === 'tor' ? 'à Tor' : waitingFor === 'orbitvpn' ? 'au VPN Orbit' : 'au VPN'} en cours{tunnel.progress ? ` (${tunnel.progress} %)` : ''}… la page
           s’ouvrira toute seule.
         </p>
       ) : null}

@@ -1,10 +1,12 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Check, Upload, ChevronRight, Download, Eye, EyeOff, File, FileArchive, FileAudio, FileImage, FileText, FileVideo, Folder, FolderOpen, Loader2, RefreshCw } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { ArrowLeft, Check, Upload, ChevronRight, Download, ExternalLink, Eye, EyeOff, File, FileArchive, FileAudio, FileImage, FileText, FileVideo, Folder, FolderOpen, Loader2, RefreshCw } from 'lucide-react';
 import { PHONE_FS_ROOT, PHONE_FS_SHORTCUTS, phoneParentPath, formatPhoneSize } from '../../lib/phone';
 
 // ---------------------------------------------------------------------------
 // Téléphone → ordinateur : parcourir le stockage du téléphone et récupérer
 // fichiers ou dossiers. Fonctionne en USB comme sans fil (adb pull).
+// Un fichier s'ouvre directement sur l'ordinateur (double-clic) — et ses
+// modifications repartent sur le téléphone — ou se glisse vers le bureau.
 // ---------------------------------------------------------------------------
 
 function iconFor(entry) {
@@ -18,6 +20,13 @@ function iconFor(entry) {
   return File;
 }
 
+// Appui sur un fichier : on anticipe sa copie locale s'il est léger, pour que
+// le glisser vers l'ordinateur parte sans attendre.
+const PREFETCH_MAX = 20 * 1024 * 1024;
+// Jeton de glisser unique pour toute la session (survit au remontage).
+let dragSeq = 0;
+const nextDragToken = () => `drag-${(dragSeq += 1)}`;
+
 const dateFmt = new Intl.DateTimeFormat('fr-FR', { day: '2-digit', month: 'short', year: 'numeric' });
 
 export default function PhoneFiles({ api, serial }) {
@@ -30,6 +39,23 @@ export default function PhoneFiles({ api, serial }) {
   const [busy, setBusy] = useState(false);
   const [result, setResult] = useState(null);
   const [dragOver, setDragOver] = useState(false);
+  const [opening, setOpening] = useState(null);
+  const [preparingDrag, setPreparingDrag] = useState(false);
+  // Pendant un glisser vers l'ordinateur, Orbit voit passer ses propres
+  // fichiers : il ne faut pas les renvoyer au téléphone s'ils sont lâchés ici.
+  const draggingOut = useRef(false);
+
+  useEffect(
+    () =>
+      api?.onFileSynced?.((info) =>
+        setResult(
+          info?.success
+            ? { success: true, message: `« ${info.name} » enregistré sur le téléphone.` }
+            : { success: false, error: `« ${info?.name} » n’a pas pu être renvoyé au téléphone : ${info?.error || 'erreur inconnue'}` }
+        )
+      ),
+    [api]
+  );
 
   const load = useCallback(
     async (target) => {
@@ -80,8 +106,49 @@ export default function PhoneFiles({ api, serial }) {
     if (r?.received?.length) setSelected(new Set());
   };
 
+  const entryArg = (e) => ({ path: e.path, size: e.size, mtime: e.mtime });
+
+  const openFile = async (e) => {
+    if (e.dir || opening) return;
+    setOpening(e.path);
+    setResult(null);
+    const r = await api.openFile({ serial, entry: entryArg(e) });
+    setOpening(null);
+    if (!r?.success) setResult({ success: false, error: r?.error || 'Ouverture impossible.' });
+  };
+
+  const prefetch = (e) => {
+    if (!e.dir && e.size <= PREFETCH_MAX) api.prefetch?.({ serial, entry: entryArg(e) });
+  };
+
+  // Glisser vers l'ordinateur : l'élément glissé, ou toute la sélection s'il
+  // en fait partie. Le glisser natif est lancé par le processus principal une
+  // fois la copie locale prête ; relâcher avant annule.
+  const onRowDragStart = async (ev, e) => {
+    ev.preventDefault();
+    if (busy || preparingDrag) return;
+    const items = selected.has(e.path) ? visible.filter((x) => selected.has(x.path)) : [e];
+    const token = nextDragToken();
+    let pending = true;
+    const cancel = () => {
+      if (pending) api.cancelDrag(token);
+    };
+    window.addEventListener('mouseup', cancel, { once: true });
+    setPreparingDrag(true);
+    draggingOut.current = true;
+    const r = await api.startDrag({ serial, token, entries: items.map(entryArg) });
+    pending = false;
+    window.removeEventListener('mouseup', cancel);
+    setPreparingDrag(false);
+    setTimeout(() => {
+      draggingOut.current = false;
+    }, 500);
+    if (r && !r.success && !r.cancelled) setResult({ success: false, error: r.error || 'Glisser impossible.' });
+    else if (r?.failed) setResult({ success: false, error: `${r.failed} élément${r.failed > 1 ? 's' : ''} n’a pas pu être préparé.` });
+  };
+
   // Glisser-déposer depuis l'ordinateur : envoi dans le dossier AFFICHÉ.
-  const isFileDrag = (e) => [...(e.dataTransfer?.types || [])].includes('Files');
+  const isFileDrag = (e) => !draggingOut.current && [...(e.dataTransfer?.types || [])].includes('Files');
   const onDragOver = (e) => {
     if (!isFileDrag(e)) return;
     e.preventDefault();
@@ -94,6 +161,11 @@ export default function PhoneFiles({ api, serial }) {
     setDragOver(false);
   };
   const onDrop = async (e) => {
+    if (draggingOut.current) {
+      e.preventDefault();
+      draggingOut.current = false;
+      return;
+    }
     if (!isFileDrag(e)) return;
     e.preventDefault();
     e.stopPropagation();
@@ -122,6 +194,11 @@ export default function PhoneFiles({ api, serial }) {
           {busy ? <Loader2 size={28} className="animate-spin text-accent-primary" /> : <Upload size={28} className="text-accent-primary" />}
           <span className="font-medium">{busy ? 'Envoi vers le téléphone…' : 'Déposer pour envoyer sur le téléphone'}</span>
           <span className="max-w-full truncate px-6 font-mono text-xs text-text-muted">{dir}</span>
+        </div>
+      ) : null}
+      {preparingDrag ? (
+        <div className="pointer-events-none absolute bottom-3 left-1/2 z-20 flex -translate-x-1/2 items-center gap-2 rounded-full bg-bg-secondary px-3 py-1.5 text-xs shadow-lg ring-1 ring-border">
+          <Loader2 size={13} className="animate-spin text-accent-primary" /> Préparation du fichier… gardez le bouton appuyé
         </div>
       ) : null}
       {/* Raccourcis */}
@@ -192,6 +269,7 @@ export default function PhoneFiles({ api, serial }) {
               </button>
             </>
           ) : null}
+          {result.message ? <span>{result.message}</span> : null}
           {result.error ? <span> {result.error}</span> : null}
         </div>
       ) : null}
@@ -201,14 +279,20 @@ export default function PhoneFiles({ api, serial }) {
         {error ? <p className="py-6 text-center text-sm text-red-500">{error}</p> : null}
         {!error && !loading && visible.length === 0 ? <p className="py-6 text-center text-sm text-text-muted">Dossier vide.</p> : null}
         {!error ? (
-          <p className="mb-2 text-center text-[11px] text-text-muted">Glissez des fichiers ou des dossiers de l’ordinateur ici pour les envoyer dans ce dossier.</p>
+          <p className="mb-2 text-center text-[11px] text-text-muted">Glissez des fichiers de l’ordinateur ici pour les envoyer dans ce dossier, ou un élément de la liste vers l’ordinateur pour l’y copier. Double-clic : ouvrir.</p>
         ) : null}
         <ul className="divide-y divide-border rounded-xl border border-border">
           {visible.map((e) => {
             const Icon = e.dir ? (selected.has(e.path) ? FolderOpen : Folder) : iconFor(e);
             const on = selected.has(e.path);
             return (
-              <li key={e.path} className={`group flex items-center gap-2 px-2.5 py-1.5 text-sm ${on ? 'bg-accent-primary/5' : 'hover:bg-bg-hover'}`}>
+              <li
+                key={e.path}
+                draggable={!busy}
+                onDragStart={(ev) => onRowDragStart(ev, e)}
+                onPointerDown={() => prefetch(e)}
+                className={`group flex items-center gap-2 px-2.5 py-1.5 text-sm ${on ? 'bg-accent-primary/5' : 'hover:bg-bg-hover'}`}
+              >
                 <button
                   type="button"
                   role="checkbox"
@@ -223,14 +307,27 @@ export default function PhoneFiles({ api, serial }) {
                 <button
                   type="button"
                   onClick={() => (e.dir ? load(e.path) : toggle(e.path))}
-                  onDoubleClick={() => !e.dir && pull([e.path])}
+                  onDoubleClick={() => openFile(e)}
                   className={`min-w-0 flex-1 truncate text-left ${e.hidden ? 'text-text-muted' : ''}`}
-                  title={e.dir ? 'Ouvrir' : 'Cliquer : sélectionner · double-clic : récupérer'}
+                  title={e.dir ? 'Ouvrir' : 'Cliquer : sélectionner · double-clic : ouvrir sur l’ordinateur · glisser : copier vers l’ordinateur'}
                 >
                   {e.name}
                 </button>
+                {opening === e.path ? <Loader2 size={14} className="shrink-0 animate-spin text-accent-primary" /> : null}
                 <span className="hidden w-24 shrink-0 text-right text-xs text-text-muted sm:block">{e.mtime ? dateFmt.format(new Date(e.mtime)) : ''}</span>
                 <span className="w-16 shrink-0 text-right text-xs text-text-muted">{e.dir ? '' : formatPhoneSize(e.size)}</span>
+                {!e.dir ? (
+                  <button
+                    type="button"
+                    disabled={!!opening}
+                    onClick={() => openFile(e)}
+                    className="shrink-0 rounded-md p-1 text-text-muted opacity-0 hover:bg-bg-hover hover:text-text-primary group-hover:opacity-100 focus:opacity-100"
+                    title="Ouvrir sur l’ordinateur (les modifications enregistrées repartent sur le téléphone)"
+                    aria-label={`Ouvrir ${e.name}`}
+                  >
+                    <ExternalLink size={14} />
+                  </button>
+                ) : null}
                 <button
                   type="button"
                   disabled={busy}

@@ -50,6 +50,7 @@ export const TOPBAR_MODULES = [
   { id: 'notifications', labelKey: 'tbm.notifications', descKey: 'tbm.notifications.desc' },
   { id: 'clock', labelKey: 'tbm.clock', descKey: 'tbm.clock.desc' },
   { id: 'weather', labelKey: 'tbm.weather', descKey: 'tbm.weather.desc' },
+  { id: 'orbitVpn', labelKey: 'tbm.orbitVpn', descKey: 'tbm.orbitVpn.desc' },
   { id: 'battery', labelKey: 'tbm.battery', descKey: 'tbm.battery.desc' },
   { id: 'focus', labelKey: 'tbm.focus', descKey: 'tbm.focus.desc' },
   { id: 'system', labelKey: 'tbm.system', descKey: 'tbm.system.desc' },

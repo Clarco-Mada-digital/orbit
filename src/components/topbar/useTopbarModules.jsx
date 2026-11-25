@@ -50,6 +50,7 @@ import Downloads from '../Downloads';
 import NowPlaying from '../NowPlaying';
 import ClockWidget from './ClockWidget';
 import WeatherWidget from './WeatherWidget';
+import OrbitVpnWidget from './OrbitVpnWidget';
 import BatteryWidget from './BatteryWidget';
 import FocusTimer from './FocusTimer';
 import SystemWidget from './SystemWidget';
@@ -509,6 +510,28 @@ const app = apps.find((a) => a.id === activeApp)
         setShowExtsPopover(false);
         setExtMenu(null);
         return;
+      }
+      // Action dans la page (Sticky Notes, Color Picker…) : on la déclenche
+      // par le protocole DOM du menu contextuel, qui traverse le monde isolé
+      // du content script. Remplace le bouton flottant que chacune posait en
+      // bas à droite des pages.
+      if (resolu?.launcher && !resolu.hasPopup) {
+        let webview = null;
+        try {
+          webview = getWebview(activeApp);
+        } catch {
+          /* aucune page affichée */
+        }
+        if (webview?.executeJavaScript) {
+          setShowExtsPopover(false);
+          setExtMenu(null);
+          webview
+            .executeJavaScript(
+              `document.documentElement.dispatchEvent(new CustomEvent('orbit:ctx-action', { detail: { id: ${JSON.stringify(resolu.launcher)} } }))`
+            )
+            .catch(() => {});
+          return;
+        }
       }
       // Pas de panneau : le menu reste le seul geste utile.
       if (!resolu?.hasPopup) return openExtMenu(ext);
@@ -1541,6 +1564,8 @@ const app = apps.find((a) => a.id === activeApp)
         return <ClockWidget key={key} placement={placement} align={menuAlign} />;
       case 'weather':
         return <WeatherWidget key={key} placement={placement} align={menuAlign} />;
+      case 'orbitVpn':
+        return <OrbitVpnWidget key={key} placement={placement} align={menuAlign} />;
       case 'battery':
         return <BatteryWidget key={key} />;
       case 'focus':

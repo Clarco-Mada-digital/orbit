@@ -72,6 +72,7 @@ import { logDiagnostic } from './lib/diagnosticsStore';
 import { useT } from './lib/i18n';
 import { attachTtsPlayer, setVolume as setTtsVolume } from './lib/ttsPlayer';
 import { useDownloadsStore } from './lib/downloadsStore';
+import { restoreNetwork as restoreOrbitVpnNetwork } from './lib/orbitVpn';
 
 function AssistantHost() {
   const [Assistant, setAssistant] = useState(null);
@@ -1104,6 +1105,17 @@ const [editUrlFor, setEditUrlFor] = useState(null); // { id, url } — boîte «
     }
     proxyRef.current = next;
   }, [apps, profiles, settings.globalProxy]);
+
+  // VPN Orbit activé « pour 15 min » (ou autre) : à l'expiration, le moteur
+  // s'arrête et tout Orbit retrouve son réseau d'avant — sans quoi les apps
+  // resteraient bloquées (fail-closed) sur un tunnel fermé.
+  useEffect(() => {
+    const pn = window.electronAPI?.privateNet;
+    if (!pn?.onChanged) return undefined;
+    return pn.onChanged((st) => {
+      if (st?.orbitvpn?.expired) restoreOrbitVpnNetwork();
+    });
+  }, []);
 
   // Synchroniser la config de traduction (langue + moteur Google/LibreTranslate)
   useEffect(() => {

@@ -1,0 +1,37 @@
+{
+  "manifest_version": 3,
+  "name": "Sticky Notes",
+  "version": "1.1.0",
+  "description": "Notes collantes par site : un clic sur l'extension dans la barre d'Orbit (ou Alt+N) ouvre un bloc-notes attaché au domaine courant. Les notes se rouvrent automatiquement à chaque visite. Aucune donnée ne quitte la machine.",
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [],
+  "orbit": {
+    "launcher": "stickyNotes",
+    "sharedSettings": true,
+    "minOrbitVersion": "1.21.5"
+  }
+}

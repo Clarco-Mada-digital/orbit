@@ -121,3 +121,52 @@ test('annuaire .onion : adresses v3 valides, uniques, sources citées', async ()
   const { faviconServiceUrl } = await import('../src/lib/appIcons.js');
   assert.equal(faviconServiceUrl(ONION_SITES[0].url), '');
 });
+
+// --- VPN Orbit -----------------------------------------------------------------
+import {
+  NETWORK_RULES as RULES_VO,
+  networkOfRule as networkOfRuleVO,
+  resolveNetworkRule as resolveVO,
+  buildTorrc as buildTorrcVO,
+  ORBIT_VPN_COUNTRIES,
+  orbitVpnLocationValid,
+  exitCountryCommands,
+  parseIpCountry,
+} from '../src/lib/privateNetwork.js';
+
+test('VPN Orbit : règle reconnue, port fermé tant que le moteur n’est pas prêt', () => {
+  assert.equal(networkOfRuleVO(RULES_VO.orbitvpn), 'orbitvpn');
+  assert.equal(resolveVO(RULES_VO.orbitvpn, { tor: 9050 }), 'socks5://127.0.0.1:9');
+  assert.equal(resolveVO(RULES_VO.orbitvpn, { orbitvpn: 41000 }), 'socks5://127.0.0.1:41000');
+});
+
+test('VPN Orbit : seuls Auto et les pays de la liste sont acceptés', () => {
+  assert.ok(orbitVpnLocationValid('auto'));
+  assert.ok(orbitVpnLocationValid('fr'));
+  for (const bad of ['', 'FR', 'xx', '{fr}', 'fr} ExitNodes {ru', 'auto\nControlPort 1']) {
+    assert.equal(orbitVpnLocationValid(bad), false, bad);
+  }
+  assert.ok(ORBIT_VPN_COUNTRIES.every((c) => /^[a-z]{2}$/.test(c.id)));
+});
+
+test('VPN Orbit : torrc avec pays de sortie strict, rien pour Auto ou une valeur inconnue', () => {
+  const base = { socksPort: 1, controlPort: 2, dataDir: '/d' };
+  const fr = buildTorrcVO({ ...base, exitCountry: 'fr' });
+  assert.match(fr, /^ExitNodes \{fr\}$/m);
+  assert.match(fr, /^StrictNodes 1$/m);
+  assert.doesNotMatch(buildTorrcVO({ ...base, exitCountry: 'auto' }), /ExitNodes/);
+  assert.doesNotMatch(buildTorrcVO({ ...base, exitCountry: 'fr}\nControlPort 0.0.0.0:1' }), /ExitNodes|0\.0\.0\.0/);
+});
+
+test('VPN Orbit : commandes de changement de pays à chaud', () => {
+  assert.deepEqual(exitCountryCommands('de'), ['SETCONF ExitNodes={de} StrictNodes=1']);
+  assert.deepEqual(exitCountryCommands('auto'), ['RESETCONF ExitNodes StrictNodes']);
+  // Valeur invalide : retour à Auto, jamais une commande forgée.
+  assert.deepEqual(exitCountryCommands('de\r\nSIGNAL HALT'), ['RESETCONF ExitNodes StrictNodes']);
+});
+
+test('VPN Orbit : pays lu dans la réponse GETINFO du port de contrôle', () => {
+  assert.equal(parseIpCountry('250-AUTHENTICATE\r\n250-ip-to-country/185.220.101.1=de\r\n250 OK\r\n'), 'de');
+  assert.equal(parseIpCountry('250-ip-to-country/10.0.0.1=??\r\n'), '');
+  assert.equal(parseIpCountry(''), '');
+});

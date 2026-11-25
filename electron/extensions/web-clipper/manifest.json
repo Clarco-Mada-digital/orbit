@@ -1,12 +1,17 @@
 {
   "manifest_version": 3,
   "name": "Web Clipper",
-  "version": "1.0.0",
-  "description": "Capture localement une sélection ou le contenu principal d’une page, puis retrouvez et exportez vos captures en Markdown.",
+  "version": "1.1.0",
+  "description": "Capture localement une sélection ou le contenu principal d’une page (clic sur l'extension dans la barre d'Orbit), puis retrouvez et exportez vos captures en Markdown.",
   "content_scripts": [
     {
-      "matches": ["http://*/*", "https://*/*"],
-      "js": ["content.js"],
+      "matches": [
+        "http://*/*",
+        "https://*/*"
+      ],
+      "js": [
+        "content.js"
+      ],
       "run_at": "document_idle",
       "all_frames": false
     }
@@ -15,6 +20,12 @@
     "page": "options.html",
     "open_in_tab": true
   },
-  "permissions": ["storage"],
-  "host_permissions": []
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [],
+  "orbit": {
+    "launcher": "webClipper",
+    "minOrbitVersion": "1.21.5"
+  }
 }

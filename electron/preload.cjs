@@ -128,6 +128,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
       }),
     pullFiles: (payload) => ipcRenderer.invoke('phone:pullFiles', payload),
     showReceived: (file) => ipcRenderer.invoke('phone:showReceived', { file }),
+    // Ouvrir / glisser vers l'ordinateur un fichier du téléphone (copie locale).
+    openFile: (payload) => ipcRenderer.invoke('phone:openFile', payload),
+    prefetch: (payload) => ipcRenderer.invoke('phone:prefetch', payload),
+    startDrag: (payload) => ipcRenderer.invoke('phone:startDrag', payload),
+    cancelDrag: (token) => ipcRenderer.send('phone:cancelDrag', { token }),
+    onFileSynced: (callback) => {
+      const listener = (_event, payload) => callback(payload);
+      ipcRenderer.on('phone:file-synced', listener);
+      return () => ipcRenderer.removeListener('phone:file-synced', listener);
+    },
     onNotifications: (callback) => {
       const listener = (_event, payload) => callback(payload);
       ipcRenderer.on('phone:notifications', listener);
@@ -578,6 +588,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
     removeVpn: () => ipcRenderer.invoke('privateNet:removeVpn'),
     check: (network) => ipcRenderer.invoke('privateNet:check', { network }),
     newIdentity: () => ipcRenderer.invoke('privateNet:newIdentity'),
+    // VPN Orbit : `minutes` = arrêt automatique (0 = jusqu'à l'arrêt).
+    startOrbitVpn: (minutes) => ipcRenderer.invoke('privateNet:startOrbitVpn', { minutes }),
+    stopOrbitVpn: () => ipcRenderer.invoke('privateNet:stopOrbitVpn'),
+    setOrbitVpnLocation: (location) => ipcRenderer.invoke('privateNet:setOrbitVpnLocation', { location }),
     onChanged: (callback) => {
       const listener = (_e, st) => callback(st);
       ipcRenderer.on('privateNet:changed', listener);

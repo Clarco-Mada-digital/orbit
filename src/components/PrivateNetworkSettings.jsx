@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { AlertTriangle, CheckCircle2, Download, ExternalLink, Loader2, Lock, Play, RefreshCw, Shield, Square, Trash2, Upload } from 'lucide-react';
 import { useStore } from '../stores/useStore';
 import NetworkChoice from './NetworkChoice';
+import OrbitVpnPanel from './OrbitVpnPanel';
 import { parseBridgeLines, NETWORK_RULES } from '../lib/privateNetwork';
 import { ONION_SITES, ONION_CATEGORIES, ONION_VERIFIED_AT } from '../lib/onionDirectory';
 
@@ -184,6 +185,13 @@ export default function PrivateNetworkSettings() {
 
       {!st.platformSupported ? (
         <p className="text-xs text-amber-500">Tor et le VPN intégrés ne sont pas disponibles pour ce système.</p>
+      ) : null}
+
+      {/* --------------------------- VPN Orbit ---------------------------- */}
+      {st.platformSupported ? (
+        <section className="rounded-xl border border-sky-500/30 bg-sky-500/5 p-4">
+          <OrbitVpnPanel />
+        </section>
       ) : null}
 
       {/* ------------------------------- Tor ------------------------------- */}

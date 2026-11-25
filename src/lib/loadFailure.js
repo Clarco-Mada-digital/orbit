@@ -103,12 +103,12 @@ const DETAILS = {
 // niveau : le serveur parle bien TLS, il présente simplement un certificat
 // qu'on refuse — « ce site ne gère pas HTTPS » serait faux dans l'autre sens.
 //
-// `network` : réseau privé de l'app ('tor' | 'vpn' | null) et `url` : adresse
+// `network` : réseau privé de l'app ('tor' | 'vpn' | 'orbitvpn' | null) et `url` : adresse
 // demandée. Ils expliquent deux échecs qui sont des PROTECTIONS, pas des pannes :
 //   - une adresse .onion hors de Tor (bloquée pour ne pas la révéler au FAI) ;
 //   - une app réglée sur Tor ou VPN alors que le moteur n'est pas connecté
 //     (rien ne part en direct, par conception).
-const NETWORK_NAMES = { tor: 'Tor', vpn: 'Le VPN' };
+const NETWORK_NAMES = { tor: 'Tor', vpn: 'Le VPN', orbitvpn: 'Le VPN Orbit' };
 
 function isOnion(url) {
   try {
@@ -139,7 +139,7 @@ export function describeLoadFailure(code, description = '', { upgraded = false, 
       kind: 'privnet',
       network,
       title: `${NETWORK_NAMES[network]} n’est pas connecté`,
-      detail: `Cette app passe par ${network === 'tor' ? 'Tor' : 'le VPN'}. Tant qu’il n’est pas connecté, rien ne part par la connexion normale — c’est voulu, pour ne jamais exposer votre adresse.`,
+      detail: `Cette app passe par ${network === 'tor' ? 'Tor' : network === 'orbitvpn' ? 'le VPN Orbit' : 'le VPN'}. Tant qu’il n’est pas connecté, rien ne part par la connexion normale — c’est voulu, pour ne jamais exposer votre adresse.`,
     };
   }
   if (network === 'tor' && num === -120 && isOnion(url)) {

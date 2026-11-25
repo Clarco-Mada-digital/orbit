@@ -1,0 +1,38 @@
+{
+  "manifest_version": 3,
+  "name": "QR Code Generator",
+  "version": "1.1.0",
+  "description": "Génère un QR code de la page ou de tout texte/lien : clic sur l'extension dans la barre d'Orbit, menu contextuel ou Alt+Q. 100% local (aucune requête réseau), personnalisable (⚙️).",
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "<all_urls>"
+      ],
+      "js": [
+        "qrcode.js",
+        "content.js"
+      ],
+      "run_at": "document_idle",
+      "all_frames": false
+    }
+  ],
+  "options_ui": {
+    "page": "options.html",
+    "open_in_tab": true
+  },
+  "permissions": [
+    "storage"
+  ],
+  "host_permissions": [],
+  "orbit": {
+    "launcher": "qrPage",
+    "sharedSettings": true,
+    "minOrbitVersion": "1.21.5"
+  }
+}

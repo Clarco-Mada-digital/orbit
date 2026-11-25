@@ -10,6 +10,10 @@
 //   - VPN : un fichier WireGuard (.conf) de votre fournisseur — Proton VPN
 //     gratuit, Mullvad, votre propre serveur… — porté par wireproxy, qui
 //     n'exige NI droits administrateur NI carte réseau virtuelle.
+//   - VPN Orbit : sans compte ni fichier, pour quelques minutes. Une instance
+//     Tor DÉDIÉE dont on choisit le pays de sortie (ou « Auto » : Tor prend
+//     les sorties les plus rapides). Séparée de « Tor » pour que le choix d'un
+//     pays ne touche pas les apps réglées sur Tor.
 //
 // Sécurité par défaut (« fail-closed ») : si le moteur n'est pas prêt, la
 // règle pointe vers un port fermé — les pages échouent au lieu de passer en
@@ -22,7 +26,11 @@
 export const NETWORK_RULES = {
   tor: 'orbit:tor',
   vpn: 'orbit:vpn',
+  orbitvpn: 'orbit:orbitvpn',
 };
+
+// Nom affiché, avec article, pour les phrases (« passe par … »).
+export const NETWORK_NAMES = { tor: 'Tor', vpn: 'le VPN', orbitvpn: 'le VPN Orbit' };
 
 // Port où rien n'écoute (« discard ») : toute requête y échoue aussitôt.
 export const CLOSED_PROXY = 'socks5://127.0.0.1:9';
@@ -31,6 +39,7 @@ export function networkOfRule(rule) {
   const r = String(rule || '').trim().toLowerCase();
   if (r === NETWORK_RULES.tor) return 'tor';
   if (r === NETWORK_RULES.vpn) return 'vpn';
+  if (r === NETWORK_RULES.orbitvpn) return 'orbitvpn';
   return null;
 }
 
@@ -87,11 +96,58 @@ export function readPtConfig(json, ptDir, sep = '/') {
   return { plugins, bridges };
 }
 
+// --- VPN Orbit -----------------------------------------------------------------
+
+// Pays proposés : ceux où le réseau Tor compte assez de relais de sortie pour
+// qu'une connexion tienne (Allemagne, Pays-Bas et États-Unis en tête). Un pays
+// avec deux ou trois sorties seulement donnerait une connexion lente et
+// fragile : il n'est pas proposé.
+export const ORBIT_VPN_COUNTRIES = [
+  { id: 'de', label: 'Allemagne', flag: '🇩🇪' },
+  { id: 'at', label: 'Autriche', flag: '🇦🇹' },
+  { id: 'ca', label: 'Canada', flag: '🇨🇦' },
+  { id: 'us', label: 'États-Unis', flag: '🇺🇸' },
+  { id: 'fi', label: 'Finlande', flag: '🇫🇮' },
+  { id: 'fr', label: 'France', flag: '🇫🇷' },
+  { id: 'lu', label: 'Luxembourg', flag: '🇱🇺' },
+  { id: 'no', label: 'Norvège', flag: '🇳🇴' },
+  { id: 'nl', label: 'Pays-Bas', flag: '🇳🇱' },
+  { id: 'pl', label: 'Pologne', flag: '🇵🇱' },
+  { id: 'ro', label: 'Roumanie', flag: '🇷🇴' },
+  { id: 'gb', label: 'Royaume-Uni', flag: '🇬🇧' },
+  { id: 'se', label: 'Suède', flag: '🇸🇪' },
+  { id: 'ch', label: 'Suisse', flag: '🇨🇭' },
+];
+
+// Durées proposées (minutes) ; 0 = jusqu'à l'arrêt.
+export const ORBIT_VPN_DURATIONS = [15, 30, 60, 0];
+
+export function orbitVpnLocationValid(id) {
+  return id === 'auto' || ORBIT_VPN_COUNTRIES.some((c) => c.id === id);
+}
+
+export function orbitVpnCountry(id) {
+  return ORBIT_VPN_COUNTRIES.find((c) => c.id === String(id || '').toLowerCase()) || null;
+}
+
+// Commandes du port de contrôle pour changer de pays SANS redémarrer Tor.
+// « auto » : plus aucune restriction, Tor pondère les sorties par débit.
+export function exitCountryCommands(location) {
+  if (!orbitVpnLocationValid(location) || location === 'auto') return ['RESETCONF ExitNodes StrictNodes'];
+  return [`SETCONF ExitNodes={${location}} StrictNodes=1`];
+}
+
+// Réponse de « GETINFO ip-to-country/<ip> » → code pays, ou ''.
+export function parseIpCountry(reply) {
+  const m = /ip-to-country\/[^=\s]+=([a-z?]{2})/i.exec(String(reply || ''));
+  return m && m[1] !== '??' ? m[1].toLowerCase() : '';
+}
+
 // Chemin pour torrc : guillemets si espaces (dossiers Windows « Program Files »).
 const torPath = (p) => (/[\s"]/.test(p) ? `"${String(p).replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"` : p);
 
 // torrc complet. `bridges` : liste de lignes ; `plugins` : ClientTransportPlugin.
-export function buildTorrc({ socksPort, controlPort, dataDir, geoip, geoip6, bridges = [], plugins = [], ownerPid }) {
+export function buildTorrc({ socksPort, controlPort, dataDir, geoip, geoip6, bridges = [], plugins = [], ownerPid, exitCountry = '' }) {
   const lines = [
     `SocksPort 127.0.0.1:${socksPort}`,
     `ControlPort 127.0.0.1:${controlPort}`,
@@ -107,6 +163,11 @@ export function buildTorrc({ socksPort, controlPort, dataDir, geoip, geoip6, bri
   if (geoip6) lines.push(`GeoIPv6File ${torPath(geoip6)}`);
   if (bridges.length) {
     lines.push('UseBridges 1', ...plugins, ...bridges.map((b) => `Bridge ${b}`));
+  }
+  // Pays de sortie imposé (VPN Orbit). StrictNodes : si aucune sortie de ce
+  // pays n'est joignable, la connexion échoue plutôt que de sortir ailleurs.
+  if (exitCountry && exitCountry !== 'auto' && orbitVpnLocationValid(exitCountry)) {
+    lines.push(`ExitNodes {${exitCountry}}`, 'StrictNodes 1');
   }
   return `${lines.join('\n')}\n`;
 }

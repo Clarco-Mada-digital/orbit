@@ -13,15 +13,8 @@
   style.textContent = `
     :host { all: initial; }
     * { box-sizing: border-box; }
-    .launcher {
-      position: fixed; right: 18px; bottom: 18px; z-index: 2147483646;
-      width: 44px; height: 44px; border: 1px solid #52525b; border-radius: 14px;
-      background: #18181b; color: #f4f4f5; box-shadow: 0 8px 24px #0006;
-      font: 600 20px/1 system-ui, sans-serif; cursor: pointer;
-    }
-    .launcher:hover { background: #27272a; }
     .panel {
-      position: fixed; right: 18px; bottom: 72px; z-index: 2147483647;
+      position: fixed; right: 18px; bottom: 18px; z-index: 2147483647;
       width: min(340px, calc(100vw - 36px)); padding: 16px;
       border: 1px solid #3f3f46; border-radius: 16px; background: #18181b;
       color: #f4f4f5; box-shadow: 0 16px 48px #0008;
@@ -29,7 +22,9 @@
     }
     .header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
     h2 { margin: 0; font-size: 15px; }
-    .close { padding: 4px 8px; border: 0; border-radius: 8px; background: transparent; color: #a1a1aa; cursor: pointer; }
+    .close { padding: 4px 8px; border: 0; border-radius: 8px; background: transparent; color: #a1a1aa; font: 14px/1 system-ui, sans-serif; cursor: pointer; }
+    .close:hover { background: #27272a; color: #f4f4f5; }
+    .panel:focus { outline: none; }
     .title { margin: 10px 0 14px; overflow: hidden; color: #a1a1aa; text-overflow: ellipsis; white-space: nowrap; }
     .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
     button.action { min-height: 38px; padding: 8px 10px; border: 1px solid #3f3f46; border-radius: 9px; background: #27272a; color: #f4f4f5; font: inherit; cursor: pointer; }
@@ -41,13 +36,6 @@
     .status[data-kind="success"] { color: #86efac; }
   `;
   shadow.appendChild(style);
-
-  const launcher = document.createElement('button');
-  launcher.className = 'launcher';
-  launcher.type = 'button';
-  launcher.textContent = '⌑';
-  launcher.title = 'Web Clipper · capturer cette page';
-  launcher.setAttribute('aria-label', launcher.title);
 
   const panel = document.createElement('section');
   panel.className = 'panel';
@@ -62,8 +50,19 @@
   const close = document.createElement('button');
   close.className = 'close';
   close.type = 'button';
-  close.textContent = 'Fermer';
+  close.textContent = '✕';
+  close.title = 'Fermer (Échap)';
+  close.setAttribute('aria-label', 'Fermer');
   close.addEventListener('click', () => { panel.hidden = true; });
+  // Échap ferme le panneau quand le focus y est (il le prend à l'ouverture) :
+  // la touche reste à la page le reste du temps.
+  panel.tabIndex = -1;
+  panel.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    e.preventDefault();
+    e.stopPropagation();
+    panel.hidden = true;
+  });
   header.append(heading, close);
 
   const title = document.createElement('p');
@@ -91,7 +90,7 @@
   status.className = 'status';
   status.setAttribute('role', 'status');
   panel.append(header, title, actions, status);
-  shadow.append(launcher, panel);
+  shadow.append(panel);
   (document.body || document.documentElement).appendChild(host);
 
   function readClips() {
@@ -181,9 +180,17 @@
     }
   }
 
-  launcher.addEventListener('click', () => {
+  // Ouverture depuis la barre d'Orbit (clic sur l'extension) : Orbit envoie
+  // 'orbit:ctx-action' — le même protocole DOM que le menu contextuel — avec
+  // l'identifiant déclaré dans `orbit.launcher` du manifeste. Plus de bouton
+  // flottant : à plusieurs extensions, ils s'empilaient en bas à droite.
+  document.documentElement.addEventListener('orbit:ctx-action', (e) => {
+    if (e.detail?.id !== 'webClipper') return;
     panel.hidden = !panel.hidden;
-    if (!panel.hidden) report('');
+    if (!panel.hidden) {
+      report('');
+      panel.focus({ preventScroll: true });
+    }
   });
   selectedButton.addEventListener('click', () => capture(true));
   pageButton.addEventListener('click', () => capture(false));

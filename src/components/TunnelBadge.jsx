@@ -1,16 +1,18 @@
 import { useEffect, useState } from 'react';
-import { Lock, Shield } from 'lucide-react';
+import { Globe2, Lock, Shield } from 'lucide-react';
+import { NETWORK_NAMES } from '../lib/privateNetwork';
 
 // ---------------------------------------------------------------------------
 // Repère visuel d'une app passée par Tor ou un VPN : un liseré de couleur
 // autour de la page et une pastille d'état. Monté UNIQUEMENT pour ces apps —
 // les autres n'en paient rien (ni rendu, ni abonnement).
-//   Tor : violet (la couleur de Tor) · VPN : turquoise
+//   Tor : violet (la couleur de Tor) · VPN : turquoise · VPN Orbit : bleu ciel
 //   État : vert = protégé, orange = connexion, rouge = coupé (rien ne charge)
 // ---------------------------------------------------------------------------
 const LOOK = {
   tor: { color: '125 70 152', label: 'Tor', Icon: Lock },
   vpn: { color: '20 184 166', label: 'VPN', Icon: Shield },
+  orbitvpn: { color: '14 165 233', label: 'VPN Orbit', Icon: Globe2 },
 };
 
 export default function TunnelBadge({ network }) {
@@ -48,7 +50,7 @@ export default function TunnelBadge({ network }) {
       />
       <div
         role="status"
-        title={`Cette app passe par ${network === 'tor' ? 'Tor' : 'le VPN'} — ${state.text}`}
+        title={`Cette app passe par ${NETWORK_NAMES[network] || 'le VPN'} — ${state.text}`}
         className="pointer-events-none absolute bottom-2 left-2 z-10 flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[11px] font-medium text-white opacity-90 shadow-md"
         style={{ background: `rgb(${look.color} / 0.92)` }}
       >

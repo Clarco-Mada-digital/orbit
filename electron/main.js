@@ -16,6 +16,7 @@ import {
   pruneStaleInstallDirs,
   replaceExtensionDir,
 } from './extension-files.js';
+import { createSharedSettingsStore, readOrbitManifestFlags } from './extension-shared-settings.js';
 import { init as initKeepass, setEnabled as keepassSetEnabled, getLogins as keepassGetLogins, associate as keepassAssociate, checkStatus as keepassCheckStatus, collectAllCredentials as keepassCollectAll } from './keepass.js';
 import * as security from './security.js';
 import {
@@ -31,7 +32,7 @@ import { extensionWarnings } from './extension-warnings.js';
 import * as vault from './vault.js';
 import * as secureStore from './secure-store.js';
 import * as privateNet from './private-network.js';
-import { networkOfRule, isOnionUrl } from '../src/lib/privateNetwork.js';
+import { networkOfRule, isOnionUrl, NETWORK_NAMES } from '../src/lib/privateNetwork.js';
 import * as vaultBackup from './vault-backup.js';
 import { readDatabase as readKdbx } from './kdbx.js';
 import * as studio from './studio.js';
@@ -176,6 +177,7 @@ async function triggerPanic() {
   if (panicConfig.stopNetworks) {
     privateNet.stopTor({ byUser: true });
     privateNet.stopVpn({ byUser: true });
+    privateNet.stopOrbitVpn({ byUser: true });
   }
   if (panicConfig.clearTor) {
     for (const ses of torSessions) {
@@ -667,6 +669,12 @@ function setSummonHotkey(accelerator) {
 // pas, il ne couvre pas l'occultation.
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
 app.commandLine.appendSwitch('disable-renderer-backgrounding');
+
+// Chaque app a sa propre session, donc son propre cache HTTP, que Chromium
+// laisse grimper jusqu'à ~1,2 Go. Avec quelques dizaines d'apps installées,
+// cela faisait près de 10 Go de cache. 256 Mo par app gardent les ressources
+// courantes (scripts, polices, images de l'interface) sans ce gaspillage.
+app.commandLine.appendSwitch('disk-cache-size', String(256 * 1024 * 1024));
 
 // Wayland : sans le portail GlobalShortcuts, Chromium IGNORE `globalShortcut`
 // — aucun message, aucun raccourci. C'est ce qui rendait les touches du studio
@@ -3477,6 +3485,121 @@ async function downloadCrxFromWebStore(extensionId, destPath) {
   return false;
 }
 
+// ---------------------------------------------------------------------------
+// Réglages d'extension partagés (voir extension-shared-settings.js)
+// ---------------------------------------------------------------------------
+// Une extension `orbit.sharedSettings` garde les mêmes réglages dans toutes les
+// sessions : apps, liens libres, fenêtres détachées. La copie de
+// référence est celle enregistrée en dernier depuis sa page d'options ; elle
+// est écrite dans chaque session au chargement de l'extension, et aussitôt
+// dans les sessions déjà ouvertes quand elle change.
+let sharedSettingsStore = null;
+function sharedStore() {
+  if (!sharedSettingsStore) {
+    sharedSettingsStore = createSharedSettingsStore(
+      path.join(app.getPath('userData'), 'extension-shared-settings.json')
+    );
+  }
+  return sharedSettingsStore;
+}
+
+// `chrome.storage` n'est accessible que depuis une page de l'extension, dans
+// la session visée : on y ouvre sa page d'options, invisible, le temps
+// d'écrire. Une écriture à la fois, pour ne pas ouvrir des dizaines de
+// fenêtres cachées au démarrage.
+let sharedWriteChain = Promise.resolve();
+function writeExtensionStorage(ses, id, page, data) {
+  const job = sharedWriteChain.then(async () => {
+    const win = new BrowserWindow({
+      show: false,
+      width: 320,
+      height: 240,
+      webPreferences: { session: ses, sandbox: true, contextIsolation: true, nodeIntegration: false },
+    });
+    try {
+      await win.loadURL(`chrome-extension://${id}/${page}`);
+      await win.webContents.executeJavaScript(`new Promise((resolve, reject) => {
+        const data = ${JSON.stringify(data)};
+        chrome.storage.local.get(null, (current) => {
+          const stale = Object.keys(current || {}).filter((k) => !(k in data));
+          const set = () => chrome.storage.local.set(data, () =>
+            chrome.runtime.lastError ? reject(new Error(chrome.runtime.lastError.message)) : resolve(true));
+          if (stale.length) chrome.storage.local.remove(stale, set);
+          else set();
+        });
+      })`);
+    } finally {
+      // `close()` et non `destroy()` : détruire brutalement une page
+      // d'extension faisait échouer (ERR_FAILED) le chargement suivant dans la
+      // même session — constaté sous Electron 45.
+      if (!win.isDestroyed()) {
+        await new Promise((resolve) => {
+          win.once('closed', resolve);
+          win.close();
+        });
+      }
+    }
+  });
+  sharedWriteChain = job.catch(() => {});
+  return job;
+}
+
+async function syncSharedSettings(partition, ext) {
+  try {
+    const flags = readOrbitManifestFlags(ext.path);
+    if (!flags.sharedSettings || !flags.optionsPage) return;
+    const entry = sharedStore().pending(partition, flags.name);
+    if (!entry) return;
+    await writeExtensionStorage(getSessionForPartition(partition), ext.id, flags.optionsPage, entry.data);
+    sharedStore().markPushed(partition, flags.name, entry.rev);
+  } catch (err) {
+    console.error('[orbit] réglages partagés non appliqués à', partition, ':', err.message);
+  }
+}
+
+// Après un enregistrement : toutes les sessions ouvertes où l'extension tourne.
+async function propagateSharedSettings(name) {
+  const targets = enabledExtensions.filter((e) => readOrbitManifestFlags(e.path).name === name);
+  for (const [partition, loaded] of loadedPerPartition) {
+    for (const ext of targets) {
+      if (loaded.has(ext.id)) await syncSharedSettings(partition, ext);
+    }
+  }
+}
+
+// Page d'options ouverte : chaque enregistrement devient la copie de
+// référence. On attend le prochain changement de `chrome.storage.local`, on
+// lit tout, puis on se remet à l'écoute — tant que la fenêtre vit.
+async function followSharedSettings(win, partition, name) {
+  const wc = win.webContents;
+  const snapshot = () => wc.executeJavaScript('new Promise((resolve) => chrome.storage.local.get(null, resolve))');
+  const nextChange = () =>
+    wc.executeJavaScript(`new Promise((resolve) => {
+      const onChange = (_changes, area) => {
+        if (area !== 'local') return;
+        chrome.storage.onChanged.removeListener(onChange);
+        chrome.storage.local.get(null, resolve);
+      };
+      chrome.storage.onChanged.addListener(onChange);
+    })`);
+  try {
+    // Premier passage après cette version : les réglages de la session d'où
+    // l'on ouvre les options deviennent ceux de partout.
+    if (!sharedStore().get(name)) {
+      const current = await snapshot();
+      if (current && Object.keys(current).length && sharedStore().update(name, current, partition)) {
+        propagateSharedSettings(name);
+      }
+    }
+    while (!wc.isDestroyed()) {
+      const data = await nextChange();
+      if (sharedStore().update(name, data, partition)) propagateSharedSettings(name);
+    }
+  } catch {
+    /* fenêtre fermée */
+  }
+}
+
 // Charge les extensions actives dans une session (une seule fois par session)
 async function ensureExtensionsForPartition(partition) {
   if (isPrivatePartition(partition)) return true;
@@ -3509,6 +3632,9 @@ async function ensureExtensionsForPartition(partition) {
         }
       }
       loadedPerPartition.set(partition, loaded);
+      for (const ext of enabledExtensions) {
+        if (loaded.has(ext.id)) await syncSharedSettings(partition, ext);
+      }
     } catch (err) {
       success = false;
       console.error('[orbit] ensureExtensionsForPartition failed:', err.message);
@@ -3653,6 +3779,7 @@ function hardenWebviewAttach(event, webPreferences, params) {
     // Page privée : session en mémoire, rien n'en sort. Pas d'extensions (elles
     // gardent leur propre stockage sur disque et voient les pages visitées),
     // et surtout pas de cookies rendus persistants — c'est l'inverse du but.
+    // (Electron refuse d'ailleurs toute extension dans une session en mémoire.)
     pendingGuestPartition = partition;
     if (isPrivatePartition(partition)) return;
 
@@ -3775,7 +3902,7 @@ function tunnelOf(wc) {
 async function confirmTunnelExit(wc, url, what) {
   const network = tunnelOf(wc);
   if (!network || !privateNet.warningsEnabled()) return 'leave';
-  const name = network === 'tor' ? 'Tor' : 'le VPN';
+  const name = NETWORK_NAMES[network] || 'le VPN';
   let host = '';
   try {
     host = new URL(url).host;
@@ -6328,6 +6455,9 @@ function splitProxyAuth(rules) {
 const partitionRules = new Map(); // partition -> règle brute
 const sessionNetwork = new WeakMap(); // session -> 'tor' | 'vpn'
 const torSessions = new Set();
+// Sessions passées par le VPN Orbit : à vider de leurs connexions quand le
+// pays change, sinon elles garderaient l'ancienne sortie.
+const orbitVpnSessions = new Set();
 
 function sessionFor(partition) {
   return !partition || partition === 'default' ? session.defaultSession : session.fromPartition(partition);
@@ -6341,6 +6471,8 @@ async function applyProxyRule(partition, rules) {
     sessionNetwork.set(ses, network);
     if (network === 'tor') torSessions.add(ses);
     else torSessions.delete(ses);
+    if (network === 'orbitvpn') orbitVpnSessions.add(ses);
+    else orbitVpnSessions.delete(ses);
     privateNet.ensure(network);
     // Moteur pas encore prêt : port fermé → aucune requête ne part en direct.
     await ses.setProxy({ proxyRules: privateNet.resolveRule(rules) });
@@ -6353,6 +6485,7 @@ async function applyProxyRule(partition, rules) {
   partitionRules.delete(partition || 'default');
   sessionNetwork.delete(ses);
   torSessions.delete(ses);
+  orbitVpnSessions.delete(ses);
   return null;
 }
 
@@ -6417,7 +6550,19 @@ ipcMain.handle('privateNet:setBridges', pnet((p) => privateNet.setTorBridges(p))
 ipcMain.handle('privateNet:setAutoStart', pnet((p) => privateNet.setAutoStart(p.on)));
 ipcMain.handle('privateNet:setWarnings', pnet((p) => privateNet.setWarnings(p.on)));
 ipcMain.handle('privateNet:removeVpn', pnet(() => privateNet.removeVpn()));
-ipcMain.handle('privateNet:check', pnet((p) => privateNet.check(p.network === 'vpn' ? 'vpn' : 'tor')));
+ipcMain.handle('privateNet:check', pnet((p) => privateNet.check(['vpn', 'orbitvpn'].includes(p.network) ? p.network : 'tor')));
+// VPN Orbit : durée bornée (0 = jusqu'à l'arrêt), pays validé par le moteur.
+ipcMain.handle('privateNet:startOrbitVpn', pnet((p) => {
+  const minutes = Number(p.minutes);
+  return privateNet.startOrbitVpn({ byUser: true, minutes: Number.isFinite(minutes) && minutes > 0 ? minutes : 0 });
+}));
+ipcMain.handle('privateNet:stopOrbitVpn', pnet(() => privateNet.stopOrbitVpn({ byUser: true })));
+ipcMain.handle('privateNet:setOrbitVpnLocation', pnet(async (p) => {
+  const res = await privateNet.setOrbitVpnLocation(String(p.location || ''));
+  // Nouveau pays : les connexions ouvertes sortiraient encore par l'ancien.
+  if (res.success && res.live) for (const ses of orbitVpnSessions) await ses.closeAllConnections().catch(() => {});
+  return res;
+}));
 ipcMain.handle('privateNet:newIdentity', pnet(async () => {
   const res = await privateNet.newIdentity();
   // Les connexions déjà ouvertes garderaient l'ancien circuit.
@@ -8090,6 +8235,13 @@ ipcMain.handle('extensions:getInfo', (_event, { path: extPath } = {}) => {
         version: manifest.version,
         manifestVersion: manifest.manifest_version || 2,
         hasOptions: Boolean(manifest.options_ui?.page || manifest.options_page),
+        // Extension sans panneau mais avec une action dans la page (Sticky
+        // Notes, Color Picker…) : un clic dans la barre la déclenche, au lieu
+        // d'un bouton flottant posé sur chaque site.
+        launcher:
+          typeof manifest.orbit?.launcher === 'string' && /^[A-Za-z0-9_-]{1,64}$/.test(manifest.orbit.launcher)
+            ? manifest.orbit.launcher
+            : null,
         // Panneau d'action : l'interface principale de la plupart des
         // extensions. S'il existe, un clic sur l'icône doit l'ouvrir plutôt
         // que de proposer un menu « Options / Désactiver ».
@@ -8137,6 +8289,11 @@ ipcMain.handle('extensions:openOptions', async (_event, { id, path: extPath, par
     if (!getAll().some((e) => e.id === id)) {
       await sesExtensions(ses).loadExtension(extPath);
     }
+    // Réglages partagés : la page s'ouvre sur la copie de référence, et ce
+    // qu'on y enregistre vaut ensuite pour toutes les sessions.
+    const flags = readOrbitManifestFlags(extPath);
+    const sharedPartition = partition || 'default';
+    if (flags.sharedSettings) await syncSharedSettings(sharedPartition, { id, path: extPath });
 
     const win = new BrowserWindow({
       width: 900,
@@ -8162,6 +8319,7 @@ ipcMain.handle('extensions:openOptions', async (_event, { id, path: extPath, par
     });
 
     await win.loadURL(`chrome-extension://${id}/${optionsPage}`);
+    if (flags.sharedSettings) followSharedSettings(win, sharedPartition, flags.name);
     return { success: true };
   } catch (err) {
     console.error("[orbit] ouverture page d'options échouée:", err);
@@ -8814,6 +8972,71 @@ ipcMain.handle(
 ipcMain.handle('phone:showReceived', (_e, { file } = {}) => {
   if (typeof file === 'string' && path.isAbsolute(file) && fs.existsSync(file)) shell.showItemInFolder(file);
   return { success: true };
+});
+
+// Téléphone → ordinateur, sans passer par « Enregistrer sous » : ouvrir un
+// fichier avec l'application par défaut de l'ordinateur, ou le glisser vers
+// le bureau / un dossier. Une copie locale est faite au préalable (voir
+// phone.pullToCache) ; un fichier ouvert puis modifié est renvoyé au téléphone
+// à chaque enregistrement.
+function phoneEntryArg(e) {
+  return {
+    path: typeof e?.path === 'string' ? e.path : '',
+    size: Number(e?.size) || 0,
+    mtime: Number(e?.mtime) || 0,
+  };
+}
+
+handleFromUi('phone:openFile', async (event, { serial, entry } = {}) => {
+  try {
+    const phone = await loadPhone();
+    const arg = phoneEntryArg(entry);
+    const r = await phone.pullToCache({ serial, ...arg });
+    if (!r.success) return r;
+    const sender = event.sender;
+    phone.watchForWriteBack({ serial, remote: arg.path, local: r.local }, (info) => {
+      if (!sender.isDestroyed()) sender.send('phone:file-synced', info);
+    });
+    const err = await shell.openPath(r.local);
+    return err ? { success: false, error: err } : { success: true };
+  } catch (err) {
+    return { success: false, error: String(err?.message || err) };
+  }
+});
+
+// Préparation anticipée (appui sur un fichier) : le glisser part plus vite.
+handleFromUi('phone:prefetch', async (_e, { serial, entry } = {}) => {
+  try {
+    const phone = await loadPhone();
+    await phone.pullToCache({ serial, ...phoneEntryArg(entry) });
+  } catch {
+    /* simple anticipation */
+  }
+  return { success: true };
+});
+
+// Glisser vers l'ordinateur : `startDrag` exige des fichiers locaux. La copie
+// peut prendre un instant ; si l'utilisateur a relâché entre-temps
+// (phone:cancelDrag), on ne démarre rien.
+const phoneDragCancelled = new Set();
+ipcMain.on('phone:cancelDrag', (event, { token } = {}) => {
+  if (fromOrbitUi(event) && typeof token === 'string') phoneDragCancelled.add(token);
+});
+handleFromUi('phone:startDrag', async (event, { serial, entries, token } = {}) => {
+  try {
+    const phone = await loadPhone();
+    const list = (Array.isArray(entries) ? entries : []).slice(0, 100).map(phoneEntryArg);
+    const results = await Promise.all(list.map((e) => phone.pullToCache({ serial, ...e })));
+    const files = results.filter((r) => r.success).map((r) => r.local);
+    if (phoneDragCancelled.delete(token)) return { success: false, cancelled: true };
+    if (!files.length) return { success: false, error: results.find((r) => r.error)?.error || 'récupération impossible' };
+    let icon = await app.getFileIcon(files[0], { size: 'normal' }).catch(() => null);
+    if (!icon || icon.isEmpty()) icon = nativeImage.createFromPath(trayIconPath());
+    event.sender.startDrag({ file: files[0], files, icon });
+    return { success: true, count: files.length, failed: results.length - files.length };
+  } catch (err) {
+    return { success: false, error: String(err?.message || err) };
+  }
 });
 
 // --- Widgets du bureau ------------------------------------------------------
@@ -9930,6 +10153,7 @@ app.on('will-quit', () => {
   }
   try {
     phoneRuntime?.cleanup?.();
+    phoneRuntime?.stopAllWriteBacks?.();
   } catch {
     /* la fenêtre miroir est déjà fermée */
   }  // Bases ouvertes : on ferme proprement. Les connexions jetables n'ont

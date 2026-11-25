@@ -1,16 +1,16 @@
 {
   "version": 1,
-  "generatedAt": "2026-11-24T12:41:54.078Z",
+  "generatedAt": "2026-11-25T09:05:50.883Z",
   "extensions": [
     {
       "file": "color-picker.zip",
       "name": "Color Picker",
-      "version": "1.1.0",
-      "description": "Pipette de couleur intégrée : bouton 🎨 flottant, survolez pour voir la couleur, cliquez pour copier (Alt+C). Ne touche pas au menu contextuel.",
+      "version": "1.2.0",
+      "description": "Pipette de couleur intégrée : clic sur l'extension dans la barre d'Orbit (ou Alt+C), survolez pour voir la couleur, cliquez pour copier. Ne touche pas au menu contextuel.",
       "nativeApp": null,
-      "minOrbitVersion": null,
-      "size": 28592,
-      "sha256": "674e77b9650eed3245ea540f253eff7a0fb4238a0b11f8f6a384edda3e2f39f4"
+      "minOrbitVersion": "1.21.5",
+      "size": 28206,
+      "sha256": "8ad7c063634ad2d68947680f88188c0a616a671c69c0c394f5aa37242898c5f7"
     },
     {
       "file": "fake-data-filler-orbit.zip",
@@ -25,12 +25,12 @@
     {
       "file": "mouse-scroll.zip",
       "name": "Souris & Défilement",
-      "version": "1.1.1",
+      "version": "1.2.0",
       "description": "Défilement lissé et réglable (vitesse, sens, par site), défilement automatique au clic du milieu, et une palette de présentation (Alt+Maj+D) : pointeur laser, stylo, surligneur, flèche, couleurs, épaisseurs, spot lumineux, halo de clic. 100% local, configurable (⚙️).",
       "nativeApp": null,
       "minOrbitVersion": null,
-      "size": 29886,
-      "sha256": "dece6284d07fc8df10d57b6bab3e5439440f0cf36587f6e838604d2b95697dcf"
+      "size": 29903,
+      "sha256": "2f4dc57d4ec10c2f845b1e4692d644f12a4a3105a416d5d60c152d0fb246a926"
     },
     {
       "file": "orbit-api.zip",
@@ -75,42 +75,42 @@
     {
       "file": "qr-code-generator.zip",
       "name": "QR Code Generator",
-      "version": "1.0.0",
-      "description": "Génère un QR code de la page ou de tout texte/lien : bouton flottant ou Alt+Q. 100% local (aucune requête réseau), personnalisable (⚙️).",
+      "version": "1.1.0",
+      "description": "Génère un QR code de la page ou de tout texte/lien : clic sur l'extension dans la barre d'Orbit, menu contextuel ou Alt+Q. 100% local (aucune requête réseau), personnalisable (⚙️).",
       "nativeApp": null,
-      "minOrbitVersion": null,
-      "size": 17521,
-      "sha256": "09d23e0a7a43dd3f6b8b799ccd1676a7b80364271352fb606a2cd38f60e9b56b"
+      "minOrbitVersion": "1.21.5",
+      "size": 17220,
+      "sha256": "2a780d5e4efe505189dea792e4ef6589256cc73579bb463c090de59a6b6104a1"
     },
     {
       "file": "sticky-notes.zip",
       "name": "Sticky Notes",
-      "version": "1.0.0",
-      "description": "Notes collantes par site : le bouton 📝 ouvre un bloc-notes attaché au domaine courant. Les notes se rouvrent automatiquement à chaque visite. Aucune donnée ne quitte la machine.",
+      "version": "1.1.0",
+      "description": "Notes collantes par site : un clic sur l'extension dans la barre d'Orbit (ou Alt+N) ouvre un bloc-notes attaché au domaine courant. Les notes se rouvrent automatiquement à chaque visite. Aucune donnée ne quitte la machine.",
       "nativeApp": null,
-      "minOrbitVersion": null,
-      "size": 14267,
-      "sha256": "af639c71be3b67cce093d0881668752c8de60f4ed0e17cace6fdbdad30377d0b"
+      "minOrbitVersion": "1.21.5",
+      "size": 14138,
+      "sha256": "7e4296fa200c5f69563897960f8459d14e55de6b5d769636422a74df62b77030"
     },
     {
       "file": "text-snippets.zip",
       "name": "Text Snippets",
-      "version": "1.3.1",
+      "version": "1.4.0",
       "description": "Abréviations extensibles : tapez ;email, ;addr, ;sig… puis Tab dans un champ. Champs de mot de passe exclus, réglages conservés lors des mises à jour. Configurable (⚙️).",
       "nativeApp": null,
       "minOrbitVersion": null,
-      "size": 15643,
-      "sha256": "2e9e4901fd7e3aa807c6a8b03c5f2062a238b5a65711f97f445f338db14465b6"
+      "size": 15666,
+      "sha256": "5601a7b78ecc022253a7f049a2a4838b3a02e02a54f12e9fb5388bd58dd35b3d"
     },
     {
       "file": "web-clipper.zip",
       "name": "Web Clipper",
-      "version": "1.0.0",
-      "description": "Capture localement une sélection ou le contenu principal d’une page, puis retrouvez et exportez vos captures en Markdown.",
+      "version": "1.1.0",
+      "description": "Capture localement une sélection ou le contenu principal d’une page (clic sur l'extension dans la barre d'Orbit), puis retrouvez et exportez vos captures en Markdown.",
       "nativeApp": null,
-      "minOrbitVersion": null,
-      "size": 6687,
-      "sha256": "e4c967adce9b36f16e36534062efa7ae6e69a1b5f1087fe0667e715188251dc7"
+      "minOrbitVersion": "1.21.5",
+      "size": 7035,
+      "sha256": "89417fd7e1ef436a1b76acfb141aa26f3a869fe9e8e4a1adaa3ba80e25434c5f"
     }
   ]
 }

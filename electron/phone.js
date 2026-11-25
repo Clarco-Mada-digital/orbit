@@ -1871,6 +1871,14 @@ export async function listPhoneDir({ serial, path: dir = PHONE_FS_ROOT } = {}) {
   return { success: true, path: target, entries: parsePhoneListing(listing, target) };
 }
 
+// Nom sûr pour tous les systèmes (Windows refuse : \\ / : * ? " < > |).
+function localSafeName(remote) {
+  return (
+    [...path.posix.basename(remote)].map((ch) => (ch.charCodeAt(0) < 32 || '\\/:*?"<>|'.includes(ch) ? '_' : ch)).join('') ||
+    'fichier'
+  );
+}
+
 // `adb pull` : le chemin distant est un ARGUMENT d'adb (aucun shell), validé
 // quand même. Un dossier est copié avec son contenu. Les noms existants ne
 // sont pas écrasés : « nom (2).ext ».
@@ -1882,10 +1890,7 @@ export async function pullFromPhone({ serial, paths, dest } = {}) {
   const received = [];
   const failed = [];
   for (const remote of list) {
-    // Nom sûr pour tous les systèmes (Windows refuse : \\ / : * ? " < > |).
-    const base =
-      [...path.posix.basename(remote)].map((ch) => (ch.charCodeAt(0) < 32 || '\\/:*?"<>|'.includes(ch) ? '_' : ch)).join('') ||
-      'fichier';
+    const base = localSafeName(remote);
     let local = path.join(dest, base);
     for (let i = 2; fs.existsSync(local) && i < 1000; i++) {
       const ext = path.extname(base);
@@ -1902,4 +1907,99 @@ export async function pullFromPhone({ serial, paths, dest } = {}) {
     failed,
     error: failed.length ? `Non récupéré${failed.length > 1 ? 's' : ''} : ${failed.slice(0, 5).join(', ')}` : undefined,
   };
+}
+
+
+// --- Fichiers du téléphone ouverts ou glissés sur l'ordinateur ----------------
+//
+// Ouvrir un fichier du téléphone ou le glisser vers le bureau demande une
+// copie locale : elle est rangée dans un dossier temporaire propre à Orbit,
+// une copie par (appareil, chemin, taille, date). Un même fichier ouvert puis
+// glissé n'est donc récupéré qu'une fois.
+
+const openedDir = () => path.join(app.getPath('temp'), 'orbit-phone-files');
+const cachePulls = new Map();
+let openedDirCleaned = false;
+
+export function pullToCache({ serial, path: remote, size = 0, mtime = 0 } = {}) {
+  if (!serial || !phoneFsPathValid(remote)) return Promise.resolve({ success: false, error: 'chemin non autorisé' });
+  // Les copies d'une session précédente ne sont plus suivies : on repart propre.
+  if (!openedDirCleaned) {
+    openedDirCleaned = true;
+    try {
+      fs.rmSync(openedDir(), { recursive: true, force: true });
+    } catch {
+      /* fichier encore ouvert ailleurs : sans gravité */
+    }
+  }
+  const key = `${serial}\0${remote}\0${size}\0${mtime}`;
+  if (!cachePulls.has(key)) {
+    const job = (async () => {
+      const dir = path.join(openedDir(), crypto.createHash('sha1').update(key).digest('hex').slice(0, 16));
+      const local = path.join(dir, localSafeName(remote));
+      if (fs.existsSync(local)) return { success: true, local };
+      fs.mkdirSync(dir, { recursive: true });
+      const out = await adb(serial, ['pull', '-a', remote, local], { timeout: 60 * 60 * 1000 });
+      const text = `${out.stdout}${out.stderr}`;
+      if (out.ok && fs.existsSync(local) && !/error|failed|does not exist|permission denied/i.test(text)) {
+        return { success: true, local };
+      }
+      fs.rmSync(dir, { recursive: true, force: true });
+      cachePulls.delete(key);
+      return { success: false, error: (out.stderr || 'récupération impossible').trim().slice(0, 200) };
+    })();
+    cachePulls.set(key, job);
+  }
+  return cachePulls.get(key);
+}
+
+// Modifier un fichier ouvert depuis le téléphone : à chaque enregistrement,
+// la copie locale est renvoyée à sa place sur le téléphone. `watchFile`
+// (scrutation du chemin) plutôt que `watch` : les éditeurs qui enregistrent
+// par « fichier temporaire + renommage » (LibreOffice, GIMP…) sont suivis.
+const writeBacks = new Map();
+const MAX_WRITE_BACKS = 50;
+
+export function watchForWriteBack({ serial, remote, local }, onSynced) {
+  if (!serial || !phoneFsPathValid(remote) || !local || writeBacks.has(local)) return;
+  if (writeBacks.size >= MAX_WRITE_BACKS) stopWriteBack(writeBacks.keys().next().value);
+  let stat;
+  try {
+    stat = fs.statSync(local);
+  } catch {
+    return;
+  }
+  if (!stat.isFile()) return;
+  const entry = { mtimeMs: stat.mtimeMs, timer: null };
+  writeBacks.set(local, entry);
+  fs.watchFile(local, { interval: 2000 }, (cur) => {
+    // Fichier supprimé ou renommé le temps d'un enregistrement : mtime 0.
+    if (!cur.mtimeMs || cur.mtimeMs === entry.mtimeMs) return;
+    entry.mtimeMs = cur.mtimeMs;
+    clearTimeout(entry.timer);
+    // Laisse l'éditeur finir d'écrire avant d'envoyer.
+    entry.timer = setTimeout(async () => {
+      const out = await adb(serial, ['push', local, remote], { timeout: 10 * 60 * 1000 });
+      const text = `${out.stdout}${out.stderr}`;
+      const ok = out.ok && !/error|failed|no such file|permission denied/i.test(text);
+      onSynced?.({
+        remote,
+        name: path.posix.basename(remote),
+        success: ok,
+        ...(ok ? {} : { error: (out.stderr || 'envoi impossible').trim().slice(0, 200) }),
+      });
+    }, 1500);
+  });
+}
+
+function stopWriteBack(local) {
+  const entry = writeBacks.get(local);
+  if (!entry) return;
+  clearTimeout(entry.timer);
+  fs.unwatchFile(local);
+  writeBacks.delete(local);
+}
+
+export function stopAllWriteBacks() {
+  for (const local of [...writeBacks.keys()]) stopWriteBack(local);
 }

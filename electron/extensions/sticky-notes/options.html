@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <title>Sticky Notes — Options</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 24px;
+      background: #0b0e14;
+      color: #f3f4f6;
+      font-family: system-ui, -apple-system, sans-serif;
+      font-size: 14px;
+    }
+    h1 { font-size: 18px; margin: 0 0 4px; }
+    .sub { color: #9ca3af; font-size: 13px; margin-bottom: 20px; }
+    .card {
+      background: #111827;
+      border: 1px solid #374151;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 16px;
+      max-width: 640px;
+    }
+    label { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; color: #d1d5db; }
+    input[type="range"] { flex: 1; }
+    input[type="number"] {
+      background: #1f2937;
+      border: 1px solid #374151;
+      color: #f3f4f6;
+      border-radius: 8px;
+      padding: 6px 10px;
+      width: 90px;
+      font-size: 13px;
+    }
+    .btn {
+      border: none;
+      border-radius: 8px;
+      padding: 8px 14px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      background: #f59e0b;
+      color: #111;
+    }
+    .btn.ghost { background: transparent; border: 1px solid #374151; color: #9ca3af; }
+    .btn.danger { background: transparent; border: 1px solid #7f1d1d; color: #f87171; }
+    .saved { color: #10b981; font-size: 13px; margin-left: 10px; display: none; }
+    h2 { font-size: 14px; margin: 0 0 10px; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    td { padding: 6px 8px; border-bottom: 1px solid #1f2937; }
+    td.chars { color: #9ca3af; width: 90px; }
+    td.actions { width: 120px; text-align: right; }
+    .hint { color: #6b7280; font-size: 12px; margin-top: 6px; }
+    code { background: #1f2937; padding: 1px 5px; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <h1>📝 Sticky Notes</h1>
+  <p class="sub">Un bloc-notes par site (bouton 📝 ou <code>Alt+N</code>). Les notes restent sur votre machine.</p>
+
+  <div class="card">
+    <h2>Apparence</h2>
+    <label>Opacité <input type="range" id="opacity" min="0.5" max="1" step="0.05" /> <span id="opacityVal"></span></label>
+    <label>Largeur <input type="number" id="width" min="220" max="600" step="10" /> px</label>
+    <label>Hauteur <input type="number" id="height" min="160" max="700" step="10" /> px</label>
+    <label>Taille du texte <input type="number" id="fontSize" min="10" max="20" /> px</label>
+    <label><input type="checkbox" id="autoOpen" /> Rouvrir automatiquement la note au retour sur un site</label>
+    <button class="btn" id="save">Enregistrer</button>
+    <span class="saved" id="saved">✓ Enregistré</span>
+  </div>
+
+  <div class="card">
+    <h2>Vos notes</h2>
+    <table id="notesTable"></table>
+    <p class="hint">Les notes sont classées par domaine. « Ouvrir » visite le site concerné n'est pas nécessaire — la note s'affiche via le bouton 📝 sur ce site.</p>
+    <div style="margin-top: 10px; display: flex; gap: 8px;">
+      <button class="btn ghost" id="export">Exporter (JSON)</button>
+      <button class="btn danger" id="clearAll">Tout effacer</button>
+    </div>
+  </div>
+
+  <script src="options.js"></script>
+</body>
+</html>

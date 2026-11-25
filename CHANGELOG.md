@@ -8,6 +8,41 @@ Format : une section `## [X.Y.Z] — AAAA-MM-JJ` par version, puis des
 sous-sections `### Ajouté` / `### Modifié` / `### Corrigé` / `### Sécurité`.
 La plus récente en premier.
 
+## [1.21.5] — 2026-11-25
+
+### Ajouté
+- **VPN Orbit** : un VPN gratuit, sans compte ni fichier, activable en un clic
+  pour tout Orbit (ou par app : Modifier l'app → Réseau). Choix du **pays de
+  sortie** parmi 14 (Allemagne, France, Pays-Bas, États-Unis, Suisse…) ou
+  **Auto** (sorties les plus rapides) ; le pays change **à chaud**, sans
+  reconnexion. Durée au choix (15 min, 30 min, 1 h ou jusqu'à l'arrêt) : à
+  l'expiration, Orbit retrouve sa connexion d'avant. « Vérifier » affiche
+  l'adresse et le pays vus par les sites. Repose sur une instance Tor dédiée
+  (le réglage Tor des apps n'est pas touché) ; Orbit rappelle qu'un vrai
+  fournisseur VPN reste préférable pour un usage régulier. Module **VPN
+  Orbit** disponible au choix pour la barre (Personnaliser → En-tête).
+- **Téléphone → ordinateur, suite** : glisser un fichier (ou la sélection) de
+  l'onglet Fichiers vers le bureau ou un dossier ; **double-clic pour ouvrir**
+  un fichier du téléphone avec l'application de l'ordinateur — et ses
+  modifications enregistrées repartent sur le téléphone.
+
+### Modifié
+- **Réglages d'extensions partagés** : Text Snippets (1.4.0), Sticky Notes,
+  QR Code et Souris & Défilement gardent les mêmes réglages dans toutes les
+  apps, les liens libres et les fenêtres détachées (avant : un jeu de réglages
+  par app).
+- **Plus de boutons flottants empilés en bas à droite** : Web Clipper, Sticky
+  Notes, Color Picker et QR Code s'ouvrent d'un clic gauche sur l'extension
+  dans la barre (le bouton flottant de QR Code reste en option). Chaque
+  fenêtre se ferme sur place : bouton ✕ et touche Échap pour Sticky Notes et
+  Web Clipper, bandeau « Quitter » pendant la pipette de Color Picker. Ces
+  versions demandent Orbit 1.21.5.
+- Cache web de chaque app plafonné à 256 Mo (jusqu'à ~1,2 Go auparavant).
+
+### Corrigé
+- Jusqu'à 14 Go de copies inutiles des modèles de l'assistant (laissées par
+  les versions d'avant le 3 novembre) sont supprimées au démarrage.
+
 ## [1.21.4] — 2026-11-24
 
 ### Ajouté

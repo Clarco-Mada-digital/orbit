@@ -15,6 +15,12 @@ electron/extensions/*
 !electron/extensions/web-clipper/**
 !electron/extensions/mouse-scroll/
 !electron/extensions/mouse-scroll/**
+!electron/extensions/sticky-notes/
+!electron/extensions/sticky-notes/**
+!electron/extensions/color-picker/
+!electron/extensions/color-picker/**
+!electron/extensions/qr-code-generator/
+!electron/extensions/qr-code-generator/**
 extensions-src/*
 
 # Extensions distribuables (ZIPs) — dossier dédié, suivi en git

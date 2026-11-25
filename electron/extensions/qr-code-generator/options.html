@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8" />
+  <title>QR Code Generator — Options</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 24px;
+      background: #0b0e14;
+      color: #f3f4f6;
+      font-family: system-ui, -apple-system, sans-serif;
+      font-size: 14px;
+    }
+    h1 { font-size: 18px; margin: 0 0 4px; }
+    .sub { color: #9ca3af; font-size: 13px; margin-bottom: 20px; }
+    .card {
+      background: #111827;
+      border: 1px solid #374151;
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 16px;
+      max-width: 640px;
+    }
+    h2 { font-size: 14px; margin: 0 0 10px; }
+    label { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; color: #d1d5db; }
+    input[type="number"] {
+      background: #1f2937;
+      border: 1px solid #374151;
+      color: #f3f4f6;
+      border-radius: 8px;
+      padding: 6px 10px;
+      width: 90px;
+      font-size: 13px;
+    }
+    input[type="color"] {
+      width: 44px;
+      height: 30px;
+      border: 1px solid #374151;
+      border-radius: 6px;
+      background: #1f2937;
+      padding: 2px;
+      cursor: pointer;
+    }
+    .btn {
+      border: none;
+      border-radius: 8px;
+      padding: 8px 14px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      background: #0ea5e9;
+      color: #fff;
+    }
+    .saved { color: #10b981; font-size: 13px; margin-left: 10px; display: none; }
+    .hint { color: #6b7280; font-size: 12px; margin-top: 6px; }
+    code { background: #1f2937; padding: 1px 5px; border-radius: 4px; }
+  </style>
+</head>
+<body>
+  <h1>⊞ QR Code Generator</h1>
+  <p class="sub">QR codes 100 % locaux : <code>Alt+Q</code>, bouton ⊞, ou clic droit → « QR code de la page ».</p>
+
+  <div class="card">
+    <h2>Apparence du QR</h2>
+    <label><input type="checkbox" id="showFab" /> Afficher aussi un bouton flottant ⊞ sur les pages (sinon : barre d’Orbit ou Alt+Q)</label>
+    <label>Échelle (px/module) <input type="number" id="scale" min="4" max="16" step="1" /></label>
+    <label>Couleur sombre <input type="color" id="dark" /></label>
+    <label>Couleur claire <input type="color" id="light" /></label>
+    <button class="btn" id="save">Enregistrer</button>
+    <span class="saved" id="saved">✓ Enregistré</span>
+    <p class="hint">Astuce : pour une lisibilité maximale, gardez un fort contraste (sombre sur clair). Certains lecteurs n'aiment pas les QR inversés (clair sur sombre).</p>
+  </div>
+
+  <script src="options.js"></script>
+</body>
+</html>

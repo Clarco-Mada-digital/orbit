@@ -1,13 +1,14 @@
-import { Globe, Lock, Shield } from 'lucide-react';
-import { NETWORK_RULES, networkOfRule } from '../lib/privateNetwork';
+import { Globe, Globe2, Lock, Shield } from 'lucide-react';
+import { NETWORK_RULES, NETWORK_NAMES, networkOfRule } from '../lib/privateNetwork';
 
 // Choix du réseau d'une app, d'un profil ou de tout Orbit : connexion
-// normale, Tor, VPN intégré, ou proxy personnalisé (champ libre).
+// normale, Tor, VPN intégré, VPN Orbit (sans compte) ou proxy personnalisé.
 // `value` est la règle de proxy brute ('' | 'orbit:tor' | 'orbit:vpn' | URL).
 const OPTIONS = [
   { id: 'none', label: 'Normale', icon: Globe },
   { id: 'tor', label: 'Tor', icon: Lock },
   { id: 'vpn', label: 'VPN', icon: Shield },
+  { id: 'orbitvpn', label: 'VPN Orbit', icon: Globe2 },
   { id: 'custom', label: 'Proxy…', icon: null },
 ];
 
@@ -18,6 +19,7 @@ export default function NetworkChoice({ value, onChange, inheritLabel }) {
     if (id === 'none') onChange('');
     else if (id === 'tor') onChange(NETWORK_RULES.tor);
     else if (id === 'vpn') onChange(NETWORK_RULES.vpn);
+    else if (id === 'orbitvpn') onChange(NETWORK_RULES.orbitvpn);
     else if (current !== 'custom') onChange('socks5://');
   };
   return (
@@ -49,9 +51,9 @@ export default function NetworkChoice({ value, onChange, inheritLabel }) {
           autoFocus
         />
       ) : null}
-      {current === 'tor' || current === 'vpn' ? (
+      {current === 'tor' || current === 'vpn' || current === 'orbitvpn' ? (
         <p className="mt-1.5 text-[11px] text-text-muted">
-          Réglages → Confidentialité → Réseau privé. Tant que {current === 'tor' ? 'Tor' : 'le VPN'} n’est pas connecté, ces pages ne
+          Réglages → Confidentialité → Réseau privé. Tant que {NETWORK_NAMES[current]} n’est pas connecté, ces pages ne
           chargent pas : rien ne part en direct.
         </p>
       ) : null}
