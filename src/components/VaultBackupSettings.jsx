@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Archive, FolderOpen, Loader2, Play, RefreshCw, ShieldAlert } from 'lucide-react';
+import { Archive, ArchiveRestore, FolderOpen, Loader2, Play, RefreshCw, ShieldAlert } from 'lucide-react';
 import { useT } from '../lib/i18n';
 
 // ---------------------------------------------------------------------------
@@ -14,7 +14,7 @@ const api = () => window.electronAPI?.vault;
 
 const FREQUENCIES = [6, 12, 24, 24 * 7];
 
-export default function VaultBackupSettings() {
+export default function VaultBackupSettings({ restoreTarget = null, onRestore = null }) {
   const t = useT();
   const [state, setState] = useState(null);
   const [passphrase, setPassphrase] = useState('');
@@ -262,6 +262,24 @@ export default function VaultBackupSettings() {
           <RefreshCw size={14} /> {t('vb.refresh')}
         </button>
       </div>
+
+      {/* Restauration : on la cherche ici, à côté des sauvegardes. */}
+      {onRestore ? (
+        <div className="border-t border-border pt-3 space-y-2">
+          <div className="flex items-center gap-2">
+            <ArchiveRestore size={16} className="text-accent-primary" />
+            <h5 className="text-sm font-semibold">{t('vb.restore.title')}</h5>
+          </div>
+          <p className="text-xs text-text-muted">
+            {restoreTarget ? t('vb.restore.into', { name: restoreTarget }) : t('vb.restore.needOpen')}
+          </p>
+          {restoreTarget ? (
+            <button onClick={onRestore} className="btn btn-secondary btn-sm">
+              <ArchiveRestore size={14} /> {t('vb.restore.action', { name: restoreTarget })}
+            </button>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   );
 }

@@ -299,7 +299,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Lecture vocale (moteur système / Piper hors ligne)
   tts: {
     state: () => ipcRenderer.invoke('tts:state'),
-    setPrefs: (engine, voiceId) => ipcRenderer.invoke('tts:setPrefs', { engine, voiceId }),
+    setPrefs: (engine, voiceId, pages) => ipcRenderer.invoke('tts:setPrefs', { engine, voiceId, pages }),
     installEngine: () => ipcRenderer.invoke('tts:installEngine'),
     installVoice: (id) => ipcRenderer.invoke('tts:installVoice', { id }),
     removeVoice: (id) => ipcRenderer.invoke('tts:removeVoice', { id }),
@@ -572,6 +572,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   panic: {
     configure: (cfg) => ipcRenderer.invoke('panic:configure', cfg),
     trigger: () => ipcRenderer.invoke('panic:trigger'),
+    onTriggered: (callback) => {
+      const listener = (_e, info) => callback(info || {});
+      ipcRenderer.on('panic:triggered', listener);
+      return () => ipcRenderer.removeListener('panic:triggered', listener);
+    },
   },
   // Réseau privé intégré (Tor / VPN WireGuard)
   privateNet: {

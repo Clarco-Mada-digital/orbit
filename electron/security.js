@@ -182,6 +182,22 @@ export function lockProfile(profileId) {
   return { success: true };
 }
 
+// Mode panique : referme d'un coup tous les profils protégés par un code.
+// Renvoie le nombre de profils effectivement refermés.
+export function lockAllProfiles() {
+  let count = 0;
+  for (const id of Object.keys(data.profileLocks)) {
+    if (unlocked.profiles.delete(id)) count += 1;
+  }
+  return count;
+}
+
+// Un verrou (Orbit ou profil) sera-t-il demandé au retour ?
+export function hasPendingLock() {
+  if (data.appLock && !unlocked.app) return true;
+  return Object.keys(data.profileLocks).some((id) => !unlocked.profiles.has(id));
+}
+
 // Nettoyage si un profil est supprimé
 export function dropProfile(profileId) {
   delete data.profileLocks[profileId];

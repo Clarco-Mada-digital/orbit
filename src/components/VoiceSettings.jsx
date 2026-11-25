@@ -75,7 +75,7 @@ export default function VoiceSettings() {
       <label className="card flex items-start gap-3 cursor-pointer">
         <input
           type="radio"
-          checked={cfg.engine !== 'piper'}
+          checked={cfg.engine !== 'piper' && cfg.engine !== 'mms-tts'}
           onChange={() => setEngine('system')}
           className="mt-1"
         />
@@ -232,6 +232,20 @@ export default function VoiceSettings() {
       </div>
 
       {error && <div className="text-sm text-error">{error}</div>}
+
+      {/* Voix d'Orbit pour la synthèse vocale des sites */}
+      <label className="card flex items-start gap-3 cursor-pointer">
+        <input
+          type="checkbox"
+          checked={cfg.pages !== false}
+          onChange={(e) => updateSettings({ tts: { ...cfg, pages: e.target.checked } })}
+          className="mt-1"
+        />
+        <div className="flex-1">
+          <div className="font-medium">{t('vs.pages')}</div>
+          <div className="text-sm text-text-muted mt-0.5">{t('vs.pagesDesc')}</div>
+        </div>
+      </label>
 
       <div className="flex gap-2">
         <button onClick={() => api()?.preview?.()} className="btn btn-secondary btn-sm">

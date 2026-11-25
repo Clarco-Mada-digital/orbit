@@ -6,11 +6,21 @@ import { useStore } from '../stores/useStore';
 // Réglages → Sécurité → Mode panique.
 //
 // Un raccourci global qui protège tout de suite : fenêtres cachées (même de
-// la barre des tâches), son coupé, coffres fermés, Orbit verrouillé. On
-// revient par le raccourci d'invocation ou l'icône de la zone de notification.
+// la barre des tâches), vidéos en pause et incrustations fermées, micro et
+// caméra coupés, notifications bloquées, coffres fermés, Orbit et profils
+// verrouillés, navigation privée fermée. On revient par le raccourci
+// d'invocation ou l'icône de la zone de notification.
 // ---------------------------------------------------------------------------
 
-const DEFAULTS = { enabled: true, accelerator: 'CommandOrControl+Alt+H', lock: true, stopNetworks: false, clearTor: false };
+const DEFAULTS = {
+  enabled: true,
+  accelerator: 'CommandOrControl+Alt+H',
+  lock: true,
+  stopNetworks: false,
+  clearTor: false,
+  closePrivate: true,
+  clearClipboard: false,
+};
 const mac = () => window.electronAPI?.platform === 'darwin';
 
 const pretty = (accel) =>
@@ -58,13 +68,17 @@ export default function PanicSettings() {
   const [recording, setRecording] = useState(false);
   const [status, setStatus] = useState(null);
   const [lockOn, setLockOn] = useState(null);
+  const [profileLocks, setProfileLocks] = useState(0);
 
   const set = (patch) => updateSettings({ panic: { ...panic, ...patch } });
 
   useEffect(() => {
     window.electronAPI?.security
       ?.getState?.()
-      .then((st) => setLockOn(Boolean(st?.appLockEnabled)))
+      .then((st) => {
+        setLockOn(Boolean(st?.appLockEnabled));
+        setProfileLocks(st?.lockedProfileIds?.length || 0);
+      })
       .catch(() => {});
   }, []);
 
@@ -89,7 +103,8 @@ export default function PanicSettings() {
       </div>
       <p className="text-sm text-text-muted">
         Un raccourci qui protège tout de suite, même quand Orbit n’est pas au premier plan : toutes ses fenêtres disparaissent
-        (barre des tâches comprise), le son est coupé, les coffres se ferment et Orbit se verrouille. Pour revenir : raccourci
+        (barre des tâches comprise), les vidéos s’arrêtent et leurs incrustations se ferment, le micro, la caméra et le partage
+        d’écran sont coupés, plus aucune notification ne s’affiche, et les coffres se ferment. Pour revenir : raccourci
         d’invocation ou icône de la zone de notification.
       </p>
 
@@ -126,15 +141,37 @@ export default function PanicSettings() {
           </div>
           {status && !status.registered ? <p className="text-xs text-red-500">{status.error || 'Raccourci indisponible.'}</p> : null}
 
+          {lockOn === false && profileLocks === 0 ? (
+            <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-2 text-xs text-amber-600 dark:text-amber-400">
+              Aucun code de verrouillage n’est défini : au retour, tout réapparaît sans rien demander. Définissez un code ci-dessus
+              (pour Orbit ou pour un profil) pour que la panique protège vraiment.
+            </p>
+          ) : null}
           <Toggle
-            label="Verrouiller Orbit"
-            hint={lockOn === false ? 'Aucun code défini : définissez un code de verrouillage ci-dessus pour que ce choix serve.' : 'Le code sera demandé au retour.'}
+            label="Verrouiller Orbit et les profils protégés"
+            hint={
+              lockOn === false && profileLocks === 0
+                ? 'Aucun code défini : ce choix ne sert qu’une fois un code défini.'
+                : 'Le code sera demandé au retour ; les pages des profils verrouillés sont fermées.'
+            }
             checked={panic.lock}
             onChange={(v) => set({ lock: v })}
           />
           <Toggle
-            label="Arrêter Tor et le VPN"
-            hint="Coupe les tunnels (les apps qui en dépendent ne chargent plus rien)."
+            label="Fermer la navigation privée"
+            hint="Les pages et fenêtres privées sont fermées et leurs données effacées."
+            checked={panic.closePrivate}
+            onChange={(v) => set({ closePrivate: v })}
+          />
+          <Toggle
+            label="Vider le presse-papiers"
+            hint="Utile si vous venez de copier un mot de passe."
+            checked={panic.clearClipboard}
+            onChange={(v) => set({ clearClipboard: v })}
+          />
+          <Toggle
+            label="Arrêter Tor et les VPN"
+            hint="Coupe Tor, le VPN et le VPN Orbit (les apps qui en dépendent ne chargent plus rien)."
             checked={panic.stopNetworks}
             onChange={(v) => set({ stopNetworks: v })}
           />

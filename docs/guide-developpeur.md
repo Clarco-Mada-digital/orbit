@@ -217,10 +217,39 @@ du document restent lisibles avant de remplacer le PDF distribué.
 - Ne pas activer automatiquement une extension simplement parce qu’elle est
   fournie dans le dépôt.
 
+- Réseaux privés (Tor, VPN, VPN Orbit) : toujours *fail-closed*. Tant que le
+  tunnel n'est pas prêt, la page ne charge pas, rien ne part en direct.
+- Toute valeur qui finit dans un fichier de configuration ou une commande
+  (torrc, port de contrôle, adb) passe par une liste blanche testée.
+- Le mode panique doit couvrir tout ce qui s'affiche ou capte : fenêtres,
+  incrustations vidéo, notifications, micro/caméra, navigation privée, et les
+  fenêtres hors d'Orbit qu'il a lancées (scrcpy). Une nouvelle fenêtre ou une
+  nouvelle source de notification doit y être raccordée.
+- Ce qu'une page embarquée peut demander au processus principal (voix,
+  téléchargement…) est vérifié côté principal (`fromOrbitUi`, bornes de
+  taille) et, comme dans Chrome, exige une interaction de l'utilisateur.
+
 Les fuses et leurs compromis sont décrits dans
 [`electron-fuses.md`](./electron-fuses.md).
 
-## 10. Références du dépôt
+## 10. Performance
+
+- Rien ne se charge ni ne se télécharge tant que l'utilisateur ne s'en sert
+  pas : modules lourds en `import()` à l'usage (Piper, MMS, téléphone, magasin
+  d'extensions), apps montées seulement une fois ouvertes, moteurs (Tor, VPN
+  Orbit) démarrés à la demande.
+- Pas de travail en arrière-plan sans raison : pas de sondage régulier quand
+  un événement existe, minuteurs `unref()`.
+- Disque : le cache HTTP est plafonné (`disk-cache-size`) ; tout cache qu'on
+  ajoute doit avoir une borne et un nettoyage.
+- Preloads posés dans les pages : le moins de travail possible, et jamais
+  d'appel synchrone dans les iframes (page principale seulement).
+- Un fichier chargé d'un seul tenant (sauvegardes, archives) doit rester sous
+  la limite des chaînes V8 (~512 Mo) : budget explicite et refus propre.
+- Mesurer avant d'affirmer : temps de démarrage d'un moteur, taille d'un
+  export, poids d'un dossier du profil.
+
+## 11. Références du dépôt
 
 - [README](../README.md)
 - [Changelog](../CHANGELOG.md)

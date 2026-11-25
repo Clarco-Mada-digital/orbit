@@ -1352,7 +1352,7 @@ export default function PasswordVault() {
 
           {/* Restauration d'une archive chiffrée */}
           {restoring && (
-            <div className="card space-y-3">
+            <div id="vault-restore-panel" className="card space-y-3">
               <div>
                 <h4 className="font-semibold text-sm">{t('pv.restoreArchive')}</h4>
                 <p className="text-xs text-text-muted mt-1">{t('pv.restoreArchiveHint')}</p>
@@ -1496,7 +1496,17 @@ export default function PasswordVault() {
           endroits différents ce qu'Orbit propose dans les pages. */}
       <CredentialSource />
 
-      <VaultBackupSettings />
+      {/* « Restaurer » depuis la section Sauvegarde : c'est là qu'on la cherche.
+          La restauration fusionne l'archive dans le coffre OUVERT. */}
+      <VaultBackupSettings
+        restoreTarget={active?.unlocked ? active.name : null}
+        onRestore={() => {
+          setRestoring(true);
+          requestAnimationFrame(() =>
+            document.getElementById('vault-restore-panel')?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+          );
+        }}
+      />
 
       {toast && (
         <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[10002] px-4 py-2 rounded-lg bg-bg-elevated border border-border shadow-lg text-sm">

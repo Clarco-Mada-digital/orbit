@@ -39,16 +39,68 @@ const SKIP_DIRS = new Set([
   'CacheStorage',
   'Crashpad',
   'crashpad',
+  'DawnWebGPUCache',
+  // Scripts des service workers : le site les retélécharge au besoin.
+  'ScriptCache',
+  // Statistiques et données jetables de Chromium.
+  'VideoDecodeStats',
+  'WebrtcVideoStats',
+  'blob_storage',
+  'shared_proto_db',
+  'Shared Dictionary',
 ]);
 
 // Fichiers de verrouillage de leveldb : caducs par nature, jamais utiles
 // ailleurs (et leur présence sans le reste du jeu nuit).
 const SKIP_FILES = new Set(['LOCK', 'LOCK.tmp']);
+// Bases publicitaires et statistiques de Chromium (et leurs journaux) : rien
+// de ce qu'on veut retrouver sur un autre ordinateur.
+const SKIP_FILE_PREFIXES = [
+  'Trust Tokens',
+  'InterestGroups',
+  'PrivateAggregation',
+  'DIPS',
+  'declarative_performance_observer',
+  'SharedStorage',
+];
 
 // Garde-fous : une sauvegarde reste un FICHIER qu'on charge en mémoire d'un
 // seul tenant. Au-delà, on refuse proprement plutôt que de tuer le processus.
 export const MAX_BACKUP_FILES = 50000;
 export const MAX_BACKUP_BYTES = 768 * 1024 * 1024;
+// Plafond de ce qu'on ENCODE (base64) : le fichier de sauvegarde est une seule
+// chaîne JSON, et V8 refuse toute chaîne au-delà d'environ 512 Mo (« Invalid
+// string length »). Chiffré, le contenu est encore réencodé en base64 (×4/3) :
+// 320 Mo ici donnent ~430 Mo au pire, sous la limite.
+export const MAX_ENCODED_BYTES = 320 * 1024 * 1024;
+
+// Les grosses données locales des sites (IndexedDB, système de fichiers) :
+// sauvegardées si la place le permet, en commençant par les plus petites, et
+// TOUJOURS par magasin entier (une base leveldb à moitié copiée est corrompue).
+const HEAVY_DIRS = new Set(['IndexedDB', 'File System']);
+
+function heavyGroupOf(rel) {
+  const parts = rel.split('/');
+  const i = parts.findIndex((p) => HEAVY_DIRS.has(p));
+  if (i < 0) return null;
+  // Partitions/<partition>/IndexedDB/<magasin>/…
+  return parts.slice(0, Math.min(parts.length - 1, i + 2)).join('/');
+}
+
+function describeGroup(group) {
+  const parts = group.split('/');
+  let partition = parts[1] || '';
+  try {
+    partition = decodeURIComponent(partition);
+  } catch {
+    /* nom brut */
+  }
+  const store = parts[3] || parts[2] || '';
+  const m = /^(https?)_(.+?)_\d+\.indexeddb/.exec(store);
+  return { partition, site: m ? m[2] : store };
+}
+
+const encodedLength = (n) => Math.ceil(n / 3) * 4;
 
 // Relève récursive des fichiers (les dossiers ignorés ne sont pas parcourus).
 function collect(root, rel, out) {
@@ -66,6 +118,7 @@ function collect(root, rel, out) {
       collect(abs, relPath, out);
     } else if (item.isFile()) {
       if (SKIP_FILES.has(item.name)) continue;
+      if (SKIP_FILE_PREFIXES.some((prefix) => item.name.startsWith(prefix))) continue;
       out.push({ abs, rel: relPath });
     }
   }
@@ -89,37 +142,101 @@ function assertSafeEntry(entry) {
   }
 }
 
+function encodeEntry(rel, raw) {
+  // gzip n'est utile que s'il réduit réellement (les fichiers déjà
+  // compressés ne gagnent rien — on garde alors l'octet d'origine).
+  const gz = zlib.gzipSync(raw, { level: 6 });
+  if (gz.length < raw.length) return { path: rel, gz: true, data: gz.toString('base64') };
+  return { path: rel, data: raw.toString('base64') };
+}
+
 // Collecte les fichiers de session + trousseaux, compressés (gzip) et encodés
 // en base64 pour tenir dans le JSON de sauvegarde.
-export function collectBackupFiles(userDataDir) {
+//
+// L'essentiel (cookies, stockages locaux, trousseaux…) passe d'abord et doit
+// tenir en entier. Les grosses données des sites (IndexedDB) suivent, des
+// plus petites aux plus grosses, tant qu'il reste de la place ; celles qui
+// ne tiennent pas sont listées dans `skipped` (le site les recrée, mais il
+// peut redemander une connexion).
+export function collectBackup(userDataDir, { maxEncoded = MAX_ENCODED_BYTES } = {}) {
   const found = [];
   for (const rootName of BACKUP_ROOTS) {
     collect(path.join(userDataDir, rootName), rootName, found);
   }
-  const entries = [];
-  let total = 0;
-  for (const { abs, rel } of found) {
-    let raw;
+  if (found.length > MAX_BACKUP_FILES) throw new Error('tooBig');
+
+  const essentials = [];
+  const groups = new Map(); // magasin → { files, size }
+  for (const file of found) {
+    let size = 0;
     try {
-      raw = fs.readFileSync(abs);
+      size = fs.statSync(file.abs).size;
     } catch {
-      continue; // fichier verrouillé au moment de l'export : sans lui
+      continue;
     }
-    if (!raw.length) continue;
-    total += raw.length;
-    if (total > MAX_BACKUP_BYTES || entries.length >= MAX_BACKUP_FILES) {
-      throw new Error('tooBig');
+    if (!size) continue;
+    const group = heavyGroupOf(file.rel);
+    if (!group) {
+      essentials.push(file);
+      continue;
     }
-    // gzip n'est utile que s'il réduit réellement (les fichiers déjà
-    // compressés ne gagnent rien — on garde alors l'octet d'origine).
-    const gz = zlib.gzipSync(raw, { level: 6 });
-    if (gz.length < raw.length) {
-      entries.push({ path: rel, gz: true, data: gz.toString('base64') });
-    } else {
-      entries.push({ path: rel, data: raw.toString('base64') });
-    }
+    const g = groups.get(group) || { files: [], size: 0 };
+    g.files.push(file);
+    g.size += size;
+    groups.set(group, g);
   }
-  return entries;
+
+  const entries = [];
+  let encoded = 0;
+  let raw = 0;
+  const read = (abs) => {
+    try {
+      return fs.readFileSync(abs);
+    } catch {
+      return null; // fichier verrouillé au moment de l'export : sans lui
+    }
+  };
+
+  for (const { abs, rel } of essentials) {
+    const data = read(abs);
+    if (!data?.length) continue;
+    raw += data.length;
+    const entry = encodeEntry(rel, data);
+    encoded += entry.data.length;
+    if (raw > MAX_BACKUP_BYTES || encoded > maxEncoded) throw new Error('tooBig');
+    entries.push(entry);
+  }
+
+  const skipped = [];
+  const ordered = [...groups.entries()].sort((a, b) => a[1].size - b[1].size);
+  for (const [group, { files, size }] of ordered) {
+    // Estimation prudente (sans gzip) avant de lire quoi que ce soit.
+    if (encoded + encodedLength(size) > maxEncoded) {
+      skipped.push({ ...describeGroup(group), bytes: size });
+      continue;
+    }
+    const batch = [];
+    let batchEncoded = 0;
+    for (const { abs, rel } of files) {
+      const data = read(abs);
+      if (!data?.length) continue;
+      const entry = encodeEntry(rel, data);
+      batchEncoded += entry.data.length;
+      batch.push(entry);
+    }
+    if (encoded + batchEncoded > maxEncoded) {
+      skipped.push({ ...describeGroup(group), bytes: size });
+      continue;
+    }
+    encoded += batchEncoded;
+    entries.push(...batch);
+  }
+  return { entries, skipped, encodedBytes: encoded };
+}
+
+// Forme historique : les entrées seules.
+export function collectBackupFiles(userDataDir, options) {
+  return collectBackup(userDataDir, options).entries;
 }
 
 // Écrit les entrées dans le dossier utilisateur (utilisé AU DÉMARRAGE, avant

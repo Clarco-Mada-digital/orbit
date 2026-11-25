@@ -321,7 +321,11 @@ export default function BackupSettings() {
         mainFiles: mainFilesFor(exportSel),
       });
       if (res?.success) {
-        setMsg({ type: 'ok', text: res.encrypted ? t('bk.savedEnc') : t('bk.saved') });
+        const saved = res.encrypted ? t('bk.savedEnc') : t('bk.saved');
+        // Sauvegarde complète trop lourde pour un seul fichier : les plus
+        // grosses données locales des sites ont été laissées de côté.
+        const sites = [...new Set((res.skipped || []).map((s) => s.site))].slice(0, 8);
+        setMsg({ type: 'ok', text: sites.length ? `${saved} ${t('bk.skippedHeavy', { sites: sites.join(', ') })}` : saved });
         setExportPwd('');
       } else if (!res?.canceled) {
         setMsg({ type: 'err', text: res?.error || t('bk.exportFail') });

@@ -646,6 +646,19 @@ const [editUrlFor, setEditUrlFor] = useState(null); // { id, url } — boîte «
   useEffect(() => {
     window.electronAPI?.panic?.configure?.({ ...(settings.panic || {}) });
   }, [settings.panic]);
+  // Panique déclenchée : les pages privées sont fermées pour de bon (session
+  // jetable purgée), pas seulement cachées avec la fenêtre.
+  useEffect(() => {
+    const off = window.electronAPI?.panic?.onTriggered?.((info) => {
+      if (info?.closePrivate === false) return;
+      const { flyPages, closeFlyPage } = useStore.getState();
+      for (const page of flyPages) if (page.private) closeFlyPage(page.id);
+      if (isPrivatePeek(linkPeekRef.current)) setLinkPeek(null);
+    });
+    return () => {
+      if (typeof off === 'function') off();
+    };
+  }, []);
 
   useEffect(() => {
     const off = window.electronAPI?.onMediaKey?.((action) => {
@@ -1084,7 +1097,7 @@ const [editUrlFor, setEditUrlFor] = useState(null); // { id, url } — boîte «
   // Moteur vocal choisi, poussé au processus principal.
   useEffect(() => {
     const cfg = settings.tts || {};
-    window.electronAPI?.tts?.setPrefs?.(cfg.engine || 'system', cfg.voiceId || '');
+    window.electronAPI?.tts?.setPrefs?.(cfg.engine || 'system', cfg.voiceId || '', cfg.pages !== false);
   }, [settings.tts]);
 
   // Proxy/VPN : applique à chaque partition (app/profil) son proxy effectif.
@@ -1325,6 +1338,7 @@ const openEditUrl = useCallback((id) => {
         url: app.url,
         partition: appPartition(app, sharedSession),
         title: app.name,
+        profileId: app.profileId,
         zoom: app.zoom,
       });
       return;

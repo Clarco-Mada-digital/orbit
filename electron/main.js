@@ -6,7 +6,7 @@ import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { extractOpenables } from './open-links.js';
 import * as defaultApp from './default-app.js';
-import { collectBackupFiles, stageRestore, applyPendingRestore } from './backup-files.js';
+import { collectBackup, stageRestore, applyPendingRestore } from './backup-files.js';
 import { unpackCrx } from './crx.js';
 import {
   copyExtensionStorage,
@@ -68,7 +68,11 @@ import { selectCookiesForUrl } from '../src/lib/mediaCookies.js';
 import { getDomain } from 'tldts-experimental';
 import { fileURLToPath } from 'url';
 import { installWebviewIpcGuard } from './ipc-guard.js';
-import { copyImage as copyImageToClipboard, copyText as copyTextToClipboard } from './clipboard-compat.js';
+import {
+  clear as clearClipboardText,
+  copyImage as copyImageToClipboard,
+  copyText as copyTextToClipboard,
+} from './clipboard-compat.js';
 
 // Avant tout `ipcMain.handle/on` : les pages embarquées n'atteignent que
 // leurs propres canaux (voir ipc-guard.js).
@@ -129,20 +133,106 @@ function showMainWindow() {
 
 // --- Mode panique ------------------------------------------------------------
 // Un raccourci GLOBAL (il marche même quand Orbit n'a pas le focus) qui, en
-// un instant : cache toutes les fenêtres d'Orbit (et de la barre des tâches),
-// coupe le son de toutes les pages, ferme les coffres, et verrouille Orbit si
-// un code est défini. En option : arrête Tor et le VPN, efface les données des
-// apps passées par Tor. On revient par le raccourci d'invocation ou l'icône de
-// la zone de notification — derrière l'écran de verrouillage.
-const PANIC_DEFAULTS = { enabled: true, accelerator: 'CommandOrControl+Alt+H', lock: true, stopNetworks: false, clearTor: false };
+// un instant :
+//   • cache toutes les fenêtres d'Orbit (barre des tâches comprise), et les
+//     fenêtres d'apps du téléphone (scrcpy, hors d'Orbit) sont fermées ;
+//   • met en pause vidéos et sons, et ferme les vidéos en incrustation
+//     (picture-in-picture : une fenêtre de Chromium, pas d'Orbit, que cacher
+//     les fenêtres ne touchait pas) ;
+//   • coupe micro, caméra et partage d'écran : couper le SON ne coupe que ce
+//     qu'on entend, pas ce qu'on transmet ;
+//   • bloque les notifications tant qu'elle dure (aperçu d'un message, nom
+//     d'un appelant…) ;
+//   • ferme les coffres, verrouille Orbit ET tous les profils protégés par un
+//     code (leurs pages sont démontées) ;
+//   • ferme la navigation privée (option, active par défaut).
+// En option : arrête Tor et les VPN, efface les données des apps passées par
+// Tor, vide le presse-papiers.
+//
+// On revient par le raccourci d'invocation ou l'icône de la zone de
+// notification — derrière l'écran de verrouillage. Les fenêtres secondaires
+// ne réapparaissent qu'une fois le verrou concerné levé : une app détachée
+// d'un profil verrouillé reste cachée tant que ce profil l'est.
+const PANIC_DEFAULTS = {
+  enabled: true,
+  accelerator: 'CommandOrControl+Alt+H',
+  lock: true,
+  stopNetworks: false,
+  clearTor: false,
+  closePrivate: true,
+  clearClipboard: false,
+};
+const PANIC_FLAGS = ['enabled', 'lock', 'stopNetworks', 'clearTor', 'closePrivate', 'clearClipboard'];
 let panicConfig = { ...PANIC_DEFAULTS };
 let panicAccel = null;
 let panicActive = false;
 const panicMuted = new Set(); // webContents coupés PAR la panique (à rétablir)
 const panicHidden = new Set(); // fenêtres secondaires cachées par la panique
+// Pages auxquelles micro, caméra ou capture d'écran ont été accordés : la
+// panique les recharge, ce qui coupe net toute capture en cours (on ne peut
+// pas atteindre les flux d'une page depuis l'extérieur).
+const captureContents = new Set();
+// Fenêtres détachées : profil et nature (privée ou non), pour savoir quoi
+// fermer et quand ré-afficher.
+const detachedInfo = new Map(); // id de fenêtre → { profileId, private }
+
+// Exécuté dans chaque cadre de chaque page : pause des médias, sortie du
+// picture-in-picture (vidéo et « document » PiP).
+const PANIC_PAGE_SCRIPT = `(() => {
+  try { document.querySelectorAll('video, audio').forEach((m) => { try { m.pause(); } catch {} }); } catch {}
+  try { if (document.pictureInPictureElement) document.exitPictureInPicture().catch(() => {}); } catch {}
+  try { window.documentPictureInPicture && window.documentPictureInPicture.window && window.documentPictureInPicture.window.close(); } catch {}
+})()`;
+
+function quietPage(wc) {
+  try {
+    for (const frame of wc.mainFrame.framesInSubtree) {
+      frame.executeJavaScript(PANIC_PAGE_SCRIPT).catch(() => {});
+    }
+  } catch {
+    /* page en cours de fermeture */
+  }
+}
+
+// Une fenêtre secondaire peut-elle revenir ? Seulement si Orbit n'est plus
+// verrouillé et, pour une app détachée, si son profil est accessible.
+function panicWindowMayReturn(win) {
+  const st = security.getState();
+  if (st.appLockEnabled && !st.appUnlocked) return false;
+  const info = detachedInfo.get(win.id);
+  if (info?.profileId) {
+    const locked = st.lockedProfileIds.includes(info.profileId);
+    if (locked && !st.unlockedProfileIds.includes(info.profileId)) return false;
+  } else if (!info) {
+    // Autre fenêtre (mini-lecteur, capture épinglée…) : on ne sait pas de
+    // quel profil elle montre le contenu, elle attend qu'aucun verrou ne
+    // soit en attente.
+    if (security.hasPendingLock()) return false;
+  }
+  return true;
+}
+
+function restorePanicWindows() {
+  for (const id of [...panicHidden]) {
+    const win = BrowserWindow.fromId(id);
+    if (!win || win.isDestroyed()) {
+      panicHidden.delete(id);
+      continue;
+    }
+    if (!panicWindowMayReturn(win)) continue;
+    panicHidden.delete(id);
+    try {
+      win.showInactive();
+    } catch {
+      /* fenêtre fermée depuis */
+    }
+  }
+}
 
 async function triggerPanic() {
   panicActive = true;
+  // 1. Tout disparaît de l'écran, d'abord : le reste peut prendre quelques
+  //    millisecondes, l'écran non.
   for (const win of BrowserWindow.getAllWindows()) {
     try {
       if (win.isDestroyed() || !win.isVisible()) continue;
@@ -154,26 +244,61 @@ async function triggerPanic() {
   }
   for (const wc of webContents.getAllWebContents()) {
     try {
-      if (!wc.isDestroyed() && !wc.isAudioMuted()) {
+      if (wc.isDestroyed()) continue;
+      if (!wc.isAudioMuted()) {
         wc.setAudioMuted(true);
         panicMuted.add(wc.id);
       }
+      quietPage(wc);
     } catch {
       /* ignore */
     }
   }
+  try {
+    phoneRuntime?.stopAppSession?.({});
+    phoneRuntime?.stopMirror?.();
+  } catch {
+    /* téléphone absent */
+  }
+
+  // 2. Micro, caméra, partage d'écran : rechargement des pages concernées.
+  for (const id of [...captureContents]) {
+    captureContents.delete(id);
+    const wc = webContents.fromId(id);
+    try {
+      if (wc && !wc.isDestroyed() && !fromOrbitUi({ sender: wc })) wc.reload();
+    } catch {
+      /* page fermée */
+    }
+  }
+
+  // 3. Navigation privée : les fenêtres détachées privées sont fermées (la
+  //    fenêtre principale ferme ses pages privées à la réception du signal).
+  if (panicConfig.closePrivate) {
+    for (const [id, info] of detachedInfo) {
+      if (!info.private) continue;
+      const win = BrowserWindow.fromId(id);
+      panicHidden.delete(id);
+      try {
+        win?.destroy();
+      } catch {
+        /* déjà fermée */
+      }
+    }
+  }
+
+  // 4. Verrous : coffres, Orbit, profils protégés.
   try {
     vault.lockAll();
   } catch {
     /* aucun coffre ouvert */
   }
   if (panicConfig.lock) {
-    const st = security.getState();
-    if (st.appLockEnabled && st.appUnlocked) {
-      security.lockApp();
-      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('orbit:relock');
-    }
+    security.lockApp();
+    security.lockAllProfiles();
   }
+  if (panicConfig.clearClipboard) await clearClipboardText().catch(() => {});
+
   if (panicConfig.stopNetworks) {
     privateNet.stopTor({ byUser: true });
     privateNet.stopVpn({ byUser: true });
@@ -185,7 +310,12 @@ async function triggerPanic() {
       await ses.clearCache().catch(() => {});
     }
   }
-  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('panic:triggered');
+  if (mainWindow && !mainWindow.isDestroyed()) {
+    // Le renderer relit l'état des verrous (démonte les pages des profils
+    // refermés) et ferme ses pages privées.
+    mainWindow.webContents.send('orbit:relock');
+    mainWindow.webContents.send('panic:triggered', { closePrivate: panicConfig.closePrivate });
+  }
 }
 
 function endPanic() {
@@ -199,19 +329,12 @@ function endPanic() {
     }
   }
   panicMuted.clear();
-  for (const id of panicHidden) {
-    try {
-      BrowserWindow.fromId(id)?.showInactive();
-    } catch {
-      /* fenêtre fermée depuis */
-    }
-  }
-  panicHidden.clear();
+  restorePanicWindows();
 }
 
 function configurePanic(cfg = {}) {
   const next = { ...PANIC_DEFAULTS, ...panicConfig };
-  for (const k of ['enabled', 'lock', 'stopNetworks', 'clearTor']) if (typeof cfg[k] === 'boolean') next[k] = cfg[k];
+  for (const k of PANIC_FLAGS) if (typeof cfg[k] === 'boolean') next[k] = cfg[k];
   if (typeof cfg.accelerator === 'string' && cfg.accelerator.length < 60) next.accelerator = cfg.accelerator;
   panicConfig = next;
   try {
@@ -1252,6 +1375,8 @@ function setupHeaderBypass(ses) {
   // Bouton de téléchargement posé sur les vidéos (preload SUPPLÉMENTAIRE, il
   // ne remplace pas celui des identifiants). Même session, même mécanisme.
   attachMediaButton(ses);
+  // speechSynthesis des pages → voix d'Orbit (Réglages → Lecture vocale).
+  attachTtsBridge(ses);
   try {
     // Blocage réseau des pubs/traceurs (no-op si l'adblock est désactivé)
     ses.webRequest.onBeforeRequest((details, callback) => {
@@ -1370,9 +1495,25 @@ function setupPermissions(ses) {
     // Les versions anciennes plaçaient le callback en dernier — on accepte les
     // deux plutôt que de dépendre du numéro de version.
     ses.setPermissionRequestHandler((wc, permission, a, b, c) => {
-      const cb = typeof a === 'function' ? a : typeof c === 'function' ? c : null;
-      if (!cb) return;
+      const rawCb = typeof a === 'function' ? a : typeof c === 'function' ? c : null;
+      if (!rawCb) return;
       const details = b || {};
+      const capture = permission === 'media' || permission === 'display-capture';
+      // Mode panique : ni notification ni capture tant qu'il dure.
+      if (panicActive && (capture || permission === 'notifications')) {
+        rawCb(false);
+        return;
+      }
+      // Une page qui reçoit micro, caméra ou écran est notée : la panique la
+      // rechargera pour couper la capture.
+      const cb = (granted) => {
+        if (granted && capture && wc && !wc.isDestroyed?.() && !captureContents.has(wc.id)) {
+          const id = wc.id;
+          captureContents.add(id);
+          wc.once('destroyed', () => captureContents.delete(id));
+        }
+        rawCb(granted);
+      };
 
       // Capture d'écran et périphériques du STUDIO d'Orbit, et eux seuls.
       //
@@ -1451,6 +1592,8 @@ function setupPermissions(ses) {
 
     // Vérifications synchrones (navigator.permissions.query, Notification.permission…)
     ses.setPermissionCheckHandler((wc, permission, requestingOrigin) => {
+      // Pendant la panique, aucune page ne peut afficher de notification.
+      if (panicActive && permission === 'notifications') return false;
       // Même raison que pour les demandes : sans origine (`file://`),
       // l'interface d'Orbit passait pour un site non identifiable, donc non
       // autorisé. Résultat : `enumerateDevices` ne livrait que des entrées
@@ -1942,7 +2085,7 @@ let translateConfig = { target: 'fr', engine: 'google', url: '', apiKey: '' };
 // Piper n'est chargé QUE si l'utilisateur l'a choisi : `import()` dynamique, à
 // l'usage. Tant qu'on ne s'en sert pas, son code n'est pas lu, aucun processus
 // n'est lancé et rien n'est téléchargé.
-let ttsPrefs = { engine: 'system', voiceId: '' };
+let ttsPrefs = { engine: 'system', voiceId: '', pages: true };
 let piperMod = null; // module chargé paresseusement
 let mmsMod = null; // module MMS-TTS chargé paresseusement
 
@@ -2018,6 +2161,7 @@ async function speakText(wc, text) {
 }
 
 function stopSpeaking() {
+  endPageSpeech('end');
   tts.stop();
   if (piperMod) {
     piperMod.stop();
@@ -2035,6 +2179,129 @@ function speakingNow() {
 
 // Lit tout le texte visible de la page. Le texte est extrait dans la page, la
 // lecture se fait dans le processus principal.
+// --- Voix d'Orbit pour les sites (speechSynthesis) -------------------------
+// Voir electron/tts-bridge-preload.cjs : une page qui appelle
+// speechSynthesis.speak() est lue avec le moteur et la voix choisis dans
+// Réglages → Lecture vocale. Une seule lecture à la fois, pour tout Orbit :
+// une nouvelle phrase (d'une page ou d'Orbit) coupe la précédente.
+let pageSpeech = null; // { frame, id, timer }
+
+function pageVoiceInfo() {
+  const target = (translateConfig.target || 'fr').slice(0, 2);
+  if (ttsPrefs.engine === 'piper' && ttsPrefs.voiceId) {
+    const m = /^([a-z]{2,3})_([A-Z]{2})/.exec(ttsPrefs.voiceId);
+    return { name: `Orbit — ${ttsPrefs.voiceId}`, lang: m ? `${m[1]}-${m[2]}` : target };
+  }
+  if (ttsPrefs.engine === 'mms-tts') return { name: 'Orbit — malgache (MMS)', lang: 'mg-MG' };
+  return { name: 'Orbit — voix du système', lang: target };
+}
+
+function endPageSpeech(type = 'end', only = null) {
+  const cur = pageSpeech;
+  if (!cur || (only && only !== cur)) return;
+  pageSpeech = null;
+  clearTimeout(cur.timer);
+  try {
+    if (!cur.frame.isDestroyed?.()) cur.frame.send('orbit:tts-page', { id: cur.id, type });
+  } catch {
+    /* cadre parti */
+  }
+}
+
+// Fin de lecture des moteurs dont l'audio est joué par l'interface (Piper,
+// MMS) : la synthèse finit AVANT la lecture. On calcule donc la durée réelle
+// à partir du nombre d'échantillons produits.
+function playbackTracker(entry) {
+  let rate = 22050;
+  let samples = 0;
+  let startedAt = 0;
+  return {
+    onStart: ({ sampleRate } = {}) => {
+      rate = sampleRate || rate;
+      startedAt = Date.now();
+      pipeAudioToUi('orbit:tts-start', { sampleRate: rate });
+    },
+    onAudio: (chunk) => {
+      samples += (chunk?.length || 0) / 2;
+      pipeAudioToUi('orbit:tts-audio', chunk);
+    },
+    onEnd: () => {
+      pipeAudioToUi('orbit:tts-end', {});
+      // Rien produit (moteur en échec) : c'est le repli qui conclura.
+      if (pageSpeech !== entry || !samples) return;
+      const left = startedAt + 80 + (samples / rate) * 1000 - Date.now();
+      entry.timer = setTimeout(() => endPageSpeech('end', entry), Math.max(0, left));
+    },
+  };
+}
+
+async function speakForPage(frame, id, text) {
+  stopSpeaking();
+  const entry = { frame, id, timer: null };
+  pageSpeech = entry;
+  try {
+    frame.send('orbit:tts-page', { id, type: 'start' });
+  } catch {
+    /* cadre parti */
+  }
+  try {
+    if (ttsPrefs.engine === 'piper' && ttsPrefs.voiceId) {
+      const res = await (await loadPiper()).speak(text, { voiceId: ttsPrefs.voiceId, ...playbackTracker(entry) });
+      if (res?.success !== false) return;
+    } else if (ttsPrefs.engine === 'mms-tts') {
+      const res = await (await loadMms()).speak(text, playbackTracker(entry));
+      if (res?.success !== false) return;
+    }
+  } catch (err) {
+    console.error('[orbit] voix des pages :', err.message);
+  }
+  if (pageSpeech !== entry) return;
+  // Moteur système (choisi, ou repli si Piper/MMS manque).
+  const res = tts.speak(text, {
+    lang: pageVoiceInfo().lang.slice(0, 2),
+    onEnd: () => endPageSpeech('end', entry),
+  });
+  if (!res.success) endPageSpeech('error', entry);
+}
+
+// Le preload demande, au chargement de chaque page, s'il doit se poser.
+ipcMain.on('tts:pageInfo', (event) => {
+  event.returnValue = fromOrbitUi(event) || !ttsPrefs.pages ? { enabled: false } : { enabled: true, ...pageVoiceInfo() };
+});
+
+ipcMain.on('tts:page', (event, msg = {}) => {
+  // Pages embarquées seulement, et seulement si le réglage est actif.
+  if (fromOrbitUi(event) || !ttsPrefs.pages || panicActive) return;
+  const frame = event.senderFrame;
+  if (!frame) return;
+  if (msg?.op === 'cancel') {
+    if (pageSpeech && pageSpeech.frame === frame) stopSpeaking();
+    return;
+  }
+  if (msg?.op !== 'speak') return;
+  const text = String(msg.text || '').slice(0, 4000).trim();
+  const id = Number(msg.id) || 0;
+  if (!text || !id) return;
+  speakForPage(frame, id, text).catch(() => {});
+});
+
+const ttsBridgeSessions = new WeakSet();
+function attachTtsBridge(ses) {
+  if (!ses || ttsBridgeSessions.has(ses)) return;
+  const filePath = path.join(__dirname, 'tts-bridge-preload.cjs');
+  try {
+    if (typeof ses.registerPreloadScript === 'function') {
+      ses.registerPreloadScript({ type: 'frame', filePath });
+    } else {
+      const existing = ses.getPreloads?.() || [];
+      if (!existing.includes(filePath)) ses.setPreloads([...existing, filePath]);
+    }
+    ttsBridgeSessions.add(ses);
+  } catch (err) {
+    console.error('[orbit] pont de lecture vocale non posé :', err.message);
+  }
+}
+
 async function speakPage(wc) {
   try {
     const text = await wc.executeJavaScript(
@@ -4464,11 +4731,12 @@ function createWindow() {
 // ---------------------------------------------------------------------------
 // Réservé à l'interface : installer Piper télécharge et rend exécutable un
 // binaire, ce n'est pas une action qu'une page embarquée doit pouvoir demander.
-handleFromUi('tts:setPrefs', (_e, { engine, voiceId } = {}) => {
+handleFromUi('tts:setPrefs', (_e, { engine, voiceId, pages } = {}) => {
   const validEngines = ['system', 'piper', 'mms-tts'];
   ttsPrefs = {
     engine: validEngines.includes(engine) ? engine : 'system',
-    voiceId: String(voiceId || ''),
+    voiceId: String(voiceId || '').slice(0, 120),
+    pages: pages !== false,
   };
   return { success: true };
 });
@@ -6025,6 +6293,8 @@ ipcMain.handle('tray:setSummonHotkey', (_e, accelerator) => setSummonHotkey(acce
 // ---------------------------------------------------------------------------
 ipcMain.handle('notifications:show', (_event, { title, body, appId, silent } = {}) => {
   if (!Notification.isSupported()) return { success: false };
+  // Mode panique : rien ne doit s'afficher à l'écran.
+  if (panicActive) return { success: false, suppressed: true };
   try {
     const notif = new Notification({
       title: title || 'Orbit',
@@ -6385,7 +6655,12 @@ ipcMain.handle('translate:setConfig', (_e, cfg = {}) => {
 ipcMain.handle('security:getState', () => security.getState());
 ipcMain.handle('security:setAppLock', (_e, pin) => security.setAppLock(pin));
 ipcMain.handle('security:removeAppLock', (_e, pin) => security.removeAppLock(pin));
-ipcMain.handle('security:unlockApp', (_e, pin) => security.unlockApp(pin));
+ipcMain.handle('security:unlockApp', (_e, pin) => {
+  const res = security.unlockApp(pin);
+  // Fenêtres cachées par la panique : elles reviennent une fois le verrou levé.
+  if (res?.success) restorePanicWindows();
+  return res;
+});
 ipcMain.handle('security:lockApp', () => {
   // Verrouiller Orbit ferme aussi les trousseaux : laisser un coffre ouvert
   // derrière un écran de verrouillage viderait celui-ci de son sens.
@@ -6396,7 +6671,11 @@ ipcMain.handle('security:setProfileLock', (_e, { id, pin } = {}) => security.set
 ipcMain.handle('security:removeProfileLock', (_e, { id, pin } = {}) =>
   security.removeProfileLock(id, pin)
 );
-ipcMain.handle('security:unlockProfile', (_e, { id, pin } = {}) => security.unlockProfile(id, pin));
+ipcMain.handle('security:unlockProfile', (_e, { id, pin } = {}) => {
+  const res = security.unlockProfile(id, pin);
+  if (res?.success) restorePanicWindows();
+  return res;
+});
 ipcMain.handle('security:lockProfile', (_e, id) => security.lockProfile(id));
 ipcMain.handle('security:dropProfile', (_e, id) => security.dropProfile(id));
 
@@ -6777,8 +7056,11 @@ ipcMain.handle('backup:export', async (_e, { data, password, full, mainFiles } =
     // stockages) et les TROUSSEAUX — c'est ce qui retrouve les comptes
     // connectés sur un autre ordinateur. Collecté AVANT le dialogue : une
     // sauvegarde trop volumineuse échoue sans avoir ouvert la fenêtre.
+    let skipped = [];
     if (full) {
-      payload = { ...payload, files: collectBackupFiles(app.getPath('userData')) };
+      const collected = collectBackup(app.getPath('userData'));
+      skipped = collected.skipped;
+      payload = { ...payload, files: collected.entries };
     }
     const res = await dialog.showSaveDialog(mainWindow, {
       title: 'Exporter la configuration Orbit',
@@ -6788,15 +7070,15 @@ ipcMain.handle('backup:export', async (_e, { data, password, full, mainFiles } =
     if (res.canceled || !res.filePath) return { success: false, canceled: true };
     const json = JSON.stringify(payload);
     fs.writeFileSync(res.filePath, password ? encryptBackup(json, password) : json);
-    return { success: true, path: res.filePath, encrypted: Boolean(password) };
+    return { success: true, path: res.filePath, encrypted: Boolean(password), skipped };
   } catch (err) {
     const msg = String(err.message || err);
+    const tooBig = msg === 'tooBig' || err instanceof RangeError;
     return {
       success: false,
-      error:
-        msg === 'tooBig'
-          ? 'Sessions et trousseaux trop volumineux (plus de 750 Mo) : impossible de tout sauvegarder dans un seul fichier.'
-          : msg,
+      error: tooBig
+        ? 'Sessions et trousseaux trop volumineux pour un seul fichier de sauvegarde. Exportez sans « sauvegarde complète », ou videz les données des apps les plus lourdes.'
+        : msg,
     };
   }
 });
@@ -7568,7 +7850,7 @@ function setupPartitionSession(partition) {
 // Ouvrir une app dans une fenêtre DÉTACHÉE (séparée), en réutilisant la même
 // partition → session/connexion partagée avec l'onglet embarqué.
 const detachedWindows = new Map();
-ipcMain.handle('app:openDetached', async (_e, { appId, url, partition, title, zoom } = {}) => {
+ipcMain.handle('app:openDetached', async (_e, { appId, url, partition, title, zoom, profileId } = {}) => {
   if (!url || !/^https?:\/\//.test(url) || !partition) return { success: false };
   setupPartitionSession(partition);
   if (!isPrivatePartition(partition)) {
@@ -7670,7 +7952,17 @@ ipcMain.handle('app:openDetached', async (_e, { appId, url, partition, title, zo
   if (initialZoom !== 1) windowZoomFactors.set(win.webContents.id, initialZoom);
   win.loadURL(url);
   detachedWindows.set(appId, win);
-  win.on('closed', () => detachedWindows.delete(appId));
+  // Pour la panique : profil de l'app (la fenêtre reste cachée tant qu'il est
+  // verrouillé) et nature privée (la fenêtre est fermée).
+  const winId = win.id;
+  detachedInfo.set(winId, {
+    profileId: typeof profileId === 'string' && profileId.length <= 200 ? profileId : null,
+    private: isPrivatePartition(partition),
+  });
+  win.on('closed', () => {
+    detachedWindows.delete(appId);
+    detachedInfo.delete(winId);
+  });
   return { success: true };
 });
 
@@ -8763,7 +9055,8 @@ async function pollPhoneNotifications() {
 // Alerte du bureau : cliquer dessus ouvre Orbit ET l'app concernée.
 function announcePhoneNotification(serial, item) {
   try {
-    if (!Notification.isSupported()) return;
+    // Mode panique : pas d'aperçu de message ni de nom d'appelant à l'écran.
+    if (panicActive || !Notification.isSupported()) return;
     const call = item.category === 'call';
     // Un appel s'annonce par QUI appelle : le titre de la notification Android
     // est souvent générique (« Appel entrant »), l'identité est ailleurs.

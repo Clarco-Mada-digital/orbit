@@ -256,6 +256,10 @@ export const fr = {
   'vb.nextRun': 'Prochaine',
   'vb.never': 'jamais',
   'vb.runNow': 'Sauvegarder maintenant',
+  'vb.restore.title': 'Restaurer une sauvegarde',
+  'vb.restore.into': 'Les entrées de l’archive seront ajoutées au coffre ouvert « {name} » (les doublons sont fusionnés). La phrase de passe des sauvegardes vous sera demandée.',
+  'vb.restore.needOpen': 'Ouvrez d’abord le coffre où restaurer (ou créez-en un nouveau, vide) : l’archive y sera ajoutée.',
+  'vb.restore.action': 'Restaurer dans « {name} »…',
   'vb.refresh': 'Actualiser',
   'vb.ranOk': '{n} trousseau(x) sauvegardé(s), {entries} entrée(s).',
   'vb.lockedSkipped':
@@ -305,6 +309,8 @@ export const fr = {
   'vs.removeVoice': 'Supprimer cette voix',
   'vs.uninstall': 'Désinstaller Piper et toutes ses voix',
   'vs.preview': 'Essayer',
+  'vs.pages': 'Utiliser cette voix pour les sites',
+  'vs.pagesDesc': 'Les sites qui lisent du texte à voix haute (synthèse vocale du navigateur) utilisent la voix choisie ici. Sans cela, ils restent muets dans Orbit. Comme dans Chrome, un site ne peut parler qu’après une action de votre part sur la page.',
   'vs.stop': 'Arrêter',
   'vs.failed': 'Opération impossible.',
   'vs.note':
@@ -555,6 +561,10 @@ export const en = {
   'vb.nextRun': 'Next',
   'vb.never': 'never',
   'vb.runNow': 'Back up now',
+  'vb.restore.title': 'Restore a backup',
+  'vb.restore.into': 'The archive’s entries will be added to the open vault “{name}” (duplicates are merged). You’ll be asked for the backup passphrase.',
+  'vb.restore.needOpen': 'First open the vault to restore into (or create a new, empty one): the archive will be added to it.',
+  'vb.restore.action': 'Restore into “{name}”…',
   'vb.refresh': 'Refresh',
   'vb.ranOk': '{n} vault(s) backed up, {entries} entries.',
   'vb.lockedSkipped':
@@ -604,6 +614,8 @@ export const en = {
   'vs.removeVoice': 'Remove this voice',
   'vs.uninstall': 'Uninstall Piper and all its voices',
   'vs.preview': 'Try it',
+  'vs.pages': 'Use this voice for websites',
+  'vs.pagesDesc': 'Websites that read text aloud (browser speech synthesis) use the voice chosen here. Without it, they stay silent in Orbit. As in Chrome, a site can only speak after you interact with the page.',
   'vs.stop': 'Stop',
   'vs.failed': 'Could not complete.',
   'vs.note':

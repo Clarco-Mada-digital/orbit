@@ -3,10 +3,12 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import crypto from 'node:crypto';
 import zlib from 'node:zlib';
 
 import {
   collectBackupFiles,
+  collectBackup,
   writeBackupFiles,
   stageRestore,
   applyPendingRestore,
@@ -130,4 +132,32 @@ test('garde-fou : au-delà du nombre maximal d’entrées, refus', () => {
 test('sans Partitions ni vaults (premier lancement) : rien à collecter', () => {
   const dir = tempUser();
   assert.deepEqual(collectBackupFiles(dir), []);
+});
+
+test('collectBackup : l’essentiel d’abord, les grosses IndexedDB par magasin entier tant qu’il y a de la place', () => {
+  const dir = tempUser();
+  const part = path.join(dir, 'Partitions', 'persist%3Awork%3Achat');
+  fs.mkdirSync(path.join(part, 'IndexedDB', 'https_small.example_0.indexeddb.leveldb'), { recursive: true });
+  fs.mkdirSync(path.join(part, 'IndexedDB', 'https_big.example_0.indexeddb.leveldb'), { recursive: true });
+  fs.writeFileSync(path.join(part, 'Cookies'), 'cookie');
+  fs.writeFileSync(path.join(part, 'IndexedDB', 'https_small.example_0.indexeddb.leveldb', '000001.ldb'), crypto.randomBytes(2000));
+  for (const n of ['000001.ldb', '000002.ldb']) {
+    fs.writeFileSync(path.join(part, 'IndexedDB', 'https_big.example_0.indexeddb.leveldb', n), crypto.randomBytes(6000));
+  }
+  // Bases publicitaires et caches : jamais sauvegardées.
+  fs.writeFileSync(path.join(part, 'DIPS'), 'x');
+  fs.mkdirSync(path.join(part, 'DawnWebGPUCache'), { recursive: true });
+  fs.writeFileSync(path.join(part, 'DawnWebGPUCache', 'data_0'), 'x');
+
+  const { entries, skipped } = collectBackup(dir, { maxEncoded: 8000 });
+  const paths = entries.map((e) => e.path);
+  assert.ok(paths.some((p) => p.endsWith('/Cookies')));
+  assert.ok(paths.some((p) => p.includes('small.example')));
+  // Le gros magasin ne tient pas : AUCUN de ses fichiers n'est pris.
+  assert.ok(!paths.some((p) => p.includes('big.example')));
+  assert.deepEqual(skipped.map((s) => [s.partition, s.site]), [['persist:work:chat', 'big.example']]);
+  assert.ok(!paths.some((p) => p.includes('DIPS') || p.includes('DawnWebGPUCache')));
+
+  // L'essentiel ne tient pas : refus net.
+  assert.throws(() => collectBackup(dir, { maxEncoded: 4 }), /tooBig/);
 });

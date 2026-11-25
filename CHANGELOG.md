@@ -25,6 +25,14 @@ La plus récente en premier.
   l'onglet Fichiers vers le bureau ou un dossier ; **double-clic pour ouvrir**
   un fichier du téléphone avec l'application de l'ordinateur — et ses
   modifications enregistrées repartent sur le téléphone.
+- **Voix d'Orbit pour les sites** : les sites qui lisent du texte à voix
+  haute (synthèse vocale du navigateur) utilisent désormais le moteur et la
+  voix choisis dans Réglages → Lecture vocale (système, Piper ou malgache).
+  Avant, ils restaient muets dans Orbit. Comme dans Chrome, un site ne parle
+  qu'après une action de l'utilisateur sur la page. Désactivable.
+- **Restaurer une sauvegarde de coffre** depuis la section Sauvegarde du
+  coffre, là où on la cherche (elle n'était accessible que par le menu
+  Importer / Exporter).
 
 ### Modifié
 - **Réglages d'extensions partagés** : Text Snippets (1.4.0), Sticky Notes,
@@ -42,6 +50,27 @@ La plus récente en premier.
 ### Corrigé
 - Jusqu'à 14 Go de copies inutiles des modèles de l'assistant (laissées par
   les versions d'avant le 3 novembre) sont supprimées au démarrage.
+- **Export de la configuration (sauvegarde complète)** : l'erreur « Invalid
+  string length » ne bloque plus l'export. Les caches et les bases
+  publicitaires de Chromium ne sont plus emportés. Les grosses données locales
+  des sites sont incluses tant que le fichier le permet, des plus petites aux
+  plus grosses ; celles qui ne tiennent pas sont nommées après l'export.
+
+### Sécurité
+- **Mode panique renforcé** : il laissait passer plusieurs choses à l'écran.
+  - Les profils protégés par un code sont refermés, et leurs pages fermées.
+  - Les vidéos sont mises en pause et leurs incrustations (picture-in-picture)
+    fermées : avant, seul le son était coupé.
+  - Le micro, la caméra et le partage d'écran sont coupés (la page concernée
+    est rechargée, l'appel est quitté).
+  - Aucune notification ne s'affiche pendant la panique, y compris celles du
+    téléphone.
+  - Les fenêtres d'apps du téléphone sont fermées.
+  - Une app détachée ne réapparaît qu'une fois Orbit, ou son profil,
+    déverrouillé.
+  - Nouvelles options : fermer la navigation privée (activée par défaut) et
+    vider le presse-papiers.
+  - Un avertissement s'affiche quand aucun code n'est défini.
 
 ## [1.21.4] — 2026-11-24
 

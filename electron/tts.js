@@ -98,7 +98,8 @@ export function stop() {
 }
 
 // `lang` : code court ('fr', 'en'…) quand le moteur sait en tenir compte.
-export function speak(text, { lang = 'fr' } = {}) {
+// `onEnd` (facultatif) : appelé quand la voix a fini — ou a été coupée.
+export function speak(text, { lang = 'fr', onEnd } = {}) {
   const content = String(text || '').trim().slice(0, 40000);
   if (!content) return { success: false, error: 'empty' };
 
@@ -112,16 +113,16 @@ export function speak(text, { lang = 'fr' } = {}) {
   if (engine === 'spd-say' && wasActive) {
     pending = setTimeout(() => {
       pending = null;
-      launch(engine, content, lang);
+      launch(engine, content, lang, onEnd);
     }, CANCEL_SETTLE_MS);
     return { success: true, engine };
   }
 
-  return launch(engine, content, lang) ? { success: true, engine } : { success: false, error: 'spawn-failed' };
+  return launch(engine, content, lang, onEnd) ? { success: true, engine } : { success: false, error: 'spawn-failed' };
 }
 
 // Démarre réellement le processus. Renvoie true si le lancement a abouti.
-function launch(engine, content, lang) {
+function launch(engine, content, lang, onEnd) {
   try {
     if (engine === 'say') {
       current = spawn('say', ['-f', '-'], { stdio: ['pipe', 'ignore', 'ignore'] });
@@ -169,6 +170,16 @@ function launch(engine, content, lang) {
   proc.on('exit', () => {
     if (current === proc) current = null;
   });
+  if (typeof onEnd === 'function') {
+    let called = false;
+    const done = () => {
+      if (called) return;
+      called = true;
+      onEnd();
+    };
+    proc.on('exit', done);
+    proc.on('error', done);
+  }
 
   return true;
 }
