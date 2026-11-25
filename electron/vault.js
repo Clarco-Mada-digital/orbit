@@ -360,6 +360,26 @@ export function updateVault(id, { name, icon, color, autoLockMinutes } = {}) {
 
 // Suppression : exige le mot de passe maître. Sans ça, quiconque passe devant
 // l'écran d'Orbit déverrouillé pourrait détruire un trousseau fermé.
+// Mot de passe oublié : le contenu est de toute façon perdu (chiffré, sans
+// porte dérobée). On supprime le FICHIER sans pouvoir le lire. Le contrôle
+// (code d'Orbit ou nom retapé) est fait par main.js avant d'arriver ici.
+export function removeForgotten(id, confirmName) {
+  const header = readHeader(id);
+  if (!header) return { success: false, error: 'not-found' };
+  if (String(confirmName || '').trim() !== String(header.name || '').trim()) {
+    return { success: false, error: 'name-mismatch' };
+  }
+  lock(id);
+  try {
+    fs.unlinkSync(fileFor(id));
+  } catch {
+    return { success: false, error: 'delete-failed' };
+  }
+  forgetMaster(id);
+  invalidateVaultCount();
+  return { success: true };
+}
+
 export function remove(id, password) {
   const header = readHeader(id);
   if (!header) return { success: false, error: 'not-found' };

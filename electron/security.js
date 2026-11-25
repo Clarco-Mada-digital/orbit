@@ -143,6 +143,13 @@ export function lockApp() {
   return { success: true };
 }
 
+// Vérifie le code d'Orbit sans changer l'état (actions sensibles : supprimer
+// un coffre dont on a oublié le mot de passe). Sans code défini : null.
+export function checkAppPin(pin) {
+  if (!data.appLock) return null;
+  return verifyEntry(data.appLock, pin);
+}
+
 // --- Verrou par profil -----------------------------------------------------
 export function setProfileLock(profileId, pin) {
   if (!profileId) return { success: false, error: 'Profil introuvable' };

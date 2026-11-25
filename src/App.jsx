@@ -44,6 +44,9 @@ import HomeDashboard from './components/HomeDashboard';
 import ThemeDecor from './components/ThemeDecor';
 import LinkPeek from './components/LinkPeek';
 import SplitDropOverlay from './components/SplitDropOverlay';
+import SpeakingIndicator from './components/SpeakingIndicator';
+import ReaderView from './components/ReaderView';
+import KeyboardSwitcher from './components/KeyboardSwitcher';
 import { splitForDrop } from './lib/splitDrop';
 
 // Aperçu ouvert depuis une page privée (partition en mémoire, voir lib/session.js).
@@ -67,6 +70,8 @@ import {
   navigateApp,
   getRegisteredWebviews,
   getWebContentsIdFor,
+  getWebview,
+  getAllWebviews,
 } from './lib/webviewRegistry';
 import { logDiagnostic } from './lib/diagnosticsStore';
 import { useT } from './lib/i18n';
@@ -993,6 +998,30 @@ const [editUrlFor, setEditUrlFor] = useState(null); // { id, url } — boîte «
       .catch(() => {});
   }, [extensions, updateExtensions]);
 
+  // Mode lecture (F9, palette, clic droit) : sur l'app active, ou sur la page
+  // désignée par son webContents (clic droit dans un panneau d'écran partagé).
+  const [readerFor, setReaderFor] = useState(null); // { webview }
+  useEffect(() => {
+    const open = (e) => {
+      const wcId = Number(e?.detail?.wcId) || 0;
+      let webview = null;
+      if (wcId) {
+        webview = getAllWebviews().find((wv) => {
+          try {
+            return wv.getWebContentsId() === wcId;
+          } catch {
+            return false;
+          }
+        }) || null;
+      }
+      if (!webview) webview = getWebview(useStore.getState().activeApp);
+      if (!webview) return;
+      setReaderFor((cur) => (cur ? null : { webview }));
+    };
+    window.addEventListener('orbit:reader-open', open);
+    return () => window.removeEventListener('orbit:reader-open', open);
+  }, []);
+
   // Ouverture du studio depuis la palette de commandes.
   useEffect(() => {
     const open = () => setShowStudio(true);
@@ -1097,7 +1126,7 @@ const [editUrlFor, setEditUrlFor] = useState(null); // { id, url } — boîte «
   // Moteur vocal choisi, poussé au processus principal.
   useEffect(() => {
     const cfg = settings.tts || {};
-    window.electronAPI?.tts?.setPrefs?.(cfg.engine || 'system', cfg.voiceId || '', cfg.pages !== false);
+    window.electronAPI?.tts?.setPrefs?.(cfg.engine || 'system', cfg.voiceId || '', cfg.pages !== false, cfg.rate || 1);
   }, [settings.tts]);
 
   // Proxy/VPN : applique à chaque partition (app/profil) son proxy effectif.
@@ -1312,6 +1341,10 @@ const openEditUrl = useCallback((id) => {
       setQuickSwitcherQuery('?');
       return setShowQuickSwitcher(true);
     }
+    if (action === 'reader') {
+      window.dispatchEvent(new Event('orbit:reader-open'));
+      return;
+    }
     if (action === 'downloads') return setShowDownloads((v) => !v);
     if (action === 'vault') return setShowVault((v) => !v);
     // Nouvelle page volante : la boîte d'adresse, vide, sans page à modifier.
@@ -1406,6 +1439,21 @@ const openEditUrl = useCallback((id) => {
     // Profil suivant / précédent, en boucle. Un profil verrouillé reste
     // atteignable : on y arrive sur son écran de déverrouillage, exactement
     // comme en cliquant dessus dans la barre latérale.
+    // Sélecteur au clavier (cartes) : désigne sans ouvrir, valide au
+    // relâchement d'Alt, sur Entrée ou après une courte pause.
+    if (/^switcher-/.test(action)) {
+      window.dispatchEvent(new CustomEvent('orbit:switcher-key', { detail: action.slice('switcher-'.length) }));
+      return;
+    }
+    const useCards = useStore.getState().settings.keyboardSwitcher !== false;
+    if (useCards && (action === 'next-profile' || action === 'prev-profile' || action === 'next-app' || action === 'prev-app')) {
+      window.dispatchEvent(
+        new CustomEvent('orbit:switcher', {
+          detail: { kind: action.endsWith('-profile') ? 'profile' : 'app', step: action.startsWith('next') ? 1 : -1 },
+        })
+      );
+      return;
+    }
     if (action === 'next-profile' || action === 'prev-profile') {
       const { profiles: list, activeProfile: cur, setActiveProfile: setP } = useStore.getState();
       if (list.length < 2) return;
@@ -1973,6 +2021,22 @@ const openEditUrl = useCallback((id) => {
       )}
 
       {/* Overlays — au-dessus des webviews car ils sont dans le DOM */}
+      {readerFor ? (
+        <ReaderView
+          webview={readerFor.webview}
+          onClose={() => setReaderFor(null)}
+          onOpenLink={(href) => {
+            setReaderFor(null);
+            try {
+              readerFor.webview.loadURL(href);
+            } catch {
+              /* page fermée entre-temps */
+            }
+          }}
+        />
+      ) : null}
+      <KeyboardSwitcher />
+      <SpeakingIndicator />
       {showQuickSwitcher && (
         <QuickSwitcher
           initialQuery={quickSwitcherQuery}

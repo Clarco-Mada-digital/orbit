@@ -6,7 +6,15 @@ import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
 import { extractOpenables } from './open-links.js';
 import * as defaultApp from './default-app.js';
-import { collectBackup, stageRestore, applyPendingRestore } from './backup-files.js';
+import {
+  stageRestore,
+  applyPendingRestore,
+  applyPendingStreamRestore,
+  isStreamBackup,
+  pendingStreamRestorePath,
+  readStreamBackup,
+  writeStreamBackup,
+} from './backup-files.js';
 import { unpackCrx } from './crx.js';
 import {
   copyExtensionStorage,
@@ -2085,7 +2093,7 @@ let translateConfig = { target: 'fr', engine: 'google', url: '', apiKey: '' };
 // Piper n'est chargé QUE si l'utilisateur l'a choisi : `import()` dynamique, à
 // l'usage. Tant qu'on ne s'en sert pas, son code n'est pas lu, aucun processus
 // n'est lancé et rien n'est téléchargé.
-let ttsPrefs = { engine: 'system', voiceId: '', pages: true };
+let ttsPrefs = { engine: 'system', voiceId: '', pages: true, rate: 1 };
 let piperMod = null; // module chargé paresseusement
 let mmsMod = null; // module MMS-TTS chargé paresseusement
 
@@ -2108,60 +2116,15 @@ function pipeAudioToUi(channel, payload) {
   }
 }
 
-async function speakWithPiper(text) {
-  const piper = await loadPiper();
-  return piper.speak(text, {
-    voiceId: ttsPrefs.voiceId,
-    onStart: ({ sampleRate }) => pipeAudioToUi('orbit:tts-start', { sampleRate }),
-    onAudio: (chunk) => pipeAudioToUi('orbit:tts-audio', chunk),
-    onEnd: () => pipeAudioToUi('orbit:tts-end', {}),
-  });
-}
-
-async function speakWithMms(text) {
-  const mms = await loadMms();
-  return mms.speak(text, {
-    onStart: ({ sampleRate }) => pipeAudioToUi('orbit:tts-start', { sampleRate }),
-    onAudio: (chunk) => pipeAudioToUi('orbit:tts-audio', chunk),
-    onEnd: () => pipeAudioToUi('orbit:tts-end', {}),
-    onProgress: (p) => mainWindow?.webContents?.send('orbit:tts-progress', p),
-  });
-}
-
+// Lecture d'un texte par Orbit (sélection, page, mode lecture, aperçu).
+// `wc` : la page à prévenir d'un moteur manquant (toast), ou null.
 async function speakText(wc, text) {
-  stopSpeaking();
-  if (ttsPrefs.engine === 'piper' && ttsPrefs.voiceId) {
-    try {
-      const res = await speakWithPiper(text);
-      if (res.success) return res;
-      showPageToast(
-        wc,
-        res.error === 'voice-missing'
-          ? 'Voix Piper introuvable — réinstallez-la dans Réglages → Lecture vocale.'
-          : 'Moteur Piper non installé — Réglages → Lecture vocale.'
-      );
-    } catch (err) {
-      console.error('[orbit] piper indisponible:', err.message);
-    }
-  }
-  if (ttsPrefs.engine === 'mms-tts') {
-    try {
-      const res = await speakWithMms(text);
-      if (res.success) return res;
-      showPageToast(wc, 'Modèle MMS-TTS non installé — Réglages → Lecture vocale.');
-    } catch (err) {
-      console.error('[orbit] mms-tts indisponible:', err.message);
-    }
-  }
-  const res = tts.speak(text, { lang: (translateConfig.target || 'fr').slice(0, 2) });
-  if (!res.success && res.error === 'no-engine') {
-    showPageToast(wc, res.hint || tts.missingEngineHint());
-  }
-  return res;
+  const entry = beginSpeech({ frame: null, id: 0, timer: null });
+  return runSpeech(entry, text, ttsPrefs.rate, wc);
 }
 
 function stopSpeaking() {
-  endPageSpeech('end');
+  endSpeech('end');
   tts.stop();
   if (piperMod) {
     piperMod.stop();
@@ -2184,7 +2147,37 @@ function speakingNow() {
 // speechSynthesis.speak() est lue avec le moteur et la voix choisis dans
 // Réglages → Lecture vocale. Une seule lecture à la fois, pour tout Orbit :
 // une nouvelle phrase (d'une page ou d'Orbit) coupe la précédente.
-let pageSpeech = null; // { frame, id, timer }
+// La lecture EN COURS, quelle qu'en soit la source (Orbit ou une page) :
+// une seule à la fois pour tout Orbit. `frame`/`id` : la page qui l'a
+// demandée (speechSynthesis), à prévenir du début et de la fin.
+let speech = null; // { frame, id, timer }
+
+// L'interface affiche « Lecture en cours · Arrêter » tant que ça parle.
+function emitSpeaking() {
+  pipeAudioToUi('orbit:tts-speaking', { speaking: Boolean(speech) });
+}
+
+function beginSpeech(entry) {
+  stopSpeaking();
+  speech = entry;
+  emitSpeaking();
+  return entry;
+}
+
+function endSpeech(type = 'end', only = null) {
+  const cur = speech;
+  if (!cur || (only && only !== cur)) return;
+  speech = null;
+  clearTimeout(cur.timer);
+  if (cur.frame) {
+    try {
+      if (!cur.frame.isDestroyed?.()) cur.frame.send('orbit:tts-page', { id: cur.id, type });
+    } catch {
+      /* cadre parti */
+    }
+  }
+  emitSpeaking();
+}
 
 function pageVoiceInfo() {
   const target = (translateConfig.target || 'fr').slice(0, 2);
@@ -2194,18 +2187,6 @@ function pageVoiceInfo() {
   }
   if (ttsPrefs.engine === 'mms-tts') return { name: 'Orbit — malgache (MMS)', lang: 'mg-MG' };
   return { name: 'Orbit — voix du système', lang: target };
-}
-
-function endPageSpeech(type = 'end', only = null) {
-  const cur = pageSpeech;
-  if (!cur || (only && only !== cur)) return;
-  pageSpeech = null;
-  clearTimeout(cur.timer);
-  try {
-    if (!cur.frame.isDestroyed?.()) cur.frame.send('orbit:tts-page', { id: cur.id, type });
-  } catch {
-    /* cadre parti */
-  }
 }
 
 // Fin de lecture des moteurs dont l'audio est joué par l'interface (Piper,
@@ -2228,40 +2209,65 @@ function playbackTracker(entry) {
     onEnd: () => {
       pipeAudioToUi('orbit:tts-end', {});
       // Rien produit (moteur en échec) : c'est le repli qui conclura.
-      if (pageSpeech !== entry || !samples) return;
+      if (speech !== entry || !samples) return;
       const left = startedAt + 80 + (samples / rate) * 1000 - Date.now();
-      entry.timer = setTimeout(() => endPageSpeech('end', entry), Math.max(0, left));
+      entry.timer = setTimeout(() => endSpeech('end', entry), Math.max(0, left));
     },
+    onProgress: (p) => mainWindow?.webContents?.send('orbit:tts-progress', p),
   };
 }
 
-async function speakForPage(frame, id, text) {
-  stopSpeaking();
-  const entry = { frame, id, timer: null };
-  pageSpeech = entry;
+// Choix du moteur : Piper ou MMS si choisis et disponibles, sinon le moteur
+// du système (repli).
+async function runSpeech(entry, text, rate, wc = null) {
+  if (ttsPrefs.engine === 'piper' && ttsPrefs.voiceId) {
+    try {
+      const res = await (await loadPiper()).speak(text, { voiceId: ttsPrefs.voiceId, rate, ...playbackTracker(entry) });
+      if (res?.success) return res;
+      if (wc) {
+        showPageToast(
+          wc,
+          res?.error === 'voice-missing'
+            ? 'Voix Piper introuvable — réinstallez-la dans Réglages → Lecture vocale.'
+            : 'Moteur Piper non installé — Réglages → Lecture vocale.'
+        );
+      }
+    } catch (err) {
+      console.error('[orbit] piper indisponible:', err.message);
+    }
+  } else if (ttsPrefs.engine === 'mms-tts') {
+    try {
+      const res = await (await loadMms()).speak(text, playbackTracker(entry));
+      if (res?.success) return res;
+      if (wc) showPageToast(wc, 'Modèle MMS-TTS non installé — Réglages → Lecture vocale.');
+    } catch (err) {
+      console.error('[orbit] mms-tts indisponible:', err.message);
+    }
+  }
+  if (speech !== entry) return { success: false, error: 'interrupted' };
+  const res = tts.speak(text, {
+    rate,
+    lang: pageVoiceInfo().lang.slice(0, 2),
+    onEnd: () => endSpeech('end', entry),
+  });
+  if (!res.success) {
+    if (wc && res.error === 'no-engine') showPageToast(wc, res.hint || tts.missingEngineHint());
+    endSpeech('error', entry);
+  }
+  return res;
+}
+
+// `pageRate` : la vitesse demandée par la page (utterance.rate), appliquée
+// en plus de celle choisie dans Orbit.
+async function speakForPage(frame, id, text, pageRate = 1) {
+  const rate = Math.min(2.5, Math.max(0.5, ttsPrefs.rate * Math.min(2, Math.max(0.5, Number(pageRate) || 1))));
+  const entry = beginSpeech({ frame, id, timer: null });
   try {
     frame.send('orbit:tts-page', { id, type: 'start' });
   } catch {
     /* cadre parti */
   }
-  try {
-    if (ttsPrefs.engine === 'piper' && ttsPrefs.voiceId) {
-      const res = await (await loadPiper()).speak(text, { voiceId: ttsPrefs.voiceId, ...playbackTracker(entry) });
-      if (res?.success !== false) return;
-    } else if (ttsPrefs.engine === 'mms-tts') {
-      const res = await (await loadMms()).speak(text, playbackTracker(entry));
-      if (res?.success !== false) return;
-    }
-  } catch (err) {
-    console.error('[orbit] voix des pages :', err.message);
-  }
-  if (pageSpeech !== entry) return;
-  // Moteur système (choisi, ou repli si Piper/MMS manque).
-  const res = tts.speak(text, {
-    lang: pageVoiceInfo().lang.slice(0, 2),
-    onEnd: () => endPageSpeech('end', entry),
-  });
-  if (!res.success) endPageSpeech('error', entry);
+  await runSpeech(entry, text, rate);
 }
 
 // Le preload demande, au chargement de chaque page, s'il doit se poser.
@@ -2275,14 +2281,14 @@ ipcMain.on('tts:page', (event, msg = {}) => {
   const frame = event.senderFrame;
   if (!frame) return;
   if (msg?.op === 'cancel') {
-    if (pageSpeech && pageSpeech.frame === frame) stopSpeaking();
+    if (speech && speech.frame === frame) stopSpeaking();
     return;
   }
   if (msg?.op !== 'speak') return;
   const text = String(msg.text || '').slice(0, 4000).trim();
   const id = Number(msg.id) || 0;
   if (!text || !id) return;
-  speakForPage(frame, id, text).catch(() => {});
+  speakForPage(frame, id, text, msg.rate).catch(() => {});
 });
 
 const ttsBridgeSessions = new WeakSet();
@@ -4731,12 +4737,13 @@ function createWindow() {
 // ---------------------------------------------------------------------------
 // Réservé à l'interface : installer Piper télécharge et rend exécutable un
 // binaire, ce n'est pas une action qu'une page embarquée doit pouvoir demander.
-handleFromUi('tts:setPrefs', (_e, { engine, voiceId, pages } = {}) => {
+handleFromUi('tts:setPrefs', (_e, { engine, voiceId, pages, rate } = {}) => {
   const validEngines = ['system', 'piper', 'mms-tts'];
   ttsPrefs = {
     engine: validEngines.includes(engine) ? engine : 'system',
     voiceId: String(voiceId || '').slice(0, 120),
     pages: pages !== false,
+    rate: Math.min(2, Math.max(0.5, Number(rate) || 1)),
   };
   return { success: true };
 });
@@ -4814,10 +4821,14 @@ handleFromUi('tts:uninstallMms', async () => {
 // Essai de voix depuis les réglages, sans passer par une page.
 handleFromUi('tts:preview', async (_e, { text } = {}) => {
   const sample = String(text || 'Bonjour, voici un aperçu de cette voix.');
-  stopSpeaking();
-  if (ttsPrefs.engine === 'piper' && ttsPrefs.voiceId) return speakWithPiper(sample);
-  if (ttsPrefs.engine === 'mms-tts') return speakWithMms(sample);
-  return tts.speak(sample, { lang: (translateConfig.target || 'fr').slice(0, 2) });
+  return speakText(null, sample);
+});
+
+// Lecture d'un texte fourni par l'interface (mode lecture).
+handleFromUi('tts:speak', async (_e, { text } = {}) => {
+  const value = String(text || '').slice(0, 100000).trim();
+  if (!value) return { success: false, error: 'empty' };
+  return speakText(null, value);
 });
 
 handleFromUi('tts:stop', () => {
@@ -5254,9 +5265,41 @@ function attachWindowContextMenu(contents, ownerWindow) {
   });
 }
 
+// Sélecteur au clavier ouvert dans l'interface : les touches qui le pilotent
+// sont détournées des pages (sinon Entrée validerait un formulaire, Échap
+// fermerait une boîte de dialogue du site).
+let switcherOpen = false;
+ipcMain.on('switcher:setOpen', (event, open) => {
+  if (!fromOrbitUi(event)) return;
+  switcherOpen = Boolean(open);
+});
+const SWITCHER_KEYS = {
+  Enter: 'switcher-commit',
+  Escape: 'switcher-cancel',
+  ArrowRight: 'switcher-next',
+  ArrowDown: 'switcher-next',
+  ArrowLeft: 'switcher-prev',
+  ArrowUp: 'switcher-prev',
+};
+
+function switcherInput(event, input) {
+  if (!switcherOpen || !mainWindow || mainWindow.isDestroyed()) return false;
+  const modifier = process.platform === 'darwin' ? 'Meta' : 'Alt';
+  let op = null;
+  if (input.type === 'keyUp' && input.key === modifier) op = 'switcher-commit';
+  else if (input.type === 'keyDown') {
+    op = input.key === 'Tab' ? (input.shift ? 'switcher-prev' : 'switcher-next') : SWITCHER_KEYS[input.key] || null;
+    if (op) event.preventDefault();
+  }
+  if (!op) return false;
+  mainWindow.webContents.send('orbit:shortcut', op);
+  return true;
+}
+
 function attachPageShortcuts(contents) {
   attachMouseNavigation(contents);
   contents.on('before-input-event', (event, input) => {
+    if (switcherInput(event, input)) return;
     const action = matchShortcutInput(input, assistantChatShortcutKey);
     if (!action) return;
 
@@ -7052,43 +7095,53 @@ ipcMain.handle('backup:export', async (_e, { data, password, full, mainFiles } =
     let payload = data;
     const extra = readMainBackupFiles(mainFiles);
     if (Object.keys(extra).length) payload = { ...payload, mainFiles: extra };
-    // Sauvegarde complète : on ajoute les fichiers de SESSION (cookies,
-    // stockages) et les TROUSSEAUX — c'est ce qui retrouve les comptes
-    // connectés sur un autre ordinateur. Collecté AVANT le dialogue : une
-    // sauvegarde trop volumineuse échoue sans avoir ouvert la fenêtre.
-    let skipped = [];
-    if (full) {
-      const collected = collectBackup(app.getPath('userData'));
-      skipped = collected.skipped;
-      payload = { ...payload, files: collected.entries };
-    }
+    // Sauvegarde complète (sessions + trousseaux) : toujours chiffrée.
+    if (full && !password) return { success: false, error: 'Une sauvegarde complète doit être protégée par un mot de passe.' };
     const res = await dialog.showSaveDialog(mainWindow, {
       title: 'Exporter la configuration Orbit',
       defaultPath: `orbit-backup-${new Date().toISOString().slice(0, 10)}.orbit`,
       filters: [{ name: 'Sauvegarde Orbit', extensions: ['orbit', 'json'] }],
     });
     if (res.canceled || !res.filePath) return { success: false, canceled: true };
+    if (full) {
+      // Écrite AU FIL DE L'EAU (format 2) : aucune limite de taille, plus
+      // d'« Invalid string length », rien laissé de côté.
+      await writeStreamBackup(res.filePath, { config: payload, password, userDataDir: app.getPath('userData') });
+      return { success: true, path: res.filePath, encrypted: true, skipped: [] };
+    }
     const json = JSON.stringify(payload);
     fs.writeFileSync(res.filePath, password ? encryptBackup(json, password) : json);
-    return { success: true, path: res.filePath, encrypted: Boolean(password), skipped };
+    return { success: true, path: res.filePath, encrypted: Boolean(password), skipped: [] };
   } catch (err) {
     const msg = String(err.message || err);
     const tooBig = msg === 'tooBig' || err instanceof RangeError;
     return {
       success: false,
       error: tooBig
-        ? 'Sessions et trousseaux trop volumineux pour un seul fichier de sauvegarde. Exportez sans « sauvegarde complète », ou videz les données des apps les plus lourdes.'
+        ? 'Configuration trop volumineuse pour un seul fichier. Cochez « sauvegarde complète » (écrite en flux, sans limite) ou retirez l’historique.'
         : msg,
     };
   }
 });
 
+// Sauvegardes complètes en flux ouvertes à l'import : le fichier reste sur le
+// disque (plusieurs Go possibles), l'interface ne reçoit qu'un jeton.
+const streamImports = new Map(); // jeton → chemin
+const stagedStreamPath = () => path.join(app.getPath('userData'), 'pending-restore-staged.ndjson');
+
 // Restauration complète : on ÉTAGE les fichiers de session (pending-restore),
 // on applique la configuration, puis on redémarre. Le fichier est consommé au
 // PROCHAIN démarrage, AVANT qu'Electron n'ouvre la moindre partition — sinon la
 // session en mémoire réécrirait par-dessus les cookies restaurés.
-ipcMain.handle('backup:stage', (_e, { files } = {}) => {
+ipcMain.handle('backup:stage', (_e, { files, staged } = {}) => {
   try {
+    // Sauvegarde en flux : déjà déchiffrée, vérifiée et étagée à l'import.
+    if (staged) {
+      const from = stagedStreamPath();
+      if (!fs.existsSync(from)) return { success: false, error: 'Sauvegarde à restaurer introuvable : réimportez le fichier.' };
+      fs.renameSync(from, pendingStreamRestorePath(app.getPath('userData')));
+      return { success: true, count: Number(staged) || 0 };
+    }
     const r = stageRestore(app.getPath('userData'), files);
     return { success: true, count: r.count };
   } catch (err) {
@@ -7110,6 +7163,12 @@ ipcMain.handle('backup:import', async () => {
       filters: [{ name: 'Sauvegarde Orbit', extensions: ['orbit', 'json'] }],
     });
     if (res.canceled || !res.filePaths[0]) return { success: false, canceled: true };
+    if (isStreamBackup(res.filePaths[0])) {
+      const token = crypto.randomBytes(12).toString('hex');
+      streamImports.clear();
+      streamImports.set(token, res.filePaths[0]);
+      return { success: true, encrypted: true, blob: { stream: token } };
+    }
     const raw = fs.readFileSync(res.filePaths[0], 'utf8');
     let parsed;
     try {
@@ -7124,7 +7183,20 @@ ipcMain.handle('backup:import', async () => {
   }
 });
 
-ipcMain.handle('backup:decrypt', (_e, { blob, password } = {}) => {
+ipcMain.handle('backup:decrypt', async (_e, { blob, password } = {}) => {
+  if (blob && typeof blob.stream === 'string') {
+    const file = streamImports.get(blob.stream);
+    if (!file) return { success: false, error: 'Fichier à réimporter.' };
+    try {
+      const { config, count } = await readStreamBackup(file, { password, stagePath: stagedStreamPath() });
+      return { success: true, data: { ...config, stagedFiles: count ? { count } : undefined } };
+    } catch (err) {
+      return {
+        success: false,
+        error: err.message === 'bad-password' ? 'Mot de passe incorrect ou fichier corrompu' : 'Fichier illisible ou corrompu',
+      };
+    }
+  }
   try {
     return { success: true, data: decryptBackup(blob, password) };
   } catch {
@@ -9532,6 +9604,14 @@ handleFromUi('vault:changeMaster', (_e, { id, current, next } = {}) =>
   vault.changeMasterPassword(id, current, next)
 );
 handleFromUi('vault:remove', (_e, { id, password } = {}) => vault.remove(id, password));
+// Coffre au mot de passe oublié : supprimé sans être ouvert. Garde-fous : le
+// nom retapé à l'identique, ET le code d'Orbit quand il en existe un (sinon
+// n'importe qui devant l'écran pourrait effacer les coffres).
+handleFromUi('vault:removeForgotten', (_e, { id, confirmName, pin } = {}) => {
+  const pinOk = security.checkAppPin(String(pin || ''));
+  if (pinOk === false) return { success: false, error: 'bad-pin' };
+  return vault.removeForgotten(id, confirmName);
+});
 
 handleFromUi('vault:entries', (_e, { id } = {}) => vault.listEntries(id));
 handleFromUi('vault:saveEntry', (_e, { id, entry } = {}) => vault.saveEntry(id, entry));
@@ -10235,6 +10315,10 @@ app.whenReady().then(async () => {
   // fermeture les réécrirait par-dessus les fichiers restaurés).
   try {
     const restored = applyPendingRestore(app.getPath('userData'));
+    // Format en flux (sauvegarde complète 2) : appliqué de la même façon.
+    const streamed = applyPendingStreamRestore(app.getPath('userData'));
+    if (streamed.count) console.log(`[orbit] restauration complète appliquée : ${streamed.count} fichier(s)`);
+    if (streamed.error) console.error('[orbit] restauration complète ignorée :', streamed.error);
     if (restored.count > 0) {
       console.log(`[orbit] ${restored.count} fichier(s) de session restauré(s)`);
     } else if (restored.error) {

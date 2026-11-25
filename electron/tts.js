@@ -99,7 +99,7 @@ export function stop() {
 
 // `lang` : code court ('fr', 'en'…) quand le moteur sait en tenir compte.
 // `onEnd` (facultatif) : appelé quand la voix a fini — ou a été coupée.
-export function speak(text, { lang = 'fr', onEnd } = {}) {
+export function speak(text, { lang = 'fr', onEnd, rate = 1 } = {}) {
   const content = String(text || '').trim().slice(0, 40000);
   if (!content) return { success: false, error: 'empty' };
 
@@ -113,19 +113,24 @@ export function speak(text, { lang = 'fr', onEnd } = {}) {
   if (engine === 'spd-say' && wasActive) {
     pending = setTimeout(() => {
       pending = null;
-      launch(engine, content, lang, onEnd);
+      launch(engine, content, lang, onEnd, rate);
     }, CANCEL_SETTLE_MS);
     return { success: true, engine };
   }
 
-  return launch(engine, content, lang, onEnd) ? { success: true, engine } : { success: false, error: 'spawn-failed' };
+  return launch(engine, content, lang, onEnd, rate) ? { success: true, engine } : { success: false, error: 'spawn-failed' };
 }
 
 // Démarre réellement le processus. Renvoie true si le lancement a abouti.
-function launch(engine, content, lang, onEnd) {
+// Vitesse : 1 = normale, bornée entre 0,5 et 2,5, traduite dans l'unité de
+// chaque moteur.
+const clampRate = (r) => Math.min(2.5, Math.max(0.5, Number(r) || 1));
+
+function launch(engine, content, lang, onEnd, rate = 1) {
+  const r = clampRate(rate);
   try {
     if (engine === 'say') {
-      current = spawn('say', ['-f', '-'], { stdio: ['pipe', 'ignore', 'ignore'] });
+      current = spawn('say', ['-r', String(Math.round(175 * r)), '-f', '-'], { stdio: ['pipe', 'ignore', 'ignore'] });
       current.stdin.end(content, 'utf8');
     } else if (engine === 'powershell') {
       // Le texte transite par l'entrée standard puis est lu en UTF-8 : le
@@ -135,6 +140,7 @@ function launch(engine, content, lang, onEnd) {
         "$t = [Console]::In.ReadToEnd(); " +
         'Add-Type -AssemblyName System.Speech; ' +
         '$s = New-Object System.Speech.Synthesis.SpeechSynthesizer; ' +
+        `$s.Rate = ${Math.max(-10, Math.min(10, Math.round((r - 1) * 10)))}; ` +
         '$s.Speak($t)';
       current = spawn(
         'powershell',
@@ -145,13 +151,13 @@ function launch(engine, content, lang, onEnd) {
     } else if (engine === 'spd-say') {
       // -e : lit l'entrée standard. -w : attend la fin (le processus reste
       // vivant, donc « Arrêter » a quelque chose à tuer).
-      current = spawn('spd-say', ['-l', lang, '-e', '-w'], {
+      current = spawn('spd-say', ['-l', lang, '-r', String(Math.max(-100, Math.min(100, Math.round((r - 1) * 100)))), '-e', '-w'], {
         stdio: ['pipe', 'ignore', 'ignore'],
       });
       current.stdin.end(content, 'utf8');
     } else {
       // espeak-ng / espeak : « --stdin » évite la limite de longueur d'argument.
-      current = spawn(engine, ['-v', lang, '--stdin'], {
+      current = spawn(engine, ['-v', lang, '-s', String(Math.round(175 * r)), '--stdin'], {
         stdio: ['pipe', 'ignore', 'ignore'],
       });
       current.stdin.end(content, 'utf8');

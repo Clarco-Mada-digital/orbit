@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
-import {
+import { BookOpen,
   ArrowLeft,
   ArrowRight,
   RotateCw,
@@ -101,6 +101,12 @@ export default function GuestContextMenu() {
 
   const run = useCallback(
     (action, value, copyDirect = false) => {
+      // Mode lecture : il s'affiche dans l'interface, pas dans la page.
+      if (action === 'reader') {
+        if (menu) window.dispatchEvent(new CustomEvent('orbit:reader-open', { detail: { wcId: menu.wcId } }));
+        close();
+        return;
+      }
       const actionValue = action === 'screenshot'
         ? { mode: value || 'visible', copyDirect }
         : value;
@@ -224,6 +230,7 @@ export default function GuestContextMenu() {
       push({ key: 'dv', icon: Download, label: t('cm.downloadVideo'), action: 'downloadVideo' });
       push({ key: 'da', icon: Music, label: t('cm.downloadAudio'), action: 'downloadAudio' });
       sep();
+      push({ key: 'rd', icon: BookOpen, label: t('cm.reader'), action: 'reader' });
       push({ key: 'sp', icon: Volume2, label: t('cm.speakPage'), action: 'speakPage' });
     }
     if (menu.speaking) {

@@ -161,3 +161,34 @@ test('collectBackup : l’essentiel d’abord, les grosses IndexedDB par magasin
   // L'essentiel ne tient pas : refus net.
   assert.throws(() => collectBackup(dir, { maxEncoded: 4 }), /tooBig/);
 });
+
+test('format en flux : écrire, relire (bon mot de passe), étager puis appliquer à l’identique', async () => {
+  const { writeStreamBackup, readStreamBackup, isStreamBackup, applyPendingStreamRestore, pendingStreamRestorePath } = await import('../electron/backup-files.js');
+  const src = tempUser();
+  seed(src);
+  const big = crypto.randomBytes(40 * 1024 * 1024 + 123); // > un morceau de 32 Mo
+  fs.mkdirSync(path.join(src, 'Partitions', 'p', 'IndexedDB', 'https_x_0.indexeddb.leveldb'), { recursive: true });
+  fs.writeFileSync(path.join(src, 'Partitions', 'p', 'IndexedDB', 'https_x_0.indexeddb.leveldb', '000003.ldb'), big);
+  const file = path.join(tempUser(), 'b.orbit');
+  const res = await writeStreamBackup(file, { config: { settings: { a: 1 } }, password: 'secret-123', userDataDir: src });
+  assert.ok(res.count >= 5);
+  assert.equal(isStreamBackup(file), true);
+
+  const dst = tempUser();
+  await assert.rejects(readStreamBackup(file, { password: 'faux', stagePath: pendingStreamRestorePath(dst) }), /bad-password/);
+  assert.equal(fs.existsSync(pendingStreamRestorePath(dst)), false, 'rien d’étagé avec un mauvais mot de passe');
+
+  const read = await readStreamBackup(file, { password: 'secret-123', stagePath: pendingStreamRestorePath(dst) });
+  assert.deepEqual(read.config, { settings: { a: 1 } });
+  const applied = applyPendingStreamRestore(dst);
+  assert.ok(applied.count >= 4);
+  assert.equal(fs.readFileSync(path.join(dst, 'vaults', 'boulot.orbv'), 'utf8'), 'vault-encrypted');
+  assert.ok(fs.readFileSync(path.join(dst, 'Partitions', 'p', 'IndexedDB', 'https_x_0.indexeddb.leveldb', '000003.ldb')).equals(big));
+  assert.equal(fs.existsSync(pendingStreamRestorePath(dst)), false, 'consommé');
+
+  // Fichier altéré : refus.
+  const bytes = fs.readFileSync(file);
+  bytes[bytes.length - 40] ^= 1;
+  fs.writeFileSync(file, bytes);
+  await assert.rejects(readStreamBackup(file, { password: 'secret-123', stagePath: pendingStreamRestorePath(dst) }), /bad-password/);
+});

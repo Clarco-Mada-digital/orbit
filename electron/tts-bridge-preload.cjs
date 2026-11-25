@@ -67,7 +67,7 @@ if (info && info.enabled) {
       );
       return;
     }
-    ipcRenderer.send('tts:page', { op: 'speak', id, text });
+    ipcRenderer.send('tts:page', { op: 'speak', id, text, rate: Number(msg.rate) || 1 });
   });
 
   ipcRenderer.on('orbit:tts-page', (_event, msg) => {
@@ -132,7 +132,7 @@ if (info && info.enabled) {
       const id = ++seq;
       ids.set(utterance, id);
       byId.set(id, utterance);
-      send({ op: 'speak', id, text: String(utterance.text || '') });
+      send({ op: 'speak', id, text: String(utterance.text || ''), rate: Number(utterance.rate) || 1 });
     };
 
     document.addEventListener('orbit:tts-in', (event) => {

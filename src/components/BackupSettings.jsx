@@ -358,9 +358,12 @@ export default function BackupSettings() {
       // avant qu'Electron n'ouvre la moindre session (sinon les cookies en
       // mémoire réécriraient par-dessus).
       const files = Array.isArray(data.files) && importSel.sessions !== false ? data.files : [];
-      if (files.length > 0) {
+      // Sauvegarde complète en flux : les fichiers sont déjà étagés côté
+      // processus principal, l'interface ne transporte qu'un compte.
+      const staged = importSel.sessions !== false ? data.stagedFiles?.count || 0 : 0;
+      if (files.length > 0 || staged > 0) {
         setMsg({ type: 'ok', text: t('bk.restarting') });
-        const st = await window.electronAPI?.backupStageRestore?.({ files });
+        const st = await window.electronAPI?.backupStageRestore?.(staged ? { staged } : { files });
         if (st?.success) setTimeout(() => window.electronAPI?.backupRelaunch?.(), 1200);
         else setMsg({ type: 'err', text: st?.error || t('bk.importFail') });
         return;
@@ -462,7 +465,7 @@ export default function BackupSettings() {
               Contenu du fichier{pendingData.exportedAt ? ` (exporté le ${new Date(pendingData.exportedAt).toLocaleString()})` : ''} — cochez ce qu’il faut restaurer :
             </p>
             <CategoryPicker selection={importSel} onChange={setImportSel} available={categoriesIn(pendingData)} data={pendingData} />
-            {Array.isArray(pendingData.files) && pendingData.files.length ? (
+            {(Array.isArray(pendingData.files) && pendingData.files.length) || pendingData.stagedFiles?.count ? (
               <label className="mb-3 flex cursor-pointer items-start gap-2 rounded-lg border border-border px-2.5 py-2 text-sm">
                 <input
                   type="checkbox"

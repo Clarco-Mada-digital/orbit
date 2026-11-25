@@ -310,6 +310,72 @@ function UnlockVault({ vault, onUnlocked }) {
       )}
 
       <p className="text-xs text-text-muted">{t('pv.unlockSlowHint')}</p>
+
+      <ForgottenVault vault={vault} onRemoved={onUnlocked} />
+    </div>
+  );
+}
+
+// « Mot de passe oublié » : sans le mot de passe, le contenu est perdu pour
+// de bon (aucune porte dérobée). On peut seulement libérer la place.
+function ForgottenVault({ vault, onRemoved }) {
+  const t = useT();
+  const [open, setOpen] = useState(false);
+  const [name, setName] = useState('');
+  const [pin, setPin] = useState('');
+  const [needPin, setNeedPin] = useState(false);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!open) return;
+    window.electronAPI?.security
+      ?.getState?.()
+      .then((st) => setNeedPin(Boolean(st?.appLockEnabled)))
+      .catch(() => {});
+  }, [open]);
+
+  if (!open) {
+    return (
+      <button onClick={() => setOpen(true)} className="text-xs text-text-muted hover:text-error hover:underline">
+        {t('pv.forgot.link')}
+      </button>
+    );
+  }
+  const submit = async () => {
+    setBusy(true);
+    setError('');
+    const res = await api()?.removeForgotten(vault.id, name, pin);
+    setBusy(false);
+    if (res?.success) {
+      onRemoved();
+      return;
+    }
+    setError(t(res?.error === 'bad-pin' ? 'pv.forgot.badPin' : res?.error === 'name-mismatch' ? 'pv.forgot.badName' : 'pv.forgot.failed'));
+  };
+  return (
+    <div className="rounded-lg border border-error/40 bg-error/5 p-3 text-left space-y-2">
+      <p className="text-xs text-text-secondary">{t('pv.forgot.desc')}</p>
+      <input
+        value={name}
+        onChange={(e) => setName(e.target.value)}
+        placeholder={t('pv.forgot.typeName', { name: vault.name })}
+        className="input text-sm"
+      />
+      {needPin ? <SecretInput value={pin} onChange={setPin} placeholder={t('pv.forgot.pin')} /> : null}
+      {error && <div className="text-xs text-error">{error}</div>}
+      <div className="flex gap-2">
+        <button
+          onClick={submit}
+          disabled={busy || name.trim() !== String(vault.name).trim() || (needPin && !pin)}
+          className="btn btn-sm flex-1 bg-error text-white hover:bg-error/90 disabled:opacity-50"
+        >
+          {t('pv.forgot.delete')}
+        </button>
+        <button onClick={() => setOpen(false)} className="btn btn-secondary btn-sm">
+          {t('common.cancel')}
+        </button>
+      </div>
     </div>
   );
 }

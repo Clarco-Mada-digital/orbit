@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useState, useEffect, useRef } from 'react';
-import {
+import { BookOpen,
   ArrowLeft,
   ArrowRight,
   RotateCw,
@@ -1566,6 +1566,19 @@ const app = apps.find((a) => a.id === activeApp)
         return <WeatherWidget key={key} placement={placement} align={menuAlign} />;
       case 'orbitVpn':
         return <OrbitVpnWidget key={key} placement={placement} align={menuAlign} />;
+      case 'reader':
+        return (
+          <Fragment key={key}>
+            <button
+              onClick={() => window.dispatchEvent(new Event('orbit:reader-open'))}
+              className="btn-icon"
+              title={`${t('tbm.reader')} (F9)`}
+              disabled={!activeApp}
+            >
+              <BookOpen size={18} />
+            </button>
+          </Fragment>
+        );
       case 'battery':
         return <BatteryWidget key={key} />;
       case 'focus':

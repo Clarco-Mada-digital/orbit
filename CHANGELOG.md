@@ -8,6 +8,47 @@ Format : une section `## [X.Y.Z] — AAAA-MM-JJ` par version, puis des
 sous-sections `### Ajouté` / `### Modifié` / `### Corrigé` / `### Sécurité`.
 La plus récente en premier.
 
+## [1.21.6] — 2026-11-25
+
+### Ajouté
+- **Mode lecture** (F9, clic droit « Mode lecture », palette, ou bouton à
+  ajouter à la barre) : l'article de la page sans menus, publicités ni barres
+  latérales. Taille du texte, police, largeur et thème (auto, clair, sépia,
+  sombre) au choix et mémorisés ; durée de lecture estimée ; bouton
+  **Écouter** pour l'entendre avec la voix d'Orbit. Le contenu du site est
+  nettoyé et affiché sans qu'aucun de ses scripts ne puisse s'exécuter.
+- **Vitesse de lecture** de la voix (Réglages → Lecture vocale), appliquée à
+  toutes les lectures, sites compris.
+- **« Lecture en cours · Arrêter »** : une pastille visible seulement pendant
+  qu'Orbit parle, pour couper une lecture d'un clic.
+- **Choisir avant d'ouvrir** (Alt+Page↓ / Alt+Page↑, avec ⇧ pour les
+  profils) : une petite barre discrète apparaît en haut et chaque appui
+  avance la sélection SANS ouvrir les apps au passage. Seule la cible s'ouvre,
+  en relâchant Alt, avec Entrée ou après une courte pause ; Échap annule.
+  Moins de pages chargées pour rien. Désactivable (Réglages → Raccourcis).
+- **Coffre au mot de passe oublié** : on peut maintenant le supprimer pour
+  libérer la place. Il faut retaper son nom, plus le code d'Orbit s'il y en a
+  un. Son contenu, lui, reste irrécupérable.
+
+### Corrigé
+- **Export de la sauvegarde complète : Orbit se fermait d'un coup** (1.21.5)
+  sur un gros profil. Toute la sauvegarde était assemblée en mémoire, et le
+  processus manquait de mémoire. Elle est maintenant écrite au fil de l'eau
+  (voir ci-dessous) : environ 200 Mo de mémoire au plus, quelle que soit la
+  taille.
+
+### Sécurité
+- **Bases de données** : le certificat TLS du serveur est vérifié par défaut,
+  avec une case pour les serveurs auto-signés. Le panneau des extensions
+  tourne dans un bac à sable.
+
+### Modifié
+- **Sauvegarde complète sans limite de taille** : elle est écrite au fil de
+  l'eau (nouveau format chiffré) au lieu d'être assemblée en mémoire. Rien
+  n'est plus laissé de côté : mesuré à 693 Mo en 15 s, Messenger compris.
+  Pendant l'import, l'archive est entièrement vérifiée avant que quoi que ce
+  soit ne soit appliqué. Les anciennes sauvegardes restent lisibles.
+
 ## [1.21.5] — 2026-11-25
 
 ### Ajouté

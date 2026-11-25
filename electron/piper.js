@@ -267,7 +267,7 @@ export function isSpeaking() {
 
 // `onAudio(chunk)` reçoit du PCM 16 bits signé, mono, petit-boutiste.
 // `onEnd()` est appelé à la fin (ou à l'arrêt).
-export function speak(text, { voiceId, onStart, onAudio, onEnd } = {}) {
+export function speak(text, { voiceId, onStart, onAudio, onEnd, rate = 1 } = {}) {
   const { model } = voiceFiles(voiceId);
   if (!isInstalled()) return { success: false, error: 'not-installed' };
   if (!fs.existsSync(model)) return { success: false, error: 'voice-missing' };
@@ -278,7 +278,8 @@ export function speak(text, { voiceId, onStart, onAudio, onEnd } = {}) {
     // --output-raw : le PCM sort au fil de la synthèse, phrase par phrase. La
     // lecture démarre donc presque tout de suite au lieu d'attendre que toute
     // la page soit synthétisée.
-    ['--model', model, '--output-raw'],
+    // --length_scale : durée des phonèmes, l'inverse de la vitesse.
+    ['--model', model, '--output-raw', '--length_scale', (1 / Math.min(2.5, Math.max(0.5, Number(rate) || 1))).toFixed(3)],
     { stdio: ['pipe', 'pipe', 'ignore'] }
   );
   current = proc;

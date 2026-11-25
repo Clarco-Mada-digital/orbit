@@ -19,8 +19,10 @@ export default function ShortcutsSettings() {
       assistantChatEnabled: s.settings.assistantChatEnabled,
       assistantChatShortcutEnabled: s.settings.assistantChatShortcutEnabled,
       assistantChatShortcutKey: s.settings.assistantChatShortcutKey,
+      keyboardSwitcher: s.settings.keyboardSwitcher,
     })),
   );
+  const updateSettings = useStore((s) => s.updateSettings);
   const [query, setQuery] = useState('');
 
   const all = useMemo(
@@ -73,6 +75,23 @@ export default function ShortcutsSettings() {
           )}
         </div>
       </div>
+
+      {/* Alt+Page↓/↑ : sélecteur discret (défaut) ou bascule immédiate. */}
+      <label className="card flex cursor-pointer items-start gap-3 !p-3">
+        <input
+          type="checkbox"
+          className="mt-0.5 h-4 w-4 accent-accent-primary"
+          checked={settings.keyboardSwitcher !== false}
+          onChange={(e) => updateSettings({ keyboardSwitcher: e.target.checked })}
+        />
+        <span>
+          <span className="block text-sm font-medium">Choisir avant d’ouvrir (apps et profils)</span>
+          <span className="block text-xs text-text-muted">
+            Avec Alt+Page↓ / Alt+Page↑ (⇧ pour les profils), une petite barre montre où vous allez ; seule la cible s’ouvre, en
+            relâchant Alt, avec Entrée ou après une courte pause. Décoché : chaque appui ouvre directement l’élément suivant.
+          </span>
+        </span>
+      </label>
 
       {groups.length === 0 && (
         <div className="card text-sm text-text-muted flex items-center gap-2">

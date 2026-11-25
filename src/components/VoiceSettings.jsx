@@ -233,6 +233,24 @@ export default function VoiceSettings() {
 
       {error && <div className="text-sm text-error">{error}</div>}
 
+      {/* Vitesse de lecture (toutes les lectures, sites compris) */}
+      <div className="card space-y-2">
+        <div className="flex items-center justify-between">
+          <span className="font-medium">{t('vs.rate')}</span>
+          <span className="text-sm tabular-nums text-text-muted">× {(cfg.rate || 1).toFixed(2).replace(/0$/, '')}</span>
+        </div>
+        <input
+          type="range"
+          min="0.5"
+          max="2"
+          step="0.05"
+          value={cfg.rate || 1}
+          onChange={(e) => updateSettings({ tts: { ...cfg, rate: Number(e.target.value) } })}
+          className="w-full accent-accent-primary"
+        />
+        <div className="text-xs text-text-muted">{t('vs.rateDesc')}</div>
+      </div>
+
       {/* Voix d'Orbit pour la synthèse vocale des sites */}
       <label className="card flex items-start gap-3 cursor-pointer">
         <input

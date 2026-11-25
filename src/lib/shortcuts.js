@@ -46,6 +46,8 @@ export function matchCombo({ key, code, ctrl, alt, meta, shift }, mac, assistant
   if (k === 'f5' && !alt) return shift || ctrl || meta ? 'reload-hard' : 'reload';
   // Aide : la liste des raccourcis, sans modificateur.
   if (k === 'f1' && !alt && !ctrl && !meta && !shift) return 'help';
+  // Mode lecture : F9, comme dans Firefox.
+  if (k === 'f9' && !alt && !ctrl && !meta && !shift) return 'reader';
 
   const mod = mac ? meta : alt;
   // Modificateur parasite (Ctrl, ou l'autre) → pas un raccourci Orbit
@@ -159,6 +161,7 @@ export function shortcutKeys(t, assistantOptions = {}) {
     g('pages', [M, 'W'], d('sc.closePage', 'Fermer l’aperçu de lien ou la page volante active')),
     g('pages', [mac ? '⌘' : 'Ctrl', 'R'], d('sc.reload', "Recharger la page de l'app active (⇧ : ignorer le cache)")),
     g('pages', [mac ? '⌘' : 'Ctrl', 'F'], d('sc.find', 'Rechercher dans la page')),
+    g('pages', ['F9'], d('sc.reader', 'Mode lecture : l’article de la page, sans distraction')),
     // Écran partagé
     g('split', [M, '⇧', 'X'], d('sc.splitToggle', 'Écran partagé : partager avec l’app précédente / quitter')),
     g('split', [M, '⇧', 'C'], d('sc.splitDirection', 'Écran partagé : côte à côte ↔ haut / bas')),

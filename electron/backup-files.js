@@ -22,6 +22,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import zlib from 'node:zlib';
+import crypto from 'node:crypto';
+import { Readable, Transform } from 'node:stream';
+import { pipeline } from 'node:stream/promises';
 
 // Racines incluses dans une sauvegarde (relatives au dossier utilisateur).
 export const BACKUP_ROOTS = ['Partitions', 'vaults'];
@@ -299,5 +302,262 @@ export function applyPendingRestore(userDataDir) {
       /* ignore */
     }
     return { count: 0, error: String(err.message || err) };
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Sauvegarde complète EN FLUX (format 2)
+//
+// Le format 1 tenait dans UNE chaîne JSON : au-delà d'environ 512 Mo, V8
+// refusait (« Invalid string length ») et il fallait laisser des données de
+// côté. Le format 2 écrit au fil de l'eau, sans jamais tout tenir en mémoire :
+//
+//   ORBITBK2 {"v":2,"salt":"…","iv":"…"}\n   ← en-tête en clair (authentifié)
+//   <AES-256-GCM( ligne 1 : configuration JSON
+//                 lignes suivantes : une entrée de fichier JSON par ligne )>
+//   <étiquette GCM, 16 octets>
+//
+// Les gros fichiers sont découpés en morceaux de 32 Mo (`append: true` pour
+// les suivants) : aucune ligne ne s'approche de la limite des chaînes.
+// À la lecture, RIEN n'est appliqué avant que l'étiquette ait été vérifiée :
+// le contenu déchiffré est d'abord étagé dans un fichier temporaire.
+// ---------------------------------------------------------------------------
+
+export const STREAM_MAGIC = 'ORBITBK2';
+const CHUNK_BYTES = 32 * 1024 * 1024;
+const MAX_CONFIG_LINE = 256 * 1024 * 1024;
+
+function deriveStreamKey(password, salt) {
+  return crypto.scryptSync(String(password), salt, 32);
+}
+
+// Toutes les entrées, une par une (gros fichiers découpés). Sans plafond de
+// taille totale : c'est tout l'intérêt du format en flux.
+export function* iterateBackupEntries(userDataDir) {
+  const found = [];
+  for (const rootName of BACKUP_ROOTS) {
+    collect(path.join(userDataDir, rootName), rootName, found);
+  }
+  if (found.length > MAX_BACKUP_FILES) throw new Error('tooBig');
+  for (const { abs, rel } of found) {
+    let raw;
+    try {
+      raw = fs.readFileSync(abs);
+    } catch {
+      continue; // fichier verrouillé au moment de l'export : sans lui
+    }
+    if (!raw.length) continue;
+    for (let at = 0; at < raw.length; at += CHUNK_BYTES) {
+      const entry = encodeEntry(rel, raw.subarray(at, at + CHUNK_BYTES));
+      if (at > 0) entry.append = true;
+      yield entry;
+    }
+  }
+}
+
+export function isStreamBackup(filePath) {
+  try {
+    const fd = fs.openSync(filePath, 'r');
+    const buf = Buffer.alloc(STREAM_MAGIC.length);
+    fs.readSync(fd, buf, 0, buf.length, 0);
+    fs.closeSync(fd);
+    return buf.toString('latin1') === STREAM_MAGIC;
+  } catch {
+    return false;
+  }
+}
+
+// Écrit la sauvegarde complète chiffrée. `config` : tout sauf les fichiers.
+export async function writeStreamBackup(filePath, { config, password, userDataDir }) {
+  if (!password) throw new Error('password-required');
+  const salt = crypto.randomBytes(16);
+  const iv = crypto.randomBytes(12);
+  const header = Buffer.from(`${STREAM_MAGIC} ${JSON.stringify({ v: 2, salt: salt.toString('base64'), iv: iv.toString('base64') })}\n`, 'utf8');
+  const cipher = crypto.createCipheriv('aes-256-gcm', deriveStreamKey(password, salt), iv);
+  cipher.setAAD(header);
+  const tmp = `${filePath}.tmp`;
+  let count = 0;
+  try {
+    fs.writeFileSync(tmp, header, { mode: 0o600 });
+    const lines = function* () {
+      yield `${JSON.stringify(config ?? {})}\n`;
+      for (const entry of iterateBackupEntries(userDataDir)) {
+        count += 1;
+        yield `${JSON.stringify(entry)}\n`;
+      }
+    };
+    await pipeline(Readable.from(lines()), cipher, fs.createWriteStream(tmp, { flags: 'a', mode: 0o600 }));
+    fs.appendFileSync(tmp, cipher.getAuthTag());
+    fs.renameSync(tmp, filePath);
+  } catch (err) {
+    fs.rmSync(tmp, { force: true });
+    throw err;
+  }
+  return { count };
+}
+
+// Coupe un flux d'octets en lignes ; appelle onLine(chaîne) pour chacune.
+// Les morceaux d'une ligne longue sont gardés à part et recollés UNE fois :
+// les recoller à chaque bloc reçu serait quadratique sur une ligne de 40 Mo.
+function lineSplitter(onLine) {
+  let parts = [];
+  let partsLen = 0;
+  const emit = (tail) => {
+    const line = parts.length ? Buffer.concat([...parts, tail]) : tail;
+    parts = [];
+    partsLen = 0;
+    onLine(line.toString('utf8'));
+  };
+  return new Transform({
+    transform(chunk, _enc, done) {
+      try {
+        let start = 0;
+        let nl;
+        while ((nl = chunk.indexOf(10, start)) >= 0) {
+          emit(chunk.subarray(start, nl));
+          start = nl + 1;
+        }
+        if (start < chunk.length) {
+          parts.push(chunk.subarray(start));
+          partsLen += chunk.length - start;
+          if (partsLen > MAX_CONFIG_LINE) throw new Error('line-too-long');
+        }
+        done();
+      } catch (err) {
+        done(err);
+      }
+    },
+    flush(done) {
+      try {
+        if (partsLen) emit(Buffer.alloc(0));
+        done();
+      } catch (err) {
+        done(err);
+      }
+    },
+  });
+}
+
+// Déchiffre et VÉRIFIE la sauvegarde, en étageant les fichiers dans
+// `stagePath` (une entrée JSON par ligne). Renvoie la configuration et le
+// nombre d'entrées. Mot de passe faux ou fichier altéré : erreur 'bad-password'
+// et rien n'est laissé sur le disque.
+export async function readStreamBackup(filePath, { password, stagePath }) {
+  const size = fs.statSync(filePath).size;
+  const fd = fs.openSync(filePath, 'r');
+  const head = Buffer.alloc(Math.min(4096, size));
+  fs.readSync(fd, head, 0, head.length, 0);
+  const tag = Buffer.alloc(16);
+  fs.readSync(fd, tag, 0, 16, size - 16);
+  fs.closeSync(fd);
+  const nl = head.indexOf(10);
+  if (nl < 0 || head.subarray(0, STREAM_MAGIC.length).toString('latin1') !== STREAM_MAGIC) throw new Error('not-a-backup');
+  const header = head.subarray(0, nl + 1);
+  let meta;
+  try {
+    meta = JSON.parse(header.subarray(STREAM_MAGIC.length + 1).toString('utf8'));
+  } catch {
+    throw new Error('not-a-backup');
+  }
+  const decipher = crypto.createDecipheriv(
+    'aes-256-gcm',
+    deriveStreamKey(password, Buffer.from(String(meta.salt), 'base64')),
+    Buffer.from(String(meta.iv), 'base64')
+  );
+  decipher.setAAD(header);
+  decipher.setAuthTag(tag);
+
+  const tmp = `${stagePath}.tmp`;
+  const out = fs.openSync(tmp, 'w', 0o600);
+  let config = null;
+  let count = 0;
+  try {
+    await pipeline(
+      fs.createReadStream(filePath, { start: header.length, end: size - 17 }),
+      decipher,
+      lineSplitter((line) => {
+        if (!line) return;
+        if (config === null) {
+          config = JSON.parse(line);
+          return;
+        }
+        const entry = JSON.parse(line);
+        assertSafeEntry(entry);
+        count += 1;
+        if (count > MAX_BACKUP_FILES * 64) throw new Error('tooMany');
+        fs.writeSync(out, `${line}\n`);
+      })
+    );
+    fs.closeSync(out);
+  } catch (err) {
+    try {
+      fs.closeSync(out);
+    } catch {
+      /* déjà fermé */
+    }
+    fs.rmSync(tmp, { force: true });
+    // Mauvais mot de passe : soit l'étiquette GCM refuse à la fin, soit le
+    // « clair » obtenu n'est que du bruit et ne se lit pas. Même réponse.
+    const msg = String(err?.message || err);
+    if (err instanceof SyntaxError || /auth|decrypt/i.test(msg)) throw new Error('bad-password');
+    throw err;
+  }
+  if (count) fs.renameSync(tmp, stagePath);
+  else fs.rmSync(tmp, { force: true });
+  return { config: config || {}, count };
+}
+
+export function pendingStreamRestorePath(userDataDir) {
+  return path.join(userDataDir, 'pending-restore.ndjson');
+}
+
+// Applique un étage au format ligne par ligne (lecture par blocs : le fichier
+// peut faire plusieurs Go).
+function applyNdjson(userDataDir, file) {
+  const fd = fs.openSync(file, 'r');
+  const block = Buffer.alloc(8 * 1024 * 1024);
+  let rest = Buffer.alloc(0);
+  let written = 0;
+  const handle = (line) => {
+    if (!line.length) return;
+    const entry = JSON.parse(line.toString('utf8'));
+    assertSafeEntry(entry);
+    const buf = Buffer.from(String(entry?.data || ''), 'base64');
+    const data = entry?.gz ? zlib.gunzipSync(buf) : buf;
+    const target = path.join(userDataDir, ...String(entry.path).split('/'));
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    if (entry.append) fs.appendFileSync(target, data);
+    else {
+      fs.writeFileSync(target, data);
+      written += 1;
+    }
+  };
+  try {
+    let n;
+    while ((n = fs.readSync(fd, block, 0, block.length, null)) > 0) {
+      let buf = Buffer.concat([rest, block.subarray(0, n)]);
+      let nl;
+      while ((nl = buf.indexOf(10)) >= 0) {
+        handle(buf.subarray(0, nl));
+        buf = buf.subarray(nl + 1);
+      }
+      rest = Buffer.from(buf);
+    }
+    if (rest.length) handle(rest);
+  } finally {
+    fs.closeSync(fd);
+  }
+  return written;
+}
+
+export function applyPendingStreamRestore(userDataDir) {
+  const file = pendingStreamRestorePath(userDataDir);
+  if (!fs.existsSync(file)) return { count: 0 };
+  try {
+    return { count: applyNdjson(userDataDir, file) };
+  } catch (err) {
+    return { count: 0, error: String(err.message || err) };
+  } finally {
+    fs.rmSync(file, { force: true });
   }
 }

@@ -299,7 +299,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Lecture vocale (moteur système / Piper hors ligne)
   tts: {
     state: () => ipcRenderer.invoke('tts:state'),
-    setPrefs: (engine, voiceId, pages) => ipcRenderer.invoke('tts:setPrefs', { engine, voiceId, pages }),
+    setPrefs: (engine, voiceId, pages, rate) => ipcRenderer.invoke('tts:setPrefs', { engine, voiceId, pages, rate }),
     installEngine: () => ipcRenderer.invoke('tts:installEngine'),
     installVoice: (id) => ipcRenderer.invoke('tts:installVoice', { id }),
     removeVoice: (id) => ipcRenderer.invoke('tts:removeVoice', { id }),
@@ -308,6 +308,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     uninstallMms: () => ipcRenderer.invoke('tts:uninstallMms'),
     preview: (text) => ipcRenderer.invoke('tts:preview', { text }),
     stop: () => ipcRenderer.invoke('tts:stop'),
+    speak: (text) => ipcRenderer.invoke('tts:speak', { text }),
+    // Une lecture commence ou finit (indicateur « Lecture en cours »).
+    onSpeaking: (callback) => {
+      const listener = (_e, info) => callback(Boolean(info?.speaking));
+      ipcRenderer.on('orbit:tts-speaking', listener);
+      return () => ipcRenderer.removeListener('orbit:tts-speaking', listener);
+    },
     onProgress: (callback) => {
       const listener = (_e, payload) => callback(payload);
       ipcRenderer.on('orbit:tts-progress', listener);
@@ -525,6 +532,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     changeMaster: (id, current, next) =>
       ipcRenderer.invoke('vault:changeMaster', { id, current, next }),
     remove: (id, password) => ipcRenderer.invoke('vault:remove', { id, password }),
+    removeForgotten: (id, confirmName, pin) => ipcRenderer.invoke('vault:removeForgotten', { id, confirmName, pin }),
     entries: (id) => ipcRenderer.invoke('vault:entries', { id }),
     saveEntry: (id, entry) => ipcRenderer.invoke('vault:saveEntry', { id, entry }),
     deleteEntry: (id, entryId) => ipcRenderer.invoke('vault:deleteEntry', { id, entryId }),
@@ -568,6 +576,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setTranslateConfig: (cfg) => ipcRenderer.invoke('translate:setConfig', cfg),
   // Proxy / VPN par partition
   applyProxy: (payload) => ipcRenderer.invoke('proxy:apply', payload),
+  // Sélecteur au clavier : tant qu'il est ouvert, le processus principal
+  // relaie Entrée, Échap, les flèches et le relâchement d'Alt depuis les pages.
+  switcher: {
+    setOpen: (open) => ipcRenderer.send('switcher:setOpen', Boolean(open)),
+  },
   // Mode panique : tout cacher, couper le son, verrouiller
   panic: {
     configure: (cfg) => ipcRenderer.invoke('panic:configure', cfg),

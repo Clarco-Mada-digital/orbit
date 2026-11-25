@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import {
+import { BookOpen,
   EyeOff,
   Search,
   X,
@@ -296,6 +296,15 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
         color: '#ec4899',
         keywords: ['enregistrer', 'record', 'video', 'vidéo', 'ecran', 'écran', 'camera', 'caméra', 'studio', 'capture', 'demo', 'tuto'],
         run: () => window.dispatchEvent(new Event('orbit:studio-open')),
+      },
+      {
+        id: 'reader',
+        name: 'Mode lecture',
+        subtitle: 'L’article de la page active, sans menus ni publicités (F9)',
+        icon: <BookOpen size={22} />,
+        color: '#b45309',
+        keywords: ['lecture', 'reader', 'article', 'lire', 'distraction', 'texte', 'reading'],
+        run: () => window.dispatchEvent(new Event('orbit:reader-open')),
       },
       {
         id: 'panic',
