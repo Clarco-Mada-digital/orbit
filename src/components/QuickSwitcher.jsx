@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BookOpen,
+  Languages,
+  RotateCcw,
   EyeOff,
   Search,
   X,
@@ -305,6 +307,28 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
         color: '#b45309',
         keywords: ['lecture', 'reader', 'article', 'lire', 'distraction', 'texte', 'reading'],
         run: () => window.dispatchEvent(new Event('orbit:reader-open')),
+      },
+      ...(useStore.getState().closedFlyPages.length
+        ? [
+            {
+              id: 'reopen-tab',
+              name: t('close.reopenCmd'),
+              subtitle: useStore.getState().closedFlyPages[0].title,
+              icon: <RotateCcw size={22} />,
+              color: '#64748b',
+              keywords: ['rouvrir', 'reopen', 'onglet', 'fermé', 'ferme', 'tab', 'annuler', 'undo'],
+              run: () => useStore.getState().reopenClosedFlyPage(),
+            },
+          ]
+        : []),
+      {
+        id: 'translate-page',
+        name: t('tbm.translate'),
+        subtitle: t('qs.translateSub'),
+        icon: <Languages size={22} />,
+        color: '#0ea5e9',
+        keywords: ['traduire', 'traduction', 'translate', 'langue', 'anglais', 'français', 'english', 'french', 'original'],
+        run: () => window.dispatchEvent(new Event('orbit:translate-page')),
       },
       {
         id: 'panic',

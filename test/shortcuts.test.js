@@ -110,3 +110,15 @@ test('recherche : sans accents, par groupe, par touches', () => {
   assert.equal(filterShortcuts(list, '', label).length, list.length);
   assert.equal(filterShortcuts(list, 'introuvable-xyz', label).length, 0);
 });
+
+test('Ctrl+W ferme l’onglet libre (et jamais Orbit) ; Alt+Maj+R traduit la page', () => {
+  const key = (o) => matchShortcutInput({ type: 'keyDown', control: false, alt: false, meta: false, shift: false, ...o });
+  assert.equal(key({ key: 'w', control: true }), 'close-page');
+  assert.equal(key({ key: 'w', alt: true }), 'close-page');
+  // Ctrl+Maj+W reste à la page : ce n'est pas un raccourci d'Orbit.
+  assert.equal(key({ key: 'w', control: true, shift: true }), null);
+  assert.equal(key({ key: 'r', alt: true, shift: true }), 'translate-page');
+  // macOS : ⌘W, pas Ctrl+W.
+  assert.equal(matchCombo({ key: 'w', ctrl: true }, true), null);
+  assert.equal(matchCombo({ key: 'w', meta: true }, true), 'close-page');
+});

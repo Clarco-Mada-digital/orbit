@@ -46,6 +46,8 @@ import { readDatabase as readKdbx } from './kdbx.js';
 import * as studio from './studio.js';
 import * as pageScrollbar from './page-scrollbar.js';
 import * as mouseGestures from './mouse-gestures.js';
+import * as pageTranslate from './page-translate.js';
+import { pickVoiceFor, baseLang } from './voice-pick.js';
 import * as sitePermissions from './site-permissions.js';
 import * as tts from './tts.js';
 import * as downloader from './downloader.js';
@@ -940,6 +942,27 @@ app.on('web-contents-created', (event, contents) => {
   if (contentsType !== 'webview') return;
   // Barre de défilement fine aux couleurs du thème (sauf si le site a la sienne).
   pageScrollbar.attach(contents);
+  // Proposition de traduction (réglage, désactivé par défaut) : seulement la
+  // langue DÉCLARÉE par la page (<html lang>), lue localement — rien ne part
+  // sur le réseau tant que l'utilisateur n'a pas cliqué.
+  contents.on('did-finish-load', () => {
+    const { offer, always = [] } = translateConfig;
+    if ((!offer && !always.length) || pageTranslations.has(contents.id) || translationBlockedReason(contents)) return;
+    contents
+      .executeJavaScript('document.documentElement.lang || ""', false)
+      .then((lang) => {
+        if (contents.isDestroyed() || pageTranslations.has(contents.id)) return;
+        const site = pageTranslate.siteOf(contents.getURL());
+        const decision = pageTranslate.pageDecision({ lang, site, ...translateConfig });
+        const base = String(lang || '').slice(0, 2).toLowerCase();
+        const target = String(translateConfig.target || 'fr').slice(0, 2).toLowerCase();
+        if (decision === 'auto') startTranslation(contents);
+        else if (decision === 'offer') {
+          pipeAudioToUi('orbit:translate-offer', { webContentsId: contents.id, lang: base, langName: langName(base), targetName: langName(target), site });
+        }
+      })
+      .catch(() => {});
+  });
   try {
     // Fixée AVANT toute navigation : l'attribut `useragent` du <webview>
     // pourrait arriver après le début du chargement (ordre des attributs
@@ -2122,26 +2145,45 @@ function pipeAudioToUi(channel, payload) {
 
 // Lecture d'un texte par Orbit (sélection, page, mode lecture, aperçu).
 // `wc` : la page à prévenir d'un moteur manquant (toast), ou null.
-async function speakText(wc, text) {
+// `lang` : langue du texte quand on la connaît (page traduite, langue
+// déclarée par la page) — elle choisit la voix. Sinon, celle de la page `wc`.
+async function speakText(wc, text, lang = null) {
   const entry = beginSpeech({ frame: null, id: 0, timer: null });
-  return runSpeech(entry, text, ttsPrefs.rate, wc);
+  const textLang = lang || (wc ? await pageLangOf(wc) : '');
+  return runSpeech(entry, text, ttsPrefs.rate, wc, textLang);
+}
+
+// Langue de ce que la page AFFICHE : la langue cible si on l'a traduite,
+// sinon celle qu'elle déclare (<html lang>).
+async function pageLangOf(wc) {
+  try {
+    if (!wc || wc.isDestroyed()) return '';
+    const st = pageTranslations.get(wc.id);
+    if (st) return st.target;
+    return String(await wc.executeJavaScript('document.documentElement.lang || ""', false) || '');
+  } catch {
+    return '';
+  }
 }
 
 function stopSpeaking() {
   endSpeech('end');
   tts.stop();
-  if (piperMod) {
-    piperMod.stop();
-    pipeAudioToUi('orbit:tts-end', {});
-  }
-  if (mmsMod) {
-    mmsMod.stop();
-    pipeAudioToUi('orbit:tts-end', {});
-  }
+  if (piperMod) piperMod.stop();
+  if (mmsMod) mmsMod.stop();
+  // Un VRAI arrêt pour le lecteur de l'interface. Avant, on lui envoyait
+  // « tts-end » — qui veut dire « la synthèse est finie, laisse jouer ce qui
+  // reste ». Piper synthétise plus vite qu'il ne parle : plusieurs secondes
+  // d'audio attendaient encore, et continuaient de sonner alors que le bouton
+  // « Arrêter » avait déjà disparu.
+  pipeAudioToUi('orbit:tts-stop', {});
 }
 
+// « Ça parle » tant qu'une lecture est en cours, y compris quand Piper a fini
+// de calculer mais que l'interface joue encore la fin : sinon « Arrêter la
+// lecture » disparaissait du clic droit alors que la voix continuait.
 function speakingNow() {
-  return tts.isSpeaking() || Boolean(piperMod && piperMod.isSpeaking()) || Boolean(mmsMod && mmsMod.isSpeaking());
+  return Boolean(speech) || tts.isSpeaking() || Boolean(piperMod && piperMod.isSpeaking()) || Boolean(mmsMod && mmsMod.isSpeaking());
 }
 
 // Lit tout le texte visible de la page. Le texte est extrait dans la page, la
@@ -2194,19 +2236,27 @@ function pageVoiceInfo() {
 }
 
 // Fin de lecture des moteurs dont l'audio est joué par l'interface (Piper,
-// MMS) : la synthèse finit AVANT la lecture. On calcule donc la durée réelle
-// à partir du nombre d'échantillons produits.
+// MMS) : la synthèse finit AVANT la lecture. C'est le lecteur de l'interface
+// qui annonce la fin RÉELLE (« tts:played », quand le dernier morceau a fini
+// de sonner). Avant, on l'estimait depuis le lancement du moteur : le
+// chargement de la voix et les petits retards d'IPC n'étaient pas comptés, la
+// page croyait la phrase finie trop tôt, lançait la suivante… et le dernier
+// mot était coupé. L'estimation ne reste qu'en filet, avec une marge large,
+// au cas où l'interface ne répondrait pas.
+let playbackSeq = 0;
 function playbackTracker(entry) {
   let rate = 22050;
   let samples = 0;
-  let startedAt = 0;
+  let firstAudioAt = 0;
+  const token = ++playbackSeq;
+  entry.playbackToken = token;
   return {
     onStart: ({ sampleRate } = {}) => {
       rate = sampleRate || rate;
-      startedAt = Date.now();
-      pipeAudioToUi('orbit:tts-start', { sampleRate: rate });
+      pipeAudioToUi('orbit:tts-start', { sampleRate: rate, token });
     },
     onAudio: (chunk) => {
+      if (!firstAudioAt) firstAudioAt = Date.now();
       samples += (chunk?.length || 0) / 2;
       pipeAudioToUi('orbit:tts-audio', chunk);
     },
@@ -2214,8 +2264,8 @@ function playbackTracker(entry) {
       pipeAudioToUi('orbit:tts-end', {});
       // Rien produit (moteur en échec) : c'est le repli qui conclura.
       if (speech !== entry || !samples) return;
-      const left = startedAt + 80 + (samples / rate) * 1000 - Date.now();
-      entry.timer = setTimeout(() => endSpeech('end', entry), Math.max(0, left));
+      const left = firstAudioAt + (samples / rate) * 1000 - Date.now();
+      entry.timer = setTimeout(() => endSpeech('end', entry), Math.max(0, left) + 3000);
     },
     onProgress: (p) => mainWindow?.webContents?.send('orbit:tts-progress', p),
   };
@@ -2223,10 +2273,13 @@ function playbackTracker(entry) {
 
 // Choix du moteur : Piper ou MMS si choisis et disponibles, sinon le moteur
 // du système (repli).
-async function runSpeech(entry, text, rate, wc = null) {
+async function runSpeech(entry, text, rate, wc = null, textLang = '') {
   if (ttsPrefs.engine === 'piper' && ttsPrefs.voiceId) {
     try {
-      const res = await (await loadPiper()).speak(text, { voiceId: ttsPrefs.voiceId, rate, ...playbackTracker(entry) });
+      const piper = await loadPiper();
+      // Une voix installée dans la langue du texte, sinon celle des réglages.
+      const voiceId = pickVoiceFor(textLang, ttsPrefs.voiceId, piper.installedVoices());
+      const res = await piper.speak(text, { voiceId, rate, ...playbackTracker(entry) });
       if (res?.success) return res;
       if (wc) {
         showPageToast(
@@ -2251,7 +2304,7 @@ async function runSpeech(entry, text, rate, wc = null) {
   if (speech !== entry) return { success: false, error: 'interrupted' };
   const res = tts.speak(text, {
     rate,
-    lang: pageVoiceInfo().lang.slice(0, 2),
+    lang: baseLang(textLang) || pageVoiceInfo().lang.slice(0, 2),
     onEnd: () => endSpeech('end', entry),
   });
   if (!res.success) {
@@ -2263,7 +2316,7 @@ async function runSpeech(entry, text, rate, wc = null) {
 
 // `pageRate` : la vitesse demandée par la page (utterance.rate), appliquée
 // en plus de celle choisie dans Orbit.
-async function speakForPage(frame, id, text, pageRate = 1) {
+async function speakForPage(frame, id, text, pageRate = 1, lang = '') {
   const rate = Math.min(2.5, Math.max(0.5, ttsPrefs.rate * Math.min(2, Math.max(0.5, Number(pageRate) || 1))));
   const entry = beginSpeech({ frame, id, timer: null });
   try {
@@ -2271,7 +2324,7 @@ async function speakForPage(frame, id, text, pageRate = 1) {
   } catch {
     /* cadre parti */
   }
-  await runSpeech(entry, text, rate);
+  await runSpeech(entry, text, rate, null, lang);
 }
 
 // Le preload demande, au chargement de chaque page, s'il doit se poser.
@@ -2287,6 +2340,12 @@ ipcMain.on('tts:pageInfo', (event) => {
 // Meta AI, servies depuis un autre domaine) : sans pont, elles restaient muettes.
 ipcMain.handle('tts:pageInfoAsync', (event) => pageInfoFor(event));
 
+// Le lecteur de l'interface a joué le dernier morceau : fin réelle.
+ipcMain.on('tts:played', (event, token) => {
+  if (!fromOrbitUi(event)) return;
+  if (speech && speech.playbackToken && speech.playbackToken === Number(token)) endSpeech('end', speech);
+});
+
 ipcMain.on('tts:page', (event, msg = {}) => {
   // Pages embarquées seulement, et seulement si le réglage est actif.
   if (fromOrbitUi(event) || !ttsPrefs.pages || panicActive) return;
@@ -2300,7 +2359,7 @@ ipcMain.on('tts:page', (event, msg = {}) => {
   const text = String(msg.text || '').slice(0, 4000).trim();
   const id = Number(msg.id) || 0;
   if (!text || !id) return;
-  speakForPage(frame, id, text, msg.rate).catch(() => {});
+  speakForPage(frame, id, text, msg.rate, baseLang(msg.lang)).catch(() => {});
 });
 
 const ttsBridgeSessions = new WeakSet();
@@ -2378,6 +2437,182 @@ async function translateText(text) {
   const { target, engine, url, apiKey } = translateConfig;
   if (engine === 'libretranslate') return translateLibre(q, target, url, apiKey);
   return translateGoogle(q, target);
+}
+
+// --- Traduction de la page entière -------------------------------------------
+// Le script de page et les règles de sécurité sont décrits dans
+// electron/page-translate.js. Ici : le pilotage. Le principal DEMANDE des lots
+// au script (texte visible d'abord), les traduit (cache, puis service) et les
+// renvoie. La page n'a aucun moyen de s'adresser au traducteur elle-même.
+const translateCache = pageTranslate.makeCache();
+const pageTranslations = new Map(); // wc.id → état de la traduction de l'onglet
+const LANG_NAMES = { fr: 'français', en: 'anglais', es: 'espagnol', de: 'allemand', it: 'italien', pt: 'portugais', mg: 'malgache', ar: 'arabe', zh: 'chinois', ja: 'japonais', ru: 'russe', nl: 'néerlandais' };
+const langName = (code) => LANG_NAMES[String(code || '').slice(0, 2).toLowerCase()] || String(code || '?');
+
+async function translateBatch(texts, target) {
+  const { engine, url, apiKey } = translateConfig;
+  if (engine === 'libretranslate') {
+    const base = String(url || '').replace(/\/$/, '');
+    if (!base) throw new Error('URL du serveur LibreTranslate manquante (Réglages → Confidentialité)');
+    const res = await net.fetch(base + '/translate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ q: texts, source: 'auto', target, format: 'text', ...(apiKey ? { api_key: apiKey } : {}) }),
+    });
+    if (!res.ok) throw new Error('LibreTranslate HTTP ' + res.status);
+    return pageTranslate.parseLibreBatch(await res.json(), texts.length);
+  }
+  // Google : plusieurs textes en UNE requête, en POST (pas de limite d'URL).
+  const body = new URLSearchParams();
+  for (const t of texts) body.append('q', t);
+  const res = await net.fetch(
+    'https://translate.googleapis.com/translate_a/t?client=gtx&sl=auto&tl=' + encodeURIComponent(target),
+    { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded;charset=UTF-8' }, body: body.toString() }
+  );
+  if (!res.ok) throw new Error('HTTP ' + res.status);
+  return pageTranslate.parseGoogleBatch(await res.json(), texts.length);
+}
+
+// Traduction en ligne interdite ici ? (page privée, ou trafic en tunnel : le
+// texte sortirait du tunnel vers le service). Un serveur LibreTranslate local
+// reste permis.
+function translationBlockedReason(wc) {
+  const privatePage = isPrivatePartition(guestPartitions.get(wc.id));
+  const tunnel = tunnelOf(wc);
+  if (!privatePage && !tunnel) return null;
+  if (translateConfig.engine === 'libretranslate' && pageTranslate.isLocalServer(translateConfig.url)) return null;
+  return privatePage
+    ? 'Traduction désactivée sur une page privée : le texte partirait vers un service en ligne. (Possible avec un serveur LibreTranslate local.)'
+    : `Traduction désactivée via ${NETWORK_NAMES[tunnel] || 'le tunnel'} : le texte sortirait du tunnel. (Possible avec un serveur LibreTranslate local.)`;
+}
+
+function runInTranslateWorld(wc, code) {
+  return wc.executeJavaScriptInIsolatedWorld(pageTranslate.TRANSLATE_WORLD_ID, [{ code }], false);
+}
+
+async function pumpTranslation(wc, st) {
+  if (st.busy || st.stopped || wc.isDestroyed()) return;
+  st.busy = true;
+  try {
+    for (let round = 0; round < 12 && !st.stopped; round++) {
+      const items = await runInTranslateWorld(
+        wc,
+        `window.__orbitTr ? window.__orbitTr.collect(${pageTranslate.BATCH_CHARS}, ${pageTranslate.BATCH_ITEMS}) : null`
+      );
+      if (!Array.isArray(items) || !items.length) break;
+      const results = new Array(items.length);
+      const missing = [];
+      items.forEach((it, i) => {
+        const hit = translateCache.get(st.target, it.t);
+        if (hit !== undefined) results[i] = { t: hit, lang: '' };
+        else missing.push(i);
+      });
+      if (missing.length) {
+        let done;
+        try {
+          done = await translateBatch(missing.map((i) => items[i].t), st.target);
+        } catch (err) {
+          await runInTranslateWorld(wc, 'window.__orbitTr && window.__orbitTr.release()').catch(() => {});
+          throw err;
+        }
+        missing.forEach((i, k) => {
+          results[i] = done[k];
+          if (done[k].t) translateCache.set(st.target, items[i].t, done[k].t);
+        });
+        // Premier lot : la page est déjà dans la bonne langue → on n'insiste pas.
+        if (!st.checkedLang) {
+          st.checkedLang = true;
+          if (pageTranslate.mostlyIn(done, st.target)) {
+            await stopTranslation(wc, { silent: true });
+            showPageToast(wc, `Cette page est déjà en ${langName(st.target)}.`);
+            return;
+          }
+          const detected = done.find((r) => r.lang)?.lang;
+          if (detected) st.from = detected;
+        }
+      }
+      if (st.stopped || wc.isDestroyed()) return;
+      await runInTranslateWorld(
+        wc,
+        `window.__orbitTr && window.__orbitTr.apply(${JSON.stringify(items.map((it, i) => ({ id: it.id, t: results[i]?.t || '' })))})`
+      );
+      if (!st.announced) {
+        st.announced = true;
+        const key = process.platform === 'darwin' ? '⌘⇧R' : 'Alt+Maj+R';
+        showPageToast(wc, `Page traduite en ${langName(st.target)}${st.from ? ` (d’origine : ${langName(st.from)})` : ''} · ${key} pour l’original`);
+      }
+    }
+  } catch (err) {
+    if (!st.errorShown && !wc.isDestroyed()) {
+      st.errorShown = true;
+      showPageToast(wc, 'Traduction impossible : ' + (err?.message || 'service injoignable'));
+    }
+  } finally {
+    st.busy = false;
+  }
+}
+
+async function injectTranslation(wc, st, { manual = false } = {}) {
+  // La traduction suit l'onglet… sauf vers un site marqué « jamais ». Une
+  // demande EXPLICITE (clic, raccourci) passe toujours.
+  const site = pageTranslate.siteOf(wc.getURL());
+  if (!manual && site && (translateConfig.never || []).includes(site)) {
+    stopTranslation(wc, { silent: true });
+    return;
+  }
+  try {
+    await runInTranslateWorld(wc, pageTranslate.pageScript);
+    st.checkedLang = false;
+    st.announced = false;
+    st.errorShown = false;
+    pumpTranslation(wc, st);
+  } catch {
+    /* page en cours de navigation : le prochain dom-ready reprendra */
+  }
+}
+
+async function startTranslation(wc) {
+  if (!wc || wc.isDestroyed()) return;
+  const blocked = translationBlockedReason(wc);
+  if (blocked) {
+    showPageToast(wc, blocked);
+    return;
+  }
+  const st = { target: (translateConfig.target || 'fr').slice(0, 8), busy: false, stopped: false, timer: null, from: '' };
+  pageTranslations.set(wc.id, st);
+  // La traduction suit l'onglet, comme dans Chrome : la page suivante est
+  // traduite aussi, jusqu'à « Voir l'original ».
+  st.onReady = () => injectTranslation(wc, st);
+  wc.on('dom-ready', st.onReady);
+  st.onGone = () => stopTranslation(wc, { silent: true, gone: true });
+  wc.once('destroyed', st.onGone);
+  st.timer = setInterval(() => pumpTranslation(wc, st), 1200);
+  await injectTranslation(wc, st, { manual: true });
+  emitTranslationState(wc);
+}
+
+async function stopTranslation(wc, { silent = false, gone = false } = {}) {
+  const st = pageTranslations.get(wc.id);
+  if (!st) return;
+  st.stopped = true;
+  clearInterval(st.timer);
+  pageTranslations.delete(wc.id);
+  if (gone || wc.isDestroyed()) return;
+  wc.removeListener('dom-ready', st.onReady);
+  wc.removeListener('destroyed', st.onGone);
+  await runInTranslateWorld(wc, 'window.__orbitTr ? window.__orbitTr.restore() : 0').catch(() => {});
+  if (!silent) showPageToast(wc, 'Page affichée dans sa langue d’origine.');
+  emitTranslationState(wc);
+}
+
+function toggleTranslation(wc) {
+  if (!wc || wc.isDestroyed()) return;
+  if (pageTranslations.has(wc.id)) return stopTranslation(wc);
+  return startTranslation(wc);
+}
+
+function emitTranslationState(wc) {
+  pipeAudioToUi('orbit:translate-state', { webContentsId: wc.id, active: pageTranslations.has(wc.id) });
 }
 
 // Petit bandeau d'information DANS la page invitée. Sert aux actions du menu
@@ -3358,6 +3593,12 @@ function buildGuestContextMenu(wc, params) {
     t.push({ type: 'separator' });
     // Lecture vocale / traduction de la page entière (utile sans sélection)
     t.push({ label: 'Lire la page à voix haute', click: () => speakPage(wc) });
+    t.push({
+      label: pageTranslations.has(wc.id)
+        ? 'Afficher la page d’origine'
+        : `Traduire la page en ${langName(translateConfig.target || 'fr')}`,
+      click: () => toggleTranslation(wc),
+    });
     if (speakingNow()) {
       t.push({ label: 'Arrêter la lecture', click: () => stopSpeaking() });
     }
@@ -5233,6 +5474,13 @@ function attachWindowShortcuts(contents) {
         if (input.shift) contents.reloadIgnoringCache();
         else contents.reload();
         return;
+      }      // Fenêtre détachée : Ctrl/⌘+W la ferme, comme un onglet de navigateur
+      // (le menu d'application n'a plus de « Fermer » : voir installAppMenu).
+      if (lower === 'w' && !input.shift && !input.alt) {
+        event.preventDefault();
+        const win = BrowserWindow.fromWebContents(contents);
+        if (win && win !== mainWindow && !win.isDestroyed()) win.close();
+        return;
       }
     }
     if (key === 'F5') {
@@ -6690,6 +6938,11 @@ ipcMain.handle('translate:setConfig', (_e, cfg = {}) => {
     engine: cfg.engine === 'libretranslate' ? 'libretranslate' : 'google',
     url: String(cfg.url || ''),
     apiKey: String(cfg.apiKey || ''),
+    offer: cfg.offer === true,
+    // Langues à toujours traduire (codes à 2 lettres) et sites à ne jamais
+    // traduire (hôtes) : choisis depuis la bulle, modifiables dans Réglages.
+    always: (Array.isArray(cfg.always) ? cfg.always : []).map((l) => String(l).slice(0, 2).toLowerCase()).filter((l) => /^[a-z]{2}$/.test(l)).slice(0, 50),
+    never: (Array.isArray(cfg.never) ? cfg.never : []).map((h) => String(h).toLowerCase().slice(0, 253)).filter(Boolean).slice(0, 500),
   };
   return { success: true };
 });
@@ -9573,6 +9826,19 @@ handleFromUi('studio:prepare', (_e, payload = {}) =>
   studio.setPendingSource(payload.id, { audio: payload.audio }));
 handleFromUi('studio:cancelPrepare', () => studio.clearPendingSource());
 handleFromUi('studio:cursor', () => studio.cursorPoint());
+// Traduire la page d'une app (bouton de barre, palette, Alt+Maj+R, proposition).
+handleFromUi('translate:page', (_event, { webContentsId, mode } = {}) => {
+  const wc = webContents.fromId(Number(webContentsId));
+  if (!wc || wc.isDestroyed() || wc.getType() !== 'webview') return { success: false };
+  const active = pageTranslations.has(wc.id);
+  if (mode === 'on' && active) return { success: true, active };
+  if (mode === 'off' && !active) return { success: true, active };
+  toggleTranslation(wc);
+  return { success: true };
+});
+handleFromUi('translate:state', (_event, { webContentsId } = {}) => ({
+  active: pageTranslations.has(Number(webContentsId)),
+}));
 handleFromUi('ui:mouseGestures', (_event, cfg) => {
   mouseGestures.configure(cfg && typeof cfg === 'object' ? cfg : {});
   return { success: true };
@@ -10310,7 +10576,29 @@ function purgeStaleFlyPartitions(userData) {
   }
 }
 
+// Menu d'application. Sans menu défini, Electron garde le sien — caché, mais
+// ses raccourcis restent actifs : Ctrl+W (« Fermer la fenêtre ») fermait TOUT
+// Orbit au lieu de l'onglet, comme dans un navigateur. Ctrl+R rechargeait
+// l'interface elle-même.
+//   • Windows / Linux : aucun menu (Orbit gère ses raccourcis lui-même).
+//   • macOS : le strict nécessaire (menu de l'app pour ⌘Q, Édition pour
+//     copier/coller, Fenêtre sans « Fermer ») — ⌘W ferme l'onglet libre.
+function installAppMenu() {
+  if (process.platform !== 'darwin') {
+    Menu.setApplicationMenu(null);
+    return;
+  }
+  Menu.setApplicationMenu(
+    Menu.buildFromTemplate([
+      { role: 'appMenu' },
+      { role: 'editMenu' },
+      { label: 'Fenêtre', submenu: [{ role: 'minimize' }, { role: 'zoom' }, { type: 'separator' }, { role: 'front' }] },
+    ])
+  );
+}
+
 app.whenReady().then(async () => {
+  installAppMenu();
   // Seconde instance : on a déjà quitté plus haut, on ne construit rien.
   if (!gotInstanceLock) return;
 

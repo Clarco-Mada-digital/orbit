@@ -20,6 +20,20 @@ let nextAt = 0;
 let sampleRate = 22050;
 let sources = new Set();
 let volume = 1;
+// Lecture en cours : numéro donné par le processus principal, et « la synthèse
+// est terminée » (plus aucun morceau à venir). Quand les deux sont réunis et
+// que le dernier morceau a fini de SONNER, on prévient le principal : c'est
+// cette fin réelle qui fait passer une page à sa phrase suivante.
+let token = 0;
+let synthDone = false;
+// Au moins un morceau joué : sans son, c'est le principal qui conclut (repli).
+let gotAudio = false;
+
+function maybeFinished(forToken) {
+  if (!forToken || forToken !== token || !synthDone || !gotAudio || sources.size > 0) return;
+  token = 0;
+  window.electronAPI?.tts?.played?.(forToken);
+}
 
 function ensureContext() {
   if (ctx && ctx.state !== 'closed') return ctx;
@@ -38,9 +52,12 @@ export function setVolume(value) {
   if (gain) gain.gain.value = volume;
 }
 
-export function start({ sampleRate: rate } = {}) {
+export function start({ sampleRate: rate, token: t } = {}) {
   stop();
   sampleRate = Number(rate) || 22050;
+  token = Number(t) || 0;
+  synthDone = false;
+  gotAudio = false;
   ensureContext();
 }
 
@@ -72,7 +89,15 @@ export function pushChunk(chunk) {
   nextAt += buffer.duration;
 
   sources.add(source);
-  source.onended = () => sources.delete(source);
+  gotAudio = true;
+  const mine = token;
+  const set = sources;
+  source.onended = () => {
+    // Un morceau d'une lecture déjà arrêtée ne compte plus.
+    if (set !== sources) return;
+    sources.delete(source);
+    maybeFinished(mine);
+  };
 }
 
 export function stop() {
@@ -85,6 +110,9 @@ export function stop() {
   }
   sources = new Set();
   nextAt = 0;
+  token = 0;
+  synthDone = false;
+  gotAudio = false;
   if (ctx && ctx.state !== 'closed') {
     const closing = ctx;
     ctx = null;
@@ -99,9 +127,13 @@ export function attachTtsPlayer() {
   return window.electronAPI?.tts?.onAudio?.({
     start,
     chunk: pushChunk,
+    // Arrêt demandé (bouton, clic droit, la page) : on coupe tout de suite.
+    stop,
     end: () => {
       // On ne coupe pas : les morceaux déjà planifiés doivent finir de se jouer.
       // Le contexte se fermera au prochain `start` ou `stop`.
+      synthDone = true;
+      maybeFinished(token);
     },
   });
 }

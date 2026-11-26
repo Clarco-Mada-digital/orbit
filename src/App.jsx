@@ -45,6 +45,8 @@ import ThemeDecor from './components/ThemeDecor';
 import LinkPeek from './components/LinkPeek';
 import SplitDropOverlay from './components/SplitDropOverlay';
 import SpeakingIndicator from './components/SpeakingIndicator';
+import CloseTabGuard from './components/CloseTabGuard';
+import TranslateOffer from './components/TranslateOffer';
 import ReaderView from './components/ReaderView';
 import KeyboardSwitcher from './components/KeyboardSwitcher';
 import { splitForDrop } from './lib/splitDrop';
@@ -1166,8 +1168,14 @@ const [editUrlFor, setEditUrlFor] = useState(null); // { id, url } — boîte «
       engine: settings.translateEngine || 'google',
       url: settings.libreTranslateUrl || '',
       apiKey: settings.libreTranslateApiKey || '',
+      offer: settings.translateOffer === true,
+      always: settings.translateAlways || [],
+      never: settings.translateNever || [],
     });
   }, [
+    settings.translateOffer,
+    settings.translateAlways,
+    settings.translateNever,
     settings.translateTarget,
     settings.translateEngine,
     settings.libreTranslateUrl,
@@ -1364,6 +1372,16 @@ const openEditUrl = useCallback((id) => {
     return () => window.removeEventListener('orbit:mouse-nav', onNav);
   }, []);
 
+  // Traduire la page affichée (Alt+Maj+R, palette, bouton de barre).
+  useEffect(() => {
+    const onTranslate = () => {
+      const id = getWebContentsIdFor(useStore.getState().activeApp);
+      if (id) window.electronAPI?.translatePage?.(id)?.catch?.(() => {});
+    };
+    window.addEventListener('orbit:translate-page', onTranslate);
+    return () => window.removeEventListener('orbit:translate-page', onTranslate);
+  }, []);
+
   // Module « Adresse » de la barre : un clic ouvre la même boîte qu'Alt+L.
   useEffect(() => {
     const open = () => openEditUrl(useStore.getState().activeApp);
@@ -1397,6 +1415,14 @@ const openEditUrl = useCallback((id) => {
       window.dispatchEvent(new Event('orbit:reader-open'));
       return;
     }
+    if (action === 'reopen-tab') {
+      useStore.getState().reopenClosedFlyPage();
+      return;
+    }
+    if (action === 'translate-page') {
+      window.dispatchEvent(new Event('orbit:translate-page'));
+      return;
+    }
     if (action === 'downloads') return setShowDownloads((v) => !v);
     if (action === 'vault') return setShowVault((v) => !v);
     // Nouvelle page volante : la boîte d'adresse, vide, sans page à modifier.
@@ -1409,8 +1435,9 @@ const openEditUrl = useCallback((id) => {
         setLinkPeek(null);
         return;
       }
-      const st = useStore.getState();
-      if (st.flyPages.some((p) => p.id === st.activeApp)) st.closeFlyPage(st.activeApp);
+      // Onglet libre : fermé, avec confirmation s'il est occupé. Application
+      // installée : jamais fermée au clavier. Voir CloseTabGuard.
+      window.dispatchEvent(new Event('orbit:close-tab'));
       return;
     }
     if (action === 'detach') {
@@ -2095,6 +2122,8 @@ const openEditUrl = useCallback((id) => {
       ) : null}
       <KeyboardSwitcher />
       <SpeakingIndicator />
+      <CloseTabGuard />
+      <TranslateOffer />
       {showQuickSwitcher && (
         <QuickSwitcher
           initialQuery={quickSwitcherQuery}

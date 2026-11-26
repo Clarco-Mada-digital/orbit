@@ -38,6 +38,23 @@ import PasswordVault from './PasswordVault';
 import ReleaseNotes from './ReleaseNotes';
 import ResetSettingsCard from './ResetSettingsCard';
 import OrbitLogo from './OrbitLogo';
+
+// Noms des langues « toujours traduire » (clés explicites : le contrôle des
+// traductions lit les appels t('…') tels quels).
+const TRANSLATE_LANG_KEYS = {
+  en: 'st.tlang.en',
+  fr: 'st.tlang.fr',
+  es: 'st.tlang.es',
+  de: 'st.tlang.de',
+  it: 'st.tlang.it',
+  pt: 'st.tlang.pt',
+  mg: 'st.tlang.mg',
+  ar: 'st.tlang.ar',
+  zh: 'st.tlang.zh',
+  ja: 'st.tlang.ja',
+  ru: 'st.tlang.ru',
+  nl: 'st.tlang.nl',
+};
 import VoiceSettings from './VoiceSettings';
 import AssistantSettings from './AssistantSettings';
 import TopbarSettings from './TopbarSettings';
@@ -1549,6 +1566,43 @@ export default function Settings({ onClose }) {
                     )}
                     {settings.translateEngine !== 'libretranslate' && (
                       <p className="text-xs text-text-muted">{t('st.googleHint')}</p>
+                    )}
+                    <label className="flex items-center justify-between gap-4 mt-4 pt-4 border-t border-border">
+                      <div>
+                        <div className="font-medium">{t('st.translateOffer')}</div>
+                        <div className="text-sm text-text-muted">{t('st.translateOfferDesc')}</div>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={settings.translateOffer === true}
+                        onChange={(e) => updateSettings({ translateOffer: e.target.checked })}
+                        className="w-12 h-6 flex-shrink-0 bg-bg-hover rounded-full relative cursor-pointer appearance-none checked:bg-accent-primary transition-colors after:content-[''] after:absolute after:top-1 after:left-1 after:w-4 after:h-4 after:bg-white after:rounded-full after:transition-transform checked:after:translate-x-6"
+                      />
+                    </label>
+                    <p className="text-xs text-text-muted mt-2">{t('st.translatePageHint')}</p>
+                    {[
+                      { key: 'translateAlways', label: t('st.translateAlways'), fmt: (v) => (TRANSLATE_LANG_KEYS[v] ? t(TRANSLATE_LANG_KEYS[v]) : v) },
+                      { key: 'translateNever', label: t('st.translateNever'), fmt: (v) => v },
+                    ].map(({ key, label, fmt }) =>
+                      (settings[key] || []).length ? (
+                        <div key={key} className="mt-3">
+                          <div className="text-sm font-medium mb-1.5">{label}</div>
+                          <div className="flex flex-wrap gap-1.5">
+                            {(settings[key] || []).map((v) => (
+                              <span key={v} className="inline-flex items-center gap-1 rounded-full border border-border bg-bg-primary pl-2.5 pr-1 py-0.5 text-xs">
+                                {fmt(v)}
+                                <button
+                                  onClick={() => updateSettings({ [key]: (settings[key] || []).filter((x) => x !== v) })}
+                                  className="rounded-full px-1 text-text-muted hover:text-error"
+                                  title={t('st.translateRemove')}
+                                >
+                                  ×
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+                        </div>
+                      ) : null
                     )}
                   </div>
                 </div>

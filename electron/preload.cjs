@@ -320,18 +320,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.on('orbit:tts-progress', listener);
       return () => ipcRenderer.removeListener('orbit:tts-progress', listener);
     },
+    // Le dernier morceau a fini de sonner (fin RÉELLE de la phrase).
+    played: (token) => ipcRenderer.send('tts:played', Number(token) || 0),
     // Flux audio brut de Piper, rejoué par l'interface (voir lib/ttsPlayer.js)
     onAudio: (handlers) => {
       const onStart = (_e, p) => handlers.start?.(p);
       const onChunk = (_e, chunk) => handlers.chunk?.(chunk);
       const onEnd = () => handlers.end?.();
+      const onStop = () => handlers.stop?.();
       ipcRenderer.on('orbit:tts-start', onStart);
       ipcRenderer.on('orbit:tts-audio', onChunk);
       ipcRenderer.on('orbit:tts-end', onEnd);
+      ipcRenderer.on('orbit:tts-stop', onStop);
       return () => {
         ipcRenderer.removeListener('orbit:tts-start', onStart);
         ipcRenderer.removeListener('orbit:tts-audio', onChunk);
         ipcRenderer.removeListener('orbit:tts-end', onEnd);
+        ipcRenderer.removeListener('orbit:tts-stop', onStop);
       };
     },
   },
@@ -574,6 +579,20 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   // Traduction : configuration (langue cible + moteur Google/LibreTranslate)
   setTranslateConfig: (cfg) => ipcRenderer.invoke('translate:setConfig', cfg),
+  // Traduction de la page entière (electron/page-translate.js). `mode` :
+  // 'on' | 'off' | absent (bascule).
+  translatePage: (webContentsId, mode) => ipcRenderer.invoke('translate:page', { webContentsId, mode }),
+  translateState: (webContentsId) => ipcRenderer.invoke('translate:state', { webContentsId }),
+  onTranslateState: (cb) => {
+    const h = (_e, payload) => cb(payload);
+    ipcRenderer.on('orbit:translate-state', h);
+    return () => ipcRenderer.removeListener('orbit:translate-state', h);
+  },
+  onTranslateOffer: (cb) => {
+    const h = (_e, payload) => cb(payload);
+    ipcRenderer.on('orbit:translate-offer', h);
+    return () => ipcRenderer.removeListener('orbit:translate-offer', h);
+  },
   // Proxy / VPN par partition
   applyProxy: (payload) => ipcRenderer.invoke('proxy:apply', payload),
   // Sélecteur au clavier : tant qu'il est ouvert, le processus principal

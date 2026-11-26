@@ -44,6 +44,13 @@ export function matchCombo({ key, code, ctrl, alt, meta, shift }, mac, assistant
   const modReload = mac ? meta && !ctrl : ctrl && !alt;
   if (modReload && k === 'r') return shift ? 'reload-hard' : 'reload';
   if (k === 'f5' && !alt) return shift || ctrl || meta ? 'reload-hard' : 'reload';
+  // Fermer l'onglet libre : Ctrl+W, comme dans un navigateur (⌘W sur macOS
+  // passe par le modificateur ⌘ plus bas). Jamais une application installée,
+  // jamais Orbit entier — voir CloseTabGuard.
+  if (!mac && ctrl && !alt && !shift && !meta && k === 'w') return 'close-page';
+  // Rouvrir le dernier onglet libre fermé : Ctrl+Maj+T, comme dans Chrome.
+  // (Sur macOS, ⌘⇧T ouvre déjà les téléchargements : bulle et palette.)
+  if (!mac && ctrl && shift && !alt && !meta && k === 't') return 'reopen-tab';
   // Aide : la liste des raccourcis, sans modificateur.
   if (k === 'f1' && !alt && !ctrl && !meta && !shift) return 'help';
   // Mode lecture : F9, comme dans Firefox.
@@ -70,6 +77,8 @@ export function matchCombo({ key, code, ctrl, alt, meta, shift }, mac, assistant
       case 't': return 'downloads';
       case 'v': return 'vault';
       case 'n': return 'detach';
+      // Traduire la page / revenir à l'original (« R » comme tRaduire : T est pris).
+      case 'r': return 'translate-page';
       // Écran partagé
       case 'x': return 'split-toggle';
       case 'c': return 'split-direction';
@@ -159,9 +168,12 @@ export function shortcutKeys(t, assistantOptions = {}) {
     g('pages', [M, 'T'], d('sc.newPage', 'Ouvrir une adresse dans une page volante')),
     g('pages', [M, 'L'], d('sc.editUrl', 'Modifier l’adresse de la page active')),
     g('pages', [M, 'W'], d('sc.closePage', 'Fermer l’aperçu de lien ou la page volante active')),
+    ...(mac ? [] : [g('pages', ['Ctrl', 'W'], d('sc.closePage', 'Fermer l’aperçu de lien ou la page volante active'))]),
+    ...(mac ? [] : [g('pages', ['Ctrl', '⇧', 'T'], d('sc.reopenTab', 'Rouvrir le dernier onglet libre fermé'))]),
     g('pages', [mac ? '⌘' : 'Ctrl', 'R'], d('sc.reload', "Recharger la page de l'app active (⇧ : ignorer le cache)")),
     g('pages', [mac ? '⌘' : 'Ctrl', 'F'], d('sc.find', 'Rechercher dans la page')),
     g('pages', ['F9'], d('sc.reader', 'Mode lecture : l’article de la page, sans distraction')),
+    g('pages', [M, '⇧', 'R'], d('sc.translate', 'Traduire la page / revenir à l’original')),
     // Écran partagé
     g('split', [M, '⇧', 'X'], d('sc.splitToggle', 'Écran partagé : partager avec l’app précédente / quitter')),
     g('split', [M, '⇧', 'C'], d('sc.splitDirection', 'Écran partagé : côte à côte ↔ haut / bas')),

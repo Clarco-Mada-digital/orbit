@@ -1214,6 +1214,20 @@ async function doFill(fields, manual) {
   }
 }
 
+// Le champ réellement focalisé (à travers un Shadow DOM) peut-il être un
+// identifiant ou un mot de passe ? Aucune mesure de mise en page ici.
+function mayBeLoginTarget(event) {
+  const path = typeof event.composedPath === 'function' ? event.composedPath() : [];
+  const el = path[0] && path[0].nodeType === 1 ? path[0] : event.target;
+  if (!el || el.tagName?.toLowerCase() !== 'input') return false;
+  const root = typeof el.getRootNode === 'function' ? el.getRootNode() : document;
+  const pass =
+    (el.form && el.form.querySelector(PASSWORD_SELECTOR)) ||
+    (root && root !== document && root.querySelector ? root.querySelector(PASSWORD_SELECTOR) : null) ||
+    document.querySelector(PASSWORD_SELECTOR);
+  return isLoginInput(el, pass);
+}
+
 function maybeFill(event) {
   const target = event.target;
   if (!target || typeof target.matches !== 'function') return;
@@ -1225,6 +1239,15 @@ function maybeFill(event) {
     removeHint();
     return;
   }
+
+  // Pré-filtre PEU COÛTEUX. La suite n'agit que si le champ qui reçoit le
+  // focus EST un champ de connexion ; or findFields() parcourt toute la page
+  // (Shadow DOM compris) et mesure chaque champ, ce qui force un recalcul de
+  // mise en page. Le faire à CHAQUE focus de n'importe quel champ ralentissait
+  // toutes les pages qui en manipulent beaucoup (éditeurs, listes, chats) :
+  // Speedometer passait de 23 à 14. On teste d'abord ce seul champ, avec les
+  // mêmes critères (isLoginInput), sans rien mesurer.
+  if (!mayBeLoginTarget(event)) return;
 
   let fields = findFields();
 
@@ -1614,6 +1637,11 @@ document.addEventListener('submit', captureSubmit, true);
 document.addEventListener(
   'click',
   (e) => {
+    // Clic RÉEL seulement : un `.click()` lancé par le script de la page (très
+    // fréquent dans les applications web) déclenchait à chaque fois une
+    // recherche complète des identifiants. L'envoi par Entrée et l'événement
+    // `submit` restent surveillés, eux.
+    if (!e.isTrusted) return;
     const el = e.target && e.target.closest ? e.target.closest('button, input[type="submit"], [role="button"]') : null;
     if (!el) return;
     if (el.type === 'button' && !/(login|log in|sign|connexion|connecter|continue|suivant|next|submit)/i.test(el.textContent || el.value || '')) return;
@@ -2720,13 +2748,27 @@ function showFakeBtn(anchor) {
   }, 8000);
 }
 
+// Le 🎲 est décidé APRÈS la tâche en cours, une seule fois : une page qui
+// donne et retire le focus par script (listes, éditeurs) ne paie plus une
+// mesure de visibilité à chaque fois. Pour une personne, le délai est nul.
+let fakeFocusTimer = null;
+let fakeFocusTarget = null;
 document.addEventListener(
   'focusin',
   (e) => {
-    if (fakeExtPresent()) return; // l'extension pose son propre 🎲
     if (!fakeDataEnabled) return;
-    if (isFillable(e.target) && !isFakeLoginField(e.target)) showFakeBtn(e.target);
-    else removeFakeBtn();
+    fakeFocusTarget = e.target;
+    if (fakeFocusTimer) return;
+    fakeFocusTimer = setTimeout(() => {
+      fakeFocusTimer = null;
+      const target = fakeFocusTarget;
+      fakeFocusTarget = null;
+      // Le focus est déjà parti ailleurs : rien à proposer.
+      if (!target || document.activeElement !== target) return;
+      if (fakeExtPresent()) return; // l'extension pose son propre 🎲
+      if (isFillable(target) && !isFakeLoginField(target)) showFakeBtn(target);
+      else removeFakeBtn();
+    }, 0);
   },
   true
 );

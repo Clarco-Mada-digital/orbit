@@ -1,5 +1,6 @@
 import { Fragment, useCallback, useState, useEffect, useRef } from 'react';
 import { BookOpen,
+  Languages,
   ArrowLeft,
   ArrowRight,
   RotateCw,
@@ -58,6 +59,38 @@ import ProfileWidget from './ProfileWidget';
 import ShieldsPanel from './ShieldsPanel';
 import PermissionsButton from './PermissionsButton';
 import MediaDownloadButton, { topbarEnabled } from './MediaDownloadButton';
+
+// Bouton « Traduire la page » : allumé tant que la page affichée est traduite.
+function TranslateButton({ disabled, activeApp, t }) {
+  const [state, setState] = useState({ id: null, active: false });
+  const wcId = getWebContentsIdFor(activeApp);
+  useEffect(() => {
+    let alive = true;
+    if (wcId) {
+      window.electronAPI?.translateState?.(wcId)?.then?.((r) => {
+        if (alive) setState({ id: wcId, active: Boolean(r?.active) });
+      }).catch?.(() => {});
+    }
+    const off = window.electronAPI?.onTranslateState?.((p) => {
+      if (p) setState({ id: p.webContentsId, active: Boolean(p.active) });
+    });
+    return () => {
+      alive = false;
+      if (typeof off === 'function') off();
+    };
+  }, [wcId]);
+  const on = state.id === wcId && state.active;
+  return (
+    <button
+      onClick={() => window.dispatchEvent(new Event('orbit:translate-page'))}
+      className={`btn-icon ${on ? 'text-accent-primary bg-accent-primary/10' : ''}`}
+      title={`${on ? t('tbm.translate.off') : t('tbm.translate')} (Alt+Maj+R)`}
+      disabled={disabled}
+    >
+      <Languages size={18} />
+    </button>
+  );
+}
 
 function ShieldsButton({ appId, webContentsId, url, menuAlign, menuPos, t }) {
   const [show, setShow] = useState(false);
@@ -1598,6 +1631,12 @@ const app = apps.find((a) => a.id === activeApp)
             >
               <BookOpen size={18} />
             </button>
+          </Fragment>
+        );
+      case 'translate':
+        return (
+          <Fragment key={key}>
+            <TranslateButton disabled={!activeApp} activeApp={activeApp} t={t} />
           </Fragment>
         );
       case 'battery':

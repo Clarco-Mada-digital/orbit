@@ -56,7 +56,7 @@
   // coffre ; `t` téléchargements.
   var ORBIT_ALT_SHIFT_KEYS = [
     'a', 'b', 'c', 'e', 'g', 'h', 'i', 'k', 'l', 'm', 'n', 'o', 'p',
-    'pagedown', 'pageup', 's', 't', 'v', 'w', 'x',
+    'pagedown', 'pageup', 'r', 's', 't', 'v', 'w', 'x',
   ];
   // Pris par ailleurs : `f` par l'extension Fake Data, et `j`/`u`/`y` sont les
   // autres touches possibles de la discussion de l'assistant (configurable).

@@ -87,7 +87,7 @@ if (info && info.enabled) {
       );
       return;
     }
-    ipcRenderer.send('tts:page', { op: 'speak', id, text, rate: Number(msg.rate) || 1 });
+    ipcRenderer.send('tts:page', { op: 'speak', id, text, rate: Number(msg.rate) || 1, lang: String(msg.lang || '').slice(0, 20) });
   });
 
   if (!isTop) {
@@ -168,7 +168,11 @@ if (info && info.enabled) {
       const id = ++seq;
       ids.set(utterance, id);
       byId.set(id, utterance);
-      send({ op: 'speak', id, text: String(utterance.text || ''), rate: Number(utterance.rate) || 1 });
+      // La langue demandée par le site (utterance.lang, ou celle de la voix
+      // choisie) : Orbit prend une voix installée qui la parle, s'il en a une.
+      const v = voices.get(utterance);
+      const lang = String(utterance.lang || (v && v.lang) || document.documentElement.lang || '');
+      send({ op: 'speak', id, text: String(utterance.text || ''), rate: Number(utterance.rate) || 1, lang });
     };
 
     document.addEventListener('orbit:tts-in', (event) => {

@@ -18,6 +18,7 @@ import {
   withFolderForProfile,
 } from '../lib/appGroups.js';
 import { buildFlyPage, flyPageId } from '../lib/flyPages.js';
+import { pushClosed, popClosed } from '../lib/closedTabs.js';
 import {
   upsertAssistantSession,
   removeAssistantSession,
@@ -384,6 +385,9 @@ export const useStore = create(
       // Leur forme imite celle d'une app pour traverser le MÊME rendu
       // (<WebView>, recherche dans la page, zoom, écran partagé).
       flyPages: [],
+      // Onglets libres récemment fermés (en mémoire seulement, jamais les
+      // pages privées) : voir lib/closedTabs.js et `reopenClosedFlyPage`.
+      closedFlyPages: [],
 
       // Onboarding : écran de bienvenue au tout premier lancement
       onboarded: false,
@@ -1005,12 +1009,22 @@ export const useStore = create(
           const rest = state.flyPages.filter((p) => p.id !== id);
           return {
             flyPages: rest,
+            closedFlyPages: page ? pushClosed(state.closedFlyPages, page) : state.closedFlyPages,
             activeApp: state.activeApp === id ? null : state.activeApp,
             // Une page volante fermée ne doit pas laisser un panneau vide dans
             // l'écran partagé.
             splitView: state.splitView?.appIds?.includes(id) ? null : state.splitView,
           };
         }),
+
+      // Rouvre le dernier onglet libre fermé (Ctrl+Maj+T, bulle, palette).
+      // Renvoie l'id de la page rouverte, ou null s'il n'y avait rien.
+      reopenClosedFlyPage: () => {
+        const { entry, rest } = popClosed(get().closedFlyPages);
+        if (!entry) return null;
+        set({ closedFlyPages: rest });
+        return get().openFlyPage(entry.url, entry.filePath ? { filePath: entry.filePath } : {});
+      },
 
       closeAllFlyPages: () =>
         set((state) => {
@@ -1159,7 +1173,7 @@ export const useStore = create(
       // les rend éphémères. Fermer Orbit les efface, comme des onglets de
       // navigation privée. Tout le reste de l'état est enregistré comme avant.
       partialize: (state) => {
-        const { flyPages: _flyPages, ...rest } = state;
+        const { flyPages: _flyPages, closedFlyPages: _closed, ...rest } = state;
         return rest;
       },
       // v9 : nouveaux réglages (en-tête configurable, horloge, météo,
