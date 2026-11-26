@@ -6,6 +6,7 @@ on:
     paths:
       - 'docs/**'
       - 'extensions-dist/**'
+      - 'themes-dist/**'
       - '.github/workflows/pages.yml'
   workflow_dispatch:
 
@@ -70,6 +71,16 @@ jobs:
           cp extensions-dist/drivers/* docs/extensions/drivers/
           echo "Publié :"
           ls -la docs/extensions/
+
+      # Thèmes de la communauté : un fichier JSON par thème dans themes-dist/,
+      # validés avec le même code que l'import dans Orbit (lisibilité exigée),
+      # et un catalogue dont chaque entrée porte l'empreinte SHA-256 du fichier.
+      - name: Publier le catalogue de thèmes
+        run: |
+          node scripts/export-themes.mjs --check
+          mkdir -p docs/themes
+          cp themes-dist/*.json docs/themes/
+          ls -la docs/themes/
 
       - name: Upload site
         uses: actions/upload-pages-artifact@v4

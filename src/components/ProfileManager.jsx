@@ -5,7 +5,9 @@ import { useShallow } from 'zustand/react/shallow';
 import NetworkChoice from './NetworkChoice';
 import { useT } from '../lib/i18n';
 
-export default function ProfileManager({ onClose }) {
+// `embedded` : affiché DANS l'onglet Réglages → Profils (pas de fenêtre en
+// plus, pas de croix). Sinon, la fenêtre habituelle.
+export default function ProfileManager({ onClose, embedded = false }) {
   const { profiles, activeProfile, setActiveProfile, addProfile, updateProfile, deleteProfile } = useStore(
     useShallow((s) => ({ profiles: s.profiles, activeProfile: s.activeProfile, setActiveProfile: s.setActiveProfile, addProfile: s.addProfile, updateProfile: s.updateProfile, deleteProfile: s.deleteProfile })),
   );
@@ -54,19 +56,8 @@ export default function ProfileManager({ onClose }) {
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center animate-fade-in">
-      <div className="w-full max-w-2xl bg-bg-secondary border border-border rounded-2xl shadow-2xl overflow-hidden animate-scale-in">
-        {/* Header */}
-        <div className="h-16 border-b border-border flex items-center justify-between px-6">
-          <h2 className="text-xl font-bold">{t('pm.title')}</h2>
-          <button onClick={onClose} className="btn-icon">
-            <X size={20} />
-          </button>
-        </div>
-
-        {/* Content */}
-        <div className="p-6 max-h-[70vh] overflow-y-auto space-y-4">
+  const body = (
+    <>
           {/* Profiles list */}
           {profiles.map((profile) => (
             <div
@@ -288,6 +279,25 @@ export default function ProfileManager({ onClose }) {
               <span className="font-medium">{t('pm.newProfile')}</span>
             </button>
           )}
+    </>
+  );
+
+  if (embedded) return <div className="space-y-4">{body}</div>;
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/60 flex items-center justify-center animate-fade-in">
+      <div className="w-full max-w-2xl bg-bg-secondary border border-border rounded-2xl shadow-2xl overflow-hidden animate-scale-in">
+        {/* Header */}
+        <div className="h-16 border-b border-border flex items-center justify-between px-6">
+          <h2 className="text-xl font-bold">{t('pm.title')}</h2>
+          <button onClick={onClose} className="btn-icon">
+            <X size={20} />
+          </button>
+        </div>
+
+        {/* Content */}
+        <div className="p-6 max-h-[70vh] overflow-y-auto space-y-4">
+          {body}
         </div>
       </div>
     </div>

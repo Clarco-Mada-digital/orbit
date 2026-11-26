@@ -579,6 +579,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   // Traduction : configuration (langue cible + moteur Google/LibreTranslate)
   setTranslateConfig: (cfg) => ipcRenderer.invoke('translate:setConfig', cfg),
+  // Thèmes de la communauté : catalogue (taille, empreinte) et texte du thème
+  // vérifié — l'interface le passe ensuite au validateur d'import.
+  themeCatalog: (refresh = false) => ipcRenderer.invoke('themes:catalog', { refresh }),
+  themeDownload: (id) => ipcRenderer.invoke('themes:download', { id }),
   // Traduction de la page entière (electron/page-translate.js). `mode` :
   // 'on' | 'off' | absent (bascule).
   translatePage: (webContentsId, mode) => ipcRenderer.invoke('translate:page', { webContentsId, mode }),

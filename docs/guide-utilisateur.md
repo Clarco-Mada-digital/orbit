@@ -167,6 +167,20 @@ l’historique. Les connexions de base de données et les autorisations s’ajou
 - Personnalisez le thème, la couleur d’accent, les polices et les modules
   affichés dans les barres.
 - Chaque profil peut avoir ses réglages d’accueil et de fond distincts.
+- La barre latérale se place à gauche ou à droite (Réglages → Apparence →
+  Disposition), et chaque barre peut se masquer d’elle-même (mode épuré).
+
+### Thèmes de la communauté
+
+Réglages → Apparence → **Thèmes de la communauté → Parcourir** affiche des
+thèmes créés par d’autres utilisateurs, avec un aperçu en clair et en sombre.
+**Installer** l’ajoute et l’active. Rien n’est téléchargé avant votre clic, et
+chaque thème est vérifié : ce n’est qu’un fichier de couleurs, jamais du code.
+
+Pour créer le vôtre : **Exporter le thème courant**, modifiez les couleurs,
+**Importer un thème**. Pour le partager avec tout le monde, suivez le
+[guide des thèmes](guide-themes.md#7-partager-son-thème). La liste publique
+est aussi sur [la page Thèmes](https://clarco-mada-digital.github.io/orbit/themes.html).
 
 ### Espaces de travail
 
@@ -239,6 +253,33 @@ source : pages déjà visitées, pages ouvertes en ce moment, identifiants des
 trousseaux déverrouillés et code à usage unique. Les apps, profils, actions,
 calculs et conversions restent toujours disponibles.
 
+### Onglets libres : fermer, rouvrir
+
+**Ctrl+W** (⌘W sur Mac) ou **Alt+W** ferme l’onglet libre affiché. S’il s’y
+passe quelque chose — une vidéo qui joue, un formulaire en cours de saisie —
+Orbit demande d’abord confirmation. Une application installée n’est jamais
+fermée par ce raccourci : elle se met en veille avec Alt+S.
+
+Juste après une fermeture, une bulle **« Onglet fermé · Rouvrir »** permet de
+revenir en arrière ; **Ctrl+Maj+T** rouvre le dernier onglet libre fermé (sur
+Mac : palette Alt+K → « Rouvrir l’onglet fermé »). Les pages privées ne sont
+jamais gardées dans cette liste.
+
+### Traduire une page
+
+Clic droit → **Traduire la page**, **Alt+Maj+R**, la palette, ou le bouton
+« Traduire la page » à ajouter à une barre. Le texte visible est traduit en
+premier, le reste suit ; le même geste revient à l’original. La traduction
+suit l’onglet : la page suivante est traduite aussi.
+
+Dans **Réglages → Navigation → Traduction** : la langue cible, le service
+(Google ou un serveur LibreTranslate), une **proposition** discrète quand une
+page est dans une autre langue (désactivée par défaut), et les listes
+« toujours traduire » une langue / « jamais » un site.
+
+Une page privée ou passée par Tor/VPN n’est jamais envoyée à un service de
+traduction en ligne (un serveur LibreTranslate local reste possible).
+
 ## 5. Assistant IA et relecture
 
 Orbit propose un assistant de discussion, des outils de résumé et de rédaction,
@@ -282,7 +323,7 @@ l’activer.
 Si vous utilisez KeePassXC, le bouton **🗄 Rapatrier la base KeePassXC** de la
 barre d’outils du trousseau recopie ses identifiants dans le trousseau Orbit
 ouvert. KeePassXC doit tourner, sa base être déverrouillée, Orbit être associé
-(Réglages → KeePassXC) et l’option **« Allow limited access to all entries in
+(Réglages → Mots de passe → KeePassXC) et l’option **« Allow limited access to all entries in
 connected databases »** être cochée dans KeePassXC → Paramètres → Intégration
 navigateur → Avancé.
 

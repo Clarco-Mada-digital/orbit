@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { Palette, Upload, Download, Trash2, AlertTriangle, Check, Sun, Moon, Monitor } from 'lucide-react';
+import { Palette, Upload, Download, Trash2, AlertTriangle, Check, Sun, Moon, Monitor, Users, RefreshCw, Share2 } from 'lucide-react';
 import { useStore } from '../stores/useStore';
 import { useShallow } from 'zustand/react/shallow';
 import { useT } from '../lib/i18n';
@@ -282,6 +282,22 @@ export default function ThemePicker() {
         <p className="text-xs text-text-muted flex-1 min-w-[12rem]">{t('st.skin.hint')}</p>
       </div>
 
+      <CommunityThemes
+        custom={custom}
+        skin={skin}
+        mode={mode}
+        previewMode={previewMode}
+        onInstalled={(theme, warnings) => {
+          updateSettings({ customThemes: upsertTheme(custom, theme), themeSkin: theme.id, themeMode: mode });
+          setReport({
+            kind: warnings.length ? 'warning' : 'ok',
+            lines: warnings.length ? warnings : [t('st.skin.imported.ok', { name: theme.name })],
+          });
+        }}
+        onError={(lines) => setReport({ kind: 'error', lines })}
+        onUse={(id) => updateSettings({ themeSkin: id, themeMode: mode })}
+      />
+
       {/* Retour d'import. Les avertissements de lisibilité sont affichés en
           entier : c'est leur précision qui les rend actionnables. */}
       {report && (
@@ -309,6 +325,132 @@ export default function ThemePicker() {
               {line}
             </div>
           ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Thèmes de la communauté : catalogue publié avec le site (themes-dist/ du
+// dépôt, voir docs/guide-themes.md). Rien n'est demandé au réseau avant le
+// clic sur « Parcourir ». Le fichier reçu a déjà été vérifié par le processus
+// principal (taille + SHA-256 du catalogue) ; il passe ICI le même validateur
+// qu'un import manuel : un thème n'est que des valeurs, jamais du code.
+// ---------------------------------------------------------------------------
+const GUIDE_URL = 'https://github.com/Clarco-Mada-digital/orbit/blob/master/docs/guide-themes.md#7-partager-son-thème';
+
+function CommunityThemes({ custom, skin, previewMode, onInstalled, onError, onUse }) {
+  const t = useT();
+  const [state, setState] = useState({ open: false, loading: false, themes: [], error: '', stale: false });
+  const [busy, setBusy] = useState('');
+
+  const load = async (refresh = false) => {
+    setState((s) => ({ ...s, open: true, loading: true, error: '' }));
+    const res = await window.electronAPI?.themeCatalog?.(refresh).catch((e) => ({ success: false, error: String(e) }));
+    setState({
+      open: true,
+      loading: false,
+      themes: res?.themes || [],
+      error: res?.success ? '' : `${t('st.community.offline')}${res?.error ? ` (${res.error})` : ''}`,
+      stale: Boolean(res?.stale),
+    });
+  };
+
+  const install = async (entry) => {
+    setBusy(entry.id);
+    try {
+      const res = await window.electronAPI?.themeDownload?.(entry.id);
+      if (!res?.success) {
+        onError([t('st.community.failed', { name: entry.name }), res?.error || '']);
+        return;
+      }
+      const parsed = parseTheme(res.text);
+      if (!parsed.ok) {
+        onError(parsed.errors);
+        return;
+      }
+      onInstalled(parsed.theme, parsed.warnings);
+    } finally {
+      setBusy('');
+    }
+  };
+
+  const installed = new Set((custom || []).map((c) => c.id));
+
+  return (
+    <div className="mt-5 pt-4 border-t border-border">
+      <div className="flex flex-wrap items-center gap-2">
+        <Users size={16} className="text-accent-primary" />
+        <div className="font-medium text-sm flex-1 min-w-[10rem]">{t('st.community.title')}</div>
+        {state.open ? (
+          <button onClick={() => load(true)} disabled={state.loading} className="btn btn-secondary btn-sm">
+            <RefreshCw size={13} className={state.loading ? 'animate-spin' : undefined} /> {t('st.community.refresh')}
+          </button>
+        ) : (
+          <button onClick={() => load(false)} className="btn btn-secondary btn-sm">
+            {t('st.community.browse')}
+          </button>
+        )}
+        <button onClick={() => window.open(GUIDE_URL, '_blank')} className="btn btn-secondary btn-sm">
+          <Share2 size={13} /> {t('st.community.share')}
+        </button>
+      </div>
+      <p className="text-xs text-text-muted mt-1">{t('st.community.desc')}</p>
+
+      {state.open && (
+        <div className="mt-3">
+          {state.error && <p className="text-xs text-warning mb-2">{state.error}</p>}
+          {state.stale && !state.error && <p className="text-xs text-text-muted mb-2">{t('st.community.stale')}</p>}
+          {!state.loading && !state.themes.length && !state.error && (
+            <p className="text-xs text-text-muted">{t('st.community.empty')}</p>
+          )}
+          <div className="grid gap-2 sm:grid-cols-2">
+            {state.themes.map((entry) => {
+              const colors = entry.preview[previewMode] || entry.preview.dark || entry.preview.light;
+              const has = installed.has(entry.id);
+              const current = skin === entry.id;
+              return (
+                <div key={entry.id} className="flex items-center gap-3 rounded-xl border border-border p-2.5">
+                  {colors ? (
+                    <div
+                      className="h-12 w-16 shrink-0 rounded-lg border border-border overflow-hidden p-1.5 flex flex-col justify-between"
+                      style={{ background: `rgb(${colors.bgPrimary})` }}
+                      aria-hidden="true"
+                    >
+                      <div className="h-2 w-10 rounded-full" style={{ background: `rgb(${colors.textPrimary})`, opacity: 0.85 }} />
+                      <div className="flex gap-1">
+                        <div className="h-4 flex-1 rounded" style={{ background: `rgb(${colors.bgElevated})` }} />
+                        <div className="h-4 w-4 rounded" style={{ background: `rgb(${colors.accent})` }} />
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="h-12 w-16 shrink-0 rounded-lg bg-bg-hover" />
+                  )}
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-medium truncate">{entry.name}</div>
+                    <div className="text-[11px] text-text-muted truncate">
+                      {entry.author ? t('st.community.by', { author: entry.author }) : ''}
+                    </div>
+                    {entry.description && <div className="text-[11px] text-text-muted line-clamp-2">{entry.description}</div>}
+                  </div>
+                  {current ? (
+                    <span className="text-xs text-accent-primary flex items-center gap-1 shrink-0">
+                      <Check size={12} /> {t('st.community.active')}
+                    </span>
+                  ) : has ? (
+                    <button onClick={() => onUse(entry.id)} className="btn btn-secondary btn-sm shrink-0">
+                      {t('st.community.use')}
+                    </button>
+                  ) : (
+                    <button onClick={() => install(entry)} disabled={busy === entry.id} className="btn btn-primary btn-sm shrink-0">
+                      {busy === entry.id ? '…' : t('st.community.install')}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
+          </div>
         </div>
       )}
     </div>

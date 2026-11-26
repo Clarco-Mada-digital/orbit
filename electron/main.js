@@ -47,6 +47,7 @@ import * as studio from './studio.js';
 import * as pageScrollbar from './page-scrollbar.js';
 import * as mouseGestures from './mouse-gestures.js';
 import * as pageTranslate from './page-translate.js';
+import * as themeStore from './theme-store.js';
 import { pickVoiceFor, baseLang } from './voice-pick.js';
 import * as sitePermissions from './site-permissions.js';
 import * as tts from './tts.js';
@@ -9827,6 +9828,14 @@ handleFromUi('studio:prepare', (_e, payload = {}) =>
 handleFromUi('studio:cancelPrepare', () => studio.clearPendingSource());
 handleFromUi('studio:cursor', () => studio.cursorPoint());
 // Traduire la page d'une app (bouton de barre, palette, Alt+Maj+R, proposition).
+// Thèmes de la communauté (Réglages → Apparence) : catalogue et fichier vérifié.
+const themeCatalogCache = () => path.join(app.getPath('userData'), 'theme-catalog.json');
+handleFromUi('themes:catalog', (_event, { refresh } = {}) =>
+  themeStore.fetchThemeCatalog({ cachePath: themeCatalogCache(), refresh: !!refresh })
+);
+handleFromUi('themes:download', (_event, { id } = {}) =>
+  themeStore.downloadTheme({ id: String(id || ''), cachePath: themeCatalogCache() })
+);
 handleFromUi('translate:page', (_event, { webContentsId, mode } = {}) => {
   const wc = webContents.fromId(Number(webContentsId));
   if (!wc || wc.isDestroyed() || wc.getType() !== 'webview') return { success: false };

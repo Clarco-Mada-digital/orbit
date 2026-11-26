@@ -44,6 +44,9 @@ const ID_PATTERN = /^[a-z0-9][a-z0-9-]{1,31}$/;
 // et un nom de 10 000 caractères casserait l'affichage du sélecteur.
 const MAX_FILE_BYTES = 256 * 1024;
 const MAX_NAME_LENGTH = 48;
+// Auteur et description : facultatifs, utiles pour partager un thème (catalogue
+// de la communauté). Du texte pur, coupé à cette longueur.
+const MAX_DESCRIPTION_LENGTH = 160;
 
 // Triplet RGB « R G B », chaque composante de 0 à 255. C'est le format que
 // Tailwind attend (`rgb(var(--bg-primary))`), et il accepte donc aussi bien
@@ -233,6 +236,11 @@ export function parseTheme(text) {
     errors.push(`name : ${MAX_NAME_LENGTH} caractères au maximum`);
   }
 
+  // Auteur et description (facultatifs) : jamais une erreur, seulement coupés.
+  const author = typeof raw.author === 'string' ? raw.author.trim().slice(0, MAX_NAME_LENGTH) : '';
+  const description =
+    typeof raw.description === 'string' ? raw.description.trim().slice(0, MAX_DESCRIPTION_LENGTH) : '';
+
   // Ambiances. Au moins une est exigée ; les deux sont recommandées.
   const hasDark = raw.dark !== undefined;
   const hasLight = raw.light !== undefined;
@@ -258,6 +266,8 @@ export function parseTheme(text) {
   const theme = {
     id,
     name,
+    ...(author ? { author } : {}),
+    ...(description ? { description } : {}),
     traits,
     ...(dark ? { dark } : {}),
     ...(light ? { light } : {}),
@@ -291,6 +301,8 @@ export function exportTheme(skin, customThemes = null) {
       // on suffixe l'identifiant et le nom pour que la copie soit distincte.
       id: suffixId(custom.id),
       name: `${custom.name} (copie)`,
+      author: custom.author,
+      description: custom.description,
       traits: custom.traits || {},
       dark: custom.dark,
       light: custom.light,
@@ -313,11 +325,13 @@ function suffixId(id) {
   return `${String(id).slice(0, 25)}-copie`;
 }
 
-function serialize({ id, name, traits, dark, light }) {
+function serialize({ id, name, author, description, traits, dark, light }) {
   const body = {
     orbitTheme: THEME_FORMAT,
     id,
     name,
+    ...(author ? { author } : {}),
+    ...(description ? { description } : {}),
     traits,
     ...(dark ? { dark } : {}),
     ...(light ? { light } : {}),

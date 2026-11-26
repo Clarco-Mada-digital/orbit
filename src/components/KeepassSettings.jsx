@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { RefreshCw, ShieldCheck, ShieldAlert, Loader2, Link } from 'lucide-react';
 import { useT } from '../lib/i18n';
-import CredentialSource from './CredentialSource';
 
 // Onglet KeePassXC des Paramètres : état du pont, association, activer/désactiver
 export default function KeepassSettings() {
@@ -51,8 +50,8 @@ export default function KeepassSettings() {
 
   return (
     <div className="space-y-6">
-      {/* Quelles sources d'identifiants Orbit interroge */}
-      <CredentialSource />
+      {/* Le choix des sources d'identifiants (coffre, KeePassXC, les deux) est
+          affiché juste au-dessus, dans la partie coffre du même onglet. */}
 
       {/* État de la connexion */}
       <div className="card">

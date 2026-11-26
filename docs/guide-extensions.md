@@ -72,6 +72,8 @@ un fichier inerte jusqu'à ce que l'utilisateur clique sur « Installer ».
 | `permissions`, `optional_permissions` | Servent aussi à produire les avertissements ci-dessous. |
 | `orbit.nativeApp` | **Propre à Orbit.** Voir §5. |
 | `orbit.minOrbitVersion` | Version minimale d'Orbit. Le magasin la respecte : sur une version plus ancienne, l'extension est affichée avec « Nécessite Orbit X.Y.Z » et ne s'installe pas. |
+| `orbit.launcher` | **Propre à Orbit.** Identifiant d'action (lettres, chiffres, `-`, `_`, 64 caractères max). Pour une extension SANS panneau (`default_popup`) : un clic sur son icône dans la barre d'Orbit envoie cette action à la page affichée (voir §3, « Parler avec Orbit »). C'est ce qui remplace un bouton flottant posé sur chaque site. |
+| `orbit.sharedSettings` | **Propre à Orbit.** `true` : les réglages enregistrés par la page d'options (`chrome.storage.local`) sont recopiés dans **toutes** les sessions (chaque app a la sienne). Sans ça, un réglage fait depuis une app ne vaudrait que pour elle. |
 
 ### Versionner correctement
 
@@ -119,6 +121,36 @@ ne couvre pas tout Chrome.
 Ces avertissements ne sont pas décoratifs : ils apparaissent dans
 **Réglages → Extensions**, sous le nom de l'extension, pour que l'utilisateur
 sache pourquoi « elle ne fait rien ».
+
+### Parler avec Orbit : menu contextuel et barre
+
+Les scripts de contenu tournent dans un monde isolé, invisible pour Orbit. Le
+**DOM**, lui, est partagé : c'est par lui que passe le dialogue.
+
+- **Ajouter des entrées au clic droit d'Orbit.** Quand l'utilisateur ouvre le
+  menu, Orbit envoie `orbit:ctx-refresh` sur `<html>`. Votre script y répond
+  en écrivant ses entrées dans l'attribut `data-orbit-ctx` (un tableau JSON
+  de `{ "id", "label" }`), en **ajoutant** aux entrées déjà présentes.
+- **Exécuter l'action choisie.** Orbit envoie `orbit:ctx-action` sur `<html>`,
+  avec `detail.id`. C'est aussi ce que reçoit votre script quand on clique
+  sur l'extension dans la barre, si le manifeste déclare `orbit.launcher`.
+
+```js
+const root = document.documentElement;
+if (window.self === window.top) {
+  root.addEventListener('orbit:ctx-refresh', () => {
+    const items = JSON.parse(root.getAttribute('data-orbit-ctx') || '[]');
+    items.push({ id: 'monAction', label: 'Faire quelque chose' });
+    root.setAttribute('data-orbit-ctx', JSON.stringify(items));
+  });
+  root.addEventListener('orbit:ctx-action', (e) => {
+    if (e.detail?.id === 'monAction') faireQuelqueChose();
+  });
+}
+```
+
+Choisissez des identifiants qui vous sont propres : toutes les extensions
+partagent ces deux événements.
 
 ---
 
@@ -176,7 +208,7 @@ créer une nouvelle app native depuis une extension tierce.
 
 ## 6. Essayer son extension
 
-1. **Dans Orbit** : Réglages → Extensions → *Installer depuis un ZIP*, puis
+1. **Dans Orbit** : Réglages → Extensions → *Installer depuis ZIP*, puis
    sélectionnez votre archive. Réinstaller la même archive remplace la version
    précédente (Orbit décharge l'ancienne, repérée par son nom, dans toutes les
    sessions).
@@ -184,7 +216,7 @@ créer une nouvelle app native depuis une extension tierce.
    Orbit recharge les apps ouvertes après une installation. Si vous doutez,
    rechargez l'app concernée.
 3. Pour itérer sans repackager, placez les sources dans
-   `electron/extensions/<nom>/` et utilisez *Installer depuis un dossier*.
+   `electron/extensions/<nom>/` et utilisez *Depuis un dossier…*.
 
 ---
 
@@ -212,7 +244,24 @@ l'installation, après avoir vérifié **sa taille et son empreinte SHA-256**.
 Une archive dont l'empreinte ne correspond pas est refusée, pas installée.
 
 Pour une extension distribuée hors catalogue, il n'y a rien à faire de
-particulier : donnez le ZIP, l'utilisateur passe par *Installer depuis un ZIP*.
+particulier : donnez le ZIP, l'utilisateur passe par *Installer depuis ZIP*.
+
+### Proposer votre extension au catalogue
+
+Le catalogue est ouvert à tous. Pour y proposer la vôtre :
+
+1. *Forkez* le dépôt d'Orbit et placez vos sources dans
+   `electron/extensions/<nom>/` (avec un `README.md` qui explique ce qu'elle
+   fait et quelles données elle touche).
+2. Lancez `npm run export:extensions -- <nom>` : l'archive est créée dans
+   `extensions-dist/` et le catalogue mis à jour.
+3. Vérifiez la checklist du §8, puis ouvrez une *pull request* avec les
+   sources, l'archive et le catalogue.
+
+Chaque extension est relue avant publication : permissions, données envoyées
+ailleurs, comportement dans les pages. Une fois acceptée, elle apparaît dans
+le magasin d'Orbit chez tout le monde, sans nouvelle version de
+l'application.
 
 ### Entrée du catalogue
 
@@ -225,6 +274,7 @@ Chaque entrée est générée, jamais écrite à la main :
   "version": "1.0.0",
   "description": "…",
   "nativeApp": null,
+  "minOrbitVersion": "1.21.5",
   "size": 14715,
   "sha256": "3b1c…"
 }
@@ -249,5 +299,5 @@ génération du catalogue.
 - [ ] Aucune donnée envoyée à un service distant sans que ce soit annoncé dans
       la description
 - [ ] Logique testable isolée dans un `lib.js`, sans dépendance
-- [ ] Testée par *Installer depuis un ZIP* dans une vraie page
+- [ ] Testée par *Installer depuis ZIP* dans une vraie page
 - [ ] `npm run export:extensions -- --check` passe

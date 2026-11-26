@@ -1,0 +1,32 @@
+{
+  "orbitTheme": 1,
+  "id": "ocean",
+  "name": "Océan",
+  "author": "Équipe Orbit",
+  "description": "Bleu profond et turquoise, calme pour les longues sessions.",
+  "traits": { "radiusCard": "14px", "radiusControl": "10px" },
+  "dark": {
+    "bgPrimary": "#0b1622",
+    "bgSecondary": "#10202f",
+    "bgElevated": "#16293b",
+    "bgHover": "#1d3448",
+    "textPrimary": "#e6f1f8",
+    "textSecondary": "#b4c8d6",
+    "textMuted": "#8aa3b5",
+    "border": "#223a50",
+    "borderLight": "#2c4862",
+    "accent": "#2cc4c9"
+  },
+  "light": {
+    "bgPrimary": "#f3f8fb",
+    "bgSecondary": "#e7f0f6",
+    "bgElevated": "#ffffff",
+    "bgHover": "#dbe8f1",
+    "textPrimary": "#0e2233",
+    "textSecondary": "#2f4a5e",
+    "textMuted": "#4f6a7d",
+    "border": "#c9dbe7",
+    "borderLight": "#dde9f1",
+    "accent": "#0b7f86"
+  }
+}

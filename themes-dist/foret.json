@@ -1,0 +1,32 @@
+{
+  "orbitTheme": 1,
+  "id": "foret",
+  "name": "Forêt",
+  "author": "Équipe Orbit",
+  "description": "Verts de sous-bois et touches de mousse, reposant pour les yeux.",
+  "traits": { "radiusCard": "12px", "radiusControl": "8px" },
+  "dark": {
+    "bgPrimary": "#0f1611",
+    "bgSecondary": "#152019",
+    "bgElevated": "#1b2a20",
+    "bgHover": "#233528",
+    "textPrimary": "#e8f2ea",
+    "textSecondary": "#bcd0c1",
+    "textMuted": "#93ab99",
+    "border": "#27392d",
+    "borderLight": "#324839",
+    "accent": "#6fcf7f"
+  },
+  "light": {
+    "bgPrimary": "#f5f8f3",
+    "bgSecondary": "#eaf0e6",
+    "bgElevated": "#ffffff",
+    "bgHover": "#dfe8da",
+    "textPrimary": "#15261a",
+    "textSecondary": "#34493a",
+    "textMuted": "#55695a",
+    "border": "#cfdcc9",
+    "borderLight": "#e1eadc",
+    "accent": "#2f7d3d"
+  }
+}

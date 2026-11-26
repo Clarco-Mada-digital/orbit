@@ -8,6 +8,49 @@ Format : une section `## [X.Y.Z] — AAAA-MM-JJ` par version, puis des
 sous-sections `### Ajouté` / `### Modifié` / `### Corrigé` / `### Sécurité`.
 La plus récente en premier.
 
+## [1.21.9] — 2026-11-26
+
+### Ajouté
+- **Traduire une page** (clic droit, Alt+Maj+R, palette, ou bouton à ajouter
+  à une barre) : le texte visible d'abord, le reste ensuite ; le même geste
+  revient à l'original, et la traduction suit l'onglet. Réglages →
+  Navigation → Traduction : proposition discrète (désactivée par défaut),
+  « toujours traduire » une langue, « jamais » un site. Jamais envoyée en
+  ligne depuis une page privée ou via Tor/VPN.
+- **Rouvrir un onglet fermé** : bulle « Onglet fermé · Rouvrir » et
+  Ctrl+Maj+T. Les pages privées n'y sont jamais gardées.
+- **Thèmes de la communauté** : Réglages → Apparence → Parcourir, aperçu en
+  clair et en sombre, installation en un clic (fichier vérifié : taille,
+  empreinte, couleurs seulement). Chacun peut proposer le sien — voir le
+  guide des thèmes — et une page publique « Thèmes » rejoint le site.
+- **Souris** : défilement automatique au clic molette, comme dans Chrome, et
+  boutons précédent / suivant, dans les pages comme dans Orbit.
+- **Nouvel accueil** en trois étapes : présentation, langue / ambiance /
+  côté de la barre appliqués en direct, et choix des premières apps.
+
+### Modifié
+- **Réglages réorganisés** par sujet : un onglet **Navigation** (pages,
+  souris, audio et vidéo, traduction) ; la disposition des barres rejoint
+  **Apparence** ; **Profils** se gère directement dans l'onglet, sans
+  fenêtre en plus ; **KeePassXC** rejoint **Mots de passe**.
+- **Ctrl+W** ferme l'onglet libre (avec confirmation s'il est occupé), plus
+  jamais Orbit entier ; une application installée n'est jamais fermée au
+  clavier.
+- Lecture vocale : la voix suit la langue du texte (page traduite, langue
+  demandée par le site) quand une voix adaptée est installée.
+
+### Corrigé
+- **Performances des pages** : le module d'identifiants rescannait toute la
+  page à chaque focus et chaque clic. Speedometer passe de 14 à 23 — le
+  niveau du moteur sans Orbit.
+- Sites qui lisent à voix haute (ex. applications Meta AI) : la voix d'Orbit
+  était refusée pour toutes les pages, et absente des cadres (iframes).
+- Lecture vocale : le dernier mot de chaque phrase était coupé ; « Arrêter »
+  laissait finir la phrase en cours et faisait disparaître son bouton.
+- Documentation des extensions remise à jour (libellés, catalogue, protocole
+  de menu contextuel, `orbit.launcher`, `orbit.sharedSettings`, proposer une
+  extension au catalogue).
+
 ## [1.21.8] — 2026-11-26
 
 ### Ajouté

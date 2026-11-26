@@ -1,7 +1,7 @@
 // ---------------------------------------------------------------------------
 // i18n léger, sans dépendance. Dictionnaires fr/en + hook réactif useT().
 //
-// Usage : const t = useT(); t('welcome.title'); t('key', { name: 'X' })
+// Usage : const t = useT(); t('wz.hello.title'); t('key', { name: 'X' })
 // La langue vient de settings.language ('auto' | 'fr' | 'en') ; 'auto' se base
 // sur la langue du système. Le fr sert toujours de repli.
 //

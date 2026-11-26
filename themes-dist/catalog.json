@@ -1,0 +1,86 @@
+{
+  "version": 1,
+  "themes": [
+    {
+      "id": "foret",
+      "name": "Forêt",
+      "author": "Équipe Orbit",
+      "description": "Verts de sous-bois et touches de mousse, reposant pour les yeux.",
+      "file": "foret.json",
+      "size": 834,
+      "sha256": "d55eacf96f1dd22e672716a16ebfcc20ec763316d724488045f5454fac9d36b5",
+      "modes": [
+        "dark",
+        "light"
+      ],
+      "preview": {
+        "dark": {
+          "bgPrimary": "15 22 17",
+          "bgElevated": "27 42 32",
+          "textPrimary": "232 242 234",
+          "accent": "111 207 127"
+        },
+        "light": {
+          "bgPrimary": "245 248 243",
+          "bgElevated": "255 255 255",
+          "textPrimary": "21 38 26",
+          "accent": "47 125 61"
+        }
+      }
+    },
+    {
+      "id": "lavande",
+      "name": "Lavande",
+      "author": "Équipe Orbit",
+      "description": "Violets doux et arrondis généreux, une ambiance feutrée.",
+      "file": "lavande.json",
+      "size": 856,
+      "sha256": "58a63fe7e60eaf12075caf4043d81120d15ce03c6b6798693b7a894dd1b644a5",
+      "modes": [
+        "dark",
+        "light"
+      ],
+      "preview": {
+        "dark": {
+          "bgPrimary": "21 18 30",
+          "bgElevated": "36 31 51",
+          "textPrimary": "241 236 250",
+          "accent": "183 156 255"
+        },
+        "light": {
+          "bgPrimary": "248 246 252",
+          "bgElevated": "255 255 255",
+          "textPrimary": "31 24 48",
+          "accent": "106 69 201"
+        }
+      }
+    },
+    {
+      "id": "ocean",
+      "name": "Océan",
+      "author": "Équipe Orbit",
+      "description": "Bleu profond et turquoise, calme pour les longues sessions.",
+      "file": "ocean.json",
+      "size": 830,
+      "sha256": "6f4c77792a34f58ddd3773436569b8882453a7b22fce6d4b5a893c4bec324038",
+      "modes": [
+        "dark",
+        "light"
+      ],
+      "preview": {
+        "dark": {
+          "bgPrimary": "11 22 34",
+          "bgElevated": "22 41 59",
+          "textPrimary": "230 241 248",
+          "accent": "44 196 201"
+        },
+        "light": {
+          "bgPrimary": "243 248 251",
+          "bgElevated": "255 255 255",
+          "textPrimary": "14 34 51",
+          "accent": "11 127 134"
+        }
+      }
+    }
+  ]
+}

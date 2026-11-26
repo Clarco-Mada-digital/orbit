@@ -82,10 +82,17 @@ thème.
 C'est tout. Les formes sont héritées du thème Orbit, et le thème apparaît
 aussitôt dans le sélecteur.
 
-### Les trois champs d'en-tête
+### Les champs d'en-tête
 
 | Champ | Obligatoire | Règle |
 | --- | --- | --- |
+| `orbitTheme` | oui | La version du format. Vaut **1** aujourd'hui. |
+| `id` | oui | 2 à 32 caractères : minuscules, chiffres, tirets. Sert de clé interne — ne reprenez pas l'identifiant d'un thème livré (`orbit`, `tech`, `paper`, `amber`, `noel`, `aurore`). |
+| `name` | oui | Le nom affiché dans les réglages. 48 caractères au maximum. |
+| `author` | non (oui pour le catalogue) | Votre nom ou pseudo, affiché sous le thème. 48 caractères au maximum. |
+| `description` | non | Une phrase qui donne envie : l'ambiance, l'usage. 160 caractères au maximum. |
+
+--- | --- | --- |
 | `orbitTheme` | oui | La version du format. Vaut **1** aujourd'hui. |
 | `id` | oui | 2 à 32 caractères : minuscules, chiffres, tirets. Sert de clé interne — ne reprenez pas l'identifiant d'un thème livré (`orbit`, `tech`, `paper`, `amber`). |
 | `name` | oui | Le nom affiché dans les réglages. 48 caractères au maximum. |
@@ -226,12 +233,53 @@ en dessous des seuils.
 
 ## 7. Partager son thème
 
-Un thème est un fichier : envoyez-le, publiez-le dans un dépôt, joignez-le à un
-message. Celui qui le reçoit fait Réglages → Apparence → **Importer un thème**.
-
 Rien n'est exécuté à l'import : un thème ne contient que des valeurs, jamais de
 code. Orbit refuse d'ailleurs toute valeur qui pourrait s'échapper vers du CSS
 arbitraire — un `font` ou un `shadowCard` contenant `;` ou `{}` est rejeté.
+Partager un thème est donc sans risque, dans les deux sens.
+
+### Entre proches : le fichier
+
+Un thème est un fichier : envoyez-le, joignez-le à un message, déposez-le dans
+un dossier partagé. Celui qui le reçoit fait Réglages → Apparence → **Importer
+un thème**.
+
+### Installer un thème de la communauté
+
+Réglages → Apparence → **Thèmes de la communauté → Parcourir**. Chaque thème
+s'affiche avec un aperçu de ses couleurs dans votre ambiance (claire ou
+sombre), son auteur et sa description. **Installer** l'ajoute à vos thèmes et
+l'active ; il se retire ensuite comme n'importe quel thème importé.
+
+Rien n'est demandé au réseau avant le clic sur « Parcourir ». Le fichier
+téléchargé doit avoir exactement la taille et l'empreinte SHA-256 annoncées
+par le catalogue, puis passer le même contrôle qu'un import manuel.
+
+### Publier le vôtre dans le catalogue
+
+Le catalogue vit dans le dépôt d'Orbit, dossier `themes-dist/`. Pour y
+ajouter votre thème :
+
+1. Partez d'un thème exporté (voir § 1) et donnez-lui un `id` qui vous est
+   propre, un `name`, un **`author`** et, idéalement, une `description`.
+2. Décrivez **les deux ambiances** (`dark` et `light`) : quelqu'un qui
+   travaille en clair doit pouvoir l'utiliser aussi.
+3. Enregistrez-le sous `themes-dist/<id>.json` (le nom du fichier est
+   l'identifiant).
+4. Lancez `npm run export:themes`. Le script valide votre thème avec le même
+   code qu'Orbit et met à jour `themes-dist/catalog.json`.
+5. Ouvrez une *pull request* avec ces deux fichiers.
+
+Le catalogue est **plus exigeant qu'un import personnel** : aucun
+avertissement de lisibilité n'est accepté (§ 6), comme pour les thèmes livrés
+avec Orbit. Un thème que vous gardez pour vous peut tout se permettre ; un
+thème partagé doit rester lisible par tout le monde. Une fois la *pull request*
+acceptée, le site se reconstruit et votre thème apparaît dans Orbit chez tous
+les utilisateurs — sans nouvelle version de l'application.
+
+Pour corriger un thème déjà publié : modifiez le fichier, relancez
+`npm run export:themes`, proposez la modification. L'empreinte change, et Orbit
+installe la nouvelle version au prochain clic.
 
 ---
 
@@ -242,6 +290,8 @@ arbitraire — un `font` ou un `shadowCard` contenant `;` ou `{}` est rejeté.
   "orbitTheme": 1,
   "id": "mon-theme",
   "name": "Mon thème",
+  "author": "Votre nom",
+  "description": "Une phrase sur l'ambiance du thème.",
   "traits": {
     "radiusCard": "0.75rem", "radiusControl": "0.5rem", "radiusPill": "9999px",
     "borderWidth": "1px", "shadowCard": "none", "glow": 0,
@@ -257,4 +307,6 @@ arbitraire — un `font` ou un `shadowCard` contenant `;` ou `{}` est rejeté.
 ```
 
 Obligatoire : `orbitTheme`, `id`, `name`, et au moins une des deux ambiances
-avec ses dix couleurs. Tout le reste est facultatif.
+avec ses dix couleurs. Tout le reste est facultatif — sauf pour le catalogue
+de la communauté, qui demande aussi `author`, les deux ambiances et une
+lisibilité sans avertissement.

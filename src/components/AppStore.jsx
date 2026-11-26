@@ -5,7 +5,8 @@ import { useShallow } from 'zustand/react/shallow';
 import { recipes, categories } from '../lib/recipes';
 import { homeUrlFor } from '../lib/urls';
 import { EMOJI_CHOICES, COLOR_CHOICES, getHostname, faviconServiceUrl } from '../lib/appIcons';
-import AppIcon, { bundledRecipeIcon } from './AppIcon';
+import AppIcon from './AppIcon';
+import { appFromRecipe } from '../lib/installRecipe';
 import { useT } from '../lib/i18n';
 
 // Aperçu du favicon avec repli automatique (Google s2 → icon.horse)
@@ -95,28 +96,7 @@ export default function AppStore({ onClose, prefill = null }) {
   });
 
   const handleInstall = (recipe) => {
-    const count = getInstances(recipe.id).length;
-    // 2e, 3e… compte : on numérote le nom pour les distinguer dans la sidebar
-    const name = count === 0 ? recipe.name : `${recipe.name} (${count + 1})`;
-    addApp({
-      profileId: activeProfile,
-      recipeId: recipe.id,
-      name,
-      url: recipe.url,
-      // URL « maison » = URL de la recette (au redémarrage, on n'atterrit
-      // jamais sur une page de connexion persistée)
-      homeUrl: recipe.url,
-      icon: recipe.icon,
-      color: recipe.color,
-      // Icône de marque réelle dès l'installation : icône officielle de la
-      // recette si elle existe (ex. Google Drive ≠ Gmail — les favicons
-      // .google.com sont tous le même « G »), sinon favicon du site
-      // Icône embarquée (AppIcon la trouve via recipeId) ; le favicon ne sert
-      // que de repli pour les rares recettes sans icône embarquée.
-      favicon: bundledRecipeIcon(recipe.id) ? '' : recipe.brandIcon || faviconServiceUrl(recipe.url),
-      unread: 0,
-      sleeping: false,
-    });
+    addApp(appFromRecipe(recipe, activeProfile, getInstances(recipe.id).length));
   };
 
   // Désinstalle UN compte (une instance) de la recette — pas tous

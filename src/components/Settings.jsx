@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import {
+  Compass,
   X,
   User,
   Palette,
@@ -114,7 +115,6 @@ const fontGroups = [
 
 export default function Settings({ onClose }) {
   const [activeTab, setActiveTab] = useState('general');
-  const [showProfileManager, setShowProfileManager] = useState(false);
   const [appVersion, setAppVersion] = useState('');
   const [updateMsg, setUpdateMsg] = useState('');
   const [checking, setChecking] = useState(false);
@@ -298,15 +298,22 @@ export default function Settings({ onClose }) {
       items: [
         { id: 'general', name: t('st.tab.general'), icon: Zap },
         { id: 'appearance', name: t('st.tab.appearance'), icon: Palette },
-        { id: 'downloads', name: t('st.tab.downloads'), icon: Download },
+        { id: 'profiles', name: t('st.tab.profiles'), icon: User },
       ],
     },
     {
-      label: t('st.group.features'),
+      label: t('st.group.browsing'),
       items: [
+        { id: 'browsing', name: t('st.tab.browsing'), icon: Compass },
+        { id: 'downloads', name: t('st.tab.downloads'), icon: Download },
         { id: 'notifications', name: t('st.tab.notifications'), icon: Bell },
         { id: 'voice', name: t('st.tab.voice'), icon: Volume2 },
         { id: 'assistant', name: t('st.tab.assistant'), icon: Bot },
+      ],
+    },
+    {
+      label: t('st.group.tools'),
+      items: [
         { id: 'extensions', name: t('st.tab.extensions'), icon: Puzzle },
         { id: 'shortcuts', name: t('st.tab.shortcuts'), icon: Keyboard },
         { id: 'rules', name: t('st.tab.rules'), icon: Workflow },
@@ -317,7 +324,6 @@ export default function Settings({ onClose }) {
       items: [
         { id: 'security', name: t('st.tab.security'), icon: ShieldCheck },
         { id: 'passwords', name: t('st.tab.passwords'), icon: KeyRound },
-        { id: 'keepass', name: 'KeePassXC', icon: KeyRound },
         { id: 'privacy', name: t('st.tab.privacy'), icon: Ban },
         { id: 'backup', name: t('st.tab.backup'), icon: Archive },
       ],
@@ -326,7 +332,6 @@ export default function Settings({ onClose }) {
       label: t('st.group.system'),
       items: [
         { id: 'diagnostics', name: t('st.tab.diagnostics'), icon: Stethoscope },
-        { id: 'profiles', name: t('st.tab.profiles'), icon: User },
         { id: 'about', name: t('st.tab.about'), icon: Info },
       ],
     },
@@ -741,157 +746,6 @@ export default function Settings({ onClose }) {
                   </div>
 
                   <div className="card">
-                    <h4 className="font-semibold mb-4">{t('st.interface')}</h4>
-                    {/* Côté de la barre latérale. Tout le reste (repli, mode
-                        épuré, menus) suit, seul le bord change. */}
-                    <div className="mb-4 flex items-center justify-between gap-4 flex-wrap">
-                      <div>
-                        <div className="font-medium">{t('st.sidebarSide')}</div>
-                        <div className="text-sm text-text-muted">{t('st.sidebarSideDesc')}</div>
-                      </div>
-                      <div className="flex gap-2">
-                        {[
-                          { id: 'left', label: t('st.sidebarSide.left') },
-                          { id: 'right', label: t('st.sidebarSide.right') },
-                        ].map((opt) => {
-                          const on = (settings.sidebarPosition === 'right' ? 'right' : 'left') === opt.id;
-                          return (
-                            <button
-                              key={opt.id}
-                              onClick={() => updateSettings({ sidebarPosition: opt.id })}
-                              className={`px-3 py-1.5 rounded-lg text-sm border transition-colors ${
-                                on
-                                  ? 'border-accent-primary bg-accent-primary/10 text-accent-primary'
-                                  : 'border-border text-text-secondary hover:bg-bg-hover'
-                              }`}
-                            >
-                              {opt.label}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                    {/* Mode épuré : chaque barre peut disparaître et revenir au
-                        survol du bord de l'écran. Remplace l'ancien
-                        interrupteur unique, qui n'était branché à rien. */}
-                    <div className="mb-4">
-                      <div className="font-medium">{t('st.zen')}</div>
-                      <div className="text-sm text-text-muted mb-3">{t('st.zenDesc')}</div>
-                      <div className="flex flex-wrap gap-2">
-                        {[
-                          { id: 'top', label: t('st.zen.top') },
-                          { id: 'left', label: t('st.zen.left') },
-                          { id: 'bottom', label: t('st.zen.bottom') },
-                        ].map((zone) => {
-                          const on = Boolean(settings.autoHide?.[zone.id]);
-                          return (
-                            <button
-                              key={zone.id}
-                              onClick={() =>
-                                updateSettings({
-                                  autoHide: { ...(settings.autoHide || {}), [zone.id]: !on },
-                                })
-                              }
-                              className={`px-3 py-1.5 rounded-lg text-sm border transition-colors ${
-                                on
-                                  ? 'border-accent-primary bg-accent-primary/10 text-accent-primary'
-                                  : 'border-border text-text-secondary hover:bg-bg-hover'
-                              }`}
-                            >
-                              {zone.label}
-                            </button>
-                          );
-                        })}
-                      </div>
-                      <p className="text-xs text-text-muted mt-2">{t('st.zenHint')}</p>
-                    </div>
-                    <label className="flex items-center justify-between mb-3">
-                      <div>
-                        <div className="font-medium">{t('st.nativeCtxMenu')}</div>
-                        <div className="text-sm text-text-muted">{t('st.nativeCtxMenuDesc')}</div>
-                      </div>
-                      <input
-                        type="checkbox"
-                        checked={settings.nativeContextMenu === true}
-                        onChange={(e) => updateSettings({ nativeContextMenu: e.target.checked })}
-                        className="w-12 h-6 bg-bg-hover rounded-full relative cursor-pointer appearance-none checked:bg-accent-primary transition-colors after:content-[''] after:absolute after:top-1 after:left-1 after:w-4 after:h-4 after:bg-white after:rounded-full after:transition-transform checked:after:translate-x-6"
-                      />
-                    </label>
-                    <label className="flex items-center justify-between mb-3">
-                      <div>
-                        <div className="font-medium">{t('st.autoPip')}</div>
-                        <div className="text-sm text-text-muted">{t('st.autoPipDesc')}</div>
-                      </div>
-                      <input
-                        type="checkbox"
-                        checked={settings.autoPictureInPicture !== false}
-                        onChange={(e) => updateSettings({ autoPictureInPicture: e.target.checked })}
-                        className="w-12 h-6 bg-bg-hover rounded-full relative cursor-pointer appearance-none checked:bg-accent-primary transition-colors after:content-[''] after:absolute after:top-1 after:left-1 after:w-4 after:h-4 after:bg-white after:rounded-full after:transition-transform checked:after:translate-x-6"
-                      />
-                    </label>
-                    <label className="flex items-center justify-between mb-3">
-                      <div>
-                        <div className="font-medium">{t('st.linkStatus')}</div>
-                        <div className="text-sm text-text-muted">{t('st.linkStatusDesc')}</div>
-                      </div>
-                      <input
-                        type="checkbox"
-                        checked={settings.linkStatus !== false}
-                        onChange={(e) => updateSettings({ linkStatus: e.target.checked })}
-                        className="w-12 h-6 bg-bg-hover rounded-full relative cursor-pointer appearance-none checked:bg-accent-primary transition-colors after:content-[''] after:absolute after:top-1 after:left-1 after:w-4 after:h-4 after:bg-white after:rounded-full after:transition-transform checked:after:translate-x-6"
-                      />
-                    </label>
-                    <label className="flex items-center justify-between mb-3">
-                      <div>
-                        <div className="font-medium">{t('st.pageScrollbar')}</div>
-                        <div className="text-sm text-text-muted">{t('st.pageScrollbarDesc')}</div>
-                      </div>
-                      <input
-                        type="checkbox"
-                        checked={settings.pageScrollbar !== false}
-                        onChange={(e) => updateSettings({ pageScrollbar: e.target.checked })}
-                        className="w-12 h-6 bg-bg-hover rounded-full relative cursor-pointer appearance-none checked:bg-accent-primary transition-colors after:content-[''] after:absolute after:top-1 after:left-1 after:w-4 after:h-4 after:bg-white after:rounded-full after:transition-transform checked:after:translate-x-6"
-                      />
-                    </label>
-                    <label className="flex items-center justify-between mb-3">
-                      <div>
-                        <div className="font-medium">{t('st.autoScroll')}</div>
-                        <div className="text-sm text-text-muted">{t('st.autoScrollDesc')}</div>
-                      </div>
-                      <input
-                        type="checkbox"
-                        checked={settings.autoScroll !== false}
-                        onChange={(e) => updateSettings({ autoScroll: e.target.checked })}
-                        className="w-12 h-6 bg-bg-hover rounded-full relative cursor-pointer appearance-none checked:bg-accent-primary transition-colors after:content-[''] after:absolute after:top-1 after:left-1 after:w-4 after:h-4 after:bg-white after:rounded-full after:transition-transform checked:after:translate-x-6"
-                      />
-                    </label>
-                    <label className="flex items-center justify-between mb-3">
-                      <div>
-                        <div className="font-medium">{t('st.mouseNav')}</div>
-                        <div className="text-sm text-text-muted">{t('st.mouseNavDesc')}</div>
-                      </div>
-                      <input
-                        type="checkbox"
-                        checked={settings.mouseNav !== false}
-                        onChange={(e) => updateSettings({ mouseNav: e.target.checked })}
-                        className="w-12 h-6 bg-bg-hover rounded-full relative cursor-pointer appearance-none checked:bg-accent-primary transition-colors after:content-[''] after:absolute after:top-1 after:left-1 after:w-4 after:h-4 after:bg-white after:rounded-full after:transition-transform checked:after:translate-x-6"
-                      />
-                    </label>
-                    <label className="flex items-center justify-between">
-                      <div>
-                        <div className="font-medium">{t('st.mediaKeys')}</div>
-                        <div className="text-sm text-text-muted">{t('st.mediaKeysDesc')}</div>
-                      </div>
-                      <input
-                        type="checkbox"
-                        checked={settings.globalMediaKeys === true}
-                        onChange={(e) => updateSettings({ globalMediaKeys: e.target.checked })}
-                        className="w-12 h-6 bg-bg-hover rounded-full relative cursor-pointer appearance-none checked:bg-accent-primary transition-colors after:content-[''] after:absolute after:top-1 after:left-1 after:w-4 after:h-4 after:bg-white after:rounded-full after:transition-transform checked:after:translate-x-6"
-                      />
-                    </label>
-                  </div>
-
-                  <div className="card">
                     <h4 className="font-semibold mb-2">{t('st.resources')}</h4>
                     <p className="text-sm text-text-muted mb-3">{t('st.resourcesDesc')}</p>
                     <label className="block text-sm font-medium mb-1.5">{t('st.autoSleep')}</label>
@@ -1118,6 +972,74 @@ export default function Settings({ onClose }) {
 
                   {/* Composition de l'en-tête + widgets (horloge, météo…) */}
                   <TopbarSettings />
+
+                  <div className="card">
+                    <h4 className="font-semibold mb-1">{t('st.layout')}</h4>
+                    <p className="text-sm text-text-muted mb-4">{t('st.layoutDesc')}</p>
+                    {/* Côté de la barre latérale. Tout le reste (repli, mode
+                        épuré, menus) suit, seul le bord change. */}
+                    <div className="mb-4 flex items-center justify-between gap-4 flex-wrap">
+                      <div>
+                        <div className="font-medium">{t('st.sidebarSide')}</div>
+                        <div className="text-sm text-text-muted">{t('st.sidebarSideDesc')}</div>
+                      </div>
+                      <div className="flex gap-2">
+                        {[
+                          { id: 'left', label: t('st.sidebarSide.left') },
+                          { id: 'right', label: t('st.sidebarSide.right') },
+                        ].map((opt) => {
+                          const on = (settings.sidebarPosition === 'right' ? 'right' : 'left') === opt.id;
+                          return (
+                            <button
+                              key={opt.id}
+                              onClick={() => updateSettings({ sidebarPosition: opt.id })}
+                              className={`px-3 py-1.5 rounded-lg text-sm border transition-colors ${
+                                on
+                                  ? 'border-accent-primary bg-accent-primary/10 text-accent-primary'
+                                  : 'border-border text-text-secondary hover:bg-bg-hover'
+                              }`}
+                            >
+                              {opt.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    {/* Mode épuré : chaque barre peut disparaître et revenir au
+                        survol du bord de l'écran. Remplace l'ancien
+                        interrupteur unique, qui n'était branché à rien. */}
+                    <div className="mb-4">
+                      <div className="font-medium">{t('st.zen')}</div>
+                      <div className="text-sm text-text-muted mb-3">{t('st.zenDesc')}</div>
+                      <div className="flex flex-wrap gap-2">
+                        {[
+                          { id: 'top', label: t('st.zen.top') },
+                          { id: 'left', label: t('st.zen.left') },
+                          { id: 'bottom', label: t('st.zen.bottom') },
+                        ].map((zone) => {
+                          const on = Boolean(settings.autoHide?.[zone.id]);
+                          return (
+                            <button
+                              key={zone.id}
+                              onClick={() =>
+                                updateSettings({
+                                  autoHide: { ...(settings.autoHide || {}), [zone.id]: !on },
+                                })
+                              }
+                              className={`px-3 py-1.5 rounded-lg text-sm border transition-colors ${
+                                on
+                                  ? 'border-accent-primary bg-accent-primary/10 text-accent-primary'
+                                  : 'border-border text-text-secondary hover:bg-bg-hover'
+                              }`}
+                            >
+                              {zone.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <p className="text-xs text-text-muted mt-2">{t('st.zenHint')}</p>
+                    </div>
+                  </div>
 
                   {/* Fenêtres secondaires : pop-ups de connexion, liens ouverts
                       dans une nouvelle fenêtre… */}
@@ -1402,22 +1324,9 @@ export default function Settings({ onClose }) {
               )}
 
               {activeTab === 'profiles' && (
-                <div className="space-y-6">
-                  <div className="card">
-                    <div className="flex items-center justify-between mb-4">
-                      <div>
-                        <h4 className="font-semibold">{t('pm.title')}</h4>
-                        <p className="text-sm text-text-muted">{t('st.profilesDesc')}</p>
-                      </div>
-                      <button
-                        onClick={() => setShowProfileManager(true)}
-                        className="btn btn-primary"
-                      >
-                        {t('st.manage')}
-                      </button>
-                    </div>
-                    <p className="text-sm text-text-muted">{t('st.profilesDesc2')}</p>
-                  </div>
+                <div className="space-y-4">
+                  <p className="text-sm text-text-muted">{t('st.profilesDesc2')}</p>
+                  <ProfileManager embedded />
                 </div>
               )}
 
@@ -1425,9 +1334,19 @@ export default function Settings({ onClose }) {
 
               {activeTab === 'extensions' && <Extensions onClose={onClose} />}
 
-              {activeTab === 'passwords' && <PasswordVault />}
-
-              {activeTab === 'keepass' && <KeepassSettings />}
+              {activeTab === 'passwords' && (
+                <div className="space-y-8">
+                  <PasswordVault />
+                  {/* KeePassXC : même sujet (d'où viennent les identifiants), même onglet. */}
+                  <section className="space-y-4 border-t border-border pt-6">
+                    <div>
+                      <h3 className="text-lg font-semibold">KeePassXC</h3>
+                      <p className="text-sm text-text-muted">{t('st.keepassDesc')}</p>
+                    </div>
+                    <KeepassSettings />
+                  </section>
+                </div>
+              )}
 
               {activeTab === 'security' && (
                 <div className="space-y-4">
@@ -1492,6 +1411,107 @@ export default function Settings({ onClose }) {
                       via « Proxy… »). */}
                   <PrivateNetworkSettings />
 
+                </div>
+              )}
+
+              {activeTab === 'browsing' && (
+                <div className="space-y-6">
+                  <div className="card">
+                    <h4 className="font-semibold mb-1">{t('st.nav.pages')}</h4>
+                    <p className="text-sm text-text-muted mb-4">{t('st.nav.pagesDesc')}</p>
+                    <label className="flex items-center justify-between mb-3">
+                      <div>
+                        <div className="font-medium">{t('st.linkStatus')}</div>
+                        <div className="text-sm text-text-muted">{t('st.linkStatusDesc')}</div>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={settings.linkStatus !== false}
+                        onChange={(e) => updateSettings({ linkStatus: e.target.checked })}
+                        className="w-12 h-6 bg-bg-hover rounded-full relative cursor-pointer appearance-none checked:bg-accent-primary transition-colors after:content-[''] after:absolute after:top-1 after:left-1 after:w-4 after:h-4 after:bg-white after:rounded-full after:transition-transform checked:after:translate-x-6"
+                      />
+                    </label>
+                    <label className="flex items-center justify-between mb-3">
+                      <div>
+                        <div className="font-medium">{t('st.pageScrollbar')}</div>
+                        <div className="text-sm text-text-muted">{t('st.pageScrollbarDesc')}</div>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={settings.pageScrollbar !== false}
+                        onChange={(e) => updateSettings({ pageScrollbar: e.target.checked })}
+                        className="w-12 h-6 bg-bg-hover rounded-full relative cursor-pointer appearance-none checked:bg-accent-primary transition-colors after:content-[''] after:absolute after:top-1 after:left-1 after:w-4 after:h-4 after:bg-white after:rounded-full after:transition-transform checked:after:translate-x-6"
+                      />
+                    </label>
+                    <label className="flex items-center justify-between mb-3">
+                      <div>
+                        <div className="font-medium">{t('st.nativeCtxMenu')}</div>
+                        <div className="text-sm text-text-muted">{t('st.nativeCtxMenuDesc')}</div>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={settings.nativeContextMenu === true}
+                        onChange={(e) => updateSettings({ nativeContextMenu: e.target.checked })}
+                        className="w-12 h-6 bg-bg-hover rounded-full relative cursor-pointer appearance-none checked:bg-accent-primary transition-colors after:content-[''] after:absolute after:top-1 after:left-1 after:w-4 after:h-4 after:bg-white after:rounded-full after:transition-transform checked:after:translate-x-6"
+                      />
+                    </label>
+                  </div>
+                  <div className="card">
+                    <h4 className="font-semibold mb-1">{t('st.nav.mouse')}</h4>
+                    <p className="text-sm text-text-muted mb-4">{t('st.nav.mouseDesc')}</p>
+                    <label className="flex items-center justify-between mb-3">
+                      <div>
+                        <div className="font-medium">{t('st.autoScroll')}</div>
+                        <div className="text-sm text-text-muted">{t('st.autoScrollDesc')}</div>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={settings.autoScroll !== false}
+                        onChange={(e) => updateSettings({ autoScroll: e.target.checked })}
+                        className="w-12 h-6 bg-bg-hover rounded-full relative cursor-pointer appearance-none checked:bg-accent-primary transition-colors after:content-[''] after:absolute after:top-1 after:left-1 after:w-4 after:h-4 after:bg-white after:rounded-full after:transition-transform checked:after:translate-x-6"
+                      />
+                    </label>
+                    <label className="flex items-center justify-between mb-3">
+                      <div>
+                        <div className="font-medium">{t('st.mouseNav')}</div>
+                        <div className="text-sm text-text-muted">{t('st.mouseNavDesc')}</div>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={settings.mouseNav !== false}
+                        onChange={(e) => updateSettings({ mouseNav: e.target.checked })}
+                        className="w-12 h-6 bg-bg-hover rounded-full relative cursor-pointer appearance-none checked:bg-accent-primary transition-colors after:content-[''] after:absolute after:top-1 after:left-1 after:w-4 after:h-4 after:bg-white after:rounded-full after:transition-transform checked:after:translate-x-6"
+                      />
+                    </label>
+                  </div>
+                  <div className="card">
+                    <h4 className="font-semibold mb-1">{t('st.nav.media')}</h4>
+                    <p className="text-sm text-text-muted mb-4">{t('st.nav.mediaDesc')}</p>
+                    <label className="flex items-center justify-between mb-3">
+                      <div>
+                        <div className="font-medium">{t('st.autoPip')}</div>
+                        <div className="text-sm text-text-muted">{t('st.autoPipDesc')}</div>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={settings.autoPictureInPicture !== false}
+                        onChange={(e) => updateSettings({ autoPictureInPicture: e.target.checked })}
+                        className="w-12 h-6 bg-bg-hover rounded-full relative cursor-pointer appearance-none checked:bg-accent-primary transition-colors after:content-[''] after:absolute after:top-1 after:left-1 after:w-4 after:h-4 after:bg-white after:rounded-full after:transition-transform checked:after:translate-x-6"
+                      />
+                    </label>
+                    <label className="flex items-center justify-between mb-3">
+                      <div>
+                        <div className="font-medium">{t('st.mediaKeys')}</div>
+                        <div className="text-sm text-text-muted">{t('st.mediaKeysDesc')}</div>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={settings.globalMediaKeys === true}
+                        onChange={(e) => updateSettings({ globalMediaKeys: e.target.checked })}
+                        className="w-12 h-6 bg-bg-hover rounded-full relative cursor-pointer appearance-none checked:bg-accent-primary transition-colors after:content-[''] after:absolute after:top-1 after:left-1 after:w-4 after:h-4 after:bg-white after:rounded-full after:transition-transform checked:after:translate-x-6"
+                      />
+                    </label>
+                  </div>
                   <div className="card">
                     <h4 className="font-semibold mb-2">{t('st.translateTitle')}</h4>
                     <p className="text-sm text-text-muted mb-4">{t('st.translateDesc')}</p>
@@ -1884,7 +1904,6 @@ export default function Settings({ onClose }) {
         </div>
       </div>
 
-      {showProfileManager && <ProfileManager onClose={() => setShowProfileManager(false)} />}
     </>
   );
 }

@@ -40,7 +40,7 @@ export function catalogUrl() {
 // GET HTTPS borné en taille ET en temps. La borne de taille est appliquée
 // pendant la réception, pas après : un serveur qui annonce 2 Ko et en envoie
 // deux gigaoctets est coupé au premier dépassement.
-function httpGet(url, { timeoutMs = 15000, maxBytes, redirects = 0 } = {}) {
+export function httpGet(url, { timeoutMs = 15000, maxBytes, redirects = 0 } = {}) {
   return new Promise((resolve, reject) => {
     if (redirects > 5) {
       reject(new Error('trop de redirections'));

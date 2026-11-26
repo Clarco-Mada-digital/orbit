@@ -1,0 +1,32 @@
+{
+  "orbitTheme": 1,
+  "id": "lavande",
+  "name": "Lavande",
+  "author": "Équipe Orbit",
+  "description": "Violets doux et arrondis généreux, une ambiance feutrée.",
+  "traits": { "radiusCard": "18px", "radiusControl": "12px", "radiusPill": "999px" },
+  "dark": {
+    "bgPrimary": "#15121e",
+    "bgSecondary": "#1c1828",
+    "bgElevated": "#241f33",
+    "bgHover": "#2d2740",
+    "textPrimary": "#f1ecfa",
+    "textSecondary": "#cdc4df",
+    "textMuted": "#a79cbd",
+    "border": "#332c47",
+    "borderLight": "#3e3656",
+    "accent": "#b79cff"
+  },
+  "light": {
+    "bgPrimary": "#f8f6fc",
+    "bgSecondary": "#efebf7",
+    "bgElevated": "#ffffff",
+    "bgHover": "#e6e0f2",
+    "textPrimary": "#1f1830",
+    "textSecondary": "#41385a",
+    "textMuted": "#5f5677",
+    "border": "#d9d1ea",
+    "borderLight": "#e8e2f3",
+    "accent": "#6a45c9"
+  }
+}
