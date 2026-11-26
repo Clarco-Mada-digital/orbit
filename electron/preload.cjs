@@ -637,6 +637,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Barre de défilement des pages : couleur d'accent du thème (« r g b ») et
   // activation. Appliquée par le main à toutes les pages (electron/page-scrollbar.js).
   setPageScrollbar: (cfg) => ipcRenderer.invoke('ui:pageScrollbar', cfg),
+  // Souris : défilement automatique (clic molette) et boutons précédent /
+  // suivant, dans les pages et dans l'interface (electron/mouse-gestures.js).
+  setMouseGestures: (cfg) => ipcRenderer.invoke('ui:mouseGestures', cfg),
 
   // Automatisations : le main garde une copie des règles de liens pour pouvoir
   // décider au clic (son gestionnaire de fenêtre est synchrone).

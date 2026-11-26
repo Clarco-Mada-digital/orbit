@@ -1341,6 +1341,29 @@ const openEditUrl = useCallback((id) => {
     return () => obs.disconnect();
   }, [pageScrollbarOn]);
 
+  // Souris : défilement automatique et boutons précédent/suivant (script
+  // injecté par le main, voir electron/mouse-gestures.js). Au-dessus de
+  // l'interface d'Orbit, les boutons latéraux pilotent l'app affichée.
+  const autoScrollOn = settings.autoScroll !== false;
+  const mouseNavOn = settings.mouseNav !== false;
+  useEffect(() => {
+    window.electronAPI?.setMouseGestures?.({ autoScroll: autoScrollOn, mouseNav: mouseNavOn })?.catch?.(() => {});
+  }, [autoScrollOn, mouseNavOn]);
+  useEffect(() => {
+    const onNav = (e) => {
+      const wv = getWebview(useStore.getState().activeApp);
+      if (!wv) return;
+      try {
+        if (e.detail === 'back' && wv.canGoBack()) wv.goBack();
+        else if (e.detail === 'forward' && wv.canGoForward()) wv.goForward();
+      } catch {
+        /* webview pas encore prêt */
+      }
+    };
+    window.addEventListener('orbit:mouse-nav', onNav);
+    return () => window.removeEventListener('orbit:mouse-nav', onNav);
+  }, []);
+
   // Module « Adresse » de la barre : un clic ouvre la même boîte qu'Alt+L.
   useEffect(() => {
     const open = () => openEditUrl(useStore.getState().activeApp);

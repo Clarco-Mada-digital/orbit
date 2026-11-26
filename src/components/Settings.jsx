@@ -836,6 +836,30 @@ export default function Settings({ onClose }) {
                         className="w-12 h-6 bg-bg-hover rounded-full relative cursor-pointer appearance-none checked:bg-accent-primary transition-colors after:content-[''] after:absolute after:top-1 after:left-1 after:w-4 after:h-4 after:bg-white after:rounded-full after:transition-transform checked:after:translate-x-6"
                       />
                     </label>
+                    <label className="flex items-center justify-between mb-3">
+                      <div>
+                        <div className="font-medium">{t('st.autoScroll')}</div>
+                        <div className="text-sm text-text-muted">{t('st.autoScrollDesc')}</div>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={settings.autoScroll !== false}
+                        onChange={(e) => updateSettings({ autoScroll: e.target.checked })}
+                        className="w-12 h-6 bg-bg-hover rounded-full relative cursor-pointer appearance-none checked:bg-accent-primary transition-colors after:content-[''] after:absolute after:top-1 after:left-1 after:w-4 after:h-4 after:bg-white after:rounded-full after:transition-transform checked:after:translate-x-6"
+                      />
+                    </label>
+                    <label className="flex items-center justify-between mb-3">
+                      <div>
+                        <div className="font-medium">{t('st.mouseNav')}</div>
+                        <div className="text-sm text-text-muted">{t('st.mouseNavDesc')}</div>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={settings.mouseNav !== false}
+                        onChange={(e) => updateSettings({ mouseNav: e.target.checked })}
+                        className="w-12 h-6 bg-bg-hover rounded-full relative cursor-pointer appearance-none checked:bg-accent-primary transition-colors after:content-[''] after:absolute after:top-1 after:left-1 after:w-4 after:h-4 after:bg-white after:rounded-full after:transition-transform checked:after:translate-x-6"
+                      />
+                    </label>
                     <label className="flex items-center justify-between">
                       <div>
                         <div className="font-medium">{t('st.mediaKeys')}</div>

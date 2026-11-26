@@ -281,6 +281,9 @@
   function onPointerDown(event) {
     if (config.autoScroll !== 'middle' || !site.enabled) return;
     if (event.button !== 1 || auto) return;
+    // Orbit fait désormais le défilement automatique lui-même (réglage
+    // Interface) : on lui laisse la main pour ne pas défiler deux fois.
+    if (document.documentElement.hasAttribute('data-orbit-autoscroll')) return;
     var el = scrollableAncestor(event.target, 'y', 1);
     if (!el || maxScroll(el, 'y') < 4) return;
     auto = {

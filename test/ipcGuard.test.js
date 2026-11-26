@@ -32,6 +32,11 @@ test('les canaux appelés PAR les preloads de page sont autorisés', () => {
   // valeurs génériques.
   assert.equal(isGuestChannel('media:buttonSurface'), true);
   assert.equal(isGuestChannel('fakedata:get'), true);
+  // Pont de lecture vocale des sites : refusé, aucun site ne pouvait parler.
+  assert.equal(isGuestChannel('tts:pageInfo'), true);
+  assert.equal(isGuestChannel('tts:pageInfoAsync'), true);
+  assert.equal(isGuestChannel('tts:page'), true);
+  assert.equal(isGuestChannel('tts:speak'), false);
 });
 
 test('autoriser ces canaux n’ouvre pas leurs voisins', () => {

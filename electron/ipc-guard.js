@@ -31,6 +31,13 @@ const GUEST_CHANNELS = new Set([
   // l'extension Fake Data. Même symptôme : refusé, donc le formulaire se
   // remplissait de valeurs génériques au lieu de celles de l'utilisateur.
   'fakedata:get',
+  // Voix d'Orbit pour les sites (speechSynthesis), demandée par
+  // tts-bridge-preload.cjs. Absents de cette liste, ils étaient refusés : le
+  // pont ne se posait jamais et aucun site ne pouvait parler (bouton
+  // « Lecture » muet, sans le moindre message).
+  'tts:pageInfo',
+  'tts:pageInfoAsync',
+  'tts:page',
 ]);
 
 // Ces deux canaux sont en LECTURE SEULE et ne portent aucun secret : l'un

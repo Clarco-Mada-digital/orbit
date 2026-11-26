@@ -25,23 +25,43 @@ const { ipcRenderer, webFrame } = require('electron');
 
 const MAX_TEXT = 4000;
 
-// Page principale seulement : les iframes (publicités, widgets) sont souvent
-// des dizaines par page, et chacune paierait un aller-retour synchrone pour
-// une fonction qu'elles n'utilisent presque jamais.
+// Page principale : réponse SYNCHRONE, le pont est réglé avant le moindre
+// script du site.
+//
+// Iframes : elles aussi peuvent parler — des applications entières vivent
+// dans un cadre (ex. les apps partagées de Meta AI, servies depuis un autre
+// domaine). Mais une page en compte parfois des dizaines (publicités,
+// widgets) : pas d'aller-retour synchrone pour chacune. Le pont s'y pose donc
+// tout de suite avec une voix provisoire, puis la vraie voix arrive de façon
+// asynchrone ('voiceschanged', comme dans Chrome). Si la voix d'Orbit est
+// désactivée pour les sites, la synthèse d'origine est rendue.
+const isTop = window.top === window.self;
 let info = null;
-if (window.top === window.self) {
+if (isTop) {
   try {
     info = ipcRenderer.sendSync('tts:pageInfo');
   } catch {
     info = null;
   }
+} else {
+  info = { enabled: true, name: 'Orbit', lang: navigator.language || 'fr-FR' };
 }
 
+// Une langue complète (« fr-FR » plutôt que « fr ») : beaucoup de sites
+// filtrent les voix sur la région.
+const REGIONS = { fr: 'FR', en: 'US', mg: 'MG', es: 'ES', de: 'DE', it: 'IT', pt: 'PT' };
+function fullLang(raw) {
+  const lang = String(raw || 'fr-FR').slice(0, 20);
+  if (/^[a-z]{2,3}$/i.test(lang)) {
+    const base = lang.toLowerCase();
+    return `${base}-${REGIONS[base] || base.toUpperCase()}`;
+  }
+  return lang;
+}
+const voiceOf = (i) => ({ name: String(i.name || 'Orbit').slice(0, 120), lang: fullLang(i.lang) });
+
 if (info && info.enabled) {
-  const voice = {
-    name: String(info.name || 'Orbit').slice(0, 120),
-    lang: String(info.lang || 'fr-FR').slice(0, 20),
-  };
+  const voice = voiceOf(info);
 
   // --- Monde isolé : relais vers Orbit -------------------------------------
   document.addEventListener('orbit:tts-out', (event) => {
@@ -70,6 +90,18 @@ if (info && info.enabled) {
     ipcRenderer.send('tts:page', { op: 'speak', id, text, rate: Number(msg.rate) || 1 });
   });
 
+  if (!isTop) {
+    ipcRenderer
+      .invoke('tts:pageInfoAsync')
+      .then((real) => {
+        const payload = real && real.enabled ? { type: 'voice', voice: voiceOf(real) } : { type: 'disable' };
+        document.dispatchEvent(new CustomEvent('orbit:tts-in', { detail: JSON.stringify({ id: 0, ...payload }) }));
+      })
+      .catch(() => {
+        document.dispatchEvent(new CustomEvent('orbit:tts-in', { detail: JSON.stringify({ id: 0, type: 'disable' }) }));
+      });
+  }
+
   ipcRenderer.on('orbit:tts-page', (_event, msg) => {
     if (!msg || typeof msg !== 'object') return;
     const payload = { id: Number(msg.id) || 0, type: String(msg.type || '') };
@@ -82,16 +114,20 @@ if (info && info.enabled) {
     const NativeUtterance = window.SpeechSynthesisUtterance;
     if (!NativeUtterance || window.__orbitSpeech) return;
     Object.defineProperty(window, '__orbitSpeech', { value: true });
+    // De quoi rendre la synthèse d'origine si Orbit ne doit pas parler ici.
+    const nativeSynth = Object.getOwnPropertyDescriptor(window, 'speechSynthesis');
+    const nativeVoice = Object.getOwnPropertyDescriptor(NativeUtterance.prototype, 'voice');
 
     // Une voix « Orbit » : celle choisie dans les réglages. Les sites la
     // trouvent dans getVoices() et peuvent la sélectionner.
-    const orbitVoice = Object.freeze({
+    const makeVoice = (v) => Object.freeze({
       voiceURI: 'orbit-voice',
-      name: VOICE.name,
-      lang: VOICE.lang,
+      name: v.name,
+      lang: v.lang,
       localService: true,
       default: true,
     });
+    let orbitVoice = makeVoice(VOICE);
 
     // utterance.voice n'accepte normalement qu'une vraie SpeechSynthesisVoice :
     // sans ce relais, « u.voice = voix » lèverait une erreur et casserait la page.
@@ -138,6 +174,20 @@ if (info && info.enabled) {
     document.addEventListener('orbit:tts-in', (event) => {
       let msg;
       try { msg = JSON.parse(String(event.detail || '')); } catch { return; }
+      // Réponse différée (iframe) : la vraie voix, ou « pas de pont ici ».
+      if (msg.type === 'voice' && msg.voice) {
+        orbitVoice = makeVoice(msg.voice);
+        synth.dispatchEvent(new Event('voiceschanged'));
+        return;
+      }
+      if (msg.type === 'disable') {
+        try {
+          if (nativeSynth) Object.defineProperty(window, 'speechSynthesis', nativeSynth);
+          else delete window.speechSynthesis;
+          if (nativeVoice) Object.defineProperty(NativeUtterance.prototype, 'voice', nativeVoice);
+        } catch {}
+        return;
+      }
       const utterance = byId.get(msg.id);
       if (!utterance) return;
       if (msg.type === 'start') { fire(utterance, 'start'); return; }
@@ -148,7 +198,16 @@ if (info && info.enabled) {
     });
 
     class OrbitSpeechSynthesis extends EventTarget {
-      constructor() { super(); this.onvoiceschanged = null; this._paused = false; }
+      constructor() { super(); this._onvc = null; this._paused = false; }
+      // Comme Chrome, les voix « arrivent » APRÈS que le site s'est abonné :
+      // poser le gestionnaire programme un 'voiceschanged'. Sans ça, l'événement
+      // envoyé au chargement partait avant le script du site, qui attendait
+      // alors une liste de voix qui ne venait jamais.
+      get onvoiceschanged() { return this._onvc; }
+      set onvoiceschanged(fn) {
+        this._onvc = typeof fn === 'function' ? fn : null;
+        if (this._onvc) setTimeout(() => this.dispatchEvent(new Event('voiceschanged')), 0);
+      }
       get speaking() { return Boolean(current); }
       get pending() { return queue.length > 0; }
       get paused() { return this._paused; }
@@ -183,8 +242,11 @@ if (info && info.enabled) {
     try {
       Object.defineProperty(window, 'speechSynthesis', { configurable: true, get: () => synth });
     } catch {}
-    // Les sites attendent souvent « voiceschanged » avant de choisir une voix.
-    setTimeout(() => synth.dispatchEvent(new Event('voiceschanged')), 0);
+    // Les sites attendent souvent « voiceschanged » avant de choisir une voix :
+    // on le signale aussi une fois la page analysée (abonnés par addEventListener).
+    const announce = () => setTimeout(() => synth.dispatchEvent(new Event('voiceschanged')), 0);
+    if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', announce, { once: true });
+    else announce();
   })();`;
 
   try {

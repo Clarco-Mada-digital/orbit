@@ -45,6 +45,7 @@ import * as vaultBackup from './vault-backup.js';
 import { readDatabase as readKdbx } from './kdbx.js';
 import * as studio from './studio.js';
 import * as pageScrollbar from './page-scrollbar.js';
+import * as mouseGestures from './mouse-gestures.js';
 import * as sitePermissions from './site-permissions.js';
 import * as tts from './tts.js';
 import * as downloader from './downloader.js';
@@ -2274,9 +2275,17 @@ async function speakForPage(frame, id, text, pageRate = 1) {
 }
 
 // Le preload demande, au chargement de chaque page, s'il doit se poser.
+function pageInfoFor(event) {
+  return fromOrbitUi(event) || !ttsPrefs.pages ? { enabled: false } : { enabled: true, ...pageVoiceInfo() };
+}
 ipcMain.on('tts:pageInfo', (event) => {
-  event.returnValue = fromOrbitUi(event) || !ttsPrefs.pages ? { enabled: false } : { enabled: true, ...pageVoiceInfo() };
+  event.returnValue = pageInfoFor(event);
 });
+// Variante asynchrone pour les IFRAMES : une page peut en compter des dizaines
+// (publicités, widgets), un aller-retour synchrone chacune ralentirait tout.
+// Or des applications entières vivent dans un cadre (ex. les apps partagées de
+// Meta AI, servies depuis un autre domaine) : sans pont, elles restaient muettes.
+ipcMain.handle('tts:pageInfoAsync', (event) => pageInfoFor(event));
 
 ipcMain.on('tts:page', (event, msg = {}) => {
   // Pages embarquées seulement, et seulement si le réglage est actif.
@@ -4665,6 +4674,9 @@ function createWindow() {
 
   // Sécuriser les <webview> et appliquer le bypass à leur session
   mainWindow.webContents.on('will-attach-webview', hardenWebviewAttach);
+  // Interface d'Orbit : boutons latéraux de la souris et défilement
+  // automatique au clic molette, comme dans les pages.
+  mouseGestures.attach(mainWindow.webContents, 'ui');
 
 
   // Raccourcis GLOBAUX : interceptés AVANT que les apps embarquées ne les
@@ -5087,23 +5099,10 @@ async function openActiveEditorCorrection(wc, action) {
   }
 }
 
-// Boutons « précédent / suivant » de la souris. Chromium les signale par
-// `app-command` sur le webContents de la page ; sans écoute, le clic ne fait
-// rien dans une app embarquée. On les traite donc comme les boutons de la
-// barre du haut : retour / avance dans l'historique de la page.
-const mouseNavAttached = new WeakSet();
+// Boutons « précédent / suivant » de la souris et défilement automatique au
+// clic molette : voir electron/mouse-gestures.js (script injecté dans la page).
 function attachMouseNavigation(contents) {
-  if (!contents || mouseNavAttached.has(contents)) return;
-  mouseNavAttached.add(contents);
-  contents.on('app-command', (_event, command) => {
-    try {
-      const nav = contents.navigationHistory;
-      if (command === 'browser-backward' && nav?.canGoBack?.()) nav.goBack();
-      else if (command === 'browser-forward' && nav?.canGoForward?.()) nav.goForward();
-    } catch {
-      /* page en cours de destruction : rien à faire */
-    }
-  });
+  mouseGestures.attach(contents, 'page');
 }
 
 // Zoom d'une page : mêmes bornes que dans Orbit (0.5 → 3, pas de 0.1).
@@ -9574,6 +9573,10 @@ handleFromUi('studio:prepare', (_e, payload = {}) =>
   studio.setPendingSource(payload.id, { audio: payload.audio }));
 handleFromUi('studio:cancelPrepare', () => studio.clearPendingSource());
 handleFromUi('studio:cursor', () => studio.cursorPoint());
+handleFromUi('ui:mouseGestures', (_event, cfg) => {
+  mouseGestures.configure(cfg && typeof cfg === 'object' ? cfg : {});
+  return { success: true };
+});
 handleFromUi('ui:pageScrollbar', (_event, cfg) => {
   pageScrollbar.configure(cfg && typeof cfg === 'object' ? cfg : {});
   return { success: true };
