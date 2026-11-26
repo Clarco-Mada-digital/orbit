@@ -257,10 +257,10 @@ export default function GuestContextMenu() {
       );
     }
 
-    if (menu.isDev) {
-      sep();
-      push({ key: 'dev', icon: Bug, label: t('cm.inspect'), action: 'inspect' });
-    }
+    // Inspecter : toujours proposé, comme dans un navigateur — l'inspecteur
+    // s'ouvre dans un panneau sous la page (voir DevToolsPanel).
+    sep();
+    push({ key: 'dev', icon: Bug, label: t('cm.inspect'), action: 'inspect' });
 
     return list;
   }, [menu, shots, t]);

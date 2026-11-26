@@ -120,3 +120,25 @@ test('l’ordre d’affichage suit la position demandée', () => {
   assert.equal(pageFor('https://exemple.com', { order: 4 }).order, 4);
   assert.equal(pageFor('https://exemple.com').order, 0);
 });
+
+// --- Conteneurs jetables ----------------------------------------------------
+test('conteneur : numéro, couleur propre, session distincte de la page d’origine', async () => {
+  const { nextContainerNumber, containerColor } = await import('../src/lib/flyPages.js');
+  const first = pageFor('https://app.test/login');
+  // Une page ordinaire déjà ouverte sur le site compte comme le conteneur 1.
+  assert.equal(nextContainerNumber([first], 'https://app.test/login'), 2);
+  const second = buildFlyPage({ id: 'fly-2', target: flyPageTarget('https://app.test/login'), container: 2 });
+  assert.equal(second.container, 2);
+  assert.equal(second.color, containerColor(2));
+  assert.notEqual(second.sessionKey, first.sessionKey);
+  // On compte par site, pas par adresse exacte.
+  assert.equal(nextContainerNumber([first, { ...second, url: 'https://app.test/admin' }], 'https://app.test/'), 3);
+  // Un autre site repart de 1 ; une page privée ne compte pas.
+  assert.equal(nextContainerNumber([first, second], 'https://autre.test/'), 1);
+  assert.equal(nextContainerNumber([pageFor('https://app.test/', { isPrivate: true })], 'https://app.test/'), 1);
+  // Pas de numéro de conteneur pour une page privée ni une page ordinaire.
+  assert.equal(first.container, undefined);
+  assert.equal(buildFlyPage({ id: 'p', target: flyPageTarget('https://app.test/'), isPrivate: true, container: 3 }).container, undefined);
+  // Les couleurs tournent.
+  assert.equal(containerColor(1), containerColor(9));
+});

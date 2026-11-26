@@ -620,6 +620,16 @@ export default function QuickSwitcher({ onClose, onOpenSettings, onOpenStore, on
         color: '#7c3aed',
         action: () => openFlyPage(url, { private: true }),
       });
+      // Conteneur jetable : une session de plus sur la même adresse (tester
+      // avec un autre compte). Effacé à la fermeture, comme une page volante.
+      list.push({
+        type: 'url',
+        id: 'smart-url-container',
+        name: t('fly.openContainer'),
+        subtitle: `${url} — ${t('fly.openContainerHint')}`,
+        color: '#f59e0b',
+        action: () => openFlyPage(url, { container: true }),
+      });
       // Fenêtre détachée : une vraie fenêtre Orbit, hors de la barre latérale.
       // C'est le geste « je veux juste voir cette page, sans l'installer » —
       // ni app, ni page volante qui reste ouverte dans l'espace de travail.

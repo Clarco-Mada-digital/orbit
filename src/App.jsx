@@ -1,5 +1,5 @@
 import { Fragment, Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Moon, Play, X, Columns2, Rows2, Wifi, KeyRound, Plus, Copy, ExternalLink, Globe, EyeOff } from 'lucide-react';
+import { Moon, Play, X, Columns2, Rows2, Wifi, KeyRound, Plus, Copy, ExternalLink, Globe, EyeOff, Boxes } from 'lucide-react';
 import Sidebar from './components/Sidebar';
 import { basenameOf, isViewerKind, toolForFile } from './lib/fileTypes';
 import Topbar from './components/Topbar';
@@ -288,9 +288,16 @@ const [editUrlFor, setEditUrlFor] = useState(null); // { id, url } — boîte «
   // zoom dans la page et nous prévient ; on persiste la valeur sur l'app, pour
   // que les boutons de la barre et le prochain démarrage la retrouvent.
   useEffect(() => {
-    const off = window.electronAPI?.onGuestZoom?.(({ appId, wcId, factor } = {}) => {
+    const off = window.electronAPI?.onGuestZoom?.(({ appId, wcId, factor, dir } = {}) => {
       const zoom = Number(factor);
       if (!Number.isFinite(zoom)) return;
+      // Une page en vue responsive RÉCLAME le geste : Ctrl + molette y
+      // agrandit la présentation, pas la page (dont la largeur doit rester
+      // celle de l'appareil). Rien n'est alors enregistré sur l'app.
+      if (!appId) {
+        const claim = new CustomEvent('orbit:guest-wheel-zoom', { cancelable: true, detail: { wcId, dir: Number(dir) || 0 } });
+        if (!window.dispatchEvent(claim)) return;
+      }
       const value = Math.min(3, Math.max(0.5, zoom));
       // Fenêtre détachée : son webContents n'est pas un <webview> enregistré
       // côté interface, c'est le processus principal qui nomme l'app.
@@ -1065,6 +1072,15 @@ const [editUrlFor, setEditUrlFor] = useState(null); // { id, url } — boîte «
 
   // Aperçu de lien : le main l'annonce (Ctrl+clic, target=_blank dans une
   // app), on l'affiche par-dessus. Un nouveau lien remplace l'aperçu ouvert.
+  // « Inspecter » du clic droit : le processus principal désigne la page et
+  // le point visé ; le <WebView> concerné ouvre son panneau.
+  useEffect(() => {
+    const off = window.electronAPI?.onDevtoolsOpen?.(({ wcId, x, y } = {}) => {
+      window.dispatchEvent(new CustomEvent('orbit:devtools', { detail: { wcId, x, y } }));
+    });
+    return () => off?.();
+  }, []);
+
   useEffect(() => {
     const off = window.electronAPI?.onLinkPeek?.(({ url, partition } = {}) => {
       if (!url || !/^https?:\/\//i.test(url)) return;
@@ -1413,6 +1429,14 @@ const openEditUrl = useCallback((id) => {
     }
     if (action === 'reader') {
       window.dispatchEvent(new Event('orbit:reader-open'));
+      return;
+    }
+    // F12 / Ctrl+Maj+I : ouvre ou ferme l'inspecteur de la page visée (celle
+    // où la touche a été pressée, sinon l'app active). Voir DevToolsPanel.
+    if (action === 'devtools') {
+      window.dispatchEvent(new CustomEvent('orbit:devtools', {
+        detail: { wcId: payload?.wcId || null, toggle: true },
+      }));
       return;
     }
     if (action === 'reopen-tab') {
@@ -2260,6 +2284,20 @@ const openEditUrl = useCallback((id) => {
                 }}
               >
                 <EyeOff size={14} /> {t('fly.openPrivate')}
+              </button>
+            )}
+            {/* Même adresse, nouvelle session : tester un site avec un
+                autre compte sans quitter celui-ci. */}
+            {!flyMenu.page.filePath && (
+              <button
+                className="w-full text-left px-3 py-2 hover:bg-bg-hover flex items-center gap-2"
+                title={t('fly.openContainerHint')}
+                onClick={() => {
+                  useStore.getState().openFlyPage(flyMenu.page.url, { container: true });
+                  setFlyMenu(null);
+                }}
+              >
+                <Boxes size={14} /> {t('fly.openContainer')}
               </button>
             )}
             <button

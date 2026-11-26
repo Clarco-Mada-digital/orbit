@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { AlertTriangle, RotateCw, ExternalLink, X } from 'lucide-react';
 import { useStore } from '../stores/useStore';
 import { useLoadingStore } from '../lib/loadingStore';
@@ -96,6 +96,23 @@ import { describeMediaFault, mediaFaultKey } from '../lib/mediaFault';
 import LoadFailure from './LoadFailure';
 import TunnelBadge from './TunnelBadge';
 import LinkStatus from './LinkStatus';
+import DevToolsPanel from './DevToolsPanel';
+import ResponsiveBar from './ResponsiveBar';
+import {
+  responsiveState,
+  viewportOf,
+  displayScale,
+  userAgentFor,
+  clampSize,
+  zoomPlan,
+  deviceById,
+  networkConditionsFor,
+  multiScale,
+  MULTI_DEFAULT,
+} from '../lib/responsive';
+import { captureTiles, drawDeviceFrame } from '../lib/deviceCapture';
+import { stepZoom, wheelZoom } from '../lib/viewZoom';
+import DeviceMirror from './DeviceMirror';
 import { logDiagnostic } from '../lib/diagnosticsStore';
 import { recipes } from '../lib/recipes';
 import { CHROME_UA } from '../lib/userAgent';
@@ -176,6 +193,365 @@ export default function WebView({ app, active, visible, flexLayout }) {
   // fonctionne — seul le lecteur est en panne.
   const [mediaFault, setMediaFault] = useState(null);
   const loadingTimer = useRef(null);
+  // Inspecteur intégré : null (fermé) ou { key, x?, y? } — x/y quand il est
+  // ouvert par « Inspecter » au clic droit, pour sélectionner l'élément visé.
+  const [inspect, setInspect] = useState(null);
+  // Ancrage de l'inspecteur (sous la page ou à côté), mémorisé.
+  const [dock, setDock] = useState(() => {
+    try {
+      return localStorage.getItem('orbit-devtools-dock') === 'right' ? 'right' : 'bottom';
+    } catch {
+      return 'bottom';
+    }
+  });
+  const changeDock = (next) => {
+    setDock(next);
+    try {
+      localStorage.setItem('orbit-devtools-dock', next);
+    } catch {
+      /* stockage indisponible */
+    }
+  };
+  // Vue responsive : null (page normale) ou l'état décrit par lib/responsive.js.
+  // Le dernier réglage est mémorisé pour la prochaine ouverture.
+  const [responsive, setResponsiveState] = useState(null);
+  const setResponsive = (next) => {
+    setResponsiveState(next);
+    if (next) {
+      try {
+        localStorage.setItem('orbit-responsive', JSON.stringify(next));
+      } catch {
+        /* stockage indisponible */
+      }
+    }
+  };
+  const toggleResponsive = () => {
+    if (responsive) return setResponsive(null);
+    let saved = null;
+    try {
+      saved = JSON.parse(localStorage.getItem('orbit-responsive') || 'null');
+    } catch {
+      saved = null;
+    }
+    return setResponsive(saved?.deviceId ? { ...responsiveState(saved.deviceId), ...saved } : responsiveState());
+  };
+  // Taille de la scène (place disponible autour de l'appareil).
+  const stageRef = useRef(null);
+  const [stageSize, setStageSize] = useState({ width: 0, height: 0 });
+  const stageWatched = Boolean(responsive);
+  // Mesurée seulement en vue responsive : sinon chaque app ouverte se
+  // re-rendrait à chaque redimensionnement de la fenêtre, pour rien.
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage || !stageWatched) return undefined;
+    const observer = new ResizeObserver(() => {
+      const r = stage.getBoundingClientRect();
+      setStageSize({ width: r.width, height: r.height });
+    });
+    observer.observe(stage);
+    return () => observer.disconnect();
+  }, [stageWatched]);
+  const [resizing, setResizing] = useState(false);
+  const deviceView = responsive ? viewportOf(responsive) : null;
+  // Plusieurs appareils côte à côte : l'appareil choisi, puis les autres de
+  // la sélection par défaut (sans doublon), à une échelle COMMUNE.
+  const mirrorDevices = responsive?.multi
+    ? MULTI_DEFAULT.filter((id) => id !== responsive.deviceId).slice(0, 2).map(deviceById)
+    : [];
+  const [capturing, setCapturing] = useState(false);
+  const deviceScale = !responsive
+    ? 1
+    : capturing
+      ? 1 // capture d'appareil : taille réelle (voir captureDevice)
+      : mirrorDevices.length && responsive.zoom === 'fit'
+        ? multiScale([deviceView, ...mirrorDevices.map((d) => ({ width: d.width, height: d.height }))], stageSize)
+        : displayScale(responsive, stageSize);
+  const devicePlan = responsive ? zoomPlan(deviceView, deviceScale, { shared: mirrorDevices.length > 0 }) : null;
+  const frameRef = useRef(null);
+  // Zoom réellement appliqué à la page : celui de l'appareil en vue
+  // responsive, celui de l'app sinon. Lu par tous les endroits qui
+  // (ré)appliquent le zoom — dont le rechargement provoqué par l'agent
+  // mobile, qui sinon remettait le zoom de l'app.
+  const effectiveZoom = devicePlan ? devicePlan.zoom : Math.min(3, Math.max(0.5, app.zoom || 1));
+  const zoomRef = useRef(effectiveZoom);
+  useEffect(() => {
+    zoomRef.current = effectiveZoom;
+  }, [effectiveZoom]);
+
+  // Tactile et agent utilisateur mobile : émulés par le processus principal
+  // (voir devtools-panel.js). Rien n'est demandé tant que la vue responsive
+  // n'a jamais été ouverte sur cette page.
+  const emulatingRef = useRef(false);
+  const wantTouch = Boolean(responsive?.touch);
+  const wantUa = responsive ? userAgentFor(responsive) : null;
+  const wantNetwork = responsive?.network || 'none';
+  const responsiveOn = Boolean(responsive);
+  useEffect(() => {
+    let id = null;
+    try {
+      id = ref.current?.getWebContentsId?.();
+    } catch {
+      id = null;
+    }
+    if (!id) return;
+    const api = window.electronAPI;
+    if (responsiveOn) {
+      emulatingRef.current = true;
+      api?.devtoolsEmulate?.({
+        webContentsId: id,
+        touch: wantTouch,
+        userAgent: wantUa,
+        network: networkConditionsFor(wantNetwork),
+      });
+    } else if (emulatingRef.current) {
+      emulatingRef.current = false;
+      api?.devtoolsStopEmulation?.(id);
+    }
+  }, [responsiveOn, wantTouch, wantUa, wantNetwork]);
+
+  // Capture de l'appareil, à sa taille RÉELLE : on repasse le temps de la
+  // capture à l'échelle 1, puis on photographie l'appareil par tuiles (voir
+  // lib/deviceCapture.js). Le résultat rejoint l'aperçu de capture habituel.
+  const captureDevice = async () => {
+    if (!responsive || capturing) return;
+    const view = viewportOf(responsive);
+    const kind = deviceById(responsive.deviceId).kind;
+    const withFrame = responsive.frame !== false;
+    setCapturing(true);
+    try {
+      // Le temps que la page se remette en page à sa taille réelle.
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      const shot = await captureTiles({
+        stage: stageRef.current,
+        frame: frameRef.current,
+        size: view,
+        captureRect: (rect) => window.electronAPI?.captureUiRect?.(rect),
+      });
+      if (!shot) return;
+      const out = withFrame ? drawDeviceFrame(shot.canvas, kind, shot.ratio) : shot.canvas;
+      let url = null;
+      try {
+        url = ref.current?.getURL?.() || null;
+      } catch {
+        url = null;
+      }
+      await window.electronAPI?.screenshots?.adopt?.({
+        dataUrl: out.toDataURL('image/png'),
+        url,
+        pixelRatio: shot.ratio,
+      });
+    } catch (err) {
+      console.error('[orbit] capture d’appareil échouée:', err);
+    } finally {
+      setCapturing(false);
+    }
+  };
+
+  // Plusieurs appareils : défilement et navigation SYNCHRONISÉS. Le meneur est
+  // l'appareil dont la position a bougé depuis le dernier passage ; les autres
+  // le suivent (en proportion de la hauteur, les pages n'ayant pas la même
+  // longueur d'un appareil à l'autre). Une navigation est suivie partout.
+  const mirrorsRef = useRef(new Map()); // id d'appareil → <webview>
+  const registerMirror = useCallback((id, el) => {
+    if (el) mirrorsRef.current.set(id, el);
+    else mirrorsRef.current.delete(id);
+  }, []);
+  const multiOn = mirrorDevices.length > 0;
+  useEffect(() => {
+    if (!multiOn) return undefined;
+    const READ = `(() => { const e = document.scrollingElement || document.documentElement; const m = e.scrollHeight - e.clientHeight; return [m > 0 ? e.scrollTop / m : 0, location.href]; })()`;
+    const last = new Map(); // <webview> → { ratio, url }
+    // Suiveurs qu'on vient de déplacer : tant qu'ils n'ont pas atteint la
+    // position (ou l'adresse) demandée, leur écart n'est PAS un geste de
+    // l'utilisateur. Sans ce délai de grâce, l'appareil pas encore déplacé
+    // passait pour le meneur et ramenait tout le monde en arrière (mesuré :
+    // ping-pong, tout revenait en haut).
+    const pending = new Map(); // <webview> → { ratio, url, until }
+    let busy = false;
+    const timer = setInterval(async () => {
+      if (busy) return;
+      busy = true;
+      try {
+        const views = [ref.current, ...mirrorsRef.current.values()].filter(Boolean);
+        const states = await Promise.all(
+          views.map(async (wv) => {
+            try {
+              const [rawRatio, rawUrl] = await wv.executeJavaScript(READ);
+              // Valeurs venues de la PAGE : on ne garde qu'un nombre borné et
+              // une adresse http(s). Elles sont réinjectées dans les autres
+              // appareils (script, loadURL) — rien d'autre n'y passe.
+              const ratio = Math.min(1, Math.max(0, Number(rawRatio) || 0));
+              const url = typeof rawUrl === 'string' && /^https?:\/\//i.test(rawUrl) ? rawUrl : null;
+              return url ? { wv, ratio, url } : null;
+            } catch {
+              return null; // page en cours de chargement
+            }
+          })
+        );
+        const live = states.filter(Boolean);
+        const now = Date.now();
+        for (const st of live) {
+          const want = pending.get(st.wv);
+          if (!want) continue;
+          const arrived = st.url === want.url && (want.ratio == null || Math.abs(st.ratio - want.ratio) < 0.01);
+          if (arrived || now > want.until) pending.delete(st.wv);
+        }
+        // Premier passage : la page principale mène — les autres appareils
+        // la rejoignent là où elle est (adresse et position).
+        const leader = !last.size
+          ? live.find((st) => st.wv === ref.current)
+          : live.find((st) => {
+              if (pending.has(st.wv)) return false;
+              const prev = last.get(st.wv);
+              return prev && (prev.url !== st.url || Math.abs(prev.ratio - st.ratio) > 0.002);
+            });
+        if (leader) {
+          for (const st of live) {
+            if (st.wv === leader.wv) continue;
+            if (st.url !== leader.url) {
+              try {
+                st.wv.loadURL(leader.url);
+              } catch {
+                /* pas prêt */
+              }
+              pending.set(st.wv, { url: leader.url, ratio: null, until: now + 8000 });
+            } else if (Math.abs(st.ratio - leader.ratio) > 0.002) {
+              st.wv
+                .executeJavaScript(
+                  // `instant` : une page en scroll-behavior: smooth glisserait
+                  // lentement, et les suiveurs traîneraient derrière.
+                  `(() => { const e = document.scrollingElement || document.documentElement; e.scrollTo({ top: ${leader.ratio} * (e.scrollHeight - e.clientHeight), behavior: 'instant' }); })()`
+                )
+                .catch(() => {});
+              pending.set(st.wv, { url: st.url, ratio: leader.ratio, until: now + 800 });
+            }
+          }
+        }
+        for (const st of live) last.set(st.wv, { ratio: st.ratio, url: st.url });
+      } finally {
+        busy = false;
+      }
+    }, 150);
+    return () => clearInterval(timer);
+  }, [multiOn]);
+
+  // Zoom de PRÉSENTATION (loupe) : agrandit ou réduit l'affichage des
+  // appareils, jamais la page — elle garde la largeur de l'appareil. Par les
+  // boutons de la barre, Ctrl + molette sur la scène, ou Ctrl + molette DANS
+  // une page (geste réclamé à App.jsx, voir plus bas).
+  const presentationRef = useRef({ responsive: null, scale: 1 });
+  useEffect(() => {
+    presentationRef.current = { responsive, scale: deviceScale };
+  }, [responsive, deviceScale]);
+  const setPresentationZoom = useCallback((next) => {
+    const cur = presentationRef.current.responsive;
+    if (!cur) return;
+    const value = Math.round(Math.min(4, Math.max(0.1, next)) * 100) / 100;
+    setResponsiveState({ ...cur, zoom: value });
+    try {
+      localStorage.setItem('orbit-responsive', JSON.stringify({ ...cur, zoom: value }));
+    } catch {
+      /* stockage indisponible */
+    }
+  }, []);
+  // Ctrl + molette sur la scène (autour des appareils).
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage || !responsiveOn) return undefined;
+    const onWheel = (event) => {
+      if (!event.ctrlKey && !event.metaKey) return;
+      event.preventDefault();
+      setPresentationZoom(wheelZoom(presentationRef.current.scale, event.deltaY));
+    };
+    stage.addEventListener('wheel', onWheel, { passive: false });
+    return () => stage.removeEventListener('wheel', onWheel);
+  }, [responsiveOn, setPresentationZoom]);
+  // Ctrl + molette DANS une page de la vue responsive (la principale ou un
+  // appareil de la vue Multi) : le preload a déjà zoomé la page ; on réclame
+  // le geste, on agrandit la présentation, et on rend à chaque page le zoom
+  // qui lui fait voir la largeur de son appareil.
+  useEffect(() => {
+    if (!responsiveOn) return undefined;
+    const onGuestWheel = (event) => {
+      const { wcId, dir } = event.detail || {};
+      const views = [ref.current, ...mirrorsRef.current.values()].filter(Boolean);
+      const mine = views.some((wv) => {
+        try {
+          return wv.getWebContentsId() === wcId;
+        } catch {
+          return false;
+        }
+      });
+      if (!mine) return;
+      event.preventDefault();
+      if (dir) setPresentationZoom(wheelZoom(presentationRef.current.scale, dir > 0 ? -100 : 100));
+      // Même échelle (borne atteinte) : rien ne déclencherait la remise du
+      // bon zoom — on la fait ici.
+      setTimeout(() => {
+        try {
+          ref.current?.setZoomFactor(zoomRef.current);
+        } catch {
+          /* pas prêt */
+        }
+        window.dispatchEvent(new Event('orbit:mirrors-rezoom'));
+      }, 60);
+    };
+    window.addEventListener('orbit:guest-wheel-zoom', onGuestWheel);
+    return () => window.removeEventListener('orbit:guest-wheel-zoom', onGuestWheel);
+  }, [responsiveOn, setPresentationZoom]);
+
+
+  // Poignées du cadre : on étire l'appareil à la souris. Le cadre est centré,
+  // donc un déplacement horizontal compte double (les deux bords bougent).
+  // Même recette que le séparateur de l'écran partagé (App.jsx) : événements
+  // SOURIS sur la fenêtre + voile plein écran pendant le geste. Les
+  // événements « pointer » sont annulés (pointercancel) dès que la souris
+  // passe au-dessus d'un <webview> — mesuré, capture comprise.
+  const startDeviceResize = (event, axis) => {
+    if (event.button !== 0 || !responsive) return;
+    event.preventDefault();
+    const start = { x: event.clientX, y: event.clientY, ...viewportOf(responsive) };
+    const base = responsive;
+    const scale = devicePlan?.zoom || 1;
+    const sizeAt = (e) => ({
+      width: axis === 'y' ? start.width : clampSize(start.width + (2 * (e.clientX - start.x)) / scale),
+      height: axis === 'x' ? start.height : clampSize(start.height + (e.clientY - start.y) / scale),
+    });
+    setResizing(axis);
+    const move = (e) => setResponsiveState({ ...base, deviceId: 'responsive', rotated: false, ...sizeAt(e) });
+    const up = (e) => {
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+      window.removeEventListener('blur', up);
+      setResizing(false);
+      if (e && 'clientX' in e) setResponsive({ ...base, deviceId: 'responsive', rotated: false, ...sizeAt(e) });
+    };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+    // Filet de sécurité : la fenêtre perd le focus en plein geste.
+    window.addEventListener('blur', up);
+  };
+
+  // Ouverture / bascule de l'inspecteur. Le détail désigne la page par son
+  // webContents ; sans lui (raccourci pressé dans l'interface), c'est l'app
+  // active qui est visée.
+  useEffect(() => {
+    const onDevtools = (event) => {
+      const { wcId, x, y, toggle } = event.detail || {};
+      let mine = false;
+      try {
+        mine = wcId ? ref.current?.getWebContentsId?.() === wcId : active;
+      } catch {
+        mine = false;
+      }
+      if (!mine) return;
+      setInspect((current) =>
+        toggle && current ? null : { key: Date.now(), x: Number(x), y: Number(y) }
+      );
+    };
+    window.addEventListener('orbit:devtools', onDevtools);
+    return () => window.removeEventListener('orbit:devtools', onDevtools);
+  }, [active]);
 
   useEffect(() => {
     let active = true;
@@ -441,7 +817,7 @@ export default function WebView({ app, active, visible, flexLayout }) {
     const applyZoom = () => {
       domReadyRef.current = true;
       try {
-        wv.setZoomFactor(Math.min(3, Math.max(0.5, app.zoom || 1)));
+        wv.setZoomFactor(zoomRef.current);
       } catch {
         /* ignore */
       }
@@ -670,11 +1046,11 @@ export default function WebView({ app, active, visible, flexLayout }) {
     const wv = ref.current;
     if (!wv || app.sleeping || typeof wv.setZoomFactor !== 'function') return;
     try {
-      wv.setZoomFactor(Math.min(3, Math.max(0.5, app.zoom || 1)));
+      wv.setZoomFactor(effectiveZoom);
     } catch {
       /* ignore */
     }
-  }, [app.zoom, app.sleeping]);
+  }, [effectiveZoom, app.sleeping]);
 
   // Donner le focus au webview quand l'app devient active, et forcer un
   // re-composite peu après (anti « page blanche » après masquage : certaines
@@ -686,13 +1062,17 @@ export default function WebView({ app, active, visible, flexLayout }) {
     const t = setTimeout(() => {
       try {
         // Ré-appliquer le même zoom force le guest à se re-peindre
-        wv.setZoomFactor(Math.min(3, Math.max(0.5, app.zoom || 1)));
+        wv.setZoomFactor(zoomRef.current);
       } catch {
         /* ignore */
       }
     }, 80);
     return () => clearTimeout(t);
-  }, [active, app.zoom]);
+    // PAS de dépendance au zoom : en vue responsive « ajustée », il change à
+    // chaque mouvement de poignée ; redonner le focus à la page fait alors
+    // perdre le focus à la fenêtre (blur) et interrompt le geste (mesuré).
+    // Le zoom est réappliqué par l'effet dédié ci-dessus.
+  }, [active]);
 
   // Picture-in-Picture automatique : quand on QUITTE une app dont une vidéo
   // joue, on la sort en mini-fenêtre flottante (PiP natif Chromium) ; quand on
@@ -744,27 +1124,147 @@ export default function WebView({ app, active, visible, flexLayout }) {
         // pilotée par le conteneur : pane flex/grille + séparateur ajustable)
         ...(visible && flexLayout ? { width: '100%', height: '100%' } : {}),
       }}
-      className="w-full h-full min-w-0 min-h-0"
+      className={`w-full h-full min-w-0 min-h-0 flex ${inspect && dock === 'right' ? 'flex-row' : 'flex-col'}`}
     >
-      <webview
-        ref={ref}
-        src={
-          typeof window.electronAPI?.ensureExtensionsForPartition === 'function' &&
-          extensionsReadyPartition !== partition
-            ? 'about:blank'
-            : startUrl
-        }
-        // Partition (« coffre à cookies ») : soit propre à l'app (sessions
-        // isolées, plusieurs comptes possibles), soit partagée avec tout le
-        // profil (mode « navigateur » → SSO Google entre Gmail/YouTube/Drive).
-        // Voir lib/session.js.
-        partition={partition}
-        useragent={CHROME_UA}
-        allowpopups="true"
-        className="w-full h-full min-w-0 min-h-0"
-        // NB : le preload KeePassXC (détection/remplissage) est injecté par le
-        // main process dans 'will-attach-webview' — pas d'attribut ici.
-      />
+      {/* Colonne de la page : barre responsive éventuelle, puis la scène.
+          La scène et le cadre sont TOUJOURS là — déplacer un <webview> dans
+          le DOM le recharge ; seul leur style change en vue responsive. */}
+      <div className="flex-1 min-w-0 min-h-0 flex flex-col">
+        {responsive && (
+          <ResponsiveBar
+            state={responsive}
+            scale={deviceScale}
+            onChange={setResponsive}
+            onClose={() => setResponsive(null)}
+            onCapture={captureDevice}
+            capturing={capturing}
+            onZoomStep={(dir) => setPresentationZoom(stepZoom(deviceScale, dir))}
+          />
+        )}
+        <div
+          ref={stageRef}
+          className={`flex-1 min-w-0 min-h-0 relative ${responsive ? 'overflow-auto' : 'overflow-hidden'} ${
+            multiOn ? 'flex items-start justify-[safe_center] gap-6 p-6 pt-10' : ''
+          }`}
+          style={
+            responsive
+              ? {
+                  background:
+                    'repeating-conic-gradient(rgba(127,127,127,.07) 0% 25%, transparent 0% 50%) 0 0 / 24px 24px',
+                }
+              : undefined
+          }
+        >
+          <div
+            ref={frameRef}
+            className={responsive ? 'relative flex-shrink-0' : 'w-full h-full'}
+            style={
+              responsive
+                ? {
+                    width: devicePlan.boxWidth,
+                    height: devicePlan.boxHeight,
+                    margin: multiOn ? 0 : '24px auto',
+                    // Pendant la capture, pas d'ombre : elle déborderait
+                    // dans les tuiles.
+                    boxShadow: capturing ? 'none' : '0 0 0 1px rgba(127,127,127,.35), 0 12px 40px rgba(0,0,0,.35)',
+                  }
+                : undefined
+            }
+          >
+            {multiOn && (
+              <span className="absolute -top-6 left-0 text-[11px] text-text-muted whitespace-nowrap">
+                {responsive.deviceId === 'responsive' ? '' : `${deviceById(responsive.deviceId).name} · `}
+                {deviceView.width} × {deviceView.height}
+              </span>
+            )}
+            <webview
+              ref={ref}
+              src={
+                typeof window.electronAPI?.ensureExtensionsForPartition === 'function' &&
+                extensionsReadyPartition !== partition
+                  ? 'about:blank'
+                  : startUrl
+              }
+              // Partition (« coffre à cookies ») : soit propre à l'app (sessions
+              // isolées, plusieurs comptes possibles), soit partagée avec tout le
+              // profil (mode « navigateur » → SSO Google entre Gmail/YouTube/Drive).
+              // Voir lib/session.js.
+              partition={partition}
+              useragent={CHROME_UA}
+              allowpopups="true"
+              // `flex` et non `block` : l'iframe interne d'un <webview> ne
+              // s'étire qu'en display:flex — en block, la page retombait à
+              // 150 px de haut (mesuré).
+              className={responsive ? 'flex' : 'w-full h-full min-w-0 min-h-0'}
+              style={
+                responsive
+                  ? {
+                      // Taille AFFICHÉE ; le zoom de la page (devicePlan.zoom)
+                      // lui fait voir la largeur réelle de l'appareil.
+                      width: devicePlan.boxWidth,
+                      height: devicePlan.boxHeight,
+                    }
+                  : undefined
+              }
+              // NB : le preload KeePassXC (détection/remplissage) est injecté par le
+              // main process dans 'will-attach-webview' — pas d'attribut ici.
+            />
+            {responsive && !capturing && !multiOn && (
+              <>
+                {/* Voile plein écran pendant le geste : aucune page ne capte
+                    la souris (voir startDeviceResize). */}
+                {resizing && (
+                  <div
+                    className="fixed inset-0 z-[9999]"
+                    style={{ cursor: resizing === 'x' ? 'ew-resize' : resizing === 'y' ? 'ns-resize' : 'nwse-resize' }}
+                  />
+                )}
+                {/* Poignées : bord droit, bord bas, coin. */}
+                <div
+                  data-rs-handle="x"
+                  onMouseDown={(e) => startDeviceResize(e, 'x')}
+                  className="absolute top-1/2 -right-4 w-2.5 h-12 -translate-y-1/2 rounded-full bg-text-muted/40 hover:bg-accent-primary cursor-ew-resize"
+                />
+                <div
+                  data-rs-handle="y"
+                  onMouseDown={(e) => startDeviceResize(e, 'y')}
+                  className="absolute left-1/2 -bottom-4 h-2.5 w-12 -translate-x-1/2 rounded-full bg-text-muted/40 hover:bg-accent-primary cursor-ns-resize"
+                />
+                <div
+                  data-rs-handle="xy"
+                  onMouseDown={(e) => startDeviceResize(e, 'xy')}
+                  className="absolute -right-4 -bottom-4 w-3.5 h-3.5 rounded-sm bg-text-muted/40 hover:bg-accent-primary cursor-nwse-resize"
+                />
+              </>
+            )}
+          </div>
+          {/* Autres appareils (vue « Multi ») : même session, même adresse,
+              défilement et navigation synchronisés avec la page. */}
+          {multiOn &&
+            mirrorDevices.map((device) => (
+              <DeviceMirror
+                key={device.id}
+                device={device}
+                url={startUrl}
+                partition={partition}
+                scale={deviceScale}
+                register={registerMirror}
+              />
+            ))}
+        </div>
+      </div>
+      {inspect && (
+        <DevToolsPanel
+          webviewRef={ref}
+          visible={visible}
+          request={inspect}
+          onClose={() => setInspect(null)}
+          dock={dock}
+          onDock={changeDock}
+          responsive={Boolean(responsive)}
+          onToggleResponsive={toggleResponsive}
+        />
+      )}
       {/* Adresse du lien survolé, en bas, du côté libre. */}
       <LinkStatus webviewRef={ref} visible={visible} />
       {/* Repère Tor / VPN : seulement pour une app en tunnel (désactivable). */}

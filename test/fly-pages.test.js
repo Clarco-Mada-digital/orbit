@@ -105,6 +105,20 @@ test('openFlyPage : réutilise la page déjà ouverte sur la même adresse', { s
   assert.equal(again, first, 'pas de doublon');
 });
 
+test('openFlyPage : un conteneur ouvre une page DE PLUS, avec sa propre session', { skip }, () => {
+  const normal = useStore.getState().openFlyPage('https://conteneur.example/app');
+  const c2 = useStore.getState().openFlyPage('https://conteneur.example/app', { container: true });
+  const c3 = useStore.getState().openFlyPage('https://conteneur.example/app', { container: true });
+  assert.notEqual(c2, normal);
+  assert.notEqual(c3, c2);
+  assert.equal(flyPage(c2).container, 2);
+  assert.equal(flyPage(c3).container, 3);
+  assert.notEqual(flyPage(c2).sessionKey, flyPage(normal).sessionKey);
+  // Rouvrir l'adresse normalement revient à la page ordinaire, pas à un
+  // conteneur de test.
+  assert.equal(useStore.getState().openFlyPage('https://conteneur.example/app'), normal);
+});
+
 test('openFlyPage : un lien reçu en page privée ne réutilise pas la normale', { skip }, () => {
   const normal = useStore.getState().openFlyPage('https://prive.example/y');
   const priv = useStore.getState().openFlyPage('https://prive.example/y', { private: true });

@@ -829,3 +829,17 @@ test('chaque action globale correspond à une touche du studio', () => {
     assert.equal(applyStudioKey(parAction[action], DEFAULT_STYLE), null);
   }
 });
+
+test('recordingBitrate : le débit suit la définition et la cadence, borné', async () => {
+  const { recordingBitrate, BITRATE_MIN, BITRATE_MAX } = await import('../src/lib/studioLayout.js');
+  // 1080p à 30 i/s : bien au-delà des 6 Mbit/s fixes d'avant.
+  assert.equal(recordingBitrate(1920, 1080, 30), 12_441_600);
+  // Plus de pixels ou plus d'images → plus de débit.
+  assert.ok(recordingBitrate(1920, 1080, 30) > recordingBitrate(1280, 720, 30));
+  assert.ok(recordingBitrate(1920, 1080, 60) > recordingBitrate(1920, 1080, 30));
+  // Plancher : le 720p à 24 i/s reste lisible.
+  assert.equal(recordingBitrate(1280, 720, 24), BITRATE_MIN);
+  // Plafond, et entrées invalides.
+  assert.equal(recordingBitrate(3840, 2160, 60), BITRATE_MAX);
+  assert.equal(recordingBitrate(undefined, null, 'x'), BITRATE_MIN);
+});

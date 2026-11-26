@@ -145,11 +145,18 @@ function isLoginInput(el, pass) {
 let lastZoomNotice = 0;
 let zoomNoticeTimer = null;
 let pendingZoomNotice = null;
+// Sens du dernier cran (+1 agrandir, -1 réduire) : la vue responsive d'Orbit
+// s'en sert pour agrandir sa PRÉSENTATION au lieu de la page, dont la largeur
+// doit rester celle de l'appareil.
+let pendingZoomDir = 0;
 
-function notifyZoom(factor) {
+function notifyZoom(factor, dir = 0) {
+  if (dir) pendingZoomDir = dir;
   const send = (value) => {
+    const d = pendingZoomDir;
+    pendingZoomDir = 0;
     try {
-      ipcRenderer.send('guest:zoom', { factor: value });
+      ipcRenderer.send('guest:zoom', { factor: value, dir: d });
     } catch {
       /* fenêtre en cours de fermeture */
     }
@@ -194,7 +201,7 @@ function applyWheelZoom(deltaY) {
   );
   if (next === current) return;
   webFrame.setZoomFactor(next);
-  notifyZoom(next);
+  notifyZoom(next, -Math.sign(deltaY));
 }
 
 try {

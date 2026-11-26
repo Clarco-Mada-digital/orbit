@@ -771,3 +771,23 @@ export function formatDuration(ms) {
   const p = (n) => String(n).padStart(2, '0');
   return h > 0 ? `${h}:${p(m)}:${p(s)}` : `${m}:${p(s)}`;
 }
+
+// --- Débit de l'encodeur ---------------------------------------------------
+// Un débit FIXE de 6 Mbit/s était la seconde cause des vidéos floues : c'est
+// à peine assez pour du 720p, et en 1080p l'encodeur VP9 temps réel de
+// Chromium compensait en lissant tout ce qui bouge — le texte bave dès qu'on
+// fait défiler une page. Le débit suit donc la définition et la cadence.
+//
+// 0,2 bit par pixel et par image : le seuil à partir duquel le texte d'une
+// démonstration (défilement, saisie) reste net en VP9/VP8 temps réel. Un
+// plancher garde le 720p lisible, un plafond évite des fichiers démesurés.
+export const BITRATE_BITS_PER_PIXEL = 0.2;
+export const BITRATE_MIN = 8_000_000;
+export const BITRATE_MAX = 25_000_000;
+
+export function recordingBitrate(width, height, fps) {
+  const pixels = Math.max(0, Number(width) || 0) * Math.max(0, Number(height) || 0);
+  const rate = Math.max(1, Number(fps) || 30);
+  const wanted = Math.round(pixels * rate * BITRATE_BITS_PER_PIXEL);
+  return Math.min(BITRATE_MAX, Math.max(BITRATE_MIN, wanted));
+}

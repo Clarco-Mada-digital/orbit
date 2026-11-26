@@ -44,6 +44,8 @@ import { networkOfRule, isOnionUrl, NETWORK_NAMES } from '../src/lib/privateNetw
 import * as vaultBackup from './vault-backup.js';
 import { readDatabase as readKdbx } from './kdbx.js';
 import * as studio from './studio.js';
+import * as devtoolsPanel from './devtools-panel.js';
+import * as stitch from './screenshot-stitch.js';
 import * as pageScrollbar from './page-scrollbar.js';
 import * as mouseGestures from './mouse-gestures.js';
 import * as pageTranslate from './page-translate.js';
@@ -2886,10 +2888,58 @@ function screenshotName() {
   return `Orbit ${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())} ${p(d.getHours())}h${p(d.getMinutes())}m${p(d.getSeconds())}s.png`;
 }
 
-// Page ENTIÈRE : capturePage() s'arrête au viewport. On passe donc par le
-// protocole DevTools (captureBeyondViewport), seul moyen d'aller au-delà du
-// défilement. Chromium plafonne la surface : on borne à 16384 px.
-async function captureFullPage(wc) {
+// ---------------------------------------------------------------------------
+// Captures NETTES.
+//
+// `capturePage()` rend un pixel par pixel d'écran. Sur un écran de densité 1
+// (la plupart des portables 1366×768 / 1920×1080 sous Linux et Windows), la
+// capture a donc la définition exacte de l'affichage : correcte à 100 %, mais
+// floue dès qu'on l'agrandit, qu'on la colle dans un document ou qu'on la
+// montre sur un écran plus dense.
+//
+// Le protocole DevTools sait faire mieux : `Page.captureScreenshot` avec
+// `clip.scale` REDESSINE la page à l'échelle demandée (texte, SVG et bordures
+// rasterisés à nouveau, pas une image agrandie). On capture donc à 2× au
+// moins — davantage si l'écran est déjà plus dense.
+//
+// Piège mesuré (Electron 45) : quand la page est zoomée (zoom Orbit d'une
+// app), le rectangle `clip` s'exprime en pixels INDÉPENDANTS DU PÉRIPHÉRIQUE,
+// pas en pixels CSS. Il faut donc multiplier les coordonnées CSS par le zoom,
+// sinon la capture tombe à côté (image blanche) ou se retrouve tronquée.
+//
+// Seconde limite mesurée : sur une page de <webview> (les apps), toute
+// capture au-delà de 1× sort en MOSAÏQUE — la page répétée 2×2 au lieu d'être
+// redessinée, quelle que soit la méthode (clip.scale, émulation de densité,
+// avec ou sans attente). Les apps restent donc capturées à la densité de
+// l'écran (`capturePage`). Le 2× ne vaut que pour la zone visible et la
+// sélection des fenêtres ordinaires : fenêtres détachées, pop-ups, interface
+// d'Orbit. La page entière, elle, passe partout par défilement et
+// assemblage (captureFullPageStitched).
+// ---------------------------------------------------------------------------
+const CAPTURE_MIN_SCALE = 2;
+const CAPTURE_MAX_SIDE = 16384; // plafond de surface de Chromium
+
+function captureScaleFor(wc) {
+  let dsf = 1;
+  try {
+    const host = wc.hostWebContents || wc;
+    const win = BrowserWindow.fromWebContents(host);
+    const display = win ? screen.getDisplayMatching(win.getBounds()) : screen.getPrimaryDisplay();
+    dsf = Number(display?.scaleFactor) || 1;
+  } catch {
+    /* écran inconnu : densité 1 */
+  }
+  return Math.min(4, Math.max(CAPTURE_MIN_SCALE, dsf));
+}
+
+// Capture NETTE (2×) d'une fenêtre ordinaire via le protocole DevTools.
+// `region` : 'visible', ou { x, y, width, height } — une sélection en pixels
+// CSS relatifs à la zone affichée (ce que rend PICK_REGION_JS).
+// Rend `{ image, scale }` (image en pixels réels, `scale` = pixels par point),
+// ou null : page d'app (<webview>, voir plus haut), ou débogueur indisponible
+// — DevTools déjà ouverts, typiquement. L'appelant se replie sur capturePage().
+async function captureSharp(wc, region) {
+  if (wc.getType() === 'webview') return null;
   const dbg = wc.debugger;
   let attached = false;
   try {
@@ -2897,23 +2947,30 @@ async function captureFullPage(wc) {
       dbg.attach('1.3');
       attached = true;
     }
+    const zoom = typeof wc.getZoomFactor === 'function' ? wc.getZoomFactor() || 1 : 1;
     const metrics = await dbg.sendCommand('Page.getLayoutMetrics');
-    const size = metrics.cssContentSize || metrics.contentSize || {};
-    const width = Math.min(Math.ceil(size.width || 0), 16384);
-    const height = Math.min(Math.ceil(size.height || 0), 16384);
-    if (!width || !height) throw new Error('taille de page inconnue');
+    const vv = metrics.cssVisualViewport || metrics.visualViewport || {};
+    const r = region === 'visible' ? { x: 0, y: 0, width: vv.clientWidth, height: vv.clientHeight } : region;
+    const clip = {
+      x: ((vv.pageX || 0) + (r.x || 0)) * zoom,
+      y: ((vv.pageY || 0) + (r.y || 0)) * zoom,
+      width: (r.width || 0) * zoom,
+      height: (r.height || 0) * zoom,
+    };
+    clip.width = Math.min(Math.ceil(clip.width), CAPTURE_MAX_SIDE);
+    clip.height = Math.min(Math.ceil(clip.height), CAPTURE_MAX_SIDE);
+    if (!clip.width || !clip.height) throw new Error('taille de page inconnue');
+    const scale = Math.max(1, Math.min(captureScaleFor(wc), CAPTURE_MAX_SIDE / clip.width, CAPTURE_MAX_SIDE / clip.height));
     const shot = await dbg.sendCommand('Page.captureScreenshot', {
       format: 'png',
-      captureBeyondViewport: true,
       fromSurface: true,
-      clip: { x: 0, y: 0, width, height, scale: 1 },
+      clip: { ...clip, scale },
     });
-    return nativeImage.createFromBuffer(Buffer.from(shot.data, 'base64'));
+    const image = nativeImage.createFromBuffer(Buffer.from(shot.data, 'base64'));
+    return image.isEmpty() ? null : { image, scale };
   } catch (err) {
-    // DevTools déjà ouverts (mode dev) → le débogueur refuse de s'attacher.
-    // Mieux vaut la zone visible qu'aucune capture.
-    console.error('[orbit] capture page entière indisponible:', err.message);
-    return wc.capturePage();
+    console.error('[orbit] capture nette indisponible, repli sur la capture d’écran:', err.message);
+    return null;
   } finally {
     if (attached) {
       try {
@@ -2925,8 +2982,75 @@ async function captureFullPage(wc) {
   }
 }
 
-// Sélection : coordonnées rendues en pixels CSS → converties en points
-// indépendants du périphérique (ce qu'attend capturePage) via le zoom de la page.
+// Page ENTIÈRE : défilement et assemblage (voir screenshot-stitch.js). Rend
+// `{ image, truncated, element }`, ou null si la page ne s'y prête pas (aucun
+// contenu qui défile : la zone visible EST la page entière).
+async function captureFullPageStitched(wc) {
+  const zoom = typeof wc.getZoomFactor === 'function' ? wc.getZoomFactor() || 1 : 1;
+  const info = await wc.executeJavaScript(stitch.STITCH_SETUP_JS, true);
+  if (!info || info.kind === 'none') return null;
+  const pt = (v) => (Number(v) || 0) * zoom;
+  const rect = { x: pt(info.rect.x), y: pt(info.rect.y), w: pt(info.rect.w), h: pt(info.rect.h) };
+  const viewW = pt(info.viewW);
+  const viewH = pt(info.viewH);
+  try {
+    await wc.executeJavaScript('window.__orbitShot.go(0)', true);
+    const firstImage = await wc.capturePage();
+    const scale = firstImage.getSize().width / Math.max(1, viewW);
+    // Plafond : l'image finale doit rester affichable dans l'éditeur, et
+    // tenir en mémoire (surface bornée, voir screenshot-stitch.js).
+    const maxPixelsHigh = Math.min(stitch.STITCH_MAX_HEIGHT, stitch.STITCH_MAX_PIXELS / Math.max(1, firstImage.getSize().width));
+    const maxContent = maxPixelsHigh / scale - (viewH - rect.h);
+    const positions = stitch.scrollPositions({
+      scrollHeight: pt(info.scrollHeight),
+      clientHeight: rect.h,
+      maxContent,
+    });
+    await wc.executeJavaScript('window.__orbitShot.afterFirst()', true);
+    const captureRect = {
+      x: Math.round(rect.x),
+      y: Math.round(rect.y),
+      width: Math.round(rect.w),
+      height: Math.round(rect.h),
+    };
+    const segments = [];
+    let reached = rect.h;
+    for (const top of positions.slice(1)) {
+      // La page peut s'arrêter avant la position demandée : on se fie à la
+      // position RÉELLE pour savoir quoi recoller.
+      const actual = pt(await wc.executeJavaScript(`window.__orbitShot.go(${Math.round(top / zoom)})`, true));
+      if (actual + rect.h <= reached) break;
+      const img = await wc.capturePage(captureRect);
+      const size = img.getSize();
+      segments.push({ data: img.toBitmap(), width: size.width, height: size.height, top: actual });
+      reached = actual + rect.h;
+    }
+    const first = { data: firstImage.toBitmap(), ...firstImage.getSize() };
+    const out = stitch.composeStitched({
+      first,
+      segments,
+      layout: { viewW, viewH, rect, content: reached },
+      background: stitch.backgroundBytes(info.bg),
+    });
+    // Page qui défile d'un bloc : on retire les barres de défilement
+    // (colonne de droite, bande du bas), qui ne figureraient que sur le
+    // premier écran.
+    let image = nativeImage.createFromBitmap(out.data, { width: out.width, height: out.height });
+    if (info.kind === 'document') {
+      const contentWidth = Math.min(out.width, Math.round(rect.w * scale));
+      const contentHeight = Math.min(out.height, Math.round((rect.y + reached) * scale));
+      if (contentWidth > 0 && contentHeight > 0 && (contentWidth < out.width || contentHeight < out.height)) {
+        image = image.crop({ x: 0, y: 0, width: contentWidth, height: contentHeight });
+      }
+    }
+    return { image, scale, truncated: out.truncated, element: info.kind === 'element' };
+  } finally {
+    await wc.executeJavaScript('window.__orbitShot && window.__orbitShot.restore()', true).catch(() => {});
+  }
+}
+
+// Sélection : rend le rectangle en pixels CSS (pour la capture nette) ET en
+// points indépendants du périphérique (ce qu'attend capturePage, le repli).
 async function pickRegion(wc) {
   const selection = await wc.executeJavaScript(PICK_REGION_JS, true);
   if (!selection?.rect) return null;
@@ -2939,7 +3063,7 @@ async function pickRegion(wc) {
     height: Math.round(r.height * zoom),
   };
   return rect.width > 2 && rect.height > 2
-    ? { rect, copyDirect: selection.copyDirect === true }
+    ? { rect, cssRect: { x: r.x, y: r.y, width: r.width, height: r.height }, copyDirect: selection.copyDirect === true }
     : null;
 }
 
@@ -2972,18 +3096,48 @@ function announceSavedScreenshot(savePath, url, bytes) {
 
 async function captureGuestPage(wc, mode, copyDirect = false) {
   try {
-    let image;
+    let sharp;
+    let fallbackRect;
+    let stitched = null;
+    // L'interface d'Orbit ne défile pas comme une page : « page entière » y
+    // déroulerait n'importe quel bloc (la liste des apps…). Elle est
+    // capturée telle qu'affichée.
+    if (mode === 'full' && mainWindow && !mainWindow.isDestroyed() && wc === mainWindow.webContents) mode = 'visible';
     if (mode === 'full') {
-      image = await captureFullPage(wc);
+      try {
+        stitched = await captureFullPageStitched(wc);
+      } catch (err) {
+        console.error('[orbit] capture page entière par défilement échouée:', err.message);
+      }
+      // Rien qui défile : la zone visible est la page entière.
+      if (stitched) sharp = { image: stitched.image, scale: stitched.scale };
     } else if (mode === 'selection') {
       const selection = await pickRegion(wc);
       if (!selection) return { success: false, cancelled: true };
       copyDirect ||= selection.copyDirect;
-      image = await wc.capturePage(selection.rect);
+      // Le cadre de sélection vient d'être retiré de la page : on laisse une
+      // image s'afficher sans lui avant de capturer.
+      await wc
+        .executeJavaScript('new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))', true)
+        .catch(() => {});
+      sharp = await captureSharp(wc, selection.cssRect);
+      fallbackRect = selection.rect;
     } else {
-      image = await wc.capturePage();
+      sharp = await captureSharp(wc, 'visible');
     }
+    // Repli : la capture à la définition de l'écran vaut mieux que rien.
+    const image = sharp?.image || (await (fallbackRect ? wc.capturePage(fallbackRect) : wc.capturePage()));
+    const pixelRatio = sharp?.scale || 1;
     if (!image || image.isEmpty()) throw new Error('image vide');
+    if (stitched?.truncated && Notification.isSupported()) {
+      const notif = new Notification({
+        title: 'Capture raccourcie',
+        body: 'La page est trop haute pour une seule image : la capture s’arrête avant la fin.',
+        silent: true,
+      });
+      keepNotificationAlive(notif);
+      notif.show();
+    }
 
     if (copyDirect) {
       copyImageToClipboard(image);
@@ -3002,7 +3156,7 @@ async function captureGuestPage(wc, mode, copyDirect = false) {
     if (!mainWindow || mainWindow.isDestroyed()) throw new Error('fenêtre Orbit indisponible');
     if (activeScreenshotId) pendingScreenshots.delete(activeScreenshotId);
     const id = crypto.randomUUID();
-    pendingScreenshots.set(id, { image, url: wc.getURL() });
+    pendingScreenshots.set(id, { image, url: wc.getURL(), pixelRatio });
     activeScreenshotId = id;
     mainWindow.show();
     mainWindow.focus();
@@ -3010,9 +3164,15 @@ async function captureGuestPage(wc, mode, copyDirect = false) {
       id,
       filename: screenshotName(),
       dataUrl: image.toDataURL(),
+      // Pixels par point : l'éditeur s'en sert pour garder des traits et un
+      // texte d'annotation de la même taille APPARENTE qu'avant la capture 2×.
+      pixelRatio,
       // Zones repérées dans la page : l'aperçu propose de les masquer, il ne
       // le fait jamais tout seul (un faux positif masquerait l'essentiel).
-      sensitive: await scanSensitiveRegions(wc, mode, image),
+      // Contenu déroulé depuis un CONTENEUR : les positions relevées dans la
+      // page ne correspondent plus à l'image assemblée — mieux vaut ne rien
+      // proposer que masquer à côté.
+      sensitive: stitched?.element ? [] : await scanSensitiveRegions(wc, mode, image),
     });
     return { success: true };
   } catch (err) {
@@ -3105,7 +3265,9 @@ handleFromUi('screenshot:capture', async (_event, { wcId, mode, copyDirect, sour
     mainWindow?.focus();
   }
   wc.focus();
-  if (captureOrbitUi) {
+  // Interface d'Orbit (par la source « orbit » ou choisie dans la liste) :
+  // on laisse le sélecteur de capture disparaître avant de photographier.
+  if (captureOrbitUi || (mainWindow && !mainWindow.isDestroyed() && wc === mainWindow.webContents)) {
     await wc.executeJavaScript(
       'new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))',
       true
@@ -3129,8 +3291,12 @@ function pinnedShotFor(event) {
   return entry && !entry.win.isDestroyed() ? entry : null;
 }
 
-function openPinnedShot(image, filename) {
-  const size = image.getSize();
+function openPinnedShot(image, filename, pixelRatio = 1) {
+  // La fenêtre se dimensionne sur la taille AFFICHÉE de la page, pas sur ses
+  // pixels : une capture nette (2×) ne doit pas s'épingler deux fois trop grande.
+  const raw = image.getSize();
+  const ratio = Math.max(1, Number(pixelRatio) || 1);
+  const size = { width: Math.round(raw.width / ratio), height: Math.round(raw.height / ratio) };
   const workArea = screen.getDisplayNearestPoint(screen.getCursorScreenPoint()).workArea;
   const bounds = pinnedWindowBounds(size, workArea, pinnedShots.size);
   const win = new BrowserWindow({
@@ -3307,7 +3473,7 @@ handleFromUi('screenshot:pin', (_event, { id, dataUrl } = {}) => {
   try {
     const image = screenshotImageFor(pending, dataUrl);
     if (!image || image.isEmpty()) return { success: false, error: 'image vide' };
-    openPinnedShot(image, screenshotName());
+    openPinnedShot(image, screenshotName(), pending.pixelRatio);
     pendingScreenshots.delete(id);
     if (activeScreenshotId === id) activeScreenshotId = null;
     return { success: true };
@@ -3647,10 +3813,8 @@ function buildGuestContextMenu(wc, params) {
       click: () => openOutsideGuarded(wc, pageUrl, 'Ouvrir la page dans le navigateur'),
     });
   }
-  if (isDev) {
-    t.push({ type: 'separator' });
-    t.push({ label: 'Inspecter', click: () => wc.inspectElement(params.x, params.y) });
-  }
+  t.push({ type: 'separator' });
+  t.push({ label: 'Inspecter', click: () => inspectPage(wc, params.x, params.y) });
 
   return t;
 }
@@ -5995,7 +6159,7 @@ handleFromUi('ctx:action', async (_event, { wcId, action, value } = {}) => {
         .catch(() => {});
       break;
     case 'inspect':
-      if (isDev) wc.inspectElement(params.x, params.y);
+      inspectPage(wc, params.x, params.y);
       break;
     case 'generatePassword': {
       // Génère un mot de passe fort et l'injecte dans le champ
@@ -8313,6 +8477,7 @@ ipcMain.on('guest:zoom', (event, payload = {}) => {
   mainWindow.webContents.send('orbit:guest-zoom', {
     wcId: event.sender.id,
     factor: zoom,
+    dir: Math.sign(Number(payload?.dir) || 0),
     ...(appId ? { appId } : {}),
   });
 });
@@ -9836,6 +10001,90 @@ handleFromUi('themes:catalog', (_event, { refresh } = {}) =>
 handleFromUi('themes:download', (_event, { id } = {}) =>
   themeStore.downloadTheme({ id: String(id || ''), cachePath: themeCatalogCache() })
 );
+// Inspecteur intégré (voir devtools-panel.js). L'interface décide OÙ le
+// panneau s'affiche ; le processus principal vérifie QUELLE page il inspecte.
+handleFromUi('devtools:show', (_event, { webContentsId, bounds, inspectAt } = {}) =>
+  devtoolsPanel.show({ mainWindow, guestId: webContentsId, bounds, inspectAt }));
+handleFromUi('devtools:hide', (_event, { webContentsId } = {}) =>
+  devtoolsPanel.hide({ guestId: webContentsId }));
+handleFromUi('devtools:close', (_event, { webContentsId } = {}) =>
+  devtoolsPanel.close({ guestId: webContentsId }));
+handleFromUi('devtools:emulate', (_event, { webContentsId, touch, userAgent, network } = {}) =>
+  devtoolsPanel.emulate({ mainWindow, guestId: webContentsId, touch, userAgent, network }));
+handleFromUi('devtools:clearSite', (_event, { webContentsId, what } = {}) =>
+  devtoolsPanel.clearSite({ mainWindow, guestId: webContentsId, what }));
+
+// Capture d'une ZONE de la fenêtre principale, telle qu'affichée — pour la
+// capture d'appareil de la vue responsive, prise par tuiles (voir
+// WebView.jsx) : capturePage() d'un <webview> plus grand que la zone visible
+// n'est pas fiable (mesuré : ni la page entière, ni la partie visible).
+handleFromUi('ui:captureRect', async (_event, rect = {}) => {
+  if (!mainWindow || mainWindow.isDestroyed()) return { success: false };
+  const n = (v) => Math.max(0, Math.round(Number(v) || 0));
+  const area = { x: n(rect.x), y: n(rect.y), width: n(rect.width), height: n(rect.height) };
+  if (!area.width || !area.height) return { success: false, error: 'empty' };
+  const image = await mainWindow.webContents.capturePage(area);
+  return { success: true, dataUrl: image.toDataURL(), size: image.getSize() };
+});
+
+// Image composée par l'interface (capture d'appareil, avec ou sans cadre) :
+// elle rejoint le parcours normal d'une capture — aperçu, annotations,
+// enregistrement, copie, épinglage.
+handleFromUi('screenshot:adopt', (_event, { dataUrl, url, pixelRatio } = {}) => {
+  const base64 = parsePngDataUrl(dataUrl);
+  if (!base64 || !mainWindow || mainWindow.isDestroyed()) return { success: false, error: 'invalid-image' };
+  const image = nativeImage.createFromBuffer(Buffer.from(base64, 'base64'));
+  if (image.isEmpty()) return { success: false, error: 'invalid-image' };
+  if (activeScreenshotId) pendingScreenshots.delete(activeScreenshotId);
+  const id = crypto.randomUUID();
+  const ratio = Math.max(1, Number(pixelRatio) || 1);
+  pendingScreenshots.set(id, { image, url: typeof url === 'string' ? url : null, pixelRatio: ratio });
+  activeScreenshotId = id;
+  mainWindow.webContents.send('orbit:screenshot-preview', {
+    id,
+    filename: screenshotName(),
+    dataUrl: image.toDataURL(),
+    pixelRatio: ratio,
+    sensitive: [],
+  });
+  return { success: true };
+});
+handleFromUi('devtools:stopEmulation', (_event, { webContentsId } = {}) =>
+  devtoolsPanel.stopEmulation({ guestId: webContentsId }));
+handleFromUi('devtools:lighthouse', (_event, { webContentsId } = {}) => {
+  const icon = nativeImage.createFromPath(resourcePath('build/icon.png'));
+  return devtoolsPanel.openLighthouse({
+    mainWindow,
+    guestId: webContentsId,
+    icon: process.platform !== 'darwin' && !icon.isEmpty() ? icon : undefined,
+  });
+});
+
+// « Inspecter » d'une page embarquée : c'est l'interface qui ouvre le panneau
+// (elle seule sait où le placer). Pour une autre fenêtre (détachée, pop-up),
+// on garde les outils de Chromium dans leur propre fenêtre.
+function inspectPage(wc, x, y) {
+  if (!wc || wc.isDestroyed()) return;
+  // Jamais les outils sur une surface d'Orbit (interface, capture épinglée,
+  // studio…) hors développement : leur console a accès aux API privilégiées
+  // exposées par le preload. Seules les PAGES (sites) s'inspectent.
+  const url = wc.getURL();
+  const isWebPage = wc.getType() === 'webview' || /^https?:/i.test(url);
+  if (!isWebPage || (mainWindow && !mainWindow.isDestroyed() && wc === mainWindow.webContents)) {
+    if (!isDev) return;
+  }
+  if (orbitUiFor(wc) && wc.getType() === 'webview' && mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send('orbit:devtools-open', { wcId: wc.id, x, y });
+    return;
+  }
+  try {
+    if (Number.isFinite(x) && Number.isFinite(y)) wc.inspectElement(x, y);
+    else wc.openDevTools({ mode: 'detach' });
+  } catch {
+    /* page fermée entre-temps */
+  }
+}
+
 handleFromUi('translate:page', (_event, { webContentsId, mode } = {}) => {
   const wc = webContents.fromId(Number(webContentsId));
   if (!wc || wc.isDestroyed() || wc.getType() !== 'webview') return { success: false };

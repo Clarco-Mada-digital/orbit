@@ -8,6 +8,55 @@ Format : une section `## [X.Y.Z] — AAAA-MM-JJ` par version, puis des
 sous-sections `### Ajouté` / `### Modifié` / `### Corrigé` / `### Sécurité`.
 La plus récente en premier.
 
+## [1.21.10] — 2026-11-26
+
+### Ajouté
+- **Inspecteur intégré** : clic droit → Inspecter, F12 ou Ctrl+Maj+I. Les
+  outils de développement (éléments, console, réseau, sources, stockage…)
+  s'ouvrent sous la page ou à côté, redimensionnables ; « Inspecter »
+  sélectionne directement l'élément cliqué.
+- **Lighthouse** depuis l'inspecteur : la page s'ouvre dans une fenêtre
+  d'audit, sur la même session (on reste connecté).
+- **Vue responsive** dans l'inspecteur : téléphones, tablettes et écrans
+  courants ou taille libre, rotation, points de rupture en un clic, poignées
+  pour étirer l'appareil, tactile et agent mobile, **réseau simulé** (4G,
+  3G, 3G lente, hors ligne), **capture de l'appareil** à sa taille réelle
+  avec ou sans cadre, et vue **Multi** (téléphone, tablette, portable côte
+  à côte, défilement et navigation synchronisés). Zoom de la présentation
+  par boutons ou Ctrl + molette, sans toucher à la largeur de la page.
+- **Effacer les données du site** et **vider le cache** depuis l'inspecteur.
+- **Conteneurs jetables** : « Nouveau conteneur » ouvre la même adresse dans
+  une session vierge et séparée, pour tester un site avec plusieurs comptes
+  à la fois ; tout est effacé à la fermeture d'Orbit.
+- **Zoom dans l'aperçu de capture** : boutons −, +, 100 %, « largeur », et
+  Ctrl + molette autour du curseur. Une page longue s'ouvre à la largeur de
+  la fenêtre, lisible.
+
+### Corrigé
+- **Capture « page entière » coupée** : les applis dont le contenu défile
+  dans un bloc (messageries, tableaux de bord…) ne donnaient que l'écran
+  visible, et les pages très longues s'arrêtaient à 16 384 px. La page est
+  maintenant déroulée et assemblée.
+- **Alt+Maj+S → Page entière** capturait l'interface d'Orbit au lieu de la
+  page quand le focus était dans la barre latérale ; les touches 1 à 4 du
+  sélecteur ne répondaient pas sur un clavier AZERTY.
+- **Vidéos floues** : débit adapté à la définition (au lieu de 6 Mbit/s
+  fixes), écran capturé à sa taille réelle puis redimensionné une seule fois
+  en haute qualité.
+- **Captures nettes** des fenêtres détachées et pop-ups (rendu en 2×), et
+  capture « page entière » juste avec une page zoomée.
+- **Vue JSON → Tableau** : le défilement horizontal manquait quand les
+  colonnes dépassaient l'écran ; la valeur complète d'une cellule s'affiche
+  au survol.
+
+### Sécurité
+- « Inspecter » ne s'ouvre que sur des pages web, jamais sur l'interface
+  d'Orbit hors développement.
+- Vue Multi : seules des positions numériques et des adresses http(s) lues
+  dans une page sont transmises aux autres appareils.
+- Capture « page entière » : surface de l'image plafonnée, même si la page
+  annonce une hauteur démesurée.
+
 ## [1.21.9] — 2026-11-26
 
 ### Ajouté

@@ -43,9 +43,53 @@ export function flyPageColor(target, isPrivate) {
   return FLY_PAGE_LOOKS[target.kind]?.color || '#64748b';
 }
 
+// ---------------------------------------------------------------------------
+// Conteneurs jetables.
+//
+// Pour tester un site avec plusieurs comptes à la fois, on veut PLUSIEURS
+// pages volantes sur la même adresse, chacune avec sa propre session. Chaque
+// page volante a déjà sa partition (`fly:<id>`, purgée à la fermeture) : un
+// conteneur n'est donc qu'une page volante qu'on refuse de dédoublonner, et
+// qu'on numérote pour s'y retrouver (« Conteneur 2 », pastille de couleur).
+// Rien n'est persisté : à la fermeture d'Orbit, conteneurs et sessions partent
+// avec les autres pages volantes.
+// ---------------------------------------------------------------------------
+export const CONTAINER_COLORS = ['#0ea5e9', '#f59e0b', '#10b981', '#ef4444', '#8b5cf6', '#ec4899', '#14b8a6', '#f97316'];
+
+export function containerColor(n) {
+  const i = Math.max(1, Math.floor(Number(n) || 1)) - 1;
+  return CONTAINER_COLORS[i % CONTAINER_COLORS.length];
+}
+
+function hostOf(url) {
+  try {
+    return new URL(url).host.toLowerCase();
+  } catch {
+    return '';
+  }
+}
+
+// Numéro du prochain conteneur pour cette adresse : on compte par SITE (même
+// hôte), pas par adresse exacte — « Conteneur 2 » de l'appli de test reste
+// le deuxième même si l'on a navigué ailleurs dans le site. Une page volante
+// ordinaire déjà ouverte sur le site compte comme le conteneur 1.
+export function nextContainerNumber(pages, url) {
+  const host = hostOf(url);
+  if (!host) return 1;
+  let highest = 0;
+  for (const page of Array.isArray(pages) ? pages : []) {
+    if (page?.private) continue;
+    if (hostOf(page?.homeUrl) !== host && hostOf(page?.url) !== host) continue;
+    highest = Math.max(highest, Number(page.container) || 1);
+  }
+  return highest + 1;
+}
+
 // `target` vient de `flyPageTarget()` (lib/urls.js) : { url, name, kind, local }.
-export function buildFlyPage({ id, target, isPrivate = false, filePath = null, order = 0, now = Date.now() }) {
+// `container` : numéro de conteneur (voir plus haut), ou null.
+export function buildFlyPage({ id, target, isPrivate = false, filePath = null, order = 0, now = Date.now(), container = null }) {
   const prefix = isPrivate ? 'priv' : 'fly';
+  const containerNumber = !isPrivate && Number(container) > 0 ? Math.floor(Number(container)) : null;
   return {
     id,
     // Portée « tous les profils » : une page volante n'est pas une
@@ -67,7 +111,10 @@ export function buildFlyPage({ id, target, isPrivate = false, filePath = null, o
     url: target.url,
     homeUrl: target.url,
     icon: flyPageIcon(target, isPrivate),
-    color: flyPageColor(target, isPrivate),
+    color: containerNumber ? containerColor(containerNumber) : flyPageColor(target, isPrivate),
+    // Présent seulement pour un conteneur : la barre latérale en tire sa
+    // pastille, et le dédoublonnage par adresse l'ignore.
+    ...(containerNumber ? { container: containerNumber } : {}),
     unread: 0,
     sleeping: false,
     zoom: 1,

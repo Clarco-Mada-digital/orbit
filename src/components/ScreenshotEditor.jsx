@@ -3,6 +3,7 @@ import {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useLayoutEffect,
   useMemo,
   useReducer,
   useRef,
@@ -26,7 +27,10 @@ import {
   Trash2,
   Type,
   Undo2,
+  ZoomIn,
+  ZoomOut,
 } from 'lucide-react';
+import { stepZoom, wheelZoom } from '../lib/viewZoom';
 import {
   ANNOTATION_COLORS,
   ANNOTATION_WIDTHS,
@@ -186,7 +190,11 @@ function drawShape(ctx, shape, canvas, origin = { x: 0, y: 0 }) {
   ctx.restore();
 }
 
-const ScreenshotEditor = forwardRef(function ScreenshotEditor({ dataUrl, alt, sensitive }, ref) {
+const ScreenshotEditor = forwardRef(function ScreenshotEditor({ dataUrl, alt, sensitive, pixelRatio = 1 }, ref) {
+  // Une capture nette compte 2 pixels (ou plus) par point affiché : les
+  // épaisseurs choisies dans la barre d'outils sont exprimées en points, on
+  // les convertit pour que le trait garde la même taille apparente.
+  const ratio = Math.max(1, Number(pixelRatio) || 1);
   const t = useT();
   const canvasRef = useRef(null);
   const imageRef = useRef(null);
@@ -216,6 +224,13 @@ const ScreenshotEditor = forwardRef(function ScreenshotEditor({ dataUrl, alt, se
   // déplacer.
   const [crop, setCrop] = useState(null);
   const [maskedSensitive, setMaskedSensitive] = useState(false);
+  // Zoom d'AFFICHAGE (loupe) : null = ajusté à la place disponible, sinon
+  // l'échelle (1 = un pixel de capture par pixel d'écran). Rien ne change
+  // dans l'image elle-même.
+  const [zoom, setZoom] = useState(null);
+  const viewportRef = useRef(null);
+  // Point à garder sous le curseur pendant un zoom (appliqué après rendu).
+  const anchorRef = useRef(null);
 
   const sensitiveRegions = useMemo(
     () => (Array.isArray(sensitive) ? sensitive.filter((rect) => rect?.width > 0 && rect?.height > 0) : []),
@@ -238,6 +253,9 @@ const ScreenshotEditor = forwardRef(function ScreenshotEditor({ dataUrl, alt, se
       if (cancelled) return;
       imageRef.current = image;
       setImageSize({ width: image.naturalWidth, height: image.naturalHeight });
+      // Page très haute (page entière) : « ajustée », elle ne serait qu'un
+      // filet illisible. On l'ouvre à la largeur de la zone.
+      if (image.naturalHeight > image.naturalWidth * 3) setZoom('width');
     };
     image.src = dataUrl;
     return () => {
@@ -255,6 +273,7 @@ const ScreenshotEditor = forwardRef(function ScreenshotEditor({ dataUrl, alt, se
     setTextInput(null);
     setCrop(null);
     setMaskedSensitive(false);
+    setZoom(null);
     setAdjustments(DEFAULT_ADJUSTMENTS);
     historyRef.current = { past: [], future: [] };
     lastRememberRef.current = null;
@@ -310,6 +329,78 @@ const ScreenshotEditor = forwardRef(function ScreenshotEditor({ dataUrl, alt, se
     }),
     [adjustments, crop, imageSize, shapes]
   );
+
+  // --- Zoom d'affichage -------------------------------------------------
+  // Largeur de la zone, pour le mode « largeur » (l'image occupe toute la
+  // largeur, on lit en défilant).
+  const [boxWidth, setBoxWidth] = useState(0);
+  useEffect(() => {
+    const box = viewportRef.current;
+    if (!box) return undefined;
+    const observer = new ResizeObserver(() => setBoxWidth(box.clientWidth));
+    observer.observe(box);
+    return () => observer.disconnect();
+  }, []);
+  // Échelle effective : null (ajusté), 'width', ou un nombre.
+  const zoomScale =
+    zoom === 'width'
+      ? viewSize?.width && boxWidth
+        ? Math.max(0.05, (boxWidth - 24) / viewSize.width)
+        : null
+      : zoom;
+  // Échelle réellement affichée (celle de « Ajuster » se lit sur le canvas).
+  const displayedScale = () => {
+    const canvas = canvasRef.current;
+    if (!canvas || !viewSize?.width) return 1;
+    return canvas.clientWidth / viewSize.width || 1;
+  };
+  // `at` : point de l'écran à garder fixe (le curseur) ; par défaut, le
+  // centre de la zone. On retient le point de l'IMAGE qui s'y trouve, et on
+  // replace le défilement après le rendu, d'après la position réelle de
+  // l'image (son décalage change entre « ajusté », centré, et un zoom fixe).
+  const zoomTo = (next, at) => {
+    const box = viewportRef.current;
+    const canvas = canvasRef.current;
+    const target = next === 'width' && viewSize?.width && box ? Math.max(0.05, (box.clientWidth - 24) / viewSize.width) : next;
+    if (box && canvas && typeof target === 'number') {
+      const r = box.getBoundingClientRect();
+      const c = canvas.getBoundingClientRect();
+      const pointer = at ? { x: at.x - r.left, y: at.y - r.top } : { x: box.clientWidth / 2, y: box.clientHeight / 2 };
+      const from = displayedScale();
+      anchorRef.current = {
+        to: target,
+        pointer,
+        image: { x: (r.left + pointer.x - c.left) / from, y: (r.top + pointer.y - c.top) / from },
+      };
+    }
+    setZoom(next);
+  };
+  useLayoutEffect(() => {
+    const a = anchorRef.current;
+    const box = viewportRef.current;
+    const canvas = canvasRef.current;
+    if (!a || !box || !canvas) return;
+    anchorRef.current = null;
+    const r = box.getBoundingClientRect();
+    const c = canvas.getBoundingClientRect();
+    // Position du canvas dans le contenu défilant de la zone.
+    const offset = { x: c.left - r.left + box.scrollLeft, y: c.top - r.top + box.scrollTop };
+    box.scrollLeft = Math.max(0, offset.x + a.image.x * a.to - a.pointer.x);
+    box.scrollTop = Math.max(0, offset.y + a.image.y * a.to - a.pointer.y);
+  }, [zoom]);
+  // Ctrl + molette : zoom autour du curseur. Écouteur NON passif, sinon
+  // impossible d'empêcher le zoom de toute l'interface.
+  useEffect(() => {
+    const box = viewportRef.current;
+    if (!box) return undefined;
+    const onWheel = (event) => {
+      if (!event.ctrlKey && !event.metaKey) return;
+      event.preventDefault();
+      zoomTo(wheelZoom(displayedScale(), event.deltaY), { x: event.clientX, y: event.clientY });
+    };
+    box.addEventListener('wheel', onWheel, { passive: false });
+    return () => box.removeEventListener('wheel', onWheel);
+  });
 
   const pointOf = useCallback(
     (event) => {
@@ -461,26 +552,26 @@ const ScreenshotEditor = forwardRef(function ScreenshotEditor({ dataUrl, alt, se
       // Sans cela, l'action par défaut du `mousedown` qui suit retire le focus
       // du champ à peine monté : il se referme avant la première frappe.
       event.preventDefault();
-      setText({ at, value: '', color, width });
+      setText({ at, value: '', color, width: width * ratio });
       return;
     }
     if (tool === 'step') {
       // Une étape se pose d'un clic, et se numérote toute seule.
       remember();
-      setShapes((list) => [...list, { tool: 'step', at, color, width, index: nextStepNumber(list) }]);
+      setShapes((list) => [...list, { tool: 'step', at, color, width: width * ratio, index: nextStepNumber(list) }]);
       return;
     }
     event.currentTarget.setPointerCapture(event.pointerId);
     drawingRef.current = { pointerId: event.pointerId, from: at };
     if (tool === 'pen' || tool === 'highlight') {
-      setDraftShape({ tool, color, width, points: [at] });
+      setDraftShape({ tool, color, width: width * ratio, points: [at] });
     } else if (tool === 'arrow') {
-      setDraftShape({ tool, color, width, from: at, to: at });
+      setDraftShape({ tool, color, width: width * ratio, from: at, to: at });
     } else {
       setDraftShape({
         tool,
         color,
-        width,
+        width: width * ratio,
         rect: normalizeRect(at, at, imageSize),
         ...(tool === 'blur' ? { blockSize: pixelateBlockSize(imageSize) } : {}),
       });
@@ -766,7 +857,8 @@ const ScreenshotEditor = forwardRef(function ScreenshotEditor({ dataUrl, alt, se
         </div>
       )}
 
-      <div className="relative max-h-[70vh] overflow-auto bg-black/30 p-3">
+      <div className="relative">
+      <div ref={viewportRef} className="relative h-[70vh] overflow-auto bg-black/30 p-3">
         <div className="relative mx-auto w-fit">
           <canvas
             ref={canvasRef}
@@ -778,8 +870,11 @@ const ScreenshotEditor = forwardRef(function ScreenshotEditor({ dataUrl, alt, se
             onPointerCancel={onPointerUp}
             aria-label={alt}
             role="img"
-            className="block h-auto max-h-[66vh] max-w-full touch-none rounded-lg object-contain shadow-xl"
-            style={{ cursor: tool === 'text' ? 'text' : 'crosshair' }}
+            className={`block touch-none rounded-lg shadow-xl ${zoomScale ? '' : 'h-auto max-h-[66vh] max-w-full object-contain'}`}
+            style={{
+              cursor: tool === 'text' ? 'text' : 'crosshair',
+              ...(zoomScale && viewSize ? { width: viewSize.width * zoomScale, height: viewSize.height * zoomScale, maxWidth: 'none' } : {}),
+            }}
           />
           {textInput && textStyle && (
             <textarea
@@ -806,6 +901,25 @@ const ScreenshotEditor = forwardRef(function ScreenshotEditor({ dataUrl, alt, se
             />
           )}
         </div>
+      </div>
+      {/* Zoom d'affichage : −, échelle (clic = ajuster), +, 100 %. */}
+      <div className="absolute bottom-3 right-5 z-20 flex items-center gap-0.5 rounded-lg border border-white/15 bg-black/70 p-0.5 text-xs text-white shadow-lg backdrop-blur">
+        <button type="button" className="rounded p-1.5 hover:bg-white/15" onClick={() => zoomTo(stepZoom(displayedScale(), -1))} title={t('annotate.zoomOut')} aria-label={t('annotate.zoomOut')}>
+          <ZoomOut size={14} />
+        </button>
+        <button type="button" className="min-w-[3.5rem] rounded px-1.5 py-1 tabular-nums hover:bg-white/15" onClick={() => zoomTo(null)} title={t('annotate.zoomFit')}>
+          {zoomScale ? `${Math.round(zoomScale * 100)} %` : t('annotate.zoomFitShort')}
+        </button>
+        <button type="button" className="rounded p-1.5 hover:bg-white/15" onClick={() => zoomTo(stepZoom(displayedScale(), 1))} title={t('annotate.zoomIn')} aria-label={t('annotate.zoomIn')}>
+          <ZoomIn size={14} />
+        </button>
+        <button type="button" className={`rounded px-1.5 py-1 hover:bg-white/15 ${zoom === 'width' ? 'bg-white/20' : ''}`} onClick={() => zoomTo('width')} title={t('annotate.zoomWidth')}>
+          ↔
+        </button>
+        <button type="button" className="rounded px-1.5 py-1 hover:bg-white/15" onClick={() => zoomTo(1)} title={t('annotate.zoomActual')}>
+          1:1
+        </button>
+      </div>
       </div>
     </div>
   );

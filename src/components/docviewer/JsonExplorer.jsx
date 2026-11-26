@@ -324,9 +324,9 @@ function RecordsTable({ records, onSelectRow }) {
     return String(v);
   };
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col">
       <div className="flex items-center gap-2 border-b border-border px-3 py-2">
-        <div className="flex flex-1 items-center gap-1.5 rounded-lg border border-border bg-bg-primary px-2">
+        <div className="flex min-w-0 flex-1 items-center gap-1.5 rounded-lg border border-border bg-bg-primary px-2">
           <Search size={12} className="text-text-muted" />
           <input value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filtrer les lignes…" className="min-w-0 flex-1 bg-transparent py-1 text-xs outline-none" />
         </div>
@@ -340,7 +340,7 @@ function RecordsTable({ records, onSelectRow }) {
           Copier JSON
         </button>
       </div>
-      <div className="min-h-0 flex-1 overflow-auto">
+      <div className="min-h-0 min-w-0 flex-1 overflow-auto">
         <table className="min-w-full border-separate border-spacing-0 text-xs">
           <thead className="sticky top-0 z-10 bg-bg-secondary">
             <tr>
@@ -363,7 +363,12 @@ function RecordsTable({ records, onSelectRow }) {
                 {columns.map((c) => {
                   const v = getAt(r, c.path);
                   return (
-                    <td key={c.name} className={`max-w-[22rem] truncate border-b border-r border-border px-2 py-1 ${typeof v === 'number' ? 'text-right' : ''}`}>
+                    <td
+                      key={c.name}
+                      // Valeur complète au survol : la cellule est tronquée.
+                      title={v === undefined ? undefined : isContainer(v) ? preview(v, 400) : String(v)}
+                      className={`max-w-[22rem] truncate border-b border-r border-border px-2 py-1 ${typeof v === 'number' ? 'text-right' : ''}`}
+                    >
                       {cell(v)}
                     </td>
                   );
@@ -960,8 +965,12 @@ export default function JsonExplorer({ text, doc, wrap }) {
         </div>
       ) : null}
 
-      {/* Vues */}
-      <div className="flex min-h-0 flex-1">
+      {/* Vues. Chaque vue porte `min-w-0` : sans lui, un élément flex refuse
+          d'être plus étroit que son contenu — un tableau de 30 colonnes
+          élargissait toute la vue (8 000 px mesurés pour une fenêtre de
+          1 400), son défilement horizontal ne se déclenchait jamais et les
+          boutons CSV / Copier sortaient de l'écran. */}
+      <div className="flex min-h-0 min-w-0 flex-1">
         {tab === 'tree' ? (
           <>
             <div className="flex min-w-0 flex-1 flex-col">
@@ -992,7 +1001,7 @@ export default function JsonExplorer({ text, doc, wrap }) {
 
         {tab === 'table' ? (
           records ? (
-            <div className="flex min-h-0 flex-1 flex-col">
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
               <div className="flex items-center gap-2 border-b border-border px-3 py-1.5 text-xs text-text-muted">Liste affichée : {recordPicker}</div>
               <RecordsTable records={records} onSelectRow={(i) => recordPath !== 'query' && activeRecordPath && setSelected([...activeRecordPath, i])} />
             </div>
@@ -1002,7 +1011,7 @@ export default function JsonExplorer({ text, doc, wrap }) {
         ) : null}
 
         {tab === 'analysis' ? (
-          <div className="flex min-h-0 flex-1 flex-col">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             {recordPicker ? <div className="flex items-center gap-2 border-b border-border px-3 py-1.5 text-xs text-text-muted">Liste analysée : {recordPicker}</div> : null}
             <Analysis data={data} records={records} recordsLabel={recordsLabel} />
           </div>
@@ -1010,7 +1019,7 @@ export default function JsonExplorer({ text, doc, wrap }) {
 
         {tab === 'chart' ? (
           records ? (
-            <div className="flex min-h-0 flex-1 flex-col">
+            <div className="flex min-h-0 min-w-0 flex-1 flex-col">
               <div className="flex items-center gap-2 border-b border-border px-3 py-1.5 text-xs text-text-muted">Liste tracée : {recordPicker}</div>
               <ChartView key={recordsLabel} records={records} recordsLabel={recordsLabel} />
             </div>
@@ -1020,7 +1029,7 @@ export default function JsonExplorer({ text, doc, wrap }) {
         ) : null}
 
         {tab === 'schema' ? (
-          <div className="flex min-h-0 flex-1 flex-col">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             <div className="flex items-center gap-2 border-b border-border px-3 py-1.5 text-xs text-text-muted">
               <FileJson size={13} /> JSON Schema déduit du document (types, champs obligatoires, formats reconnus).
               <button className="btn btn-secondary btn-sm ml-auto" onClick={() => copyText(schema)}>
@@ -1035,7 +1044,7 @@ export default function JsonExplorer({ text, doc, wrap }) {
         ) : null}
 
         {tab === 'text' ? (
-          <div className="flex min-h-0 flex-1 flex-col">
+          <div className="flex min-h-0 min-w-0 flex-1 flex-col">
             <div className="flex flex-wrap items-center gap-1.5 border-b border-border px-3 py-1.5">
               <button className="btn btn-secondary btn-sm" onClick={() => { const r = parseJsonDocument(draft); if (r.ok) { setDraft(serialize(r.value)); applyDraft(serialize(r.value)); } else setDraftError(r); }}>
                 Formater

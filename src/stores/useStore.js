@@ -17,7 +17,7 @@ import {
   orderForProfile,
   withFolderForProfile,
 } from '../lib/appGroups.js';
-import { buildFlyPage, flyPageId } from '../lib/flyPages.js';
+import { buildFlyPage, flyPageId, nextContainerNumber } from '../lib/flyPages.js';
 import { pushClosed, popClosed } from '../lib/closedTabs.js';
 import {
   upsertAssistantSession,
@@ -944,7 +944,11 @@ export const useStore = create(
       // `filePath` : chemin réel d'un fichier local ouvert depuis le système.
       // Il est transmis tel quel au processus principal, qui ne lit QUE les
       // fichiers que l'utilisateur a lui-même ouverts (voir documents:read).
-      openFlyPage: (rawUrl, { private: isPrivate = false, filePath } = {}) => {
+      //
+      // `{ container: true }` : conteneur jetable — une page de PLUS sur la
+      // même adresse, avec sa propre session (voir lib/flyPages.js). Jamais
+      // dédoublonnée : c'est tout son intérêt.
+      openFlyPage: (rawUrl, { private: isPrivate = false, filePath, container = false } = {}) => {
         // `flyPageTarget` (lib/urls.js) tranche : adresse web, ou page HTML
         // locale ouverte depuis le système. Le reste est refusé.
         const target = flyPageTarget(rawUrl);
@@ -961,9 +965,16 @@ export const useStore = create(
           return null;
         }
         const url = target.url;
-        const existing = get().flyPages.find(
-          (p) => Boolean(p.private) === isPrivate && (p.url === url || p.homeUrl === url)
-        );
+        const wantsContainer = Boolean(container) && !isPrivate && !target.local;
+        const sameAddress = (p) =>
+          Boolean(p.private) === isPrivate && (p.url === url || p.homeUrl === url);
+        // Une page ordinaire est préférée à un conteneur ouvert sur la même
+        // adresse : rouvrir un lien ne doit pas atterrir dans la session de
+        // test d'un autre compte.
+        const pages = get().flyPages;
+        const existing = wantsContainer
+          ? null
+          : pages.find((p) => sameAddress(p) && !p.container) || pages.find(sameAddress);
         if (existing) {
           set({ activeApp: existing.id });
           return existing.id;
@@ -986,6 +997,7 @@ export const useStore = create(
               isPrivate,
               filePath,
               order: state.flyPages.length,
+              container: wantsContainer ? nextContainerNumber(state.flyPages, url) : null,
             }),
           ],
           activeApp: id,

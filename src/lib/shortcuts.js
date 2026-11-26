@@ -55,6 +55,10 @@ export function matchCombo({ key, code, ctrl, alt, meta, shift }, mac, assistant
   if (k === 'f1' && !alt && !ctrl && !meta && !shift) return 'help';
   // Mode lecture : F9, comme dans Firefox.
   if (k === 'f9' && !alt && !ctrl && !meta && !shift) return 'reader';
+  // Inspecteur : F12, et Ctrl+Maj+I (⌥⌘I sur macOS), comme dans un navigateur.
+  if (k === 'f12' && !alt && !ctrl && !meta && !shift) return 'devtools';
+  if (!mac && ctrl && shift && !alt && !meta && k === 'i') return 'devtools';
+  if (mac && meta && alt && !ctrl && (k === 'i' || code === 'KeyI')) return 'devtools';
 
   const mod = mac ? meta : alt;
   // Modificateur parasite (Ctrl, ou l'autre) → pas un raccourci Orbit
@@ -174,6 +178,7 @@ export function shortcutKeys(t, assistantOptions = {}) {
     g('pages', [mac ? '⌘' : 'Ctrl', 'F'], d('sc.find', 'Rechercher dans la page')),
     g('pages', ['F9'], d('sc.reader', 'Mode lecture : l’article de la page, sans distraction')),
     g('pages', [M, '⇧', 'R'], d('sc.translate', 'Traduire la page / revenir à l’original')),
+    g('pages', ['F12'], d('sc.devtools', 'Inspecter la page (outils de développement)')),
     // Écran partagé
     g('split', [M, '⇧', 'X'], d('sc.splitToggle', 'Écran partagé : partager avec l’app précédente / quitter')),
     g('split', [M, '⇧', 'C'], d('sc.splitDirection', 'Écran partagé : côte à côte ↔ haut / bas')),

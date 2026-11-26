@@ -88,11 +88,21 @@ export default function ScreenshotPreview() {
       }
       setWindows(list);
       // Pré-sélection : la fenêtre d'où vient le raccourci (une fenêtre
-      // détachée, donc absente des onglets), sinon l'interface, sinon la page.
+      // détachée, donc absente des onglets), sinon LA PAGE ACTIVE, et
+      // l'interface d'Orbit seulement s'il n'y a aucune page à capturer.
+      //
+      // Avant, un Alt+Maj+S pressé avec le focus dans l'interface (après un
+      // clic dans la barre latérale, le cas le plus courant) visait
+      // l'interface d'Orbit elle-même — et la liste, qui n'avait pas d'option
+      // « orbit », affichait « Page » : « page entière » rendait alors l'écran
+      // d'Orbit, sans rien dérouler. La cible choisie est désormais toujours
+      // une option VISIBLE de la liste.
       const shortcutWindow = wcId ? list.find((w) => w.wcId === wcId) : null;
-      if (detail.source === 'orbit') setTarget('orbit');
-      else if (shortcutWindow) setTarget(`win:${wcId}`);
-      else setTarget('page');
+      const activePage = getWebContentsIdFor(useStore.getState().activeApp);
+      const orbitWindow = list.find((w) => w.kind === 'orbit');
+      if (shortcutWindow && shortcutWindow.kind !== 'orbit') setTarget(`win:${wcId}`);
+      else if ((wcId && !shortcutWindow) || activePage) setTarget('page');
+      else setTarget(orbitWindow ? `win:${orbitWindow.wcId}` : 'orbit');
       setChooseMode(true);
       setError('');
     };
@@ -112,19 +122,25 @@ export default function ScreenshotPreview() {
   useEffect(() => {
     if (!chooseMode && !capture && countdown === null) return undefined;
     const onKeyDown = (event) => {
-      if (chooseMode && !busy && countdown === null && /^[1-4]$/.test(event.key)) {
+      // Chiffre choisi : par le caractère, OU par la position physique de la
+      // touche — sur un clavier AZERTY, la touche « 2 » donne « é » sans Maj,
+      // et les raccourcis 1 à 4 ne répondaient pas.
+      const digit = /^[1-4]$/.test(event.key)
+        ? event.key
+        : (/^(?:Digit|Numpad)([1-4])$/.exec(String(event.code || '')) || [])[1];
+      if (chooseMode && !busy && countdown === null && digit && !event.ctrlKey && !event.altKey && !event.metaKey) {
         const target = event.target;
         if (target instanceof HTMLElement && target.closest('input, select, textarea, [contenteditable="true"]')) {
           return;
         }
         event.preventDefault();
-        if (event.key === '4') {
+        if (digit === '4') {
           setChooseMode(false);
           window.dispatchEvent(new Event('orbit:studio-open'));
           return;
         }
         const modes = ['visible', 'full', 'selection'];
-        chooseCaptureMode(modes[Number(event.key) - 1], false);
+        chooseCaptureMode(modes[Number(digit) - 1], false);
         return;
       }
       if (event.key !== 'Escape') return;
@@ -354,6 +370,7 @@ export default function ScreenshotPreview() {
           dataUrl={capture.dataUrl}
           alt={t('cm.screenshotPreview')}
           sensitive={capture.sensitive}
+          pixelRatio={capture.pixelRatio}
         />
         {error && <p role="alert" className="px-5 pt-3 text-sm text-error">{error}</p>}
         <footer className="flex flex-wrap justify-end gap-2 border-t border-border px-5 py-4">

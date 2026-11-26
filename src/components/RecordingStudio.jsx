@@ -38,6 +38,7 @@ import {
   easeFocus,
   cursorFocus,
   recordingName,
+  recordingBitrate,
   formatDuration,
   FRAME_RATES,
   fpsHealth,
@@ -371,7 +372,13 @@ export default function RecordingStudio({ onClose }) {
         // Le son du système suit la même demande que la vidéo. S'il n'est pas
         // disponible, le flux arrive avec la vidéo seule : le studio continue.
         audio: wantsSystem,
-        video: { frameRate: FPS, width: OUTPUT.width, height: OUTPUT.height },
+        // Définition NATIVE de la source, surtout pas celle de la vidéo : en
+        // demandant 1920×1080 à un écran de 1712×963, Chromium agrandissait
+        // l'image, que le canvas réduisait ensuite pour la poser dans son
+        // cadre — deux rééchantillonnages, et un texte flou à l'arrivée. Le
+        // canvas fait une seule mise à l'échelle, en haute qualité. Plafond
+        // 4K pour ne pas noyer une machine modeste sous un écran 5K.
+        video: { frameRate: FPS, width: { max: 3840 }, height: { max: 2160 } },
       });
       // Repli pour les systèmes sans boucle audio (fréquent sous Linux) : les
       // distributions PipeAudio/PulseAudio exposent souvent une entrée
@@ -684,6 +691,11 @@ export default function RecordingStudio({ onClose }) {
     // image par seconde, alors que le dessin, lui, tournait à trente.
     const stream = canvas.captureStream(0);
     frameTrack.current = stream.getVideoTracks()[0] || null;
+    // Contenu d'écran : à débit serré, l'encodeur doit sacrifier la fluidité
+    // plutôt que le détail (le texte doit rester lisible).
+    if (frameTrack.current && 'contentHint' in frameTrack.current) {
+      frameTrack.current.contentHint = 'detail';
+    }
     const audio = buildAudioStream();
     if (audio) audio.getAudioTracks().forEach((track) => stream.addTrack(track));
 
@@ -698,7 +710,8 @@ export default function RecordingStudio({ onClose }) {
     const mimeType = candidates.find((type) => MediaRecorder.isTypeSupported(type)) || '';
     const recorder = new MediaRecorder(stream, {
       ...(mimeType ? { mimeType } : {}),
-      videoBitsPerSecond: 6_000_000,
+      // Débit proportionnel à la définition et à la cadence (voir studioLayout).
+      videoBitsPerSecond: recordingBitrate(canvas.width, canvas.height, FPS),
     });
     chunksRef.current = [];
     recorder.ondataavailable = (e) => {

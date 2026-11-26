@@ -385,6 +385,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       return () => ipcRenderer.removeListener('orbit:annotate-draw', listener);
     },
     cancel: (id) => ipcRenderer.invoke('screenshot:cancel', { id }),
+    // Image composée par l'interface → aperçu de capture habituel.
+    adopt: (payload) => ipcRenderer.invoke('screenshot:adopt', payload),
     onPreview: (callback) => {
       const listener = (_event, payload) => callback(payload);
       ipcRenderer.on('orbit:screenshot-preview', listener);
@@ -586,6 +588,24 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Traduction de la page entière (electron/page-translate.js). `mode` :
   // 'on' | 'off' | absent (bascule).
   translatePage: (webContentsId, mode) => ipcRenderer.invoke('translate:page', { webContentsId, mode }),
+  // Inspecteur intégré (voir electron/devtools-panel.js et DevToolsPanel.jsx).
+  devtoolsShow: (payload) => ipcRenderer.invoke('devtools:show', payload),
+  devtoolsHide: (webContentsId) => ipcRenderer.invoke('devtools:hide', { webContentsId }),
+  devtoolsClose: (webContentsId) => ipcRenderer.invoke('devtools:close', { webContentsId }),
+  devtoolsLighthouse: (webContentsId) => ipcRenderer.invoke('devtools:lighthouse', { webContentsId }),
+  // Vue responsive : tactile et agent utilisateur mobile.
+  devtoolsEmulate: (payload) => ipcRenderer.invoke('devtools:emulate', payload),
+  devtoolsStopEmulation: (webContentsId) => ipcRenderer.invoke('devtools:stopEmulation', { webContentsId }),
+  // Nettoyage du site inspecté : what = 'cache' | 'data'.
+  devtoolsClearSite: (webContentsId, what) => ipcRenderer.invoke('devtools:clearSite', { webContentsId, what }),
+  // Capture d'une zone de la fenêtre d'Orbit (capture d'appareil par tuiles).
+  captureUiRect: (rect) => ipcRenderer.invoke('ui:captureRect', rect),
+  // « Inspecter » du clic droit : { wcId, x, y }.
+  onDevtoolsOpen: (cb) => {
+    const handler = (_e, payload) => cb(payload);
+    ipcRenderer.on('orbit:devtools-open', handler);
+    return () => ipcRenderer.removeListener('orbit:devtools-open', handler);
+  },
   translateState: (webContentsId) => ipcRenderer.invoke('translate:state', { webContentsId }),
   onTranslateState: (cb) => {
     const h = (_e, payload) => cb(payload);

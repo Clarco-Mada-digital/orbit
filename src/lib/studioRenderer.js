@@ -73,6 +73,14 @@ function roundedPath(ctx, x, y, w, h, radius) {
   ctx.closePath();
 }
 
+// Rectangle calé sur les pixels entiers du canvas (bords arrondis vers
+// l'intérieur de la boîte d'origine, à un pixel près).
+export function snapRect(r) {
+  const x = Math.round(r.x);
+  const y = Math.round(r.y);
+  return { x, y, w: Math.round(r.x + r.w) - x, h: Math.round(r.y + r.h) - y };
+}
+
 // Dessine une vidéo dans une boîte, découpée en arrondi ou en cercle.
 function drawClipped(ctx, video, box, { radius, circle, cover, source }) {
   const vw = video.videoWidth;
@@ -93,10 +101,18 @@ function drawClipped(ctx, video, box, { radius, circle, cover, source }) {
     ? coverRect(source ? source.sw : vw, source ? source.sh : vh, box.x, box.y, box.w, box.h)
     : containRect(source ? source.sw : vw, source ? source.sh : vh, box.x, box.y, box.w, box.h);
 
+  // Netteté : sans ces deux réglages, le texte d'un écran filmé sortait flou.
+  //   • le lissage par défaut de Chromium est « low » (bilinéaire simple) : à
+  //     la réduction, il saute des pixels et bave sur le texte fin ;
+  //   • une image posée à une position FRACTIONNAIRE est rééchantillonnée en
+  //     entier, même à l'échelle 1 — on cale donc le rectangle sur la grille.
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  const dest = snapRect(fit);
   if (source) {
-    ctx.drawImage(video, source.sx, source.sy, source.sw, source.sh, fit.x, fit.y, fit.w, fit.h);
+    ctx.drawImage(video, source.sx, source.sy, source.sw, source.sh, dest.x, dest.y, dest.w, dest.h);
   } else {
-    ctx.drawImage(video, fit.x, fit.y, fit.w, fit.h);
+    ctx.drawImage(video, dest.x, dest.y, dest.w, dest.h);
   }
   ctx.restore();
 }

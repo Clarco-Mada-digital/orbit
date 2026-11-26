@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import {
+  Boxes,
   Play,
   Moon,
   Trash2,
@@ -428,6 +429,19 @@ export default function AppContextMenu({ appId, x, y, onClose }) {
                 className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-bg-hover transition-colors disabled:opacity-40"
               >
                 <ExternalLink size={15} /> {t('ctx.openBrowser')}
+              </button>
+              {/* Le site de l'app, dans une session vierge et jetable : tester
+                  avec un autre compte sans toucher à celui de l'app. */}
+              <button
+                onClick={() => {
+                  if (app.url) useStore.getState().openFlyPage(app.url, { container: true });
+                  onClose();
+                }}
+                disabled={!app.url}
+                title={t('fly.openContainerHint')}
+                className="w-full flex items-center gap-3 px-3 py-2 text-sm hover:bg-bg-hover transition-colors disabled:opacity-40"
+              >
+                <Boxes size={15} /> {t('fly.openContainer')}
               </button>
               {profiles.length > 1 && (
                 <button

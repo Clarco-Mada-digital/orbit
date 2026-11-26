@@ -1112,7 +1112,7 @@ export default function Sidebar({
                   onDragEnd={endAppDrag}
                   onMouseEnter={(e) => showMemPopup(page, e)}
                   onMouseLeave={hideMemPopup}
-                  title={`${page.private ? `${t('fly.privateBadge')} — ` : ''}${flyPageLabel(page)}${page.url ? ` — ${page.url}` : ''}`}
+                  title={`${page.private ? `${t('fly.privateBadge')} — ` : ''}${page.container ? `${t('fly.container', { n: page.container })} — ` : ''}${flyPageLabel(page)}${page.url ? ` — ${page.url}` : ''}`}
                   className={`w-full flex items-center gap-2 ${
                     settings.compactMode ? 'px-2 py-1.5' : 'px-2 py-1.5'
                   } rounded-lg cursor-pointer transition-all group relative border border-dashed ${
@@ -1132,6 +1132,17 @@ export default function Sidebar({
                     {page.private && (
                       <span className="absolute -bottom-1 -right-1 w-3.5 h-3.5 rounded-full bg-violet-600 text-white flex items-center justify-center ring-2 ring-bg-secondary">
                         <EyeOff size={8} />
+                      </span>
+                    )}
+                    {/* Pastille « conteneur » : son numéro, dans sa couleur —
+                        on doit savoir d'un coup d'œil QUELLE session on a sous
+                        les yeux quand trois pages montrent le même site. */}
+                    {page.container && (
+                      <span
+                        className="absolute -bottom-1 -right-1 min-w-3.5 h-3.5 px-0.5 rounded-full text-white text-[8px] font-bold leading-none flex items-center justify-center ring-2 ring-bg-secondary"
+                        style={{ background: page.color }}
+                      >
+                        {page.container}
                       </span>
                     )}
                   </div>
