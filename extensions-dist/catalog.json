@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "generatedAt": "2026-11-26T07:00:40.547Z",
+  "generatedAt": "2026-11-26T10:24:54.880Z",
   "extensions": [
     {
       "file": "color-picker.zip",
@@ -25,12 +25,12 @@
     {
       "file": "mouse-scroll.zip",
       "name": "Souris & Défilement",
-      "version": "1.2.1",
+      "version": "1.2.2",
       "description": "Défilement lissé et réglable (vitesse, sens, par site), défilement automatique au clic du milieu, et une palette de présentation (Alt+Maj+D) : pointeur laser, stylo, surligneur, flèche, couleurs, épaisseurs, spot lumineux, halo de clic. 100% local, configurable (⚙️).",
       "nativeApp": null,
       "minOrbitVersion": null,
-      "size": 29987,
-      "sha256": "46770f0458df4ff68b151cd523be96ff982ec96b7555692dc56d9d07d9896331"
+      "size": 29989,
+      "sha256": "61b7817c81299454d4fa01460176615d3b184ed483daac811576cc4fd59d6532"
     },
     {
       "file": "orbit-api.zip",
