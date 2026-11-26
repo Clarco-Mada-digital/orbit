@@ -8,6 +8,28 @@ Format : une section `## [X.Y.Z] — AAAA-MM-JJ` par version, puis des
 sous-sections `### Ajouté` / `### Modifié` / `### Corrigé` / `### Sécurité`.
 La plus récente en premier.
 
+## [1.21.8] — 2026-11-26
+
+### Ajouté
+- **Adresse des liens au survol** : une petite bulle discrète en bas de la
+  page montre où mène un lien, comme dans un navigateur. Elle se place du
+  côté libre, à l'opposé du pointeur. Désactivable (Réglages → Interface).
+- **Module « Adresse de la page »** à ajouter à l'en-tête ou à la barre du
+  bas : le lien de la page affichée ; un clic pour le modifier (comme Alt+L).
+- **Barre latérale à droite** : Réglages → Interface → Côté de la barre
+  latérale. Le repli, le masquage automatique et les menus suivent.
+- **Réinitialiser les réglages** (À propos) : toutes les préférences
+  reviennent à leur valeur d'origine, avec l'option de revoir l'écran
+  d'accueil. Les apps, profils, mots de passe et connexions sont conservés.
+
+### Modifié
+- **Barres de défilement des pages** : fines, arrondies et aux couleurs du
+  thème, sur Windows, Linux et macOS, à la place des larges barres du
+  système. Un site qui a déjà les siennes les garde. Désactivable.
+
+### Corrigé
+- Le logo de l'onglet « À propos » est maintenant le vrai logo d'Orbit.
+
 ## [1.21.7] — 2026-11-25
 
 Même contenu que la 1.21.6, dont la construction avait échoué (fichier de
