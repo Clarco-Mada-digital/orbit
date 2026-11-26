@@ -1319,6 +1319,35 @@ const openEditUrl = useCallback((id) => {
   setEditUrlFor({ id, url: target.url || target.homeUrl || '' });
 }, []);
 
+  // Barre de défilement des pages : on transmet au main la couleur d'accent
+  // RÉELLEMENT appliquée (thème, choix perso, accent par profil…). Observer le
+  // style de :root évite de recopier ici toute la logique de thème.
+  const pageScrollbarOn = settings.pageScrollbar !== false;
+  useEffect(() => {
+    const send = window.electronAPI?.setPageScrollbar;
+    if (typeof send !== 'function') return undefined;
+    const root = document.documentElement;
+    let last = '';
+    const push = () => {
+      const accent = getComputedStyle(root).getPropertyValue('--accent-primary').trim();
+      const key = `${pageScrollbarOn}|${accent}`;
+      if (key === last) return;
+      last = key;
+      send({ enabled: pageScrollbarOn, accent }).catch?.(() => {});
+    };
+    push();
+    const obs = new MutationObserver(push);
+    obs.observe(root, { attributes: true, attributeFilter: ['style', 'data-theme', 'data-skin'] });
+    return () => obs.disconnect();
+  }, [pageScrollbarOn]);
+
+  // Module « Adresse » de la barre : un clic ouvre la même boîte qu'Alt+L.
+  useEffect(() => {
+    const open = () => openEditUrl(useStore.getState().activeApp);
+    window.addEventListener('orbit:edit-url', open);
+    return () => window.removeEventListener('orbit:edit-url', open);
+  }, [openEditUrl]);
+
   // Exécute une action de raccourci (nom centralisé dans lib/shortcuts.js)
   const runShortcut = useCallback((action, payload) => {
     if (action === 'screenshot') {
@@ -1589,6 +1618,9 @@ const openEditUrl = useCallback((id) => {
 
   // Largeurs en rem → elles suivent la taille de police réglée
   const sidebarWidth = sidebarCollapsed ? '4rem' : '17.5rem';
+  // Côté de la barre latérale. La zone de masquage garde son nom interne
+  // 'left' : c'est « la zone de la barre latérale », quel que soit son côté.
+  const sidebarSide = settings.sidebarPosition === 'right' ? 'right' : 'left';
   // Une barre masquable passe en SURIMPRESSION : elle ne doit plus réserver de
   // place. Sinon chaque passage de souris réagencerait toute la fenêtre — et
   // forcerait les <webview> à se remettre en page, ce qui est coûteux et fait
@@ -1633,6 +1665,8 @@ const openEditUrl = useCallback((id) => {
         // nette quand une app est ouverte (et pour laisser la sidebar gérer
         // son propre décor).
         '--decor-left': typeof sidebarOffset === 'number' ? `${sidebarOffset}px` : sidebarOffset,
+        // Début de la zone de contenu : à 0 quand la barre est à droite.
+        '--decor-x': sidebarSide === 'right' ? '0px' : typeof sidebarOffset === 'number' ? `${sidebarOffset}px` : sidebarOffset,
         '--decor-top': sidebarTop === 0 ? '0px' : sidebarTop,
         '--decor-bottom': bottombarHeight === 0 ? '0px' : bottombarHeight,
       }}
@@ -1709,7 +1743,7 @@ const openEditUrl = useCallback((id) => {
         {/* Sidebar (fixed) — masquée en plein écran */}
         {!isFullscreen && (
           <>
-            <RevealStrip zone="left" enabled={hideLeft} offset={hideTop ? 0 : 48} />
+            <RevealStrip zone="left" side={sidebarSide} enabled={hideLeft} offset={hideTop ? 0 : 48} />
             <Sidebar
               collapsed={sidebarCollapsed}
               onToggle={() => setSidebarCollapsed(!sidebarCollapsed)}
@@ -1725,6 +1759,7 @@ const openEditUrl = useCallback((id) => {
               bottomOffset={bottombarHeight}
               topOffset={sidebarTop}
               autoHidden={hideLeft}
+              side={sidebarSide}
               revealed={leftZone.visible}
               revealHandlers={leftZone.handlers}
             />
@@ -1733,8 +1768,8 @@ const openEditUrl = useCallback((id) => {
 
         {/* Zone principale — marge = largeur sidebar (rem) */}
         <div
-          className="relative flex-1 flex flex-col min-w-0 transition-[margin-left] duration-300"
-          style={{ marginLeft: sidebarOffset }}
+          className="relative flex-1 flex flex-col min-w-0 transition-[margin] duration-300"
+          style={sidebarSide === 'right' ? { marginRight: sidebarOffset } : { marginLeft: sidebarOffset }}
         >
           {/* Glisser une app ou un lien libre de la barre latérale vers un
               bord : écran partagé (voir SplitDropOverlay). */}

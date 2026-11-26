@@ -634,6 +634,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
   backupRestoreMain: (payload) => ipcRenderer.invoke('backup:restoreMain', payload),
   backupRelaunch: () => ipcRenderer.invoke('backup:relaunch'),
 
+  // Barre de défilement des pages : couleur d'accent du thème (« r g b ») et
+  // activation. Appliquée par le main à toutes les pages (electron/page-scrollbar.js).
+  setPageScrollbar: (cfg) => ipcRenderer.invoke('ui:pageScrollbar', cfg),
+
   // Automatisations : le main garde une copie des règles de liens pour pouvoir
   // décider au clic (son gestionnaire de fenêtre est synchrone).
   setRules: (rules) => ipcRenderer.invoke('rules:set', rules),

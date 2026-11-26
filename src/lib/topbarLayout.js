@@ -34,6 +34,7 @@ export const TOPBAR_MODULES = [
   { id: 'nav', labelKey: 'tbm.nav', descKey: 'tbm.nav.desc' },
   { id: 'appTitle', labelKey: 'tbm.appTitle', descKey: 'tbm.appTitle.desc' },
   { id: 'zoom', labelKey: 'tbm.zoom', descKey: 'tbm.zoom.desc' },
+  { id: 'address', labelKey: 'tbm.address', descKey: 'tbm.address.desc' },
   { id: 'search', labelKey: 'tbm.search', descKey: 'tbm.search.desc' },
   { id: 'profile', labelKey: 'tbm.profile', descKey: 'tbm.profile.desc' },
   { id: 'extensions', labelKey: 'tbm.extensions', descKey: 'tbm.extensions.desc' },

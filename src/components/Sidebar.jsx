@@ -46,7 +46,9 @@ export default function Sidebar({
   autoHidden = false,
   revealed = true,
   revealHandlers = {},
+  side = 'left',
 }) {
+  const onRight = side === 'right';
   const {
     profiles,
     activeProfile,
@@ -272,7 +274,9 @@ export default function Sidebar({
       mounted: !!getWebview(app.id),
       // Bulle à droite de la ligne, bornée à l'écran (largeur ~260 px).
       top: Math.max(8, Math.min(rect.top, window.innerHeight - 230)),
-      left: Math.min(rect.right + 8, window.innerWidth - 268),
+      left: onRight
+        ? Math.max(8, rect.left - 268)
+        : Math.min(rect.right + 8, window.innerWidth - 268),
     });
   };
   const hideMemPopup = () => setMemPopup(null);
@@ -705,7 +709,7 @@ export default function Sidebar({
 
   return (
     <aside
-      className={`fixed left-0 bg-bg-secondary border-r border-border flex flex-col ${
+      className={`fixed ${onRight ? 'right-0 border-l' : 'left-0 border-r'} bg-bg-secondary border-border flex flex-col ${
         collapsed ? 'w-16' : 'w-[17.5rem]'
       } ${
         // En mode épuré, seule la translation s'anime : animer `width` en même
@@ -723,7 +727,7 @@ export default function Sidebar({
         // Masquable → elle passe au-dessus du contenu (qui ne lui réserve plus
         // de place) et glisse hors de l'écran quand rien ne la retient.
         zIndex: autoHidden ? REVEALED_BAR_Z : 10,
-        transform: autoHidden && !revealed ? 'translateX(-100%)' : 'translateX(0)',
+        transform: autoHidden && !revealed ? `translateX(${onRight ? '100%' : '-100%'})` : 'translateX(0)',
       }}
       {...revealHandlers}
     >
@@ -775,7 +779,9 @@ export default function Sidebar({
             className={`btn-icon ${collapsed ? 'w-8 h-8' : ''}`}
             title={collapsed ? t('sb.expand') : t('sb.collapse')}
           >
-            {collapsed ? <ChevronRight size={18} /> : <ChevronLeft size={18} />}
+            {/* La flèche montre le sens du mouvement : vers l'écran pour
+                développer, vers le bord pour réduire. */}
+            {collapsed === onRight ? <ChevronLeft size={18} /> : <ChevronRight size={18} />}
           </button>
         </div>
 
@@ -884,7 +890,7 @@ export default function Sidebar({
         {collapsed && assistantFlyout && (
           <section
             aria-label={t('assistant.history.title')}
-            className="absolute left-full top-0 z-[100] ml-2 flex max-h-[min(70vh,520px)] w-80 flex-col overflow-hidden rounded-xl border border-border bg-bg-elevated shadow-2xl"
+            className={`absolute ${onRight ? 'right-full mr-2' : 'left-full ml-2'} top-0 z-[100] flex max-h-[min(70vh,520px)] w-80 flex-col overflow-hidden rounded-xl border border-border bg-bg-elevated shadow-2xl`}
             onMouseEnter={() => clearTimeout(assistantFlyoutTimer.current)}
             onMouseLeave={scheduleAssistantFlyoutClose}
           >

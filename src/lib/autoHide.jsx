@@ -127,12 +127,14 @@ export function useAutoHide(zone, enabled) {
 export const REVEAL_STRIP_Z = 600;
 export const REVEALED_BAR_Z = 650;
 
-export function RevealStrip({ zone, enabled, offset = 0 }) {
+// `side` : pour la barre latérale (zone 'left'), le bord réel de l'écran —
+// elle peut être placée à droite (réglage `sidebarPosition`).
+export function RevealStrip({ zone, enabled, offset = 0, side = 'left' }) {
   if (!enabled) return null;
   const geometry = {
     top: { top: 0, left: 0, right: 0, height: 6 },
     bottom: { bottom: 0, left: 0, right: 0, height: 6 },
-    left: { left: 0, top: offset, bottom: 0, width: 6 },
+    left: { [side === 'right' ? 'right' : 'left']: 0, top: offset, bottom: 0, width: 6 },
   }[zone];
   return (
     <div

@@ -36,6 +36,8 @@ import RulesSettings from './RulesSettings';
 import Diagnostics from './Diagnostics';
 import PasswordVault from './PasswordVault';
 import ReleaseNotes from './ReleaseNotes';
+import ResetSettingsCard from './ResetSettingsCard';
+import OrbitLogo from './OrbitLogo';
 import VoiceSettings from './VoiceSettings';
 import AssistantSettings from './AssistantSettings';
 import TopbarSettings from './TopbarSettings';
@@ -723,6 +725,35 @@ export default function Settings({ onClose }) {
 
                   <div className="card">
                     <h4 className="font-semibold mb-4">{t('st.interface')}</h4>
+                    {/* Côté de la barre latérale. Tout le reste (repli, mode
+                        épuré, menus) suit, seul le bord change. */}
+                    <div className="mb-4 flex items-center justify-between gap-4 flex-wrap">
+                      <div>
+                        <div className="font-medium">{t('st.sidebarSide')}</div>
+                        <div className="text-sm text-text-muted">{t('st.sidebarSideDesc')}</div>
+                      </div>
+                      <div className="flex gap-2">
+                        {[
+                          { id: 'left', label: t('st.sidebarSide.left') },
+                          { id: 'right', label: t('st.sidebarSide.right') },
+                        ].map((opt) => {
+                          const on = (settings.sidebarPosition === 'right' ? 'right' : 'left') === opt.id;
+                          return (
+                            <button
+                              key={opt.id}
+                              onClick={() => updateSettings({ sidebarPosition: opt.id })}
+                              className={`px-3 py-1.5 rounded-lg text-sm border transition-colors ${
+                                on
+                                  ? 'border-accent-primary bg-accent-primary/10 text-accent-primary'
+                                  : 'border-border text-text-secondary hover:bg-bg-hover'
+                              }`}
+                            >
+                              {opt.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
                     {/* Mode épuré : chaque barre peut disparaître et revenir au
                         survol du bord de l'écran. Remplace l'ancien
                         interrupteur unique, qui n'était branché à rien. */}
@@ -778,6 +809,30 @@ export default function Settings({ onClose }) {
                         type="checkbox"
                         checked={settings.autoPictureInPicture !== false}
                         onChange={(e) => updateSettings({ autoPictureInPicture: e.target.checked })}
+                        className="w-12 h-6 bg-bg-hover rounded-full relative cursor-pointer appearance-none checked:bg-accent-primary transition-colors after:content-[''] after:absolute after:top-1 after:left-1 after:w-4 after:h-4 after:bg-white after:rounded-full after:transition-transform checked:after:translate-x-6"
+                      />
+                    </label>
+                    <label className="flex items-center justify-between mb-3">
+                      <div>
+                        <div className="font-medium">{t('st.linkStatus')}</div>
+                        <div className="text-sm text-text-muted">{t('st.linkStatusDesc')}</div>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={settings.linkStatus !== false}
+                        onChange={(e) => updateSettings({ linkStatus: e.target.checked })}
+                        className="w-12 h-6 bg-bg-hover rounded-full relative cursor-pointer appearance-none checked:bg-accent-primary transition-colors after:content-[''] after:absolute after:top-1 after:left-1 after:w-4 after:h-4 after:bg-white after:rounded-full after:transition-transform checked:after:translate-x-6"
+                      />
+                    </label>
+                    <label className="flex items-center justify-between mb-3">
+                      <div>
+                        <div className="font-medium">{t('st.pageScrollbar')}</div>
+                        <div className="text-sm text-text-muted">{t('st.pageScrollbarDesc')}</div>
+                      </div>
+                      <input
+                        type="checkbox"
+                        checked={settings.pageScrollbar !== false}
+                        onChange={(e) => updateSettings({ pageScrollbar: e.target.checked })}
                         className="w-12 h-6 bg-bg-hover rounded-full relative cursor-pointer appearance-none checked:bg-accent-primary transition-colors after:content-[''] after:absolute after:top-1 after:left-1 after:w-4 after:h-4 after:bg-white after:rounded-full after:transition-transform checked:after:translate-x-6"
                       />
                     </label>
@@ -1633,20 +1688,8 @@ export default function Settings({ onClose }) {
               {activeTab === 'about' && (
                 <div className="space-y-6">
                   <div className="card text-center">
-                    <div className="w-20 h-20 mx-auto rounded-full bg-gradient-to-br from-accent-primary to-purple-500 flex items-center justify-center mb-4">
-                      <svg
-                        width="48"
-                        height="48"
-                        viewBox="0 0 24 24"
-                        fill="none"
-                        stroke="white"
-                        strokeWidth="2"
-                      >
-                        <circle cx="12" cy="12" r="3" />
-                        <path d="M12 1v6m0 6v6m8.66-15.66l-4.24 4.24m-4.84 4.84l-4.24 4.24m15.08.08l-4.24-4.24m-4.84-4.84L2.34 2.34" />
-                      </svg>
-                    </div>
-                    <h2 className="text-2xl font-bold mb-2">Orbit 🛰</h2>
+                    <OrbitLogo size={80} className="mx-auto mb-4 drop-shadow-lg" />
+                    <h2 className="text-2xl font-bold mb-2">Orbit</h2>
                     <p className="text-text-muted mb-1">
                       {t('about.version', { version: appVersion || '—' })}
                     </p>
@@ -1754,6 +1797,8 @@ export default function Settings({ onClose }) {
                     <h4 className="font-semibold mb-2">{t('st.license')}</h4>
                     <p className="text-sm text-text-muted">{t('st.licenseText')}</p>
                   </div>
+
+                  <ResetSettingsCard />
                 </div>
               )}
             </div>

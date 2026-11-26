@@ -1074,6 +1074,10 @@ export const useStore = create(
           settings: { ...state.settings, ...updates },
         })),
 
+      // « Repartir de zéro » côté préférences : seules les valeurs d'origine
+      // restent. Apps, profils, coffre et sessions ne sont pas touchés.
+      resetSettings: () => set({ settings: { ...defaultSettings } }),
+
       // --- Historique de l’assistant ---------------------------------------
       saveAssistantSession: (session) =>
         set((state) => ({

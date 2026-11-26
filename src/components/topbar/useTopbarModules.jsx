@@ -736,6 +736,27 @@ const app = apps.find((a) => a.id === activeApp)
             )}
           </Fragment>
         );
+      case 'address': {
+        // L'adresse de la page affichée, comme la barre d'un navigateur. Un
+        // clic ouvre la boîte « Modifier l'adresse » (la même qu'Alt+L).
+        const url = app?.url || app?.homeUrl || '';
+        const shown = url.replace(/^https?:\/\//, '').replace(/\/$/, '');
+        const secure = url.startsWith('https://');
+        return (
+          <Fragment key={key}>
+            {app && (
+              <button
+                onClick={() => window.dispatchEvent(new Event('orbit:edit-url'))}
+                className="app-no-drag flex items-center gap-1.5 min-w-0 max-w-[420px] h-7 px-2.5 rounded-lg bg-bg-elevated/60 border border-border/60 hover:border-border hover:bg-bg-hover text-xs text-text-secondary transition-colors"
+                title={`${url}\n${t('tbm.address.edit')} (Alt+L)`}
+              >
+                <Globe size={13} className={`flex-shrink-0 ${secure ? 'text-success' : 'text-text-muted'}`} />
+                <span className="truncate">{shown || t('tbm.address.empty')}</span>
+              </button>
+            )}
+          </Fragment>
+        );
+      }
       case 'zoom':
         return (
           <Fragment key={key}>

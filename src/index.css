@@ -295,6 +295,41 @@
   }
 }
 
+/* ===== Adresse du lien survolé =============================================
+   Petite bulle discrète en bas de la page, comme la barre d'état d'un
+   navigateur : translucide, arrondie, décollée du bord. Elle se place du côté
+   opposé au pointeur (classe is-left / is-right, voir LinkStatus.jsx) et ne
+   capte jamais la souris. */
+.orbit-link-status {
+  position: absolute;
+  bottom: 12px;
+  z-index: 25;
+  max-width: min(60%, 640px);
+  padding: 4px 10px;
+  border-radius: 9px;
+  border: 1px solid rgb(var(--border) / 0.55);
+  background: rgb(var(--bg-elevated) / 0.72);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  color: rgb(var(--text-secondary));
+  font-size: 12px;
+  line-height: 1.35;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-shadow: 0 4px 14px rgb(0 0 0 / 0.18);
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(4px);
+  transition: opacity 0.14s ease, transform 0.14s ease;
+}
+.orbit-link-status.is-left { left: 12px; }
+.orbit-link-status.is-right { right: 12px; }
+.orbit-link-status.is-shown {
+  opacity: 1;
+  transform: none;
+}
+
 /* ===== Barre de progression de chargement des apps =========================
    Fine barre EN HAUT du contenu, dans la couleur d'accent choisie par
    l'utilisateur (variable --accent-primary). Remplace l'ancien voile + spinner.
@@ -477,10 +512,10 @@
 [data-decor='full'] .orbit-network {
   -webkit-mask-image: linear-gradient(#000, #000), linear-gradient(#000, #000), linear-gradient(#000, #000);
   -webkit-mask-size: 100% max(var(--decor-top, 3rem), 8px), calc(100% - var(--decor-left, 17.5rem)) 100%, 100% max(var(--decor-bottom, 2.5rem), 8px);
-  -webkit-mask-position: 0 0, var(--decor-left, 17.5rem) 0, 0 100%;
+  -webkit-mask-position: 0 0, var(--decor-x, var(--decor-left, 17.5rem)) 0, 0 100%;
   mask-image: linear-gradient(#000, #000), linear-gradient(#000, #000), linear-gradient(#000, #000);
   mask-size: 100% max(var(--decor-top, 3rem), 8px), calc(100% - var(--decor-left, 17.5rem)) 100%, 100% max(var(--decor-bottom, 2.5rem), 8px);
-  mask-position: 0 0, var(--decor-left, 17.5rem) 0, 0 100%;
+  mask-position: 0 0, var(--decor-x, var(--decor-left, 17.5rem)) 0, 0 100%;
 }
 
 /* Guirlande : or, rouge, vert — trois ampoules qui se suivent sur toute la

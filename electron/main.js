@@ -44,6 +44,7 @@ import { networkOfRule, isOnionUrl, NETWORK_NAMES } from '../src/lib/privateNetw
 import * as vaultBackup from './vault-backup.js';
 import { readDatabase as readKdbx } from './kdbx.js';
 import * as studio from './studio.js';
+import * as pageScrollbar from './page-scrollbar.js';
 import * as sitePermissions from './site-permissions.js';
 import * as tts from './tts.js';
 import * as downloader from './downloader.js';
@@ -936,6 +937,8 @@ app.on('web-contents-created', (event, contents) => {
     return;
   }
   if (contentsType !== 'webview') return;
+  // Barre de défilement fine aux couleurs du thème (sauf si le site a la sienne).
+  pageScrollbar.attach(contents);
   try {
     // Fixée AVANT toute navigation : l'attribut `useragent` du <webview>
     // pourrait arriver après le début du chargement (ordre des attributs
@@ -9571,6 +9574,10 @@ handleFromUi('studio:prepare', (_e, payload = {}) =>
   studio.setPendingSource(payload.id, { audio: payload.audio }));
 handleFromUi('studio:cancelPrepare', () => studio.clearPendingSource());
 handleFromUi('studio:cursor', () => studio.cursorPoint());
+handleFromUi('ui:pageScrollbar', (_event, cfg) => {
+  pageScrollbar.configure(cfg && typeof cfg === 'object' ? cfg : {});
+  return { success: true };
+});
 // Pendant l'enregistrement seulement : voir setThrottling dans studio.js.
 handleFromUi('studio:throttling', (e, { enabled } = {}) =>
   studio.setThrottling({ enabled, window: vaultWindow(e) })

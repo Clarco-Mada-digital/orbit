@@ -95,6 +95,7 @@ import { isDisplayableFailure, describeLoadFailure } from '../lib/loadFailure';
 import { describeMediaFault, mediaFaultKey } from '../lib/mediaFault';
 import LoadFailure from './LoadFailure';
 import TunnelBadge from './TunnelBadge';
+import LinkStatus from './LinkStatus';
 import { logDiagnostic } from '../lib/diagnosticsStore';
 import { recipes } from '../lib/recipes';
 import { CHROME_UA } from '../lib/userAgent';
@@ -764,6 +765,8 @@ export default function WebView({ app, active, visible, flexLayout }) {
         // NB : le preload KeePassXC (détection/remplissage) est injecté par le
         // main process dans 'will-attach-webview' — pas d'attribut ici.
       />
+      {/* Adresse du lien survolé, en bas, du côté libre. */}
+      <LinkStatus webviewRef={ref} visible={visible} />
       {/* Repère Tor / VPN : seulement pour une app en tunnel (désactivable). */}
       {appNetwork && showTunnelBadge ? <TunnelBadge network={appNetwork} /> : null}
       {/* Indicateur de chargement : fine barre de progression EN HAUT, discrète,
