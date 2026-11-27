@@ -387,6 +387,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
     cancel: (id) => ipcRenderer.invoke('screenshot:cancel', { id }),
     // Image composée par l'interface → aperçu de capture habituel.
     adopt: (payload) => ipcRenderer.invoke('screenshot:adopt', payload),
+    // Fait revenir les pop-ups écartées pendant le choix de capture.
+    restoreWindows: () => ipcRenderer.invoke('screenshot:restoreWindows'),
     onPreview: (callback) => {
       const listener = (_event, payload) => callback(payload);
       ipcRenderer.on('orbit:screenshot-preview', listener);
@@ -502,6 +504,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Studio d'enregistrement (écran + caméra, composition et export)
   studio: {
     sources: () => ipcRenderer.invoke('studio:sources'),
+    // Source de la fenêtre d'où vient la demande (fenêtre détachée, pop-up).
+    sourceFor: (wcId) => ipcRenderer.invoke('studio:sourceFor', { wcId }),
     prepare: (id, options) =>
       ipcRenderer.invoke('studio:prepare', { id, ...(options || {}) }),
     cancelPrepare: () => ipcRenderer.invoke('studio:cancelPrepare'),

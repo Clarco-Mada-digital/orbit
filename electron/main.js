@@ -3068,6 +3068,29 @@ async function pickRegion(wc) {
 }
 
 const pendingScreenshots = new Map();
+// Pop-ups masquées le temps de l'aperçu de capture (voir captureGuestPage).
+// On ne la MASQUE pas : une fenêtre masquée disparaît de la liste des
+// sources du studio, on ne pourrait plus la filmer. On la détache de la
+// fenêtre principale — elle passe alors derrière, comme une fenêtre
+// détachée — puis on la rattache.
+const popupsHiddenForPreview = new Set();
+function setPopupAside(win) {
+  if (!win || win.isDestroyed()) return;
+  try {
+    win.setParentWindow(null);
+  } catch {
+    win.hide();
+  }
+  popupsHiddenForPreview.add(win);
+}
+function restorePopupsAfterPreview() {
+  for (const win of popupsHiddenForPreview) {
+    if (win.isDestroyed()) continue;
+    if (mainWindow && !mainWindow.isDestroyed()) win.setParentWindow(mainWindow);
+    win.show();
+  }
+  popupsHiddenForPreview.clear();
+}
 let activeScreenshotId = null;
 
 function announceSavedScreenshot(savePath, url, bytes) {
@@ -3158,6 +3181,13 @@ async function captureGuestPage(wc, mode, copyDirect = false) {
     const id = crypto.randomUUID();
     pendingScreenshots.set(id, { image, url: wc.getURL(), pixelRatio });
     activeScreenshotId = id;
+    // Capture d'une pop-up (vue d'URL) : fenêtre ENFANT de la principale,
+    // donc toujours au-dessus d'elle — elle cacherait l'aperçu. On l'écarte
+    // le temps de l'aperçu ; elle revient à sa fermeture.
+    const popup = orbitPopupForGuest(wc);
+    if (popup) {
+      setPopupAside(popup);
+    }
     mainWindow.show();
     mainWindow.focus();
     mainWindow.webContents.send('orbit:screenshot-preview', {
@@ -3201,6 +3231,7 @@ function screenshotImageFor(pending, dataUrl) {
 }
 
 handleFromUi('screenshot:copy', (_event, { id, dataUrl } = {}) => {
+  restorePopupsAfterPreview();
   const pending = pendingScreenshots.get(id);
   if (!pending) return { success: false, error: 'capture-expired' };
   copyImageToClipboard(screenshotImageFor(pending, dataUrl));
@@ -3234,6 +3265,14 @@ handleFromUi('screenshot:targets', () => {
       kind: detachedAppIdForWc(wc.id) ? 'detached' : 'window',
     });
   }
+  // Pop-ups (vues d'URL) : leur fenêtre affiche un fichier local, écartée
+  // ci-dessus ; on propose la PAGE qu'elle contient.
+  for (const win of orbitPopups) {
+    if (win.isDestroyed()) continue;
+    const guest = popupGuestOf(win);
+    if (!guest) continue;
+    targets.push({ wcId: guest.id, title: guest.getTitle() || guest.getURL() || 'Orbit', kind: 'popup' });
+  }
   return { success: true, targets };
 });
 
@@ -3244,8 +3283,10 @@ handleFromUi('screenshot:capture', async (_event, { wcId, mode, copyDirect, sour
     : webContents.fromId(Number(wcId));
   const isEmbeddedPage = wc && !wc.isDestroyed() && wc.getType() === 'webview' && orbitUiFor(wc);
   // Toute fenêtre d'Orbit est capturable : fenêtre détachée, pop-up modale,
-  // capture épinglée… (une page embarquée, elle, reste un <webview>).
-  const targetWindow = orbitWindowFor(wc);
+  // capture épinglée… (une page embarquée, elle, reste un <webview>). Pour
+  // une pop-up (vue d'URL), c'est la page qu'elle contient qui est visée :
+  // on ramène la pop-up devant, et on capture son <webview>.
+  const targetWindow = orbitWindowFor(wc) || orbitPopupForGuest(wc);
   const isOrbitUiPage = captureOrbitUi && mainWindow && !mainWindow.isDestroyed()
     && wc === mainWindow.webContents;
   if (!isEmbeddedPage && !targetWindow && !isOrbitUiPage) {
@@ -3468,6 +3509,7 @@ ipcMain.handle('annotate:close', (event) => {
 });
 
 handleFromUi('screenshot:pin', (_event, { id, dataUrl } = {}) => {
+  restorePopupsAfterPreview();
   const pending = pendingScreenshots.get(id);
   if (!pending) return { success: false, error: 'capture-expired' };
   try {
@@ -3522,13 +3564,22 @@ ipcMain.handle('pin:close', (event) => {
   return { success: true };
 });
 
+// Sélecteur de capture fermé sans capture, ou enregistrement lancé / studio
+// fermé : les pop-ups écartées reviennent.
+handleFromUi('screenshot:restoreWindows', () => {
+  restorePopupsAfterPreview();
+  return { success: true };
+});
+
 handleFromUi('screenshot:cancel', (_event, { id } = {}) => {
+  restorePopupsAfterPreview();
   pendingScreenshots.delete(id);
   if (activeScreenshotId === id) activeScreenshotId = null;
   return { success: true };
 });
 
 handleFromUi('screenshot:save', async (_event, { id, dataUrl } = {}) => {
+  restorePopupsAfterPreview();
   const pending = pendingScreenshots.get(id);
   if (!pending) return { success: false, error: 'capture-expired' };
   try {
@@ -4663,6 +4714,9 @@ function createOrbitPopup(url, partition) {
   win.webContents.on('will-attach-webview', hardenWebviewAttach);
   win.webContents.on('did-attach-webview', (_event, guestContents) => {
     rememberGuestPartition(guestContents);
+    // Raccourcis d'Orbit (capture Alt+Maj+S, enregistrement…) depuis la page
+    // de la pop-up, comme depuis une app ou une fenêtre détachée.
+    attachPageShortcuts(guestContents);
     // Menu contextuel natif dans la pop-up aussi (copier un lien, coller un
     // mot de passe…) — absent par défaut dans un <webview>.
     // Les pop-ups n'hébergent pas l'interface d'Orbit : menu natif.
@@ -5532,6 +5586,27 @@ function orbitWindowFor(wc) {
   return null;
 }
 
+// Pop-up d'Orbit (vue d'URL, voir createOrbitPopup) dont la page est ce
+// <webview> — ou null. La pop-up affiche `popup.html` : c'est sa PAGE qu'on
+// capture, pas son habillage.
+function orbitPopupForGuest(wc) {
+  if (!wc || wc.isDestroyed?.() || wc.getType() !== 'webview') return null;
+  const host = wc.hostWebContents;
+  if (!host) return null;
+  for (const win of orbitPopups) {
+    if (!win.isDestroyed() && win.webContents.id === host.id) return win;
+  }
+  return null;
+}
+
+function popupGuestOf(win) {
+  return (
+    webContents
+      .getAllWebContents()
+      .find((w) => !w.isDestroyed() && w.getType() === 'webview' && w.hostWebContents?.id === win.webContents.id) || null
+  );
+}
+
 // App de la fenêtre détachée qui héberge ce webContents (null sinon).
 function detachedAppIdForWc(wcId) {
   for (const [appId, win] of detachedWindows) {
@@ -5732,6 +5807,13 @@ function attachPageShortcuts(contents) {
       // sélecteur derrière elle — donc « rien ne se passait ».
       if (action === 'screenshot') {
         if (mainWindow.isMinimized()) mainWindow.restore();
+        // Depuis une pop-up (vue d'URL) : fenêtre ENFANT de la principale,
+        // elle resterait au-dessus et cacherait le sélecteur. On l'écarte ;
+        // elle revient pour être capturée, ou à la fermeture du sélecteur.
+        const popup = orbitPopupForGuest(contents);
+        if (popup) {
+          setPopupAside(popup);
+        }
         mainWindow.show();
         mainWindow.focus();
       }
@@ -9987,6 +10069,20 @@ function handleFromUi(channel, fn) {
 // Réservé à l'interface d'Orbit : une page embarquée ne doit jamais pouvoir
 // énumérer les écrans, lire la position du curseur, ni écrire une vidéo.
 handleFromUi('studio:sources', () => studio.listSources());
+// Source à pré-choisir quand le studio s'ouvre depuis une fenêtre détachée ou
+// une pop-up : l'identifiant de capture de SA fenêtre. Rien pour la fenêtre
+// principale (le studio y garde son choix habituel).
+handleFromUi('studio:sourceFor', (_e, { wcId } = {}) => {
+  const wc = webContents.fromId(Number(wcId));
+  if (!wc || wc.isDestroyed()) return { success: false };
+  const win = orbitWindowFor(wc) || orbitPopupForGuest(wc);
+  if (!win || win.isDestroyed() || win === mainWindow) return { success: false };
+  try {
+    return { success: true, id: win.getMediaSourceId() };
+  } catch {
+    return { success: false };
+  }
+});
 // Dépose le choix de source juste avant la capture (voir studio.js).
 handleFromUi('studio:prepare', (_e, payload = {}) =>
   studio.setPendingSource(payload.id, { audio: payload.audio }));

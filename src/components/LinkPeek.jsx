@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { X, Maximize2, Columns2, AppWindow, Globe, Copy, Check, Loader2 } from 'lucide-react';
 import { CHROME_UA } from '../lib/userAgent';
+import { setPeekWebview } from '../lib/webviewRegistry';
 import { useT } from '../lib/i18n';
 import { isDisplayableFailure } from '../lib/loadFailure';
 import LoadFailure from './LoadFailure';
@@ -42,6 +43,15 @@ export default function LinkPeek({ peek, onClose, onOpenInOrbit, onOpenSplit }) 
   // HTTPS, serveur injoignable…). Sans cet écran, l'aperçu restait noir avec
   // un indicateur qui tournait : aucune issue, aucune explication.
   const [failure, setFailure] = useState(null);
+
+  // Connue du registre (à part des apps) : le sélecteur de capture la
+  // propose (« Aperçu du lien ») même si le raccourci est pressé ailleurs.
+  useEffect(() => {
+    const wv = ref.current;
+    if (!wv) return undefined;
+    setPeekWebview(wv);
+    return () => setPeekWebview(null);
+  }, []);
 
   useEffect(() => {
     const wv = ref.current;

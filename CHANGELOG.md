@@ -8,6 +8,20 @@ Format : une section `## [X.Y.Z] — AAAA-MM-JJ` par version, puis des
 sous-sections `### Ajouté` / `### Modifié` / `### Corrigé` / `### Sécurité`.
 La plus récente en premier.
 
+## [1.21.11] — 2026-11-27
+
+### Corrigé
+- **Capture et enregistrement depuis une pop-up de lien** : Alt+Maj+S ne
+  répondait pas dans la page d'une pop-up, et le sélecteur s'ouvrait caché
+  sous elle. La pop-up s'écarte pendant le choix et l'aperçu, sa page est
+  proposée et pré-sélectionnée, puis elle revient à sa place.
+- **Enregistrer une fenêtre détachée** : le studio s'ouvrait sur « Tout
+  l'écran » ; la fenêtre d'où vient la demande est maintenant
+  pré-sélectionnée comme source à filmer.
+- **Aperçu de lien (Ctrl + clic)** : il apparaît comme cible à part,
+  « Aperçu du lien », choisie automatiquement quand il est ouvert (la liste
+  affichait « Page de l'app active », trompeur).
+
 ## [1.21.10] — 2026-11-26
 
 ### Ajouté

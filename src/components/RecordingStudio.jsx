@@ -105,7 +105,7 @@ const KEY_FOR_ACTION = Object.fromEntries(
 );
 
 
-export default function RecordingStudio({ onClose }) {
+export default function RecordingStudio({ onClose, preferWcId = null }) {
   const t = useT();
   const accentColor = useStore((s) => s.settings?.accentColor) || '#6366f1';
   const savedStyle = useStore((s) => s.settings?.studio);
@@ -283,11 +283,27 @@ export default function RecordingStudio({ onClose }) {
   }, [hint]);
 
   // --- Inventaire ----------------------------------------------------------
+  // Ouvert depuis une fenêtre détachée ou une pop-up : c'est elle qu'on veut
+  // filmer, pas l'écran entier. Pris en compte au premier inventaire.
+  const preferredRef = useRef(preferWcId);
   const loadSources = useCallback(async () => {
     const res = await api()?.sources();
     if (res?.success) {
       setSources(res.sources);
-      setSourceId((cur) => (res.sources.some((s) => s.id === cur) ? cur : res.sources[0]?.id || ''));
+      let preferred = null;
+      if (preferredRef.current) {
+        const hint = await api()?.sourceFor?.(preferredRef.current);
+        preferredRef.current = null;
+        // Même fenêtre, suffixe parfois différent (`window:123:0` rendu par
+        // Electron, `window:123:1` listé par le système) : on compare le
+        // numéro de fenêtre.
+        const key = (id) => String(id || '').split(':').slice(0, 2).join(':');
+        const match = hint?.success ? res.sources.find((s) => key(s.id) === key(hint.id)) : null;
+        if (match) preferred = match.id;
+      }
+      setSourceId((cur) =>
+        preferred || (res.sources.some((s) => s.id === cur) ? cur : res.sources[0]?.id || '')
+      );
     } else {
       setError(tRef.current('studio.err.sources'));
     }
@@ -738,6 +754,9 @@ export default function RecordingStudio({ onClose }) {
     setElapsed(0);
     setPaused(false);
     setStep('recording');
+    // Une pop-up écartée pendant la préparation revient : c'est peut-être
+    // elle qu'on filme.
+    window.electronAPI?.screenshots?.restoreWindows?.();
   };
 
   const finishRecording = async () => {

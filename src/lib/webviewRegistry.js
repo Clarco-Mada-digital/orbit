@@ -85,3 +85,21 @@ export function reloadApp(appId, url, hard = false) {
     return false;
   }
 }
+
+// Aperçu de lien (Ctrl + clic) : tenu À PART du registre des apps, que
+// d'autres parcourent pour persister un zoom ou recharger des apps — l'aperçu
+// n'est pas une app. Le sélecteur de capture s'en sert comme cible.
+let peekWebview = null;
+
+export function setPeekWebview(webview) {
+  peekWebview = webview || null;
+}
+
+export function getPeekWebContentsId() {
+  if (!peekWebview) return null;
+  try {
+    return peekWebview.getWebContentsId();
+  } catch {
+    return null;
+  }
+}

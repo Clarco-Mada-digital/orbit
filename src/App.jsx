@@ -1033,7 +1033,9 @@ const [editUrlFor, setEditUrlFor] = useState(null); // { id, url } — boîte «
 
   // Ouverture du studio depuis la palette de commandes.
   useEffect(() => {
-    const open = () => setShowStudio(true);
+    // `detail.wcId` : la fenêtre d'où vient la demande (fenêtre détachée,
+    // pop-up) — le studio la propose comme source à filmer.
+    const open = (event) => setShowStudio({ wcId: Number(event?.detail?.wcId) || null });
     window.addEventListener('orbit:studio-open', open);
     return () => window.removeEventListener('orbit:studio-open', open);
   }, []);
@@ -2178,7 +2180,16 @@ const openEditUrl = useCallback((id) => {
       )}
       <ScreenshotPreview />
       <Suspense fallback={null}>
-        {showStudio && <RecordingStudio onClose={() => setShowStudio(false)} />}
+        {showStudio && (
+          <RecordingStudio
+            preferWcId={showStudio.wcId || null}
+            onClose={() => {
+              setShowStudio(false);
+              // Les pop-ups écartées pendant la préparation reviennent.
+              window.electronAPI?.screenshots?.restoreWindows?.();
+            }}
+          />
+        )}
         {/* La relecture hors ligne ne se monte vraiment qu'au premier appel :
             le composant s'affiche sinon sans rien faire. */}
         <OfflineProofreader />

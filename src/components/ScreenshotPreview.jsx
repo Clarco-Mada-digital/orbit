@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Camera, Clapperboard, Copy, Crop, Download, Expand, LoaderCircle, Pin, X } from 'lucide-react';
 import { useT } from '../lib/i18n';
-import { getWebContentsIdFor } from '../lib/webviewRegistry';
+import { getPeekWebContentsId, getWebContentsIdFor } from '../lib/webviewRegistry';
 import { useStore } from '../stores/useStore';
 import ScreenshotEditor from './ScreenshotEditor';
 
@@ -25,7 +25,12 @@ export default function ScreenshotPreview() {
   // l'originale du processus principal (pas de ré-encodage).
   const editorRef = useRef(null);
 
-  const pageWcId = sourceWcId || getWebContentsIdFor(activeApp);
+  const appWcId = getWebContentsIdFor(activeApp);
+  // Aperçu de lien ouvert (Ctrl + clic) : cible à part, il recouvre l'app.
+  const peekWcId = getPeekWebContentsId();
+  const pageWcId = target === 'peek' && peekWcId ? peekWcId : sourceWcId || appWcId;
+  // Fenêtre choisie dans la liste (détachée, pop-up) : le studio la filmera.
+  const studioWcId = useCallback(() => (target.startsWith('win:') ? Number(target.slice(4)) : null), [target]);
 
   const chooseCaptureMode = useCallback(async (mode, copyDirect) => {
     const captureSource = target === 'orbit' ? 'orbit' : 'page';
@@ -99,6 +104,14 @@ export default function ScreenshotPreview() {
       // une option VISIBLE de la liste.
       const shortcutWindow = wcId ? list.find((w) => w.wcId === wcId) : null;
       const activePage = getWebContentsIdFor(useStore.getState().activeApp);
+      const peek = getPeekWebContentsId();
+      // Aperçu de lien ouvert : c'est lui qu'on a sous les yeux.
+      if (peek && (!wcId || wcId === peek)) {
+        setTarget('peek');
+        setChooseMode(true);
+        setError('');
+        return;
+      }
       const orbitWindow = list.find((w) => w.kind === 'orbit');
       if (shortcutWindow && shortcutWindow.kind !== 'orbit') setTarget(`win:${wcId}`);
       else if ((wcId && !shortcutWindow) || activePage) setTarget('page');
@@ -136,7 +149,7 @@ export default function ScreenshotPreview() {
         event.preventDefault();
         if (digit === '4') {
           setChooseMode(false);
-          window.dispatchEvent(new Event('orbit:studio-open'));
+          window.dispatchEvent(new CustomEvent('orbit:studio-open', { detail: { wcId: studioWcId() } }));
           return;
         }
         const modes = ['visible', 'full', 'selection'];
@@ -156,11 +169,12 @@ export default function ScreenshotPreview() {
         setCapture(null);
       } else {
         setChooseMode(false);
+        window.electronAPI?.screenshots?.restoreWindows?.();
       }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [busy, capture, chooseCaptureMode, chooseMode, countdown]);
+  }, [busy, capture, chooseCaptureMode, chooseMode, countdown, studioWcId]);
 
   const close = async () => {
     try {
@@ -255,7 +269,7 @@ export default function ScreenshotPreview() {
             </div>
             <button
               type="button"
-              onClick={() => { setChooseMode(false); setError(''); }}
+              onClick={() => { setChooseMode(false); setError(''); window.electronAPI?.screenshots?.restoreWindows?.(); }}
               className="rounded-xl p-2 text-white/70 transition hover:bg-white/10 hover:text-white"
               aria-label={t('cm.cancelScreenshot')}
             >
@@ -284,7 +298,14 @@ export default function ScreenshotPreview() {
                 onChange={(event) => setTarget(event.target.value)}
                 className="max-w-[60%] rounded-lg border border-white/15 bg-slate-900/80 px-3 py-2 text-white outline-none focus:border-indigo-300"
               >
-                {pageWcId && <option value="page">{t('cm.screenshotTargetPage')}</option>}
+                {peekWcId && <option value="peek">{t('cm.screenshotTargetPeek')}</option>}
+                {(sourceWcId || appWcId) && (
+                  <option value="page">
+                    {sourceWcId && sourceWcId !== appWcId && sourceWcId !== peekWcId
+                      ? t('cm.screenshotTargetSource')
+                      : t('cm.screenshotTargetPage')}
+                  </option>
+                )}
                 {windows.map((win) => (
                   <option key={win.wcId} value={`win:${win.wcId}`}>
                     {win.kind === 'orbit' ? t('cm.screenshotTargetOrbit') : win.title}
@@ -311,7 +332,7 @@ export default function ScreenshotPreview() {
                 onClick={(event) => {
                   if (mode === 'record') {
                     setChooseMode(false);
-                    window.dispatchEvent(new Event('orbit:studio-open'));
+                    window.dispatchEvent(new CustomEvent('orbit:studio-open', { detail: { wcId: studioWcId() } }));
                     return;
                   }
                   chooseCaptureMode(mode, event.ctrlKey || event.metaKey);
